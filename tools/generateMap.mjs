@@ -42,6 +42,9 @@ const TERRAIN = [
   { id: 7, key: 'mountain',  name: 'Mountain Peak',      color: '#b9b6b0', blocks: true },
   { id: 8, key: 'steppe',    name: 'Dry Steppe',         color: '#c9b079', blocks: false },
   { id: 9, key: 'urban',     name: 'Urban / Town',       color: '#9a9aa2', blocks: false },
+  // ids 10–18 are reserved at runtime for town tiles (src/town/townTiles.ts),
+  // so the bridge — a base map terrain — takes the next free id, 19.
+  { id: 19, key: 'bridge',   name: 'Bridge',             color: '#a9742f', blocks: false },
 ];
 const T = Object.fromEntries(TERRAIN.map((t) => [t.key, t.id]));
 
@@ -314,6 +317,69 @@ for (let ty = 0; ty < HEIGHT; ty++) {
   grid.push(row);
 }
 
+// ---------------------------------------------------------------------------
+// Bridges — editable data. Each crossing is auto-spanned across the river (or
+// sound) it sits on, so the exact river width does not have to be hand-counted.
+// `dir` is the direction the bridge RUNS: 'h' across a north–south river,
+// 'v' across an east–west river. Open ocean is never bridged.
+// ---------------------------------------------------------------------------
+const BRIDGES = [
+  { name: 'Wenatchee (Columbia)',  tx: 183, ty: 68,  dir: 'h' },
+  { name: 'Vantage (Columbia)',    tx: 182, ty: 90,  dir: 'h' },
+  { name: 'Tri-Cities (Columbia)', tx: 182, ty: 110, dir: 'h' },
+  { name: 'Tri-Cities (Snake)',    tx: 200, ty: 111, dir: 'v' },
+  { name: 'Vancouver (Columbia)',  tx: 120, ty: 125, dir: 'v' },
+];
+
+function placeBridge(bridge) {
+  const CROSSABLE = new Set([T.sound, T.river]); // never bridge open ocean
+  const BLOCKED = new Set(TERRAIN.filter((t) => t.blocks).map((t) => t.id));
+  const step = bridge.dir === 'h' ? [1, 0] : [0, 1];
+  const inBounds = (x, y) => x >= 0 && y >= 0 && x < WIDTH && y < HEIGHT;
+
+  // Recenter onto water if the authored point is a tile or two off.
+  let cx = bridge.tx;
+  let cy = bridge.ty;
+  if (!CROSSABLE.has(grid[cy]?.[cx])) {
+    let found = false;
+    for (let d = -3; d <= 3 && !found; d++) {
+      const x = cx + step[0] * d;
+      const y = cy + step[1] * d;
+      if (inBounds(x, y) && CROSSABLE.has(grid[y][x])) {
+        cx = x;
+        cy = y;
+        found = true;
+      }
+    }
+    if (!found) throw new Error(`Bridge "${bridge.name}" is not on crossable water`);
+  }
+
+  // Collect the contiguous water span through the center, plus one walkable
+  // land tile on each end so the bridge meets the bank (skip ocean ends).
+  const span = [];
+  for (const sign of [-1, 1]) {
+    let x = cx + step[0] * sign;
+    let y = cy + step[1] * sign;
+    let guard = 0;
+    while (inBounds(x, y) && CROSSABLE.has(grid[y][x]) && guard++ < 40) {
+      span.push([x, y]);
+      x += step[0] * sign;
+      y += step[1] * sign;
+    }
+    // Anchor onto the bank if it is walkable land (not ocean / mountain).
+    if (inBounds(x, y) && !BLOCKED.has(grid[y][x])) span.push([x, y]);
+  }
+  span.push([cx, cy]);
+
+  for (const [x, y] of span) grid[y][x] = T.bridge;
+  return span.length;
+}
+
+for (const bridge of BRIDGES) {
+  const len = placeBridge(bridge);
+  console.log(`bridge: ${bridge.name.padEnd(22)} ${len} tiles`);
+}
+
 // Pick a guaranteed-walkable spawn near Seattle (search outward if needed).
 function nearestWalkable(cx, cy) {
   const blocked = new Set(TERRAIN.filter((t) => t.blocks).map((t) => t.id));
@@ -334,6 +400,62 @@ const spawnTile = nearestWalkable(
   Math.round(seattle.x * (WIDTH - 1)),
   Math.round(seattle.y * (HEIGHT - 1)),
 );
+
+// ---------------------------------------------------------------------------
+// Connectivity check: flood-fill walkable terrain from the spawn and confirm
+// every major region is reachable on foot. Fails loudly if something is sealed.
+// ---------------------------------------------------------------------------
+function reachableFromSpawn() {
+  const blocked = new Set(TERRAIN.filter((t) => t.blocks).map((t) => t.id));
+  const walk = (x, y) =>
+    x >= 0 && y >= 0 && x < WIDTH && y < HEIGHT && !blocked.has(grid[y][x]);
+  const seen = Array.from({ length: HEIGHT }, () => new Array(WIDTH).fill(false));
+  const stack = [[spawnTile.x, spawnTile.y]];
+  seen[spawnTile.y][spawnTile.x] = true;
+  while (stack.length) {
+    const [x, y] = stack.pop();
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const nx = x + dx;
+      const ny = y + dy;
+      if (walk(nx, ny) && !seen[ny][nx]) {
+        seen[ny][nx] = true;
+        stack.push([nx, ny]);
+      }
+    }
+  }
+  const nearReach = (tx, ty) => {
+    for (let r = 0; r < 8; r++) {
+      for (let dy = -r; dy <= r; dy++) {
+        for (let dx = -r; dx <= r; dx++) {
+          const x = tx + dx;
+          const y = ty + dy;
+          if (walk(x, y)) return seen[y][x];
+        }
+      }
+    }
+    return false;
+  };
+  const tile = (nx, ny) => [Math.round(nx * (WIDTH - 1)), Math.round(ny * (HEIGHT - 1))];
+  const regions = {
+    'Olympic Peninsula': [20, 64],
+    'Olympia (S Sound)': tile(0.318, 0.56),
+    Bellingham: tile(0.36, 0.09),
+    'Wenatchee (C)': tile(0.66, 0.43),
+    'Spokane (NE)': tile(0.88, 0.25),
+    'Yakima (SC)': tile(0.6, 0.62),
+    'Tri-Cities': tile(0.715, 0.69),
+    'Walla Walla (SE)': tile(0.84, 0.715),
+  };
+  console.log('Connectivity from spawn', spawnTile, ':');
+  let allOk = true;
+  for (const [name, [x, y]] of Object.entries(regions)) {
+    const ok = nearReach(x, y);
+    if (!ok) allOk = false;
+    console.log(`  ${name.padEnd(20)} ${ok ? 'REACHABLE' : 'SEALED ***'}`);
+  }
+  if (!allOk) console.log('WARNING: some regions are still sealed off.');
+}
+reachableFromSpawn();
 
 // ---------------------------------------------------------------------------
 // Organise into zone chunks (a grid of zones) for future streaming.
@@ -386,7 +508,7 @@ console.log(`Wrote ${outPath}`);
 const GLYPH = {
   [T.ocean]: '~', [T.sound]: '≈', [T.river]: 'r', [T.beach]: '.',
   [T.grassland]: ',', [T.forest]: '#', [T.foothills]: 'v', [T.mountain]: '^',
-  [T.steppe]: ':', [T.urban]: 'O',
+  [T.steppe]: ':', [T.urban]: 'O', [T.bridge]: '=',
 };
 const stepX = 3;
 const stepY = 3;
