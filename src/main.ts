@@ -18,7 +18,7 @@ const game = new Phaser.Game(gameConfig);
 // if the deploy reaches the device, this WILL show. Bump BUILD each deploy to
 // confirm new code is live. pointer-events:none so it never blocks taps.
 // ---------------------------------------------------------------------------
-const BUILD_MARKER = 'BUILD 1';
+const BUILD_MARKER = 'BUILD 2';
 const SCALE_MODE_NAMES = [
   'NONE',
   'WIDTH_CONTROLS_HEIGHT',
