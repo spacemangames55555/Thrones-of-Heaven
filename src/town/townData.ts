@@ -1,9 +1,11 @@
 import { TownTileId } from './townTiles';
 
 /**
- * Authored layout for the Seattle town. It is stamped onto the overworld at
- * {@link SEATTLE_TOWN.origin} (tile coords on the Washington map), so the town
- * is a seamless part of the open world — no walls, no loading screen.
+ * Authored layout for the Seattle town. It is stamped onto the overworld next
+ * to the Seattle city marker (see {@link TownDef.anchorCity} + offset), so the
+ * town re-derives at its correct spot at any map scale — no hard-coded tile
+ * coordinates — and stays a seamless part of the open world (no walls, no
+ * loading screen).
  *
  * Each row is a string of single-character cells (all rows must be `width`
  * long). Characters map to tiles via {@link TOWN_LEGEND}; a few also mark
@@ -15,13 +17,16 @@ import { TownTileId } from './townTiles';
  *   x corrupted ground    R rift core   n npc
  */
 export interface TownDef {
-  /** Top-left tile of the town on the Washington map. */
-  origin: { tx: number; ty: number };
+  /** Name of the city marker the town is anchored to. */
+  anchorCity: string;
+  /** Tile offset of the town's top-left corner from that city marker. */
+  offset: { tx: number; ty: number };
   rows: string[];
 }
 
 export const SEATTLE_TOWN: TownDef = {
-  origin: { tx: 96, ty: 41 },
+  anchorCity: 'Seattle',
+  offset: { tx: 2, ty: -9 },
   rows: [
     '.....BBB..==..BBB..t..',
     '.....BBB..==..BBB.....',

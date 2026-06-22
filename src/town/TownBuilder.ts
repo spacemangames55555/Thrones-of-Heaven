@@ -27,8 +27,14 @@ export interface TownFeatures {
  * features. Adding another town later is pure data: a new {@link TownDef}.
  */
 export function buildTown(map: GameMap, town: TownDef = SEATTLE_TOWN): TownFeatures {
-  const { origin, rows } = town;
+  const { rows } = town;
   const width = rows[0].length;
+
+  // Resolve the town's top-left tile from its anchor city, so it lands in the
+  // right place regardless of map scale.
+  const city = map.cities.find((c) => c.name === town.anchorCity);
+  if (!city) throw new Error(`Town anchor city "${town.anchorCity}" not found on map`);
+  const origin = { tx: city.tx + town.offset.tx, ty: city.ty + town.offset.ty };
 
   const doors: DoorFeature[] = [];
   let spawn = map.tileToWorldCenter(origin.tx, origin.ty);
