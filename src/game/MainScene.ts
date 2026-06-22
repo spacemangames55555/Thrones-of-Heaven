@@ -7,6 +7,7 @@ import { CityMarkers } from '../ui/CityMarkers';
 import { DebugReadout } from '../ui/DebugReadout';
 import { DialogueBox } from '../ui/DialogueBox';
 import { TouchButton } from '../ui/TouchButton';
+import { CAMERA_ZOOM } from './settings';
 import { TOWN_TILES } from '../town/townTiles';
 import { buildTown, type TownFeatures, type DoorFeature } from '../town/TownBuilder';
 import type { WashingtonMap } from '../map/mapTypes';
@@ -77,15 +78,13 @@ export class MainScene extends Phaser.Scene {
 
     const cam = this.cameras.main;
     cam.startFollow(this.player.sprite, true, 0.12, 0.12);
-    cam.setZoom(this.pickZoom());
+    cam.setZoom(CAMERA_ZOOM); // tune in src/game/settings.ts
     cam.setRoundPixels(true);
 
     this.controls = new Controls(this);
     this.dialogue = new DialogueBox(this);
     this.talkButton = new TouchButton(this, 'Talk', () => this.tryTalk());
     this.readout = new DebugReadout(this, this.map, this.player);
-
-    this.scale.on(Phaser.Scale.Events.RESIZE, () => cam.setZoom(this.pickZoom()));
   }
 
   override update(): void {
@@ -204,13 +203,5 @@ export class MainScene extends Phaser.Scene {
       .setOrigin(0.5, 1)
       .setStroke('#160b22', 4)
       .setDepth(7);
-  }
-
-  /** Zoom so a useful slice of the map is visible on any screen size. */
-  private pickZoom(): number {
-    const target = 520;
-    const shortSide = Math.min(this.scale.width, this.scale.height);
-    const zoom = shortSide / target;
-    return Phaser.Math.Clamp(Math.round(zoom * 2) / 2, 1.5, 4);
   }
 }

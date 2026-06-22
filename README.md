@@ -48,20 +48,49 @@ There are no walls or loading screens; you wander in and out freely.
 
 ## What's in the map
 
-An authored, data-driven model of Washington (256 × 160 tiles, 16px each):
+An authored, data-driven model of Washington — **800 × 500 tiles, 16px each**
+(12,800 × 8,000 px, ≈10× the original prototype's area). Crossing it on foot is
+a real trek.
 
-- Pacific Ocean and the Strait of Juan de Fuca
-- The Olympic Peninsula with its impassable Olympic Mountains
-- Puget Sound (with islands) separating the peninsula from the mainland
-- The Cascade Range down the middle — Mt. Baker, Rainier, St. Helens, Adams —
-  splitting the green wet west from the dry eastern steppe
-- The Columbia River entering from the north and sweeping west to the ocean
-- Labeled markers for Seattle, Tacoma, Olympia, Everett, Bellingham, Spokane,
-  Yakima, Tri-Cities, Vancouver WA, Wenatchee, and Walla Walla
+West → east, it includes:
+
+- Pacific coast: ocean with beaches; the Strait of Juan de Fuca
+- Olympic Peninsula: temperate **coastal rainforest** around the impassable
+  Olympic Mountains, with Lake Crescent
+- Puget Sound + Hood Canal (with walkable islands) and **wetland/marsh**
+  estuaries; the urban lowland corridor (Seattle, Tacoma, Everett, Olympia,
+  Bellingham)
+- Western Cascade slope: **montane evergreen forest** and foothills
+- Cascade crest: alpine snow peaks (Baker, Glacier Peak, Rainier, Adams, St.
+  Helens) with **three walkable passes**, and Lake Chelan
+- Eastern Washington: shrub-steppe across the Columbia Basin, rocky
+  **scabland/coulees**, the **Palouse** wheat farmland in the SE, the forested
+  **Okanogan highlands** in the N, and Spokane
+- Rivers (crossed only at bridges): the Columbia, the Snake, and tributaries
+
+The 18 terrain types: ocean, sound, lake, river *(all block)*; bridge, beach,
+coastal rainforest, lowland forest, montane forest, meadow/grassland, foothills,
+mountain pass, shrub-steppe, scabland, farmland, wetland, urban *(all walk)*; and
+alpine peak *(block)*. Each has a distinct placeholder color — no downloaded art.
 
 The map is stored as editable JSON in `src/map/washington.map.json`, organised
-into a grid of **zone chunks** so streaming can be added later. It is produced
-by the authored region model in `tools/generateMap.mjs`.
+into a grid of **zone chunks** (so streaming can be added later) and produced by
+the authored, code-based region model in `tools/generateMap.mjs`. The whole state
+renders as a single Phaser GPU tilemap layer. The JSON is ~0.9 MB raw but gzips
+to ~26 KB, so it downloads fast on a phone.
+
+## Tuning the feel
+
+Two constants in **`src/game/settings.ts`** control the journey:
+
+| Constant | Default | Effect |
+| --- | --- | --- |
+| `PLAYER_SPEED` | `130` | Walking speed in px/sec. Higher = faster travel. |
+| `CAMERA_ZOOM` | `1.6` | Camera zoom. Lower = pulled back (see more world); higher = zoomed in. |
+
+Map size lives in `tools/generateMap.mjs` (`WIDTH` / `HEIGHT`); change them and
+re-run `node tools/generateMap.mjs` — cities, rivers, bridges, and the town
+re-derive automatically because everything is anchored to geographic features.
 
 ---
 
@@ -125,6 +154,7 @@ src/
   main.ts                      # entry point — boots Phaser
   game/
     config.ts                  # Phaser game config (renderer, scale, physics)
+    settings.ts                # tunable constants: PLAYER_SPEED, CAMERA_ZOOM
     MainScene.ts               # overworld: map + town + player + NPC + portals
   map/
     washington.map.json        # authored map data (zone-chunked)

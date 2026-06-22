@@ -1,16 +1,19 @@
 /**
- * Thrones of Heaven — Washington State map generator.
+ * Thrones of Heaven — Washington State map generator (large, enriched build).
  *
- * This is the AUTHORED region model for Washington. It is NOT procedural noise:
- * every region (Pacific coast, Strait of Juan de Fuca, Olympic Peninsula, Puget
- * Sound, the Cascade crest, the eastern shrub-steppe, the Columbia River) is
- * placed by hand-tuned geometry derived from a real map of the state, then
- * sampled onto a 256 x 160 tile grid.
+ * AUTHORED region model: every region (Pacific coast, Olympic rainforest, Puget
+ * Sound + Hood Canal, the urban lowland corridor, the Cascade crest with its
+ * passes, the Columbia Basin shrub-steppe, the channeled scablands, the Palouse
+ * wheat country, the Okanogan highlands, the Columbia/Snake rivers) is placed by
+ * hand-tuned geometry in normalised 0..1 coordinates, then sampled onto an
+ * 800 x 500 tile grid. Because the geography is normalised, the whole map —
+ * cities, rivers, bridges, the town anchor — re-derives cleanly at any size:
+ * change WIDTH/HEIGHT and re-run.
  *
- * Output: src/map/washington.map.json — a clean custom JSON, organised into a
- * grid of zone chunks so streaming can be added later without a rewrite.
+ * Output: src/map/washington.map.json — clean custom JSON, organised into zone
+ * chunks so streaming can be added later without a rewrite.
  *
- * Run with:  node tools/generateMap.mjs
+ * Run:  node tools/generateMap.mjs
  */
 
 import { writeFileSync } from 'node:fs';
@@ -20,108 +23,150 @@ import { dirname, resolve } from 'node:path';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 // ---------------------------------------------------------------------------
-// Grid configuration
+// Grid configuration — ~3.2x the original 256x160 (≈10x the area).
 // ---------------------------------------------------------------------------
-const WIDTH = 256;   // tiles, west -> east
-const HEIGHT = 160;  // tiles, north -> south  (8:5 landscape)
+const WIDTH = 800;   // tiles, west -> east
+const HEIGHT = 500;  // tiles, north -> south (8:5 landscape)
 const TILE_SIZE = 16;
-const ZONE_SIZE = 32; // tiles per zone edge -> 8 x 5 = 40 zones
+const ZONE_SIZE = 32;
 
 // ---------------------------------------------------------------------------
-// Terrain types. `id` is also the tile index used by the tileset/renderer.
-// `blocks` marks impassable terrain for collision.
+// Terrain types. `id` is also the tileset frame index used by the renderer.
+// ids 0–9 and 19 are the original set; ids 20+ are the new richer terrains.
+// (ids 10–18 are reserved at runtime for town tiles — see src/town/townTiles.ts.)
 // ---------------------------------------------------------------------------
 const TERRAIN = [
-  { id: 0, key: 'ocean',     name: 'Pacific Ocean',      color: '#1b3a6b', blocks: true },
-  { id: 1, key: 'sound',     name: 'Puget Sound / Lake', color: '#2f6fae', blocks: true },
-  { id: 2, key: 'river',     name: 'River',              color: '#3f8fcf', blocks: true },
-  { id: 3, key: 'beach',     name: 'Beach / Coast',      color: '#d9c8a0', blocks: false },
-  { id: 4, key: 'grassland', name: 'Grassland / Plains', color: '#6aa84f', blocks: false },
-  { id: 5, key: 'forest',    name: 'Forest',             color: '#2f6b3a', blocks: false },
-  { id: 6, key: 'foothills', name: 'Foothills',          color: '#7c8a4a', blocks: false },
-  { id: 7, key: 'mountain',  name: 'Mountain Peak',      color: '#b9b6b0', blocks: true },
-  { id: 8, key: 'steppe',    name: 'Dry Steppe',         color: '#c9b079', blocks: false },
-  { id: 9, key: 'urban',     name: 'Urban / Town',       color: '#9a9aa2', blocks: false },
-  // ids 10–18 are reserved at runtime for town tiles (src/town/townTiles.ts),
-  // so the bridge — a base map terrain — takes the next free id, 19.
-  { id: 19, key: 'bridge',   name: 'Bridge',             color: '#a9742f', blocks: false },
+  { id: 0,  key: 'ocean',      name: 'Pacific Ocean',        color: '#16335f', blocks: true },
+  { id: 1,  key: 'sound',      name: 'Puget Sound',          color: '#2f6fae', blocks: true },
+  { id: 2,  key: 'river',      name: 'River',                color: '#3f8fcf', blocks: true },
+  { id: 3,  key: 'beach',      name: 'Beach / Coast',        color: '#ddca97', blocks: false },
+  { id: 4,  key: 'grassland',  name: 'Meadow / Grassland',   color: '#76b14e', blocks: false },
+  { id: 5,  key: 'forest',     name: 'Lowland Forest',       color: '#3f7d3f', blocks: false },
+  { id: 6,  key: 'foothills',  name: 'Foothills',            color: '#8a8a52', blocks: false },
+  { id: 7,  key: 'mountain',   name: 'Alpine Peak',          color: '#e0e7ee', blocks: true },
+  { id: 8,  key: 'steppe',     name: 'Shrub-Steppe',         color: '#cdb37a', blocks: false },
+  { id: 9,  key: 'urban',      name: 'Urban / Town',         color: '#9a9aa2', blocks: false },
+  { id: 19, key: 'bridge',     name: 'Bridge',               color: '#a9742f', blocks: false },
+  { id: 20, key: 'lake',       name: 'Lake',                 color: '#2b5c86', blocks: true },
+  { id: 21, key: 'rainforest', name: 'Coastal Rainforest',   color: '#1f7a55', blocks: false },
+  { id: 22, key: 'montane',    name: 'Montane Forest',       color: '#245f37', blocks: false },
+  { id: 23, key: 'scabland',   name: 'Scabland / Coulee',    color: '#9c8a63', blocks: false },
+  { id: 24, key: 'farmland',   name: 'Palouse Farmland',     color: '#d7c24f', blocks: false },
+  { id: 25, key: 'wetland',    name: 'Wetland / Marsh',      color: '#5f8d6a', blocks: false },
+  { id: 26, key: 'pass',       name: 'Mountain Pass',        color: '#b7ad86', blocks: false },
 ];
 const T = Object.fromEntries(TERRAIN.map((t) => [t.key, t.id]));
 
 // ---------------------------------------------------------------------------
-// Geometry helpers (all in normalised 0..1 coordinates)
-//   nx: 0 = far west,  1 = far east
-//   ny: 0 = far north, 1 = far south
+// Geometry + noise helpers (normalised 0..1 coords; nx west→east, ny north→south)
 // ---------------------------------------------------------------------------
 function dist(ax, ay, bx, by) {
   return Math.hypot(ax - bx, ay - by);
 }
 
-// Distance from point P to a polyline (list of [nx,ny] waypoints).
+function projToSegment(px, py, x1, y1, x2, y2) {
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const len2 = dx * dx + dy * dy;
+  let t = len2 === 0 ? 0 : ((px - x1) * dx + (py - y1) * dy) / len2;
+  t = Math.max(0, Math.min(1, t));
+  return { x: x1 + t * dx, y: y1 + t * dy, dx, dy, len2 };
+}
+
 function distToPolyline(px, py, pts) {
   let best = Infinity;
   for (let i = 0; i < pts.length - 1; i++) {
-    const [x1, y1] = pts[i];
-    const [x2, y2] = pts[i + 1];
-    const dx = x2 - x1;
-    const dy = y2 - y1;
-    const len2 = dx * dx + dy * dy;
-    let t = len2 === 0 ? 0 : ((px - x1) * dx + (py - y1) * dy) / len2;
-    t = Math.max(0, Math.min(1, t));
-    const cx = x1 + t * dx;
-    const cy = y1 + t * dy;
-    best = Math.min(best, dist(px, py, cx, cy));
+    const p = projToSegment(px, py, pts[i][0], pts[i][1], pts[i + 1][0], pts[i + 1][1]);
+    best = Math.min(best, dist(px, py, p.x, p.y));
   }
   return best;
 }
 
-// Cheap deterministic value-noise so coastlines/forests get a little wobble
-// without becoming random mush. Same input always gives same output.
-function jitter(tx, ty, scale = 1, freq = 0.13) {
-  const s = Math.sin(tx * freq * 1.7 + ty * freq * 0.9) +
-            Math.sin(tx * freq * 0.6 - ty * freq * 1.3 + 2.1);
-  return s * 0.5 * scale;
+// Nearest point on a polyline plus the local tangent (for bridge orientation).
+function nearestOnPolyline(px, py, pts) {
+  let best = Infinity;
+  let res = { x: pts[0][0], y: pts[0][1], dx: 1, dy: 0 };
+  for (let i = 0; i < pts.length - 1; i++) {
+    const p = projToSegment(px, py, pts[i][0], pts[i][1], pts[i + 1][0], pts[i + 1][1]);
+    const d = dist(px, py, p.x, p.y);
+    if (d < best) {
+      best = d;
+      res = { x: p.x, y: p.y, dx: p.dx, dy: p.dy };
+    }
+  }
+  return res;
+}
+
+// Deterministic value noise (smooth, repeatable) for organic region edges.
+function hash2(x, y) {
+  let h = Math.imul(x | 0, 374761393) ^ Math.imul(y | 0, 668265263);
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967295;
+}
+function vnoise(x, y) {
+  const xi = Math.floor(x);
+  const yi = Math.floor(y);
+  const xf = x - xi;
+  const yf = y - yi;
+  const u = xf * xf * (3 - 2 * xf);
+  const v = yf * yf * (3 - 2 * yf);
+  const tl = hash2(xi, yi);
+  const tr = hash2(xi + 1, yi);
+  const bl = hash2(xi, yi + 1);
+  const br = hash2(xi + 1, yi + 1);
+  return (
+    tl * (1 - u) * (1 - v) + tr * u * (1 - v) + bl * (1 - u) * v + br * u * v
+  );
+}
+// Fractal noise in normalised space (returns roughly -1..1).
+function fbm(nx, ny, freq) {
+  let a = 0;
+  let amp = 0.6;
+  let f = freq;
+  for (let o = 0; o < 3; o++) {
+    a += (vnoise(nx * f, ny * f) - 0.5) * 2 * amp;
+    f *= 2;
+    amp *= 0.5;
+  }
+  return a;
 }
 
 // ---------------------------------------------------------------------------
-// Authored geography (normalised coordinates, tuned against a real WA map)
+// Authored geography (normalised; tuned against a real WA map)
 // ---------------------------------------------------------------------------
 
-// Puget Sound: irregular inland waterway running from the Strait down to Olympia.
+// Puget Sound + Hood Canal.
 const PUGET = [
   [0.345, 0.075], [0.350, 0.135], [0.342, 0.200], [0.330, 0.260],
-  [0.335, 0.320], [0.330, 0.380], [0.320, 0.440], [0.300, 0.500],
-  [0.300, 0.545],
+  [0.335, 0.320], [0.330, 0.380], [0.320, 0.440], [0.300, 0.500], [0.300, 0.545],
 ];
-// Hood Canal: the long hooked inlet on the west side of the Sound.
 const HOOD = [
   [0.300, 0.150], [0.285, 0.230], [0.275, 0.310], [0.285, 0.390], [0.305, 0.450],
 ];
 
-// Columbia River: enters from the north, sweeps down the big bend, turns west
-// through the Tri-Cities and runs the southern border out to the Pacific.
+// Columbia River: enters north, big bend, turns west to the Pacific.
 const COLUMBIA = [
   [0.655, -0.02], [0.640, 0.10], [0.660, 0.22], [0.705, 0.34],
   [0.715, 0.46], [0.722, 0.60], [0.700, 0.70], [0.640, 0.745],
   [0.540, 0.775], [0.420, 0.800], [0.300, 0.815], [0.180, 0.820],
   [0.100, 0.805], [0.050, 0.790],
 ];
-// Snake River: comes in from the east to join the Columbia near the Tri-Cities.
 const SNAKE = [
   [1.02, 0.640], [0.900, 0.660], [0.800, 0.690], [0.722, 0.700],
 ];
+// Tributaries (thin; their headwaters end in walkable land so they never seal).
+const SKAGIT = [[0.452, 0.108], [0.410, 0.118], [0.378, 0.128], [0.356, 0.138]];
+const YAKIMA = [[0.575, 0.520], [0.620, 0.580], [0.665, 0.640], [0.705, 0.685]];
+const WENATCHEE_R = [[0.585, 0.400], [0.620, 0.420], [0.652, 0.432]];
+const SPOKANE_R = [[0.985, 0.235], [0.900, 0.265], [0.820, 0.300]];
+const TRIBUTARIES = [SKAGIT, YAKIMA, WENATCHEE_R, SPOKANE_R];
 
-// Southern state border, west -> east. In the west it follows the lower
-// Columbia out to the Pacific; it notches north at the Tri-Cities bend, then
-// runs the straight Oregon/Idaho line through the SE. Anything south is
-// off-state (rendered as ocean so the WA landmass reads as a clean silhouette).
+// Southern border (lower Columbia in the west, straight Oregon line in the SE).
 const SOUTH_BORDER = [
   [0.000, 0.790], [0.100, 0.805], [0.180, 0.822], [0.300, 0.815],
   [0.420, 0.800], [0.540, 0.775], [0.660, 0.748], [0.720, 0.730],
   [0.860, 0.760], [1.000, 0.800],
 ];
-
-// Southern border latitude (ny) at a given longitude (nx).
 function southBorderNy(nx) {
   for (let i = 0; i < SOUTH_BORDER.length - 1; i++) {
     const [x1, y1] = SOUTH_BORDER[i];
@@ -134,29 +179,39 @@ function southBorderNy(nx) {
   return 0.80;
 }
 
-// Olympic Mountains: impassable core of the Olympic Peninsula.
-const OLYMPIC = { x: 0.150, y: 0.250, r: 0.072 };
-
-// Cascade high peaks (impassable masses along the crest).
+// Mountains. Olympic core + Cascade peaks along the crest.
+const OLYMPIC = { x: 0.150, y: 0.250, r: 0.070 };
 const PEAKS = [
-  { name: 'Baker',      x: 0.560, y: 0.085, r: 0.030 },
-  { name: 'Rainier',    x: 0.545, y: 0.500, r: 0.040 },
-  { name: 'St Helens',  x: 0.520, y: 0.665, r: 0.026 },
-  { name: 'Adams',      x: 0.595, y: 0.655, r: 0.030 },
+  { name: 'Baker',       x: 0.560, y: 0.085, r: 0.030 },
+  { name: 'Glacier Peak', x: 0.560, y: 0.300, r: 0.028 },
+  { name: 'Rainier',     x: 0.548, y: 0.500, r: 0.040 },
+  { name: 'Adams',       x: 0.598, y: 0.660, r: 0.030 },
+  { name: 'St Helens',   x: 0.520, y: 0.690, r: 0.026 },
+];
+const CREST_X = 0.560;
+const CREST_HALF = 0.040;
+const PASSES = [0.200, 0.420, 0.585]; // 3 walkable crossings of the crest
+
+// Lakes (block).
+const LAKE_CRESCENT = [[0.095, 0.180], [0.130, 0.182], [0.160, 0.185]]; // Olympic, E-W
+const LAKE_CHELAN = [[0.600, 0.250], [0.628, 0.300], [0.652, 0.345]];   // long NW->SE fjord
+const LAKE_WASHINGTON = { x: 0.408, y: 0.330, rx: 0.005, ry: 0.026 };   // east of Seattle (room for the town)
+const BANKS_LAKE = [[0.770, 0.360], [0.772, 0.420]];                     // Grand Coulee
+
+// Wetland / marsh patches (estuaries).
+const WETLANDS = [
+  { x: 0.360, y: 0.135, r: 0.030 }, // Skagit delta
+  { x: 0.305, y: 0.540, r: 0.026 }, // south Sound / Nisqually
+  { x: 0.230, y: 0.560, r: 0.024 }, // Grays Harbor estuary
 ];
 
-// Cascade crest line and its two walkable passes.
-const CREST_X = 0.560;            // centre of the range, west->east
-const CREST_HALF = 0.045;         // half-width of the high ridge
-const PASSES = [0.330, 0.470];    // ny of Stevens & Snoqualmie passes
-
-// City anchors (normalised). Used for urban tiles, markers and spawn.
+// City anchors (normalised). Used for urban tiles, markers, spawn, town & bridges.
 const CITIES = [
   { name: 'Seattle',     x: 0.370, y: 0.330 },
   { name: 'Tacoma',      x: 0.355, y: 0.430 },
   { name: 'Olympia',     x: 0.318, y: 0.560 },
   { name: 'Everett',     x: 0.378, y: 0.250 },
-  { name: 'Bellingham',  x: 0.360, y: 0.090 },
+  { name: 'Bellingham',  x: 0.388, y: 0.072 },
   { name: 'Spokane',     x: 0.880, y: 0.250 },
   { name: 'Yakima',      x: 0.600, y: 0.620 },
   { name: 'Tri-Cities',  x: 0.715, y: 0.690 },
@@ -168,123 +223,152 @@ const CITIES = [
 // ---------------------------------------------------------------------------
 // Water masks
 // ---------------------------------------------------------------------------
-
-// Pacific coastline: ocean lies west of this edge. The edge bulges east in the
-// SW (Willapa/Grays Harbor) and the coast wraps below the Columbia mouth.
 function oceanEdge(ny) {
   let edge = 0.045 + 0.02 * Math.sin(ny * Math.PI * 1.3);
-  // Grays Harbor / Willapa Bay bite out of the SW coast.
-  if (ny > 0.55 && ny < 0.78) edge += 0.018;
+  if (ny > 0.55 && ny < 0.78) edge += 0.018; // Grays Harbor / Willapa Bay
   return edge;
 }
-
-// Strait of Juan de Fuca: water across the top-left, north of the Olympic
-// Peninsula and the northern Sound, separating WA from Canada.
 function straitBottom(nx) {
-  if (nx < 0.045) return 1; // open ocean corner, all water at top
-  if (nx > 0.345) return 0; // east of the Sound the border is land to the top
-  // Dip deepest where the Strait turns south into Admiralty Inlet (~0.30).
+  if (nx < 0.045) return 1;
+  if (nx > 0.345) return 0;
   const base = 0.060 + 0.010 * Math.sin(nx * 12);
   const inlet = 0.075 * Math.exp(-((nx - 0.315) ** 2) / 0.0016);
   return base + inlet;
 }
-
-function isOcean(nx, ny, tx, ty) {
-  // West of the Pacific coastline.
-  if (nx < oceanEdge(ny) + jitter(tx, ty, 0.012)) return true;
-  // North of the Strait.
-  if (ny < straitBottom(nx) + jitter(tx, ty, 0.006)) return true;
-  // South of the lower Columbia (the western southern border) is off-state.
-  if (ny > southBorderNy(nx) + 0.012 + jitter(tx, ty, 0.006)) return true;
+function isOcean(nx, ny, n) {
+  if (nx < oceanEdge(ny) + n * 0.010) return true;
+  if (ny < straitBottom(nx) + n * 0.006) return true;
+  if (ny > southBorderNy(nx) + 0.012 + n * 0.006) return true;
   return false;
 }
-
-function isSound(nx, ny, tx, ty) {
-  const w = jitter(tx, ty, 0.010);
-  const dPuget = distToPolyline(nx, ny + w, PUGET);
-  if (dPuget < 0.028 + Math.abs(jitter(tx, ty, 0.012, 0.2))) return true;
-  const dHood = distToPolyline(nx, ny, HOOD);
-  if (dHood < 0.013) return true;
-  // A couple of inland lakes east of the Sound for flavour.
-  if (dist(nx, ny, 0.395, 0.330) < 0.012) return true; // Lake Washington
-  if (dist(nx, ny, 0.905, 0.470) < 0.010) return true; // Banks Lake-ish
+function isSound(nx, ny, n) {
+  if (distToPolyline(nx, ny + n * 0.010, PUGET) < 0.026 + Math.abs(n) * 0.012) return true;
+  if (distToPolyline(nx, ny, HOOD) < 0.012) return true;
   return false;
 }
-
-function isRiver(nx, ny, tx, ty) {
-  const w = jitter(tx, ty, 0.006);
-  if (distToPolyline(nx + w, ny, COLUMBIA) < 0.0125) return true;
-  if (distToPolyline(nx, ny, SNAKE) < 0.0090) return true;
+function isLake(nx, ny) {
+  if (distToPolyline(nx, ny, LAKE_CRESCENT) < 0.010) return true;
+  if (distToPolyline(nx, ny, LAKE_CHELAN) < 0.009) return true;
+  if (distToPolyline(nx, ny, BANKS_LAKE) < 0.008) return true;
+  const lw = LAKE_WASHINGTON;
+  if (((nx - lw.x) / lw.rx) ** 2 + ((ny - lw.y) / lw.ry) ** 2 < 1) return true;
   return false;
 }
+function isRiver(nx, ny, n) {
+  if (distToPolyline(nx + n * 0.006, ny, COLUMBIA) < 0.0085) return true;
+  if (distToPolyline(nx, ny, SNAKE) < 0.0060) return true;
+  for (const trib of TRIBUTARIES) {
+    if (distToPolyline(nx, ny, trib) < 0.0032) return true;
+  }
+  return false;
+}
+function isWetland(nx, ny, n) {
+  return WETLANDS.some((w) => dist(nx, ny, w.x, w.y) < w.r + n * 0.01);
+}
 
-// Puget Sound islands (San Juans + Whidbey/Vashon-ish) punched back into water.
+// Walkable islands punched into the Sound.
+const ISLANDS = [
+  { x: 0.300, y: 0.058, r: 0.020 }, // San Juans
+  { x: 0.330, y: 0.040, r: 0.015 },
+  { x: 0.318, y: 0.085, r: 0.012 },
+  { x: 0.352, y: 0.150, r: 0.024 }, // Whidbey
+  { x: 0.318, y: 0.300, r: 0.014 }, // Bainbridge
+  { x: 0.350, y: 0.365, r: 0.012 }, // Vashon
+];
 function isIsland(nx, ny) {
-  const islands = [
-    { x: 0.300, y: 0.060, r: 0.018 }, // San Juans
-    { x: 0.330, y: 0.040, r: 0.014 },
-    { x: 0.352, y: 0.150, r: 0.022 }, // Whidbey
-    { x: 0.355, y: 0.360, r: 0.012 }, // Vashon
-    { x: 0.318, y: 0.300, r: 0.013 }, // Bainbridge
-  ];
-  return islands.some((i) => dist(nx, ny, i.x, i.y) < i.r);
+  return ISLANDS.some((i) => dist(nx, ny, i.x, i.y) < i.r);
 }
 
 // ---------------------------------------------------------------------------
-// Land terrain
+// Mountains / passes
 // ---------------------------------------------------------------------------
-
-function isMountain(nx, ny, tx, ty) {
-  // Big impassable peaks.
+function crestXAt(ny) {
+  return CREST_X + 0.012 * Math.sin(ny * 6.0);
+}
+function nearPass(ny) {
+  return PASSES.some((p) => Math.abs(ny - p) < 0.028);
+}
+function isAlpine(nx, ny, n) {
   for (const p of PEAKS) {
-    if (dist(nx, ny, p.x, p.y) < p.r + jitter(tx, ty, 0.006)) return true;
+    if (dist(nx, ny, p.x, p.y) < p.r + n * 0.006) return true;
   }
-  // Olympic Mountains core.
-  if (dist(nx, ny, OLYMPIC.x, OLYMPIC.y) < OLYMPIC.r + jitter(tx, ty, 0.006)) return true;
-  // The Cascade crest ridge, with gaps at the passes.
-  const onCrest = Math.abs(nx - CREST_X + jitter(tx, ty, 0.010)) < CREST_HALF * 0.55;
-  if (onCrest && ny > 0.04 && ny < 0.86) {
-    const nearPass = PASSES.some((py) => Math.abs(ny - py) < 0.035);
-    if (!nearPass) return true;
-  }
+  if (dist(nx, ny, OLYMPIC.x, OLYMPIC.y) < OLYMPIC.r + n * 0.006) return true;
+  const onCrest = Math.abs(nx - crestXAt(ny) + n * 0.010) < CREST_HALF * 0.6;
+  if (onCrest && ny > 0.04 && ny < 0.86 && !nearPass(ny)) return true;
   return false;
 }
 
-function landTerrain(nx, ny, tx, ty) {
+// ---------------------------------------------------------------------------
+// Land terrain by region
+// ---------------------------------------------------------------------------
+function landTerrain(nx, ny, n) {
   // Urban cores near the city anchors.
   for (const c of CITIES) {
-    if (dist(nx, ny, c.x, c.y) < 0.011) return T.urban;
+    if (dist(nx, ny, c.x, c.y) < 0.010) return T.urban;
   }
 
-  if (isMountain(nx, ny, tx, ty)) return T.mountain;
+  if (isAlpine(nx, ny, n)) return T.mountain;
 
-  // Foothills flank the Cascade crest (and the passes are foothills, walkable).
-  const distCrest = Math.abs(nx - CREST_X + jitter(tx, ty, 0.012));
-  if (distCrest < CREST_HALF * 1.7 && ny > 0.03 && ny < 0.88) return T.foothills;
+  const crest = crestXAt(ny);
+  const distCrest = nx - crest; // negative = west of crest
 
-  // Olympic Peninsula apron: foothills/forest ring around the Olympic core.
+  // The crest band that is not an alpine peak becomes a walkable pass.
+  if (Math.abs(distCrest + n * 0.010) < CREST_HALF && ny > 0.04 && ny < 0.86) {
+    return nearPass(ny) ? T.pass : T.foothills;
+  }
+
+  // Foothills flank the crest on both sides.
+  if (Math.abs(distCrest) < CREST_HALF * 2.0 && ny > 0.03 && ny < 0.88) return T.foothills;
+
+  // Olympic apron: foothills then rainforest ring around the peaks.
   const dOly = dist(nx, ny, OLYMPIC.x, OLYMPIC.y);
-  if (dOly < OLYMPIC.r * 1.7) return T.foothills;
+  if (dOly < OLYMPIC.r * 1.55) return T.foothills;
 
-  const west = nx < CREST_X;
+  const west = nx < crest;
   if (west) {
-    // Wet, green west side: forest with grassland in the lowland valleys.
-    // A thin beach strip hugs the open Pacific coast.
-    if (nx < oceanEdge(ny) + 0.012) return T.beach;
-    const lowland = nx > 0.34 && nx < 0.50 && ny > 0.20 && ny < 0.78;
-    const forestNoise = jitter(tx, ty, 1, 0.21);
-    if (lowland && forestNoise < 0.25) return T.grassland;
+    // A thin beach hugs the open Pacific coast.
+    if (nx < oceanEdge(ny) + 0.010) return T.beach;
+
+    // Olympic Peninsula (west of the Sound, north of Grays Harbor): rainforest.
+    const peninsula = nx < 0.305 && ny > straitBottom(nx) && ny < 0.56;
+    if (peninsula) return dOly < OLYMPIC.r * 2.3 ? T.rainforest : T.rainforest;
+
+    // West Cascade slope: montane forest within ~0.12 of the crest.
+    if (distCrest > -0.13) {
+      return fbm(nx, ny, 60) > 0.35 ? T.foothills : T.montane;
+    }
+
+    // Lowlands between the Sound and the slope: forest with meadow valleys + urban.
+    const lowland = nx > 0.33 && nx < 0.50;
+    const open = fbm(nx, ny, 40);
+    if (lowland && open > 0.20) return T.grassland;
     return T.forest;
   }
 
-  // Dry east side: shrub-steppe / farmland, greener along the rivers.
-  const nearRiver = Math.min(
+  // ---- East of the crest ----
+  // Okanogan highlands: forested north-east.
+  if (ny < 0.22 && nx > 0.615 && nx < 0.90) {
+    return fbm(nx, ny, 55) > 0.25 ? T.foothills : T.montane;
+  }
+  // East Cascade slope: montane fading to steppe.
+  if (distCrest < 0.12) {
+    return fbm(nx, ny, 50) > 0.1 ? T.montane : T.steppe;
+  }
+  // Palouse wheat country: rolling farmland in the SE.
+  if (nx > 0.78 && ny > 0.58 && ny < 0.92) {
+    return fbm(nx, ny, 45) > -0.15 ? T.farmland : T.grassland;
+  }
+  // Channeled scablands / coulees: rocky patch in the central basin.
+  const scab = fbm(nx, ny, 35);
+  if (nx > 0.66 && nx < 0.86 && ny > 0.36 && ny < 0.62 && scab > 0.05) return T.scabland;
+
+  // Default: Columbia Basin shrub-steppe, greener (grassland) along the rivers.
+  const nearWater = Math.min(
     distToPolyline(nx, ny, COLUMBIA),
     distToPolyline(nx, ny, SNAKE),
+    distToPolyline(nx, ny, YAKIMA),
   );
-  if (nearRiver < 0.035) return T.grassland; // irrigated river valleys
-  // A little forest on the east Cascade slope.
-  if (nx < 0.66 && distCrest < CREST_HALF * 3.0) return T.forest;
+  if (nearWater < 0.030) return T.grassland;
   return T.steppe;
 }
 
@@ -294,102 +378,113 @@ function landTerrain(nx, ny, tx, ty) {
 function terrainAt(tx, ty) {
   const nx = tx / (WIDTH - 1);
   const ny = ty / (HEIGHT - 1);
+  const n = fbm(nx, ny, 22); // organic edge wobble
 
-  if (isOcean(nx, ny, tx, ty)) return T.ocean;
+  if (isOcean(nx, ny, n)) return T.ocean;
 
-  // Islands sit inside the Sound region as land.
   const island = isIsland(nx, ny);
   if (!island) {
-    if (isSound(nx, ny, tx, ty)) return T.sound;
-    if (isRiver(nx, ny, tx, ty)) return T.river;
+    if (isLake(nx, ny)) return T.lake;
+    if (isSound(nx, ny, n)) return T.sound;
+    if (isRiver(nx, ny, n)) return T.river;
+    if (isWetland(nx, ny, n) && nx < 0.5) return T.wetland;
   }
-
-  return landTerrain(nx, ny, tx, ty);
+  return landTerrain(nx, ny, n);
 }
 
 // ---------------------------------------------------------------------------
-// Build full grid
+// Build grid
 // ---------------------------------------------------------------------------
 const grid = [];
 for (let ty = 0; ty < HEIGHT; ty++) {
-  const row = [];
-  for (let tx = 0; tx < WIDTH; tx++) row.push(terrainAt(tx, ty));
+  const row = new Array(WIDTH);
+  for (let tx = 0; tx < WIDTH; tx++) row[tx] = terrainAt(tx, ty);
   grid.push(row);
 }
 
 // ---------------------------------------------------------------------------
-// Bridges — editable data. Each crossing is auto-spanned across the river (or
-// sound) it sits on, so the exact river width does not have to be hand-counted.
-// `dir` is the direction the bridge RUNS: 'h' across a north–south river,
-// 'v' across an east–west river. Open ocean is never bridged.
+// Bridges — anchored to named features so they re-derive at any scale. Each
+// bridge snaps onto the nearest point of its river, orients across the flow,
+// and auto-spans the water (never bridging open ocean).
 // ---------------------------------------------------------------------------
+const cityXY = (name) => {
+  const c = CITIES.find((q) => q.name === name);
+  return [c.x, c.y];
+};
 const BRIDGES = [
-  { name: 'Wenatchee (Columbia)',  tx: 183, ty: 68,  dir: 'h' },
-  { name: 'Vantage (Columbia)',    tx: 182, ty: 90,  dir: 'h' },
-  { name: 'Tri-Cities (Columbia)', tx: 182, ty: 110, dir: 'h' },
-  { name: 'Tri-Cities (Snake)',    tx: 200, ty: 111, dir: 'v' },
-  { name: 'Vancouver (Columbia)',  tx: 120, ty: 125, dir: 'v' },
+  { name: 'Wenatchee (Columbia)',  anchor: cityXY('Wenatchee'),  river: COLUMBIA },
+  { name: 'Vantage (Columbia)',    anchor: [0.715, 0.500],       river: COLUMBIA },
+  { name: 'Tri-Cities (Columbia)', anchor: [0.700, 0.700],       river: COLUMBIA },
+  { name: 'Tri-Cities (Snake)',    anchor: [0.790, 0.690],       river: SNAKE },
+  { name: 'Vancouver (Columbia)',  anchor: cityXY('Vancouver'),  river: COLUMBIA },
 ];
 
 function placeBridge(bridge) {
-  const CROSSABLE = new Set([T.sound, T.river]); // never bridge open ocean
+  const CROSSABLE = new Set([T.sound, T.river]);
   const BLOCKED = new Set(TERRAIN.filter((t) => t.blocks).map((t) => t.id));
-  const step = bridge.dir === 'h' ? [1, 0] : [0, 1];
   const inBounds = (x, y) => x >= 0 && y >= 0 && x < WIDTH && y < HEIGHT;
 
-  // Recenter onto water if the authored point is a tile or two off.
-  let cx = bridge.tx;
-  let cy = bridge.ty;
+  // Snap onto the river centreline and orient across the local flow.
+  const p = nearestOnPolyline(bridge.anchor[0], bridge.anchor[1], bridge.river);
+  const dir = Math.abs(p.dy) > Math.abs(p.dx) ? 'h' : 'v'; // bridge runs across flow
+  const step = dir === 'h' ? [1, 0] : [0, 1];
+  let cx = Math.round(p.x * (WIDTH - 1));
+  let cy = Math.round(p.y * (HEIGHT - 1));
+
+  // Nudge onto an actual river/sound tile (search a small neighbourhood).
   if (!CROSSABLE.has(grid[cy]?.[cx])) {
-    let found = false;
-    for (let d = -3; d <= 3 && !found; d++) {
-      const x = cx + step[0] * d;
-      const y = cy + step[1] * d;
-      if (inBounds(x, y) && CROSSABLE.has(grid[y][x])) {
-        cx = x;
-        cy = y;
-        found = true;
+    let best = null;
+    let bestD = Infinity;
+    for (let dy = -6; dy <= 6; dy++) {
+      for (let dx = -6; dx <= 6; dx++) {
+        const x = cx + dx;
+        const y = cy + dy;
+        if (inBounds(x, y) && CROSSABLE.has(grid[y][x])) {
+          const d = dx * dx + dy * dy;
+          if (d < bestD) {
+            bestD = d;
+            best = [x, y];
+          }
+        }
       }
     }
-    if (!found) throw new Error(`Bridge "${bridge.name}" is not on crossable water`);
+    if (!best) throw new Error(`Bridge "${bridge.name}" found no crossable water`);
+    [cx, cy] = best;
   }
 
-  // Collect the contiguous water span through the center, plus one walkable
-  // land tile on each end so the bridge meets the bank (skip ocean ends).
-  const span = [];
+  // Span the contiguous water through the centre, anchoring onto each bank.
+  const span = [[cx, cy]];
   for (const sign of [-1, 1]) {
     let x = cx + step[0] * sign;
     let y = cy + step[1] * sign;
     let guard = 0;
-    while (inBounds(x, y) && CROSSABLE.has(grid[y][x]) && guard++ < 40) {
+    while (inBounds(x, y) && CROSSABLE.has(grid[y][x]) && guard++ < 60) {
       span.push([x, y]);
       x += step[0] * sign;
       y += step[1] * sign;
     }
-    // Anchor onto the bank if it is walkable land (not ocean / mountain).
     if (inBounds(x, y) && !BLOCKED.has(grid[y][x])) span.push([x, y]);
   }
-  span.push([cx, cy]);
-
   for (const [x, y] of span) grid[y][x] = T.bridge;
   return span.length;
 }
 
 for (const bridge of BRIDGES) {
-  const len = placeBridge(bridge);
-  console.log(`bridge: ${bridge.name.padEnd(22)} ${len} tiles`);
+  console.log(`bridge: ${bridge.name.padEnd(22)} ${placeBridge(bridge)} tiles`);
 }
 
-// Pick a guaranteed-walkable spawn near Seattle (search outward if needed).
+// ---------------------------------------------------------------------------
+// Spawn (near Seattle) + connectivity check
+// ---------------------------------------------------------------------------
+const blockedIds = new Set(TERRAIN.filter((t) => t.blocks).map((t) => t.id));
 function nearestWalkable(cx, cy) {
-  const blocked = new Set(TERRAIN.filter((t) => t.blocks).map((t) => t.id));
-  for (let r = 0; r < 40; r++) {
+  for (let r = 0; r < 60; r++) {
     for (let dy = -r; dy <= r; dy++) {
       for (let dx = -r; dx <= r; dx++) {
         const x = cx + dx;
         const y = cy + dy;
         if (x < 0 || y < 0 || x >= WIDTH || y >= HEIGHT) continue;
-        if (!blocked.has(grid[y][x])) return { x, y };
+        if (!blockedIds.has(grid[y][x])) return { x, y };
       }
     }
   }
@@ -401,19 +496,16 @@ const spawnTile = nearestWalkable(
   Math.round(seattle.y * (HEIGHT - 1)),
 );
 
-// ---------------------------------------------------------------------------
-// Connectivity check: flood-fill walkable terrain from the spawn and confirm
-// every major region is reachable on foot. Fails loudly if something is sealed.
-// ---------------------------------------------------------------------------
-function reachableFromSpawn() {
-  const blocked = new Set(TERRAIN.filter((t) => t.blocks).map((t) => t.id));
+function connectivityReport() {
   const walk = (x, y) =>
-    x >= 0 && y >= 0 && x < WIDTH && y < HEIGHT && !blocked.has(grid[y][x]);
+    x >= 0 && y >= 0 && x < WIDTH && y < HEIGHT && !blockedIds.has(grid[y][x]);
   const seen = Array.from({ length: HEIGHT }, () => new Array(WIDTH).fill(false));
   const stack = [[spawnTile.x, spawnTile.y]];
   seen[spawnTile.y][spawnTile.x] = true;
+  let reach = 0;
   while (stack.length) {
     const [x, y] = stack.pop();
+    reach++;
     for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
       const nx = x + dx;
       const ny = y + dy;
@@ -423,8 +515,9 @@ function reachableFromSpawn() {
       }
     }
   }
+  const tile = (nx, ny) => [Math.round(nx * (WIDTH - 1)), Math.round(ny * (HEIGHT - 1))];
   const nearReach = (tx, ty) => {
-    for (let r = 0; r < 8; r++) {
+    for (let r = 0; r < 12; r++) {
       for (let dy = -r; dy <= r; dy++) {
         for (let dx = -r; dx <= r; dx++) {
           const x = tx + dx;
@@ -435,30 +528,37 @@ function reachableFromSpawn() {
     }
     return false;
   };
-  const tile = (nx, ny) => [Math.round(nx * (WIDTH - 1)), Math.round(ny * (HEIGHT - 1))];
   const regions = {
-    'Olympic Peninsula': [20, 64],
+    'Olympic Peninsula': tile(0.12, 0.35),
     'Olympia (S Sound)': tile(0.318, 0.56),
-    Bellingham: tile(0.36, 0.09),
+    Bellingham: tile(0.388, 0.072),
     'Wenatchee (C)': tile(0.66, 0.43),
+    'Okanogan (N)': tile(0.75, 0.12),
     'Spokane (NE)': tile(0.88, 0.25),
+    'Scablands (C)': tile(0.76, 0.5),
     'Yakima (SC)': tile(0.6, 0.62),
     'Tri-Cities': tile(0.715, 0.69),
     'Walla Walla (SE)': tile(0.84, 0.715),
+    'Palouse (SE)': tile(0.92, 0.78),
   };
   console.log('Connectivity from spawn', spawnTile, ':');
   let allOk = true;
+  let totalWalk = 0;
+  for (let y = 0; y < HEIGHT; y++) for (let x = 0; x < WIDTH; x++) if (walk(x, y)) totalWalk++;
   for (const [name, [x, y]] of Object.entries(regions)) {
     const ok = nearReach(x, y);
     if (!ok) allOk = false;
     console.log(`  ${name.padEnd(20)} ${ok ? 'REACHABLE' : 'SEALED ***'}`);
   }
-  if (!allOk) console.log('WARNING: some regions are still sealed off.');
+  console.log(
+    `reachable ${reach} / walkable ${totalWalk} (${(totalWalk - reach)} sealed in islands/spits)`,
+  );
+  if (!allOk) console.log('WARNING: some named regions are still sealed.');
 }
-reachableFromSpawn();
+connectivityReport();
 
 // ---------------------------------------------------------------------------
-// Organise into zone chunks (a grid of zones) for future streaming.
+// Zone chunks
 // ---------------------------------------------------------------------------
 const zonesX = Math.ceil(WIDTH / ZONE_SIZE);
 const zonesY = Math.ceil(HEIGHT / ZONE_SIZE);
@@ -470,9 +570,7 @@ for (let zy = 0; zy < zonesY; zy++) {
     const w = Math.min(ZONE_SIZE, WIDTH - x0);
     const h = Math.min(ZONE_SIZE, HEIGHT - y0);
     const tiles = [];
-    for (let y = 0; y < h; y++) {
-      tiles.push(grid[y0 + y].slice(x0, x0 + w));
-    }
+    for (let y = 0; y < h; y++) tiles.push(grid[y0 + y].slice(x0, x0 + w));
     zones.push({ id: `zone_${zx}_${zy}`, zx, zy, x: x0, y: y0, width: w, height: h, tiles });
   }
 }
@@ -500,18 +598,20 @@ const out = {
 
 const outPath = resolve(__dirname, '../src/map/washington.map.json');
 writeFileSync(outPath, JSON.stringify(out));
-console.log(`Wrote ${outPath}`);
+console.log(`Wrote ${outPath} (${WIDTH}x${HEIGHT}, ${zones.length} zones)`);
 
 // ---------------------------------------------------------------------------
-// ASCII preview so the shape can be eyeballed against a real WA map.
+// ASCII preview + histogram
 // ---------------------------------------------------------------------------
 const GLYPH = {
   [T.ocean]: '~', [T.sound]: '≈', [T.river]: 'r', [T.beach]: '.',
   [T.grassland]: ',', [T.forest]: '#', [T.foothills]: 'v', [T.mountain]: '^',
-  [T.steppe]: ':', [T.urban]: 'O', [T.bridge]: '=',
+  [T.steppe]: ':', [T.urban]: 'O', [T.bridge]: '=', [T.lake]: 'L',
+  [T.rainforest]: '@', [T.montane]: '%', [T.scabland]: 'c', [T.farmland]: 'w',
+  [T.wetland]: 'm', [T.pass]: '+',
 };
-const stepX = 3;
-const stepY = 3;
+const stepX = Math.ceil(WIDTH / 100);
+const stepY = Math.ceil(HEIGHT / 50);
 let preview = '';
 for (let ty = 0; ty < HEIGHT; ty += stepY) {
   let line = '';
@@ -520,12 +620,11 @@ for (let ty = 0; ty < HEIGHT; ty += stepY) {
 }
 console.log(preview);
 
-// Terrain histogram (sanity check on balance).
 const counts = {};
 for (const row of grid) for (const v of row) counts[v] = (counts[v] || 0) + 1;
 const total = WIDTH * HEIGHT;
 for (const t of TERRAIN) {
   const pct = (((counts[t.id] || 0) / total) * 100).toFixed(1);
-  console.log(`${t.key.padEnd(10)} ${String(pct).padStart(5)}%`);
+  console.log(`${t.key.padEnd(11)} ${String(pct).padStart(5)}%`);
 }
 console.log(`spawn tile: ${spawnTile.x},${spawnTile.y}`);

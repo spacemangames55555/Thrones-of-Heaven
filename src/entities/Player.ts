@@ -1,8 +1,9 @@
 import Phaser from 'phaser';
+import { PLAYER_SPEED } from '../game/settings';
 
 const TEXTURE_KEY = 'player-dot';
 const RADIUS = 7;
-const SPEED = 150; // pixels per second
+const SPEED = PLAYER_SPEED; // pixels per second — tune in src/game/settings.ts
 
 /**
  * The player avatar: a simple colored sprite driven by Arcade Physics.
