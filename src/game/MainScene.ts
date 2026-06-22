@@ -8,6 +8,8 @@ import { DebugReadout } from '../ui/DebugReadout';
 import { DialogueBox } from '../ui/DialogueBox';
 import { TouchButton } from '../ui/TouchButton';
 import { ZoomControls } from '../ui/ZoomControls';
+import { SpiritVision } from '../spirit/SpiritVision';
+import type { Interactable } from '../entities/Interactable';
 import { CAMERA_ZOOM } from './settings';
 import { TOWN_TILES } from '../town/townTiles';
 import { buildTown, type TownFeatures, type DoorFeature } from '../town/TownBuilder';
@@ -45,8 +47,11 @@ export class MainScene extends Phaser.Scene {
   private talkButton!: TouchButton;
   private zoomControls!: ZoomControls;
   private uiCamera!: Phaser.Cameras.Scene2D.Camera;
+  private spirit!: SpiritVision;
 
-  private npcGuard = false; // talked; wait until player leaves range to re-trigger
+  // Interaction targets (the real NPC and, when Spirit Vision is on, spirits).
+  private talkTarget: Interactable | null = null; // in range now (drives Talk button)
+  private guardTarget: Interactable | null = null; // already auto-talked; wait to leave range
   private reenableControls = false;
   private portalCooldownUntil = 0;
 
@@ -79,6 +84,10 @@ export class MainScene extends Phaser.Scene {
     this.npc = new Npc(this, this.town.npc.x, this.town.npc.y, TOWNSFOLK_LINES);
     this.physics.add.collider(this.player.sprite, this.npc.sprite);
 
+    // Spirit entities live in the world (drawn by the main camera), hidden until
+    // Spirit Vision is revealed. Created here so they fall in the WORLD snapshot.
+    this.spirit = new SpiritVision(this);
+
     const cam = this.cameras.main;
     cam.startFollow(this.player.sprite, true, 0.12, 0.12);
     cam.setZoom(CAMERA_ZOOM); // tune in src/game/settings.ts
@@ -93,6 +102,9 @@ export class MainScene extends Phaser.Scene {
     this.talkButton = new TouchButton(this, 'Talk', () => this.tryTalk());
     this.zoomControls = new ZoomControls(this, cam, this.map.pixelWidth, this.map.pixelHeight);
     this.readout = new DebugReadout(this, this.map, this.player);
+    // Spirit Vision tint + toggle button are UI (created after the world snapshot
+    // so they land in the UI camera partition below).
+    this.spirit.createUI((on) => this.onSpiritVisionChanged(on));
 
     // Dedicated UI camera, fixed at zoom 1 and never scrolling, so the on-screen
     // UI is NOT scaled or moved by the main camera's zoom/follow (the bug:
@@ -126,7 +138,7 @@ export class MainScene extends Phaser.Scene {
     this.player.setDirection(dir.x, dir.y);
 
     this.checkDoors();
-    this.checkNpc();
+    this.checkInteractions();
     this.readout.update();
   }
 
@@ -142,27 +154,60 @@ export class MainScene extends Phaser.Scene {
     }
   }
 
-  private checkNpc(): void {
-    const dist = this.npc.distanceTo(this.player.x, this.player.y);
-    this.talkButton.setVisible(dist <= NPC_TALK_RANGE);
-    if (dist > NPC_TALK_RANGE) this.npcGuard = false;
-    if (dist <= NPC_AUTO_RANGE && !this.npcGuard) this.openDialogue();
+  /**
+   * Proximity + talk handling for ALL interactables: the real NPC always, plus
+   * spirit entities only while Spirit Vision is active (so when it's off they're
+   * imperceptible — no Talk prompt, no auto-dialogue).
+   */
+  private checkInteractions(): void {
+    const candidates: Interactable[] = [this.npc];
+    if (this.spirit.isActive()) candidates.push(...this.spirit.entities);
+
+    let nearest: Interactable | null = null;
+    let nearestDist = Infinity;
+    for (const c of candidates) {
+      const d = c.distanceTo(this.player.x, this.player.y);
+      if (d < nearestDist) {
+        nearestDist = d;
+        nearest = c;
+      }
+    }
+
+    if (nearest && nearestDist <= NPC_TALK_RANGE) {
+      this.talkTarget = nearest;
+      this.talkButton.setVisible(true);
+      if (nearestDist <= NPC_AUTO_RANGE && this.guardTarget !== nearest) {
+        this.openDialogueWith(nearest);
+      }
+    } else {
+      this.talkTarget = null;
+      this.talkButton.setVisible(false);
+      this.guardTarget = null; // left range — allow auto-talk again next approach
+    }
   }
 
   private tryTalk(): void {
     if (this.dialogue.isOpen()) return;
-    if (this.npc.distanceTo(this.player.x, this.player.y) <= NPC_TALK_RANGE) this.openDialogue();
+    if (this.talkTarget) this.openDialogueWith(this.talkTarget);
   }
 
-  private openDialogue(): void {
-    this.npcGuard = true;
+  private openDialogueWith(target: Interactable): void {
+    this.guardTarget = target;
     this.talkButton.setVisible(false);
     this.controls.setEnabled(false);
     this.player.setDirection(0, 0);
-    this.dialogue.open(this.npc.lines, () => {
+    this.dialogue.open(target.lines, () => {
       // Re-enable on the next frame so the closing tap can't spawn the joystick.
       this.reenableControls = true;
     });
+  }
+
+  /** When Spirit Vision turns off mid-conversation with a spirit, end it. */
+  private onSpiritVisionChanged(on: boolean): void {
+    const talkingToSpirit = this.spirit.entities.some((e) => e === this.guardTarget);
+    if (!on && this.dialogue.isOpen() && talkingToSpirit) {
+      this.dialogue.forceClose();
+    }
   }
 
   // --- Building interior transitions ---------------------------------------
