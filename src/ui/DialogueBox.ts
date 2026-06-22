@@ -79,6 +79,11 @@ export class DialogueBox {
     }
   }
 
+  /** Force the box closed (e.g. the spirit you were talking to just vanished). */
+  forceClose(): void {
+    if (this.open_) this.close();
+  }
+
   private close(): void {
     this.open_ = false;
     this.setVisible(false);
