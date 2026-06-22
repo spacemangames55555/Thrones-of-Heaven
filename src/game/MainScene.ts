@@ -7,6 +7,7 @@ import { CityMarkers } from '../ui/CityMarkers';
 import { DebugReadout } from '../ui/DebugReadout';
 import { DialogueBox } from '../ui/DialogueBox';
 import { TouchButton } from '../ui/TouchButton';
+import { ZoomControls } from '../ui/ZoomControls';
 import { CAMERA_ZOOM } from './settings';
 import { TOWN_TILES } from '../town/townTiles';
 import { buildTown, type TownFeatures, type DoorFeature } from '../town/TownBuilder';
@@ -42,6 +43,7 @@ export class MainScene extends Phaser.Scene {
   private npc!: Npc;
   private dialogue!: DialogueBox;
   private talkButton!: TouchButton;
+  private zoomControls!: ZoomControls;
 
   private npcGuard = false; // talked; wait until player leaves range to re-trigger
   private reenableControls = false;
@@ -84,10 +86,14 @@ export class MainScene extends Phaser.Scene {
     this.controls = new Controls(this);
     this.dialogue = new DialogueBox(this);
     this.talkButton = new TouchButton(this, 'Talk', () => this.tryTalk());
+    this.zoomControls = new ZoomControls(this, cam, this.map.pixelWidth, this.map.pixelHeight);
     this.readout = new DebugReadout(this, this.map, this.player);
   }
 
-  override update(): void {
+  override update(_time: number, delta: number): void {
+    // Zoom keeps smoothing every frame, even during dialogue.
+    this.zoomControls.update(delta);
+
     if (this.reenableControls && !this.dialogue.isOpen()) {
       this.controls.setEnabled(true);
       this.reenableControls = false;

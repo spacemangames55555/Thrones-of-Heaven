@@ -117,6 +117,9 @@ export class Controls {
   private onPointerDown(pointer: Phaser.Input.Pointer): void {
     if (!this.enabled) return;
     if (this.activePointerId !== null) return;
+    // Don't spawn the joystick when the press lands on an on-screen UI button
+    // (zoom +/−, Talk); let that button handle it instead.
+    if (this.scene.input.hitTestPointer(pointer).length > 0) return;
     this.activePointerId = pointer.id;
     this.originX = pointer.x;
     this.originY = pointer.y;

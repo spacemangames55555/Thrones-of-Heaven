@@ -14,10 +14,17 @@ Built with **Phaser 4 + TypeScript + Vite**.
 | Action | Desktop | Touch (phone) |
 | --- | --- | --- |
 | Move | **WASD** or **Arrow keys** | **Virtual joystick** — touch anywhere and drag; a stick springs up under your finger. A faint ring in the lower-left shows where it lives. |
+| Zoom out / in | **−/_** and **+/=** keys, or the **mouse wheel** | The **−** and **+** buttons stacked on the right edge |
 | Talk to an NPC | Walk into them, **or** tap the **Talk** button (lower-right) when it appears | Same |
 | Advance / close dialogue | **Tap anywhere** | **Tap anywhere** |
 | Enter a building | Walk onto its glowing **doorway** tile | Same |
 | Leave a building | Walk onto the **door** inside the room | Same |
+
+**Zooming:** the two right-side buttons (and the keys/wheel) smoothly scale the
+camera between a tight view on your character and the **entire Washington map**.
+A quick **tap** zooms one step; **press and hold** keeps zooming until you let go
+or hit a limit. The camera always stays following the player and never shows
+empty space past the map edge; at full zoom-out the whole state is framed.
 
 - Movement is free and smooth (analog 8-directional), not grid-snapped.
 - You can't walk into water (ocean, Puget Sound, lakes, rivers), high mountain
@@ -86,7 +93,12 @@ Two constants in **`src/game/settings.ts`** control the journey:
 | Constant | Default | Effect |
 | --- | --- | --- |
 | `PLAYER_SPEED` | `130` | Walking speed in px/sec. Higher = faster travel. |
-| `CAMERA_ZOOM` | `1.6` | Camera zoom. Lower = pulled back (see more world); higher = zoomed in. |
+| `CAMERA_ZOOM` | `1.6` | Camera zoom at startup. Lower = pulled back; higher = zoomed in. |
+| `ZOOM_STEP` | `1.5` | How much one tap of the +/− buttons changes the zoom. |
+| `ZOOM_TWEEN_MS` | `200` | Settle time of the smooth zoom tween after a tap (ms). |
+| `ZOOM_HOLD_RATE` | `3.0` | Continuous zoom rate while a button/key is held (×/sec). |
+| `ZOOM_IN_LIMIT` | `2.2` | Tightest (most zoomed-in) the camera may go. |
+| `ZOOM_OUT_MARGIN` | `1.08` | Margin at full zoom-out. The OUT limit (whole map fits) is computed live from the map + screen size — never hardcoded. |
 
 Map size lives in `tools/generateMap.mjs` (`WIDTH` / `HEIGHT`); change them and
 re-run `node tools/generateMap.mjs` — cities, rivers, bridges, and the town
@@ -178,6 +190,7 @@ src/
     DebugReadout.ts            # X/Y + terrain + nearest-city HUD
     DialogueBox.ts             # reusable bottom-screen dialogue system
     TouchButton.ts             # reusable on-screen button (Talk)
+    ZoomControls.ts            # +/− zoom buttons, keys, wheel (full map ↔ character)
 tools/
   generateMap.mjs              # authored Washington region model -> JSON
 ```
