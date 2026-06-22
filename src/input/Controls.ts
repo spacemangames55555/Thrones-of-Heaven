@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { getInsets } from '../ui/uiLayout';
 
 const HINT_MARGIN = 92;
 const BASE_RADIUS = 56;
@@ -103,7 +104,8 @@ export class Controls {
 
   private layout(): void {
     const h = this.scene.scale.height;
-    this.hint.setPosition(HINT_MARGIN, h - HINT_MARGIN);
+    const insets = getInsets(this.scene);
+    this.hint.setPosition(insets.left + HINT_MARGIN, h - insets.bottom - HINT_MARGIN);
   }
 
   private resetJoystick(): void {

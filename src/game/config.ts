@@ -1,10 +1,19 @@
 import Phaser from 'phaser';
 import { MainScene } from './MainScene';
 import { InteriorScene } from '../interior/InteriorScene';
+import { viewportSize } from '../ui/uiLayout';
+
+const { w, h } = viewportSize();
 
 /**
- * Phaser 4 game configuration. Mobile-first: the canvas resizes to fill the
- * screen (portrait or landscape) and pixel-art rendering keeps the tiles crisp.
+ * Phaser 4 game configuration. Mobile-first: the canvas is sized to the real
+ * visible viewport (see main.ts, which keeps it synced via visualViewport) and
+ * pixel-art rendering keeps the tiles crisp.
+ *
+ * Scale mode is NONE on purpose: we drive the game size explicitly from the
+ * visual viewport so the UI coordinate space always matches what's on screen.
+ * (RESIZE mode measured the parent element, which on iOS Safari came out wider
+ * than the visible area and pushed edge-anchored UI off-screen.)
  */
 export const gameConfig: Phaser.Types.Core.GameConfig = {
   type: Phaser.AUTO,
@@ -12,10 +21,10 @@ export const gameConfig: Phaser.Types.Core.GameConfig = {
   backgroundColor: '#0b1a2b',
   pixelArt: true,
   scale: {
-    mode: Phaser.Scale.RESIZE,
-    autoCenter: Phaser.Scale.CENTER_BOTH,
-    width: '100%',
-    height: '100%',
+    mode: Phaser.Scale.NONE,
+    autoCenter: Phaser.Scale.NO_CENTER,
+    width: w,
+    height: h,
   },
   input: {
     activePointers: 3, // multi-touch headroom for future on-screen buttons

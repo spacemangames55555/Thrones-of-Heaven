@@ -1,21 +1,24 @@
 import Phaser from 'phaser';
 import type { GameMap } from '../map/GameMap';
 import type { Player } from '../entities/Player';
+import { getInsets, UI_MARGIN } from './uiLayout';
 
 /**
- * Small on-screen readout pinned to the camera: player world X/Y, the terrain
- * type under the player, and the nearest city.
+ * Small on-screen readout pinned to the camera (top-left, inside the safe
+ * area): player world X/Y, the terrain type under the player, and nearest city.
  */
 export class DebugReadout {
+  private readonly scene: Phaser.Scene;
   private readonly text: Phaser.GameObjects.Text;
   private readonly map: GameMap;
   private readonly player: Player;
 
   constructor(scene: Phaser.Scene, map: GameMap, player: Player) {
+    this.scene = scene;
     this.map = map;
     this.player = player;
 
-    this.text = scene.add.text(8, 8, '', {
+    this.text = scene.add.text(0, 0, '', {
       fontFamily: 'ui-monospace, Menlo, Consolas, monospace',
       fontSize: '12px',
       color: '#e8f0ff',
@@ -24,6 +27,17 @@ export class DebugReadout {
     });
     this.text.setScrollFactor(0);
     this.text.setDepth(2000);
+
+    this.layout();
+    scene.scale.on(Phaser.Scale.Events.RESIZE, this.layout, this);
+    scene.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      scene.scale.off(Phaser.Scale.Events.RESIZE, this.layout, this);
+    });
+  }
+
+  private layout(): void {
+    const insets = getInsets(this.scene);
+    this.text.setPosition(insets.left + UI_MARGIN, insets.top + UI_MARGIN);
   }
 
   update(): void {

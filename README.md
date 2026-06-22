@@ -14,7 +14,7 @@ Built with **Phaser 4 + TypeScript + Vite**.
 | Action | Desktop | Touch (phone) |
 | --- | --- | --- |
 | Move | **WASD** or **Arrow keys** | **Virtual joystick** — touch anywhere and drag; a stick springs up under your finger. A faint ring in the lower-left shows where it lives. |
-| Zoom out / in | **−/_** and **+/=** keys, or the **mouse wheel** | The **−** and **+** buttons stacked on the right edge |
+| Zoom out / in | **−/_** and **+/=** keys, or the **mouse wheel** | The **+** / **−** buttons stacked at the bottom-right (inside the safe area) |
 | Talk to an NPC | Walk into them, **or** tap the **Talk** button (lower-right) when it appears | Same |
 | Advance / close dialogue | **Tap anywhere** | **Tap anywhere** |
 | Enter a building | Walk onto its glowing **doorway** tile | Same |

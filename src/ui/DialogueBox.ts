@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { getInsets, UI_MARGIN } from './uiLayout';
 
 /**
  * Reusable, phone-friendly dialogue box pinned to the bottom of the screen.
@@ -29,7 +30,7 @@ export class DialogueBox {
     this.text = scene.add
       .text(0, 0, '', {
         fontFamily: 'system-ui, sans-serif',
-        fontSize: '16px',
+        fontSize: '15px',
         color: '#f3ecd8',
         lineSpacing: 4,
       })
@@ -102,18 +103,23 @@ export class DialogueBox {
   private layout(): void {
     const w = this.scene.scale.width;
     const h = this.scene.scale.height;
-    const margin = 12;
-    const boxH = Phaser.Math.Clamp(h * 0.26, 96, 170);
-    const boxW = w - margin * 2;
-    const cx = w / 2;
-    const cy = h - margin - boxH / 2;
+    const insets = getInsets(this.scene);
+    // Fit within the safe area with equal padding on both sides.
+    const left = insets.left + UI_MARGIN;
+    const right = w - insets.right - UI_MARGIN;
+    const boxW = Math.max(120, right - left);
+    const boxH = Phaser.Math.Clamp(h * 0.26, 112, 180);
+    const cx = (left + right) / 2;
+    const bottom = h - insets.bottom - UI_MARGIN;
+    const cy = bottom - boxH / 2;
+    const pad = 14;
 
     this.border.setPosition(cx, cy).setSize(boxW + 4, boxH + 4);
     this.box.setPosition(cx, cy).setSize(boxW, boxH);
 
-    const pad = 16;
-    this.text.setPosition(margin + pad, cy - boxH / 2 + pad);
+    // Left-anchored text, word-wrapped to the inner box width.
+    this.text.setPosition(left + pad, cy - boxH / 2 + pad);
     this.text.setWordWrapWidth(boxW - pad * 2, true);
-    this.hint.setPosition(w - margin - pad, h - margin - pad);
+    this.hint.setPosition(right - pad, bottom - pad);
   }
 }
