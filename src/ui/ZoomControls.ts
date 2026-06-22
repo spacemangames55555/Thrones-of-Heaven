@@ -6,8 +6,9 @@ import {
   ZOOM_IN_LIMIT,
   ZOOM_OUT_MARGIN,
 } from '../game/settings';
+import { getInsets, UI_MARGIN } from './uiLayout';
 
-const BTN = 52;
+const BTN = 62;
 const GAP = 14;
 const HOLD_DELAY = 250; // ms before a press becomes a continuous zoom
 
@@ -107,8 +108,8 @@ export class ZoomControls {
     this.cam.setZoom(z);
 
     // Dim a button when its limit is reached.
-    this.inBtn.bg.setAlpha(this.target >= ZOOM_IN_LIMIT - 1e-4 ? 0.4 : 0.92);
-    this.outBtn.bg.setAlpha(this.target <= this.outLimit + 1e-4 ? 0.4 : 0.92);
+    this.inBtn.bg.setAlpha(this.target >= ZOOM_IN_LIMIT - 1e-4 ? 0.45 : 0.96);
+    this.outBtn.bg.setAlpha(this.target <= this.outLimit + 1e-4 ? 0.45 : 0.96);
   }
 
   // --- input ----------------------------------------------------------------
@@ -161,13 +162,18 @@ export class ZoomControls {
   } {
     const depth = 1300;
     const bg = this.scene.add
-      .rectangle(0, 0, BTN, BTN, 0x1d2b40, 0.92)
-      .setStrokeStyle(2, 0xffd24a, 0.95)
+      .rectangle(0, 0, BTN, BTN, 0x14223a, 0.96)
+      .setStrokeStyle(3, 0xffd24a, 1)
       .setScrollFactor(0)
       .setDepth(depth)
       .setInteractive({ useHandCursor: true });
     const label = this.scene.add
-      .text(0, 0, glyph, { fontFamily: 'system-ui, sans-serif', fontSize: '30px', color: '#ffe9a8' })
+      .text(0, 0, glyph, {
+        fontFamily: 'system-ui, sans-serif',
+        fontSize: '40px',
+        color: '#ffe9a8',
+        fontStyle: 'bold',
+      })
       .setOrigin(0.5)
       .setScrollFactor(0)
       .setDepth(depth + 1);
@@ -181,9 +187,11 @@ export class ZoomControls {
     this.target = Phaser.Math.Clamp(this.target, this.outLimit, ZOOM_IN_LIMIT);
     const w = this.scene.scale.width;
     const h = this.scene.scale.height;
-    const cx = w - 16 - BTN / 2;
-    const inY = h / 2 - (BTN / 2 + GAP / 2);
-    const outY = h / 2 + (BTN / 2 + GAP / 2);
+    const insets = getInsets(this.scene);
+    // Bottom-right, inside the safe area: − at the bottom, + stacked above it.
+    const cx = w - insets.right - UI_MARGIN - BTN / 2;
+    const outY = h - insets.bottom - UI_MARGIN - BTN / 2;
+    const inY = outY - (BTN + GAP);
     this.inBtn.bg.setPosition(cx, inY);
     this.inBtn.label.setPosition(cx, inY);
     this.outBtn.bg.setPosition(cx, outY);

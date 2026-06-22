@@ -1,8 +1,11 @@
 import Phaser from 'phaser';
+import { getInsets, UI_MARGIN } from './uiLayout';
 
 /**
  * A small, reusable on-screen button pinned to the camera (works on touch and
  * mouse). Used for the "Talk" prompt; future buttons (Enter, Use, …) reuse it.
+ * Anchored bottom-CENTER inside the safe area, clear of the bottom-right zoom
+ * buttons and the bottom-left joystick.
  */
 export class TouchButton {
   private readonly scene: Phaser.Scene;
@@ -56,8 +59,9 @@ export class TouchButton {
   private layout(): void {
     const w = this.scene.scale.width;
     const h = this.scene.scale.height;
-    const cx = w - 16 - this.width / 2;
-    const cy = h - 16 - this.height / 2;
+    const insets = getInsets(this.scene);
+    const cx = w / 2;
+    const cy = h - insets.bottom - UI_MARGIN - this.height / 2;
     this.bg.setPosition(cx, cy);
     this.label.setPosition(cx, cy);
   }
