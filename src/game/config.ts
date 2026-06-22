@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { MainScene } from './MainScene';
+import { InteriorScene } from '../interior/InteriorScene';
 
 /**
  * Phaser 4 game configuration. Mobile-first: the canvas resizes to fill the
@@ -26,5 +27,6 @@ export const gameConfig: Phaser.Types.Core.GameConfig = {
       gravity: { x: 0, y: 0 },
     },
   },
-  scene: [MainScene],
+  // MainScene starts automatically; InteriorScene is launched on demand.
+  scene: [MainScene, InteriorScene],
 };
