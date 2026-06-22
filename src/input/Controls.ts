@@ -30,6 +30,7 @@ export class Controls {
   private originY = 0;
   private joyX = 0;
   private joyY = 0;
+  private enabled = true;
 
   constructor(scene: Phaser.Scene) {
     this.scene = scene;
@@ -68,10 +69,27 @@ export class Controls {
     scene.input.on(Phaser.Input.Events.POINTER_MOVE, this.onPointerMove, this);
     scene.input.on(Phaser.Input.Events.POINTER_UP, this.onPointerUp, this);
     scene.input.on(Phaser.Input.Events.POINTER_UP_OUTSIDE, this.onPointerUp, this);
+
+    // The ScaleManager is global, so its listener outlives a scene shutdown —
+    // remove it explicitly (important for the interior scene, which restarts).
+    scene.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      scene.scale.off(Phaser.Scale.Events.RESIZE, this.layout, this);
+    });
+  }
+
+  /**
+   * Enable/disable movement input. While disabled the joystick is hidden and
+   * getDirection() returns zero — used to freeze the player during dialogue or
+   * scene transitions.
+   */
+  setEnabled(enabled: boolean): void {
+    this.enabled = enabled;
+    if (!enabled) this.resetJoystick();
   }
 
   /** Current movement vector, components in [-1, 1]. */
   getDirection(): Direction {
+    if (!this.enabled) return { x: 0, y: 0 };
     let kx = 0;
     let ky = 0;
     if (this.keys.A.isDown || this.keys.LEFT.isDown) kx -= 1;
@@ -88,7 +106,16 @@ export class Controls {
     this.hint.setPosition(HINT_MARGIN, h - HINT_MARGIN);
   }
 
+  private resetJoystick(): void {
+    this.activePointerId = null;
+    this.joyX = 0;
+    this.joyY = 0;
+    this.base.setVisible(false);
+    this.thumb.setVisible(false);
+  }
+
   private onPointerDown(pointer: Phaser.Input.Pointer): void {
+    if (!this.enabled) return;
     if (this.activePointerId !== null) return;
     this.activePointerId = pointer.id;
     this.originX = pointer.x;

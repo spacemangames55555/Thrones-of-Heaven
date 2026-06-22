@@ -19,17 +19,28 @@ export class GameMap {
   readonly pixelWidth: number;
   readonly pixelHeight: number;
   readonly layer: Phaser.Tilemaps.TilemapLayerBase;
+  /** Tileset frames (= id + 1) that block movement, for re-marking collision. */
+  readonly blockingFrames: number[];
 
   private readonly terrainById: Map<number, TerrainType>;
+  /** Every tile type, base terrain plus any extra (town) tiles. */
+  private readonly allTiles: TerrainType[];
   /** Full grid of raw terrain ids, indexed [y][x], for terrain queries. */
   private readonly grid: number[][];
 
-  constructor(scene: Phaser.Scene, data: WashingtonMap) {
+  /**
+   * @param extraTiles Additional tile types (e.g. town tiles) appended to the
+   *   tileset after the base terrain, so features can be stamped onto the same
+   *   GPU layer later via {@link setTileId}.
+   */
+  constructor(scene: Phaser.Scene, data: WashingtonMap, extraTiles: TerrainType[] = []) {
     this.data = data;
     this.tileSize = data.tileSize;
     this.pixelWidth = data.width * data.tileSize;
     this.pixelHeight = data.height * data.tileSize;
-    this.terrainById = new Map(data.terrain.map((t) => [t.id, t]));
+    this.allTiles = [...data.terrain, ...extraTiles];
+    this.terrainById = new Map(this.allTiles.map((t) => [t.id, t]));
+    this.blockingFrames = this.allTiles.filter((t) => t.blocks).map((t) => t.id + 1);
 
     this.grid = GameMap.stitchZones(data);
     this.buildTilesetTexture(scene, data);
@@ -55,7 +66,7 @@ export class GameMap {
   /** Paint a horizontal strip texture: frame 0 empty, frames 1..N = terrain. */
   private buildTilesetTexture(scene: Phaser.Scene, data: WashingtonMap): void {
     const ts = data.tileSize;
-    const frames = data.terrain.length + 1; // +1 for the empty frame 0
+    const frames = this.allTiles.length + 1; // +1 for the empty frame 0
     const key = 'terrain-tiles';
 
     if (scene.textures.exists(key)) scene.textures.remove(key);
@@ -64,7 +75,7 @@ export class GameMap {
 
     const ctx = canvasTexture.context;
     ctx.clearRect(0, 0, frames * ts, ts); // frame 0 stays transparent
-    for (const terrain of data.terrain) {
+    for (const terrain of this.allTiles) {
       const fx = (terrain.id + 1) * ts;
       ctx.fillStyle = terrain.color;
       ctx.fillRect(fx, 0, ts, ts);
@@ -96,10 +107,31 @@ export class GameMap {
     if (!layer) throw new Error('Failed to create tilemap layer');
 
     // Mark blocking terrain (frames = id + 1) as collidable.
-    const blockingFrames = data.terrain.filter((t) => t.blocks).map((t) => t.id + 1);
-    layer.setCollision(blockingFrames);
+    layer.setCollision(this.blockingFrames);
 
     return layer;
+  }
+
+  // --- Runtime edits (used to stamp the town onto the overworld) -------------
+
+  /** Overwrite one tile's terrain id, in both the query grid and the layer. */
+  setTileId(tx: number, ty: number, id: number): void {
+    if (tx < 0 || ty < 0 || tx >= this.data.width || ty >= this.data.height) return;
+    this.grid[ty][tx] = id;
+    this.layer.putTileAt(id + 1, tx, ty);
+  }
+
+  /**
+   * Push pending tile edits to the GPU and re-mark collision so newly stamped
+   * blocking tiles (buildings, rift) actually stop the player. Call once after
+   * a batch of {@link setTileId} edits.
+   */
+  commitEdits(): void {
+    const gpuLayer = this.layer as Phaser.Tilemaps.TilemapLayerBase & {
+      generateLayerDataTexture?: () => void;
+    };
+    gpuLayer.generateLayerDataTexture?.();
+    this.layer.setCollision(this.blockingFrames);
   }
 
   // --- Queries --------------------------------------------------------------

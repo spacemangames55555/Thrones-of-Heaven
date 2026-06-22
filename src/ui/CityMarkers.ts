@@ -5,10 +5,13 @@ import type { GameMap } from '../map/GameMap';
  * Small, non-interactive labeled markers at the major cities. They live in
  * world space, so they pan with the map. No interaction yet — just landmarks
  * that help the state read as Washington.
+ *
+ * @param exclude City names to skip (e.g. Seattle, now a real walkable town).
  */
 export class CityMarkers {
-  constructor(scene: Phaser.Scene, map: GameMap) {
+  constructor(scene: Phaser.Scene, map: GameMap, exclude: string[] = []) {
     for (const city of map.cities) {
+      if (exclude.includes(city.name)) continue;
       const { x, y } = map.tileToWorldCenter(city.tx, city.ty);
 
       // Diamond marker.

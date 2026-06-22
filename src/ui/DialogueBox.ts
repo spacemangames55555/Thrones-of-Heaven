@@ -1,0 +1,119 @@
+import Phaser from 'phaser';
+
+/**
+ * Reusable, phone-friendly dialogue box pinned to the bottom of the screen.
+ * Call {@link open} with an array of lines; tapping anywhere advances to the
+ * next line, and tapping past the last line closes it. Any NPC plugs in by
+ * passing its own lines — no per-NPC code.
+ */
+export class DialogueBox {
+  private readonly scene: Phaser.Scene;
+  private readonly box: Phaser.GameObjects.Rectangle;
+  private readonly border: Phaser.GameObjects.Rectangle;
+  private readonly text: Phaser.GameObjects.Text;
+  private readonly hint: Phaser.GameObjects.Text;
+
+  private lines: string[] = [];
+  private index = 0;
+  private open_ = false;
+  private acceptTapAt = 0;
+  private onClose?: () => void;
+
+  constructor(scene: Phaser.Scene) {
+    this.scene = scene;
+    const depth = 1500;
+
+    this.border = scene.add.rectangle(0, 0, 10, 10, 0xffd24a, 0.9).setScrollFactor(0).setDepth(depth);
+    this.box = scene.add.rectangle(0, 0, 10, 10, 0x0c1626, 0.94).setScrollFactor(0).setDepth(depth + 1);
+
+    this.text = scene.add
+      .text(0, 0, '', {
+        fontFamily: 'system-ui, sans-serif',
+        fontSize: '16px',
+        color: '#f3ecd8',
+        lineSpacing: 4,
+      })
+      .setScrollFactor(0)
+      .setDepth(depth + 2);
+
+    this.hint = scene.add
+      .text(0, 0, 'tap to continue ▸', {
+        fontFamily: 'system-ui, sans-serif',
+        fontSize: '12px',
+        color: '#ffd24a',
+      })
+      .setScrollFactor(0)
+      .setDepth(depth + 2)
+      .setOrigin(1, 1);
+
+    this.setVisible(false);
+    this.layout();
+
+    scene.scale.on(Phaser.Scale.Events.RESIZE, this.layout, this);
+    scene.input.on(Phaser.Input.Events.POINTER_DOWN, this.onPointerDown, this);
+  }
+
+  isOpen(): boolean {
+    return this.open_;
+  }
+
+  open(lines: string[], onClose?: () => void): void {
+    if (lines.length === 0) return;
+    this.lines = lines;
+    this.index = 0;
+    this.onClose = onClose;
+    this.open_ = true;
+    this.acceptTapAt = this.scene.time.now + 180; // ignore the tap that opened it
+    this.render();
+    this.setVisible(true);
+  }
+
+  private onPointerDown(): void {
+    if (!this.open_ || this.scene.time.now < this.acceptTapAt) return;
+    this.index += 1;
+    if (this.index >= this.lines.length) {
+      this.close();
+    } else {
+      this.render();
+    }
+  }
+
+  private close(): void {
+    this.open_ = false;
+    this.setVisible(false);
+    const cb = this.onClose;
+    this.onClose = undefined;
+    cb?.();
+  }
+
+  private render(): void {
+    this.text.setText(this.lines[this.index]);
+    const last = this.index === this.lines.length - 1;
+    this.hint.setText(last ? 'tap to close ▸' : 'tap to continue ▸');
+  }
+
+  private setVisible(v: boolean): void {
+    this.box.setVisible(v);
+    this.border.setVisible(v);
+    this.text.setVisible(v);
+    this.hint.setVisible(v);
+  }
+
+  private layout(): void {
+    const w = this.scene.scale.width;
+    const h = this.scene.scale.height;
+    const margin = 12;
+    const boxH = Phaser.Math.Clamp(h * 0.26, 96, 170);
+    const boxW = w - margin * 2;
+    const cx = w / 2;
+    const cy = h - margin - boxH / 2;
+
+    this.border.setPosition(cx, cy).setSize(boxW + 4, boxH + 4);
+    this.box.setPosition(cx, cy).setSize(boxW, boxH);
+
+    const pad = 16;
+    this.text.setPosition(margin + pad, cy - boxH / 2 + pad);
+    this.text.setWordWrapWidth(boxW - pad * 2, true);
+    this.hint.setPosition(w - margin - pad, h - margin - pad);
+  }
+}
