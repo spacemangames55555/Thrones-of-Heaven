@@ -44,6 +44,7 @@ export class MainScene extends Phaser.Scene {
   private dialogue!: DialogueBox;
   private talkButton!: TouchButton;
   private zoomControls!: ZoomControls;
+  private uiCamera!: Phaser.Cameras.Scene2D.Camera;
 
   private npcGuard = false; // talked; wait until player leaves range to re-trigger
   private reenableControls = false;
@@ -83,11 +84,25 @@ export class MainScene extends Phaser.Scene {
     cam.setZoom(CAMERA_ZOOM); // tune in src/game/settings.ts
     cam.setRoundPixels(true);
 
+    // Everything created so far is WORLD. Snapshot it so the UI camera can
+    // ignore it (and the main camera can ignore the UI created next).
+    const worldObjects = this.children.list.slice();
+
     this.controls = new Controls(this);
     this.dialogue = new DialogueBox(this);
     this.talkButton = new TouchButton(this, 'Talk', () => this.tryTalk());
     this.zoomControls = new ZoomControls(this, cam, this.map.pixelWidth, this.map.pixelHeight);
     this.readout = new DebugReadout(this, this.map, this.player);
+
+    // Dedicated UI camera, fixed at zoom 1 and never scrolling, so the on-screen
+    // UI is NOT scaled or moved by the main camera's zoom/follow (the bug:
+    // scrollFactor(0) stops scrolling but NOT scaling with zoom). Partition
+    // rendering: the main camera draws only the world; the UI camera only the UI.
+    const uiObjects = this.children.list.filter((o) => !worldObjects.includes(o));
+    this.uiCamera = this.cameras.add(0, 0, this.scale.width, this.scale.height);
+    this.uiCamera.setName('UICamera');
+    cam.ignore(uiObjects);
+    this.uiCamera.ignore(worldObjects);
   }
 
   override update(_time: number, delta: number): void {
