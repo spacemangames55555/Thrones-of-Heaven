@@ -55,3 +55,35 @@ export const ZOOM_IN_LIMIT = 1.7;
  */
 export const ZOOM_OUT_MARGIN = 1.08;
 
+
+// --- Combat v1 (melee vs. the Sasquatch) -----------------------------------
+
+/** Player health pool. */
+export const PLAYER_MAX_HP = 100;
+/** Damage one player melee swing deals. */
+export const PLAYER_ATTACK_DAMAGE = 25;
+/** Player melee reach in px (~1.75 tiles at 32px). */
+export const PLAYER_ATTACK_RANGE = 58;
+/** Minimum time between player swings, in ms. */
+export const PLAYER_ATTACK_COOLDOWN_MS = 500;
+/** Out-of-combat HP regenerated per second. */
+export const PLAYER_HP_REGEN_PER_SEC = 7;
+/** How long after combat before regen starts, in ms. */
+export const PLAYER_HP_REGEN_DELAY_MS = 4000;
+
+/** Sasquatch health pool. */
+export const SASQUATCH_MAX_HP = 120;
+/** Damage one Sasquatch strike deals to the player. */
+export const SASQUATCH_DAMAGE = 14;
+/** Sasquatch move speed in tiles/sec (slightly slower than the player, kiteable). */
+export const SASQUATCH_MOVE_TILES_PER_SEC = 6;
+/** Distance (px) at which the Sasquatch notices the player and gives chase. */
+export const SASQUATCH_AGGRO_RANGE = 224;
+/** Distance (px) within which the Sasquatch can strike. */
+export const SASQUATCH_ATTACK_RANGE = 64;
+/** Cooldown after a Sasquatch strike before it can attack again, in ms. */
+export const SASQUATCH_ATTACK_COOLDOWN_MS = 1500;
+/** Telegraph (wind-up) duration before a strike lands, in ms — long enough to dodge. */
+export const SASQUATCH_WINDUP_MS = 750;
+/** Distance (px) at which the Sasquatch gives up the chase and returns home. */
+export const SASQUATCH_LEASH_RANGE = 440;
