@@ -18,12 +18,19 @@ import { HealthBar } from '../combat/HealthBar';
 import { AttackButton } from '../ui/AttackButton';
 import { DashButton } from '../ui/DashButton';
 import { ANGEL_ENCOUNTER } from '../story/angelData';
-import { QuestManager } from '../quest/QuestManager';
-import { THE_CORRUPTION_AT_THE_GATES, type ObjectiveTrigger } from '../quest/questData';
+import { QuestChain, type QuestEvent } from '../quest/QuestChain';
+import {
+  QUEST_REGISTRY,
+  THE_CORRUPTION_AT_THE_GATES,
+  type ObjectiveTrigger,
+  type TargetKind,
+} from '../quest/questData';
 import { ObjectiveMarker } from '../quest/ObjectiveMarker';
 import { QuestTracker } from '../ui/QuestTracker';
 import { DevPanel } from '../ui/DevPanel';
 import { PlayerProgression } from '../progression/PlayerProgression';
+import { OREGON_SPIRIT_ID } from '../spirit/spiritData';
+import type { SpiritEntity } from '../spirit/SpiritEntity';
 import type { Interactable } from '../entities/Interactable';
 import type { PlayerPath } from '../story/playerPath';
 import { getInsets, UI_MARGIN } from '../ui/uiLayout';
@@ -34,7 +41,6 @@ import {
   PLAYER_HP_REGEN_PER_SEC,
   PLAYER_HP_REGEN_DELAY_MS,
   SASQUATCH_DAMAGE,
-  QUEST_XP_REWARD,
   DEV_GRANT_XP_CHUNK,
   DEV_MODE,
   DMG_PER_LEVEL,
@@ -129,10 +135,14 @@ export class MainScene extends Phaser.Scene {
   private playerPath: PlayerPath = 'neutral';
   private angelEncounterFired = false;
 
-  // Quest: the data-driven opening quest, its tracker UI, and its world marker.
-  private quest!: QuestManager;
+  // Quest CHAIN: the central, serializable manager driving the whole registry,
+  // its tracker UI, and its world marker. Quest-givers map an NPC to the quest
+  // ids it can offer (+ idle flavor lines when it has nothing to give).
+  private chain!: QuestChain;
   private tracker!: QuestTracker;
   private marker!: ObjectiveMarker;
+  private questGivers: { npc: Npc; questIds: string[]; idleLines: string[] }[] = [];
+  private oregonSpirit?: SpiritEntity; // the stub quest's objective target
   // The single stored+displayed alignment title (its text() IS the stored value).
   private titleText!: Phaser.GameObjects.Text;
 
@@ -204,10 +214,19 @@ export class MainScene extends Phaser.Scene {
     this.physics.add.collider(this.sasquatch.sprite, this.map.layer);
     this.physics.add.collider(this.player.sprite, this.sasquatch.sprite);
 
-    // The opening quest (data-driven). The world objective marker lives in the
-    // worldFx layer, so the main camera draws it and the UI camera ignores it.
-    this.quest = new QuestManager(THE_CORRUPTION_AT_THE_GATES);
-    this.quest.onChange = () => this.refreshQuestUi();
+    // The quest CHAIN (data-driven registry). The world objective marker lives
+    // in the worldFx layer, so the main camera draws it and the UI camera ignores
+    // it. Quest-givers: which NPC offers which quest ids (it offers the available
+    // one); idleLines play when it has nothing to give.
+    this.chain = new QuestChain(QUEST_REGISTRY);
+    this.chain.onChange = () => this.refreshQuestUi();
+    this.chain.onEvent = (e) => this.handleQuestEvent(e);
+    this.questGivers = [
+      { npc: this.npc, questIds: ['corruption-at-the-gates'], idleLines: [] },
+      { npc: this.portlandNpc, questIds: ['a-path-opens'], idleLines: [...PORTLAND_NPC_LINES] },
+    ];
+    this.oregonSpirit = this.spirit.entities.find((e) => e.id === OREGON_SPIRIT_ID);
+    this.chain.evaluateUnlocks(); // opening quest → available from the start
     this.marker = new ObjectiveMarker(this, this.worldFx);
 
     const cam = this.cameras.main;
@@ -797,35 +816,90 @@ export class MainScene extends Phaser.Scene {
     this.controls.setEnabled(false);
     this.player.setDirection(0, 0);
 
-    // The quest-giver speaks a different set per quest state; finishing the
-    // INACTIVE set starts the quest. Other interactables use their own lines.
-    if (target === this.npc) {
-      const startNow = this.quest.status === 'inactive';
-      this.dialogue.open(this.npcLinesForState(), () => {
-        if (startNow) this.startQuest();
-        this.reenableControls = true;
-      });
+    // A quest-giver NPC speaks per the chain's state (and offering accepts).
+    const giver = this.questGivers.find((g) => (g.npc as Interactable) === target);
+    if (giver) {
+      this.openQuestGiverDialogue(giver);
       return;
     }
 
+    // Generic interactable (spirits). Speaking to the seeded Oregon spirit
+    // completes the stub quest's objective (no-op unless that's the active goal).
+    const isOregonSpirit = this.oregonSpirit !== undefined && target === this.oregonSpirit;
     this.dialogue.open(target.lines, () => {
-      // Re-enable on the next frame so the closing tap can't spawn the joystick.
+      if (isOregonSpirit) this.notifyQuest('oregon-spirit-spoken');
       this.reenableControls = true;
     });
   }
 
-  /** Pick the NPC's dialogue for the current quest state (all text in questData). */
-  private npcLinesForState(): string[] {
-    const q = this.quest.quest;
-    if (this.quest.status === 'complete') return [...q.npcCompleteLines];
-    if (this.quest.status === 'active') return [...q.npcActiveLines];
-    return [...q.npcInactiveLines];
+  /**
+   * Data-driven quest-giver dialogue from the chain: a reminder if this giver has
+   * an ACTIVE quest; an OFFER (accepted when the lines finish) if it has an
+   * AVAILABLE one; an acknowledgment if its quest is COMPLETE; else idle flavor.
+   */
+  private openQuestGiverDialogue(giver: { npc: Npc; questIds: string[]; idleLines: string[] }): void {
+    const activeId = giver.questIds.find((id) => this.chain.status(id) === 'active');
+    if (activeId) {
+      this.dialogue.open([...this.chain.get(activeId)!.npcActiveLines], () => {
+        this.reenableControls = true;
+      });
+      return;
+    }
+    const offer = this.chain.firstAvailable(giver.questIds);
+    if (offer) {
+      this.dialogue.open([...offer.npcInactiveLines], () => {
+        this.acceptQuest(offer.id);
+        this.reenableControls = true;
+      });
+      return;
+    }
+    const doneId = giver.questIds.find((id) => this.chain.status(id) === 'complete');
+    if (doneId) {
+      this.dialogue.open([...this.chain.get(doneId)!.npcCompleteLines], () => {
+        this.reenableControls = true;
+      });
+      return;
+    }
+    this.dialogue.open(giver.idleLines.length ? giver.idleLines : ['...'], () => {
+      this.reenableControls = true;
+    });
   }
 
-  /** Begin the quest; respawn the beast if it was already dead so OBJ 1 is doable. */
-  private startQuest(): void {
-    this.quest.start();
-    if (!this.sasquatch.isAlive) this.sasquatch.reset();
+  /** Accept an available quest from its giver (the chain emits 'started'). */
+  private acceptQuest(id: string): void {
+    this.chain.accept(id);
+  }
+
+  /** React to discrete quest lifecycle events (kept out of frame logic). */
+  private handleQuestEvent(e: QuestEvent): void {
+    switch (e.type) {
+      case 'started':
+        // No-soft-lock: if the opening beast was already slain, respawn it.
+        if (e.questId === 'corruption-at-the-gates' && !this.sasquatch.isAlive) this.sasquatch.reset();
+        this.refreshQuestUi();
+        break;
+      case 'objective-complete':
+        this.refreshQuestUi();
+        break;
+      case 'quest-complete':
+        this.grantQuestReward(e.questId);
+        this.refreshQuestUi();
+        break;
+      case 'unlocked':
+        // Informational (a later quest became available); the marker/giver handle it.
+        break;
+    }
+  }
+
+  /** Grant a completed quest's data-driven reward block (heal / title / XP + banner). */
+  private grantQuestReward(questId: string): void {
+    const def = this.chain.get(questId);
+    if (!def) return;
+    const r = def.reward;
+    if (r.healToFull) this.playerHealth.full();
+    if (r.title) this.awardTitle(r.title);
+    this.showBanner(r.note ? `${r.banner}\n\n${r.note}` : r.banner, 3400);
+    if (r.xp > 0) this.gainXP(r.xp);
   }
 
   // --- The Angel's Choice ---------------------------------------------------
@@ -872,7 +946,7 @@ export class MainScene extends Phaser.Scene {
     // refusing advances the story: tapping Accept plays a placeholder line and
     // re-opens the choice. Outside the quest, the standalone two-branch logic is
     // untouched.
-    const forced = this.quest.isActive && this.quest.currentTrigger === 'angel-refused';
+    const forced = this.chain.activeTrigger === 'angel-refused';
     this.choice.open(ANGEL_ENCOUNTER.prompt, [
       {
         label: ANGEL_ENCOUNTER.acceptLabel,
@@ -884,7 +958,8 @@ export class MainScene extends Phaser.Scene {
 
   /** Quest-forced encounter: Accept can't take hold — show a line, re-offer the choice. */
   private onForcedAccept(): void {
-    this.dialogue.open([...this.quest.quest.forcedAcceptLines], () => this.presentAngelChoice());
+    const lines = this.chain.activeQuest?.forcedAcceptLines ?? ['...'];
+    this.dialogue.open([...lines], () => this.presentAngelChoice());
   }
 
   private onAcceptLight(): void {
@@ -905,35 +980,50 @@ export class MainScene extends Phaser.Scene {
     this.notifyQuest('angel-refused');
   }
 
-  /** DEV-ONLY: replay the whole opening quest without reloading (key R or the corner button). */
-  private devReset(): void {
-    this.setPlayerPath('neutral');
-    this.spirit.setSpiritVision(false); // 'neutral' alone doesn't turn it off
+  /**
+   * Reset the WHOLE quest chain to its initial state: clear the completed record
+   * and active quest, clear the awarded title, and re-arm the opening quest's
+   * world prerequisites (angel, player path / Spirit Vision, the beast) so the
+   * chain replays from scratch. Shared by "Reset All Quests" and the dev reset.
+   */
+  private resetQuestChain(): void {
+    this.chain.reset();
+    this.chain.evaluateUnlocks(); // opening quest available again
+    this.awardTitle(null);
     this.angelEncounterFired = false;
     this.angel.dismiss();
+    this.setPlayerPath('neutral');
+    this.spirit.setSpiritVision(false); // 'neutral' alone doesn't turn it off
+    this.sasquatch.reset();
+    this.guardTarget = null;
+    this.refreshQuestUi();
+  }
+
+  /** DEV: reset only the quest chain (closes any open dialogue/choice first). */
+  private devResetQuests(): void {
     this.choice.close();
     if (this.dialogue.isOpen()) this.dialogue.forceClose();
-    this.guardTarget = null;
     this.controls.setEnabled(true);
     this.player.setDirection(0, 0);
+    this.resetQuestChain();
+  }
 
-    // Full quest replay: back to inactive, title cleared, beast respawned.
-    this.quest.reset();
-    this.awardTitle(null);
-    this.sasquatch.reset();
+  /** DEV-ONLY: full reset — the quest chain PLUS combat, progression, energy, swarms. */
+  private devReset(): void {
+    this.devResetQuests();
 
     // Progression back to Lv1 / 0 XP, and the HP pool back to the level-1 max.
     this.progression.reset();
     this.playerHealth.setMax(this.progression.effectiveMaxHP);
     this.playerHealth.full();
 
-    // Combat Depth: refill energy, end any dash, and reset the swarm to its
-    // dormant starting pack near the rift.
+    // Combat Depth: refill energy, end any dash, and reset the swarms to their
+    // dormant starting packs (Seattle rift + Oregon seed).
     this.energy.full();
     this.lastEnergySpendTime = -1e9;
     this.dashEndsAt = 0;
     this.dashCooldownUntil = 0;
-    this.clearSwarmers(); // clears ALL swarmers, including the Oregon seed
+    this.clearSwarmers();
     this.spawnSwarmPack(this.town.rift.x, this.town.rift.y);
     this.spawnSwarmPack(OREGON_SWARM_SPAWN.x, OREGON_SWARM_SPAWN.y);
   }
@@ -958,6 +1048,8 @@ export class MainScene extends Phaser.Scene {
       { label: 'Spawn Spirit Swarm', onPress: () => this.devSpawnSwarm() },
       { label: 'Refill Energy', onPress: () => this.energy.full() },
       { label: 'Teleport to Oregon', onPress: () => this.devTeleportToOregon() },
+      { label: 'Complete Active Quest', onPress: () => this.chain.completeActive() },
+      { label: 'Reset All Quests', onPress: () => this.devResetQuests() },
       { label: 'Dev Reset', key: KC.R, onPress: () => this.devReset() },
     ];
 
@@ -970,26 +1062,22 @@ export class MainScene extends Phaser.Scene {
   // --- Quest ----------------------------------------------------------------
 
   /**
-   * Feed a world event to the quest. Advances only if it matches the current
-   * objective. Handles the two no-soft-lock cases: a finished quest triggers the
-   * reward; reaching the angel objective while already corrupted auto-completes
-   * it (the angel will not manifest a second time).
+   * Feed a world event to the active quest. The chain advances only if the
+   * trigger matches its current objective, emitting events that drive the reward.
+   * Still handles the no-soft-lock case: reaching the angel objective while
+   * already corrupted auto-completes it (the angel will not manifest again).
    */
   private notifyQuest(trigger: ObjectiveTrigger): void {
-    const result = this.quest.notify(trigger);
-    if (!result.advanced) return;
-    if (result.questCompleted) {
-      this.onQuestComplete();
-      return;
-    }
-    if (this.quest.currentTrigger === 'angel-refused' && this.playerPath === 'corrupted') {
+    const result = this.chain.notify(trigger);
+    if (!result.advanced || result.questCompleted) return;
+    if (this.chain.activeTrigger === 'angel-refused' && this.playerPath === 'corrupted') {
       this.notifyQuest('angel-refused');
     }
   }
 
-  /** OBJ 2 completes when the player gets close to the rift (independent of the angel). */
+  /** The opening quest's OBJ 2 completes on rift proximity (independent of the angel). */
   private checkQuestProximity(): void {
-    if (this.quest.currentTrigger !== 'rift-reached') return;
+    if (this.chain.activeTrigger !== 'rift-reached') return;
     const d = Phaser.Math.Distance.Between(
       this.player.x,
       this.player.y,
@@ -999,28 +1087,17 @@ export class MainScene extends Phaser.Scene {
     if (d <= ANGEL_ENCOUNTER.triggerRange) this.notifyQuest('rift-reached');
   }
 
-  /** Completion + reward: heal to full, award the alignment title, banner, clear tracker. */
-  private onQuestComplete(): void {
-    this.playerHealth.full();
-    this.awardTitle(this.quest.quest.awardedTitle);
-    this.showBanner(
-      `${this.quest.quest.completionBanner}\n\n${this.quest.quest.titleNote}`,
-      3400,
-    );
-    this.refreshQuestUi(); // status is now complete → tracker hides
-    this.gainXP(QUEST_XP_REWARD); // XP chunk on top of the heal + title
-  }
-
   /** Store and display the single alignment-title string on the HUD. */
   private awardTitle(title: string | null): void {
     this.titleText.setText(title ? `Title: ${title}` : '').setVisible(!!title);
   }
 
-  /** Sync the tracker panel to the live quest state. */
+  /** Sync the tracker panel to the active quest in the chain. */
   private refreshQuestUi(): void {
-    if (this.quest.isActive) {
-      const obj = this.quest.objective;
-      this.tracker.show(this.quest.title, obj ? obj.text : '');
+    const q = this.chain.activeQuest;
+    if (q) {
+      const obj = this.chain.activeObjectiveDef;
+      this.tracker.show(q.title, obj ? obj.text : '');
     } else {
       this.tracker.hide();
     }
@@ -1036,20 +1113,34 @@ export class MainScene extends Phaser.Scene {
 
   /** Where the objective marker should point right now, or null for none. */
   private currentMarkerTarget(): { x: number; y: number; label: string } | null {
-    if (this.quest.isComplete) return null;
-    // Before the quest starts, point the player at the quest-giver.
-    if (this.quest.status === 'inactive') {
-      return { x: this.npc.sprite.x, y: this.npc.sprite.y, label: this.quest.quest.preAcceptHint };
+    // Active quest → its current objective's world target.
+    const active = this.chain.activeQuest;
+    if (active) {
+      const obj = this.chain.activeObjectiveDef;
+      return obj && obj.target ? this.resolveTarget(obj.target) : null;
     }
-    const obj = this.quest.objective;
-    if (!obj || !obj.target) return null;
-    switch (obj.target) {
+    // No active quest → point at the giver of the next AVAILABLE quest (the
+    // pre-accept pointer), so finishing one quest leads to the next.
+    for (const g of this.questGivers) {
+      const offer = this.chain.firstAvailable(g.questIds);
+      if (offer) return { x: g.npc.sprite.x, y: g.npc.sprite.y, label: offer.preAcceptHint };
+    }
+    return null;
+  }
+
+  /** Resolve a quest objective's TargetKind to a world position for the marker. */
+  private resolveTarget(target: TargetKind): { x: number; y: number; label: string } | null {
+    switch (target) {
       case 'sasquatch':
         return this.sasquatch.isAlive ? { x: this.sasquatch.x, y: this.sasquatch.y, label: '' } : null;
       case 'rift':
         return { x: this.town.rift.x, y: this.town.rift.y, label: '' };
       case 'npc':
         return { x: this.npc.sprite.x, y: this.npc.sprite.y, label: '' };
+      case 'oregon-spirit':
+        return this.oregonSpirit
+          ? { x: this.oregonSpirit.x, y: this.oregonSpirit.y, label: '' }
+          : { x: OREGON_SWARM_SPAWN.x, y: OREGON_SWARM_SPAWN.y, label: '' };
     }
   }
 

@@ -79,6 +79,14 @@ export class SpiritEntity implements Interactable {
     return Phaser.Math.Distance.Between(this.sprite.x, this.sprite.y, x, y);
   }
 
+  /** World position (used by the quest objective marker to point at this spirit). */
+  get x(): number {
+    return this.sprite.x;
+  }
+  get y(): number {
+    return this.sprite.y;
+  }
+
   private static ensureTexture(scene: Phaser.Scene): void {
     if (scene.textures.exists(TEXTURE_KEY)) return;
     const w = 30; // ~0.95 tile wide
