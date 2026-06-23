@@ -1,27 +1,24 @@
 /**
  * Tunable gameplay constants. Edit these to change how the world feels.
  *
- * The map is large (see src/map/washington.map.json — currently 800 x 500
- * tiles, 16px each = 12,800 x 8,000 px), so these two values set how long a
- * journey across Washington takes and how much of the world you can see.
+ * The map is 800 x 500 tiles at 32px each = 25,600 x 16,000 px.
  */
 
 /**
- * Player walking speed, in pixels per second.
- *
- * At 130, crossing the full state west↔east (~12,800px) takes roughly 1.5–2
- * minutes of straight walking, more once you detour around water and mountains —
- * a real trek without being tedious. Raise it to travel faster, lower it for a
- * longer journey.
+ * Player walking speed, expressed in TILES PER SECOND (stable across tile-size
+ * changes; the actual px/s = this × tile size). At 8 tiles/s, crossing the full
+ * 800-tile state west↔east takes ~1.7 minutes of straight walking, more with
+ * detours around water and mountains — a real trek without being tedious.
  */
-export const PLAYER_SPEED = 130;
+export const PLAYER_SPEED_TILES_PER_SEC = 8;
 
 /**
- * Main camera zoom at startup / the default gameplay framing. Higher = more
- * zoomed in (bigger player, less world on screen); lower = pulled back. This is
- * the level the camera opens at; the zoom buttons move out from here.
+ * Main camera zoom at startup / the default gameplay framing. At 1.1 the 32px
+ * tiles render ~35px on screen and a 428px-wide phone shows ~12 tiles across,
+ * with the ~32x48 player spanning ~1.5 tiles. Higher = more zoomed in; lower =
+ * pulled back. The zoom buttons move out from here.
  */
-export const CAMERA_ZOOM = 1.6;
+export const CAMERA_ZOOM = 1.1;
 
 // --- Two-button zoom (full map ↔ character) --------------------------------
 
@@ -45,10 +42,11 @@ export const ZOOM_TWEEN_MS = 200;
 export const ZOOM_HOLD_RATE = 3.0;
 
 /**
- * The most zoomed-IN (tightest on the character) the camera may go. Equal to or
- * a little closer than {@link CAMERA_ZOOM}. The player cannot zoom past this.
+ * The most zoomed-IN (tightest on the character) the camera may go. At 1.7 the
+ * 32px tiles render ~54px and ~8 tiles show across. The player cannot zoom past
+ * this. The zoom-OUT limit is computed live from the map + screen size.
  */
-export const ZOOM_IN_LIMIT = 2.2;
+export const ZOOM_IN_LIMIT = 1.7;
 
 /**
  * Extra breathing room at full zoom-OUT: 1.0 fits the map exactly to the screen,

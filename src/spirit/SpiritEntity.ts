@@ -36,7 +36,7 @@ export class SpiritEntity implements Interactable {
       .setDepth(8); // above terrain, around NPC depth
 
     this.label = scene.add
-      .text(data.x, data.y - 16, data.name, {
+      .text(data.x, data.y - 28, data.name, {
         fontFamily: 'system-ui, sans-serif',
         fontSize: '10px',
         color: '#e6d8ff',
@@ -81,20 +81,20 @@ export class SpiritEntity implements Interactable {
 
   private static ensureTexture(scene: Phaser.Scene): void {
     if (scene.textures.exists(TEXTURE_KEY)) return;
-    const w = 18;
-    const h = 22;
+    const w = 30; // ~0.95 tile wide
+    const h = 40; // ~1.25 tiles tall
     const g = scene.make.graphics({ x: 0, y: 0 }, false);
     // A pale ghost figure (white so per-entity tint shows): rounded head/body
     // with a wavy hem. Drawn white; SpiritEntity tints + the tween fades it.
     g.fillStyle(0xffffff, 1);
-    g.fillCircle(w / 2, 7, 6); // head/body top
-    g.fillRect(w / 2 - 6, 7, 12, 9); // body
-    g.fillCircle(w / 2 - 4, 16, 2.4); // wavy hem
-    g.fillCircle(w / 2, 16, 2.4);
-    g.fillCircle(w / 2 + 4, 16, 2.4);
+    g.fillCircle(w / 2, 12, 10); // head/body top
+    g.fillRect(w / 2 - 10, 12, 20, 18); // body
+    g.fillCircle(w / 2 - 6.5, 31, 4); // wavy hem
+    g.fillCircle(w / 2, 31, 4);
+    g.fillCircle(w / 2 + 6.5, 31, 4);
     g.fillStyle(0x2a1a44, 1);
-    g.fillCircle(w / 2 - 2.4, 6, 1.2); // hollow eyes
-    g.fillCircle(w / 2 + 2.4, 6, 1.2);
+    g.fillCircle(w / 2 - 4, 10, 2); // hollow eyes
+    g.fillCircle(w / 2 + 4, 10, 2);
     g.generateTexture(TEXTURE_KEY, w, h);
     g.destroy();
   }

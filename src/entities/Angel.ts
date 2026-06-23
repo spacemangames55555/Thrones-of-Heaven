@@ -15,7 +15,7 @@ export class Angel {
   constructor(scene: Phaser.Scene, x: number, y: number) {
     Angel.ensureTexture(scene);
 
-    this.glow = scene.add.circle(x, y, 22, 0xfff3c0, 0).setDepth(7); // soft halo, hidden
+    this.glow = scene.add.circle(x, y, 34, 0xfff3c0, 0).setDepth(7); // soft halo, hidden
     this.sprite = scene.add.sprite(x, y, TEXTURE_KEY).setDepth(9).setVisible(false);
 
     scene.tweens.add({
@@ -48,21 +48,21 @@ export class Angel {
 
   private static ensureTexture(scene: Phaser.Scene): void {
     if (scene.textures.exists(TEXTURE_KEY)) return;
-    const w = 28;
-    const h = 32;
+    const w = 44; // ~1.4 tiles wide (wingspan)
+    const h = 56; // ~1.75 tiles tall
     const g = scene.make.graphics({ x: 0, y: 0 }, false);
     // Wings (pale gold), behind the body.
     g.fillStyle(0xfbe9a0, 0.95);
-    g.fillTriangle(w / 2 - 3, 14, 1, 8, 4, 22);
-    g.fillTriangle(w / 2 + 3, 14, w - 1, 8, w - 4, 22);
+    g.fillTriangle(w / 2 - 5, 24, 2, 12, 7, 38);
+    g.fillTriangle(w / 2 + 5, 24, w - 2, 12, w - 7, 38);
     // Robed body + head (bright white).
     g.fillStyle(0xfffdf2, 1);
-    g.fillRect(w / 2 - 5, 12, 10, 16);
-    g.fillTriangle(w / 2 - 5, 28, w / 2 + 5, 28, w / 2, 22);
-    g.fillCircle(w / 2, 9, 4.5);
+    g.fillRect(w / 2 - 8, 20, 16, 28);
+    g.fillTriangle(w / 2 - 8, 48, w / 2 + 8, 48, w / 2, 38);
+    g.fillCircle(w / 2, 15, 7.5);
     // Golden halo above the head.
-    g.lineStyle(2, 0xffd24a, 1);
-    g.strokeCircle(w / 2, 4, 4);
+    g.lineStyle(3, 0xffd24a, 1);
+    g.strokeCircle(w / 2, 7, 6.5);
     g.generateTexture(TEXTURE_KEY, w, h);
     g.destroy();
   }

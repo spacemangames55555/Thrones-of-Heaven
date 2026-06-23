@@ -28,8 +28,10 @@ export interface SpiritEntityData {
 export const SPIRIT_ENTITIES: SpiritEntityData[] = [
   {
     id: 'rift-wraith',
-    x: 5064, // corrupted ground at the eastern gate of Seattle, by the rift
-    y: 2648,
+    // World pixels at 32px tiles: tile (316,165) on the corrupted ground at the
+    // eastern gate of Seattle, by the rift (tile*32 + 16 for the tile centre).
+    x: 10128,
+    y: 5296,
     color: 0xb38cff,
     name: 'Pale Wraith',
     lines: [

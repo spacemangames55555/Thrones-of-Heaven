@@ -8,8 +8,8 @@
  * correct at any map scale — only the text lives here.)
  */
 export const ANGEL_ENCOUNTER = {
-  /** How close (world px) to the rift the player must be to trigger it. */
-  triggerRange: 70,
+  /** How close (world px) to the rift the player must be to trigger it (~3.5 tiles at 32px). */
+  triggerRange: 110,
 
   /** Spoken via the existing dialogue box when the angel manifests. */
   lines: [

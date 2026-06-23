@@ -1,13 +1,16 @@
 import Phaser from 'phaser';
-import { PLAYER_SPEED } from '../game/settings';
+import { PLAYER_SPEED_TILES_PER_SEC } from '../game/settings';
+import { TILE_SIZE } from '../render/tileAtlas';
 
-const TEXTURE_KEY = 'player-dot';
-const RADIUS = 7;
-const SPEED = PLAYER_SPEED; // pixels per second — tune in src/game/settings.ts
+const TEXTURE_KEY = 'player-figure';
+const WIDTH = 32; // ~1 tile wide
+const HEIGHT = 48; // ~1.5 tiles tall — fixes the "character = one giant block" look
+const SPEED = PLAYER_SPEED_TILES_PER_SEC * TILE_SIZE; // px/sec
 
 /**
- * The player avatar: a simple colored sprite driven by Arcade Physics.
- * Movement is free and analog (smooth 8-directional) — never grid-snapped.
+ * The player avatar: a simple colored figure (~1 x 1.5 tiles) driven by Arcade
+ * Physics. Same placeholder gold "soul/herald" look as before, just sized for
+ * 32px tiles. Movement is free and analog (8-directional), never grid-snapped.
  */
 export class Player {
   readonly sprite: Phaser.Physics.Arcade.Sprite;
@@ -19,9 +22,11 @@ export class Player {
     this.sprite.setCollideWorldBounds(true);
     this.sprite.setDepth(10);
 
-    // Circular body slightly smaller than the sprite for forgiving collision.
+    // A small footprint at the figure's base (~0.6 tile) so it fits through
+    // 1-tile gaps and collides where its "feet" are, not its whole height.
     const body = this.sprite.body as Phaser.Physics.Arcade.Body;
-    body.setCircle(RADIUS, this.sprite.width / 2 - RADIUS, this.sprite.height / 2 - RADIUS);
+    const r = 9;
+    body.setCircle(r, WIDTH / 2 - r, HEIGHT - r * 2 - 3);
   }
 
   /** Apply a normalized-ish direction vector (components in [-1, 1]). */
@@ -46,15 +51,19 @@ export class Player {
 
   private static ensureTexture(scene: Phaser.Scene): void {
     if (scene.textures.exists(TEXTURE_KEY)) return;
-    const d = RADIUS * 2 + 4;
+    const w = WIDTH;
+    const h = HEIGHT;
     const g = scene.make.graphics({ x: 0, y: 0 }, false);
+    // Dark outline, gold body (a vertical "soul/herald" capsule), highlight, head.
     g.fillStyle(0x101418, 1);
-    g.fillCircle(d / 2, d / 2, RADIUS + 1.5); // dark outline
+    g.fillRoundedRect(4, 8, w - 8, h - 10, 9);
     g.fillStyle(0xffd24a, 1);
-    g.fillCircle(d / 2, d / 2, RADIUS); // gold core (a soul/herald)
-    g.fillStyle(0xffffff, 0.9);
-    g.fillCircle(d / 2 - 2, d / 2 - 2, 1.6); // tiny highlight
-    g.generateTexture(TEXTURE_KEY, d, d);
+    g.fillRoundedRect(6, 10, w - 12, h - 14, 7);
+    g.fillStyle(0xfff0b8, 1);
+    g.fillCircle(w / 2, 13, 6); // head
+    g.fillStyle(0xffffff, 0.85);
+    g.fillCircle(w / 2 - 3, 11, 2); // tiny highlight
+    g.generateTexture(TEXTURE_KEY, w, h);
     g.destroy();
   }
 }
