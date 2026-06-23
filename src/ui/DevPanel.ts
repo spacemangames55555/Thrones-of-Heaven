@@ -19,7 +19,7 @@ const TAB_GAP = 8; // space between the tab and the button column
 // (the expanded buttons capture their own taps, so the joystick never spawns under
 // them; the bottom action buttons are on the right, clear of this left column).
 const BAND_TOP = 196; // clears the top-left cluster + top-centre quest tracker
-const BAND_BOTTOM_GAP = 96; // clearance kept above the very bottom controls
+const BAND_BOTTOM_GAP = 84; // clearance kept above the very bottom controls
 const DEPTH = 1550; // above the static HUD/tracker, below the choice/dialogue modals
 
 /**
