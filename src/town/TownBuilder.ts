@@ -90,6 +90,6 @@ export function buildTown(map: GameMap, town: TownDef = SEATTLE_TOWN): TownFeatu
     doors,
     npc,
     rift,
-    label: { x: labelTile.x, y: labelTile.y - map.tileSize, text: 'Seattle' },
+    label: { x: labelTile.x, y: labelTile.y - map.tileSize, text: town.anchorCity },
   };
 }

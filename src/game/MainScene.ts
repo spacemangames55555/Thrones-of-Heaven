@@ -52,6 +52,7 @@ import {
 } from './settings';
 import { TOWN_TILES } from '../town/townTiles';
 import { buildTown, type TownFeatures, type DoorFeature } from '../town/TownBuilder';
+import { PORTLAND_TOWN, PORTLAND_NPC_LINES } from '../town/townData';
 import type { WashingtonMap } from '../map/mapTypes';
 import washingtonMap from '../map/washington.map.json';
 
@@ -62,6 +63,11 @@ const NPC_TALK_RANGE = 80; // ~2.5 tiles — show the Talk button
 
 // The lone Sasquatch sits in dense forest, 26 tiles north of the Seattle spawn.
 const SASQUATCH_SPAWN = { x: 9872, y: 4464 };
+
+// Oregon spirit-swarm seed: a pack in the Willamette Valley just south of
+// Portland (city tile 376,409). World px of tile (382,425). Fightable only with
+// Spirit Vision on — see the Oregon spirit entity in src/spirit/spiritData.ts.
+const OREGON_SWARM_SPAWN = { x: 12240, y: 13616 };
 
 /**
  * The overworld scene: renders Washington, stamps the Seattle town onto it,
@@ -76,6 +82,9 @@ export class MainScene extends Phaser.Scene {
   private readout!: DebugReadout;
   private town!: TownFeatures;
   private npc!: Npc;
+  // Portland (Oregon) — a second town reusing the same systems, flavor only.
+  private portland!: TownFeatures;
+  private portlandNpc!: Npc;
   private dialogue!: DialogueBox;
   private talkButton!: TouchButton;
   private zoomControls!: ZoomControls;
@@ -147,12 +156,17 @@ export class MainScene extends Phaser.Scene {
     this.cameras.main.setBounds(0, 0, this.map.pixelWidth, this.map.pixelHeight);
     this.cameras.main.setBackgroundColor('#0b1a2b');
 
-    // City labels for everywhere except Seattle (now a real town).
-    new CityMarkers(this, this.map, ['Seattle']);
+    // City labels for everywhere except the real walkable towns.
+    new CityMarkers(this, this.map, ['Seattle', 'Portland']);
 
     // Stamp the town onto the overworld and read back its feature positions.
     this.town = buildTown(this.map);
     this.addTownDecor();
+
+    // Portland (Oregon) — a second town from the same system, just a nameplate
+    // (no rift). Built before the world snapshot so its tiles + NPC are world.
+    this.portland = buildTown(this.map, PORTLAND_TOWN);
+    this.addTownLabel(this.portland.label);
 
     // Spawn the player in the town square.
     this.player = new Player(this, this.town.spawn.x, this.town.spawn.y);
@@ -165,6 +179,10 @@ export class MainScene extends Phaser.Scene {
       ...THE_CORRUPTION_AT_THE_GATES.npcInactiveLines,
     ]);
     this.physics.add.collider(this.player.sprite, this.npc.sprite);
+
+    // Portland's quest-giver-style NPC — flavor dialogue only (no quest wired).
+    this.portlandNpc = new Npc(this, this.portland.npc.x, this.portland.npc.y, [...PORTLAND_NPC_LINES]);
+    this.physics.add.collider(this.player.sprite, this.portlandNpc.sprite);
 
     // Spirit entities live in the world (drawn by the main camera), hidden until
     // Spirit Vision is revealed. Created here so they fall in the WORLD snapshot.
@@ -234,6 +252,9 @@ export class MainScene extends Phaser.Scene {
     // and intangible until Spirit Vision is earned. Spawned after the UI camera
     // exists so each is routed past it (world camera draws them).
     this.spawnSwarmPack(this.town.rift.x, this.town.rift.y);
+    // The Oregon seed: a second dormant pack south of Portland, proving the
+    // spirit corridor extends into Oregon (only fightable with Spirit Vision on).
+    this.spawnSwarmPack(OREGON_SWARM_SPAWN.x, OREGON_SWARM_SPAWN.y);
   }
 
   override update(_time: number, delta: number): void {
@@ -666,6 +687,14 @@ export class MainScene extends Phaser.Scene {
     );
   }
 
+  /** DEV: jump straight to Portland (Oregon) to test the south without the walk. */
+  private devTeleportToOregon(): void {
+    this.cancelDash();
+    this.player.sprite.setPosition(this.portland.spawn.x, this.portland.spawn.y);
+    this.player.setDirection(0, 0);
+    this.cameras.main.centerOn(this.portland.spawn.x, this.portland.spawn.y);
+  }
+
   private spawnDamageNumber(x: number, y: number, amount: number, color: string): void {
     const t = this.add
       .text(x, y, `-${Math.round(amount)}`, {
@@ -717,7 +746,7 @@ export class MainScene extends Phaser.Scene {
 
   private checkDoors(): void {
     if (this.time.now < this.portalCooldownUntil) return;
-    for (const door of this.town.doors) {
+    for (const door of [...this.town.doors, ...this.portland.doors]) {
       if (Phaser.Math.Distance.Between(this.player.x, this.player.y, door.x, door.y) < DOOR_TRIGGER) {
         this.enterInterior(door);
         return;
@@ -731,7 +760,7 @@ export class MainScene extends Phaser.Scene {
    * imperceptible — no Talk prompt, no auto-dialogue).
    */
   private checkInteractions(): void {
-    const candidates: Interactable[] = [this.npc];
+    const candidates: Interactable[] = [this.npc, this.portlandNpc];
     if (this.spirit.isActive()) candidates.push(...this.spirit.entities);
 
     let nearest: Interactable | null = null;
@@ -904,8 +933,9 @@ export class MainScene extends Phaser.Scene {
     this.lastEnergySpendTime = -1e9;
     this.dashEndsAt = 0;
     this.dashCooldownUntil = 0;
-    this.clearSwarmers();
+    this.clearSwarmers(); // clears ALL swarmers, including the Oregon seed
     this.spawnSwarmPack(this.town.rift.x, this.town.rift.y);
+    this.spawnSwarmPack(OREGON_SWARM_SPAWN.x, OREGON_SWARM_SPAWN.y);
   }
 
   /**
@@ -927,6 +957,7 @@ export class MainScene extends Phaser.Scene {
       { label: 'Respawn Sasquatch', key: KC.K, onPress: () => this.sasquatch.reset() },
       { label: 'Spawn Spirit Swarm', onPress: () => this.devSpawnSwarm() },
       { label: 'Refill Energy', onPress: () => this.energy.full() },
+      { label: 'Teleport to Oregon', onPress: () => this.devTeleportToOregon() },
       { label: 'Dev Reset', key: KC.R, onPress: () => this.devReset() },
     ];
 
@@ -1073,10 +1104,10 @@ export class MainScene extends Phaser.Scene {
 
   // --- Decor ----------------------------------------------------------------
 
-  private addTownDecor(): void {
-    // Town nameplate where the old Seattle marker was.
+  /** A town nameplate (reused for Seattle and Portland). */
+  private addTownLabel(label: { x: number; y: number; text: string }): void {
     this.add
-      .text(this.town.label.x, this.town.label.y, this.town.label.text, {
+      .text(label.x, label.y, label.text, {
         fontFamily: 'system-ui, sans-serif',
         fontSize: '11px',
         color: '#fdf6e3',
@@ -1084,6 +1115,10 @@ export class MainScene extends Phaser.Scene {
       .setOrigin(0.5, 1)
       .setStroke('#1a1410', 4)
       .setDepth(6);
+  }
+
+  private addTownDecor(): void {
+    this.addTownLabel(this.town.label);
 
     // Pulsing corruption-rift marker at the town's gates.
     const rift = this.town.rift;

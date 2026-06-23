@@ -23,10 +23,16 @@ import { dirname, resolve } from 'node:path';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 // ---------------------------------------------------------------------------
-// Grid configuration — ~3.2x the original 256x160 (≈10x the area).
+// Grid configuration. Washington occupies the original WA_ROWS rows; Oregon is
+// appended below as OR_ROWS more rows of ONE continuous landmass on the SAME
+// coordinate space. Washington features stay anchored to WA_ROWS (nyWA), so WA
+// is byte-identical to before — only the former ocean south of the Columbia is
+// reclaimed as Oregon. Change any of these and re-run.
 // ---------------------------------------------------------------------------
-const WIDTH = 800;   // tiles, west -> east
-const HEIGHT = 500;  // tiles, north -> south (8:5 landscape)
+const WIDTH = 800;     // tiles, west -> east
+const WA_ROWS = 500;   // original Washington rows (all WA geography anchors here)
+const OR_ROWS = 300;   // appended Oregon rows to the south
+const HEIGHT = WA_ROWS + OR_ROWS; // 800 — continuous WA+OR
 const TILE_SIZE = 32;
 const ZONE_SIZE = 32;
 
@@ -221,6 +227,71 @@ const CITIES = [
 ];
 
 // ---------------------------------------------------------------------------
+// Oregon — continuous southern extension. Authored in the SAME normalised x and
+// the SAME WA-anchored latitude space (nyWA = ty/(WA_ROWS-1)), continuing south
+// of the Columbia/parallel border so the Cascades and coast line up across the
+// seam. Intentionally SPARSE in the normal world. Cities' y may exceed 1.0 (they
+// are just nyWA values south of Washington).
+// ---------------------------------------------------------------------------
+const OR_CITIES = [
+  { name: 'Portland', x: 0.470, y: 0.820 }, // just S of the Columbia, on the valley
+  { name: 'Salem',    x: 0.452, y: 0.892 },
+  { name: 'Eugene',   x: 0.448, y: 0.988 },
+  { name: 'Bend',     x: 0.610, y: 0.966 }, // E of the Cascades (high desert)
+  { name: 'Medford',  x: 0.470, y: 1.108 },
+];
+const OR_PEAKS = [
+  { name: 'Hood',          x: 0.556, y: 0.836, r: 0.030 }, // prominent, near the north
+  { name: 'Jefferson',     x: 0.560, y: 0.918, r: 0.024 },
+  { name: 'Three Sisters', x: 0.566, y: 0.992, r: 0.026 },
+  { name: 'McLoughlin',    x: 0.560, y: 1.150, r: 0.022 },
+];
+const OR_PASSES = [0.900, 1.060]; // walkable Cascade crossings in Oregon
+
+function isOregon(nx, nyWA) {
+  return nyWA > southBorderNy(nx) + 0.004;
+}
+function nearOregonPass(nyWA) {
+  return OR_PASSES.some((p) => Math.abs(nyWA - p) < 0.030);
+}
+function isOregonAlpine(nx, nyWA, n) {
+  for (const p of OR_PEAKS) if (dist(nx, nyWA, p.x, p.y) < p.r + n * 0.006) return true;
+  const onCrest = Math.abs(nx - crestXAt(nyWA) + n * 0.010) < CREST_HALF * 0.6;
+  return onCrest && !nearOregonPass(nyWA);
+}
+function oregonLand(nx, nyWA, n) {
+  // Sparse cities (urban cores).
+  for (const c of OR_CITIES) if (dist(nx, nyWA, c.x, c.y) < 0.010) return T.urban;
+
+  if (isOregonAlpine(nx, nyWA, n)) return T.mountain;
+
+  const crest = crestXAt(nyWA);
+  const distCrest = nx - crest;
+  // The Cascade crest continues south: a walkable pass band, else foothills.
+  if (Math.abs(distCrest + n * 0.010) < CREST_HALF) return nearOregonPass(nyWA) ? T.pass : T.foothills;
+  if (Math.abs(distCrest) < CREST_HALF * 2.0) return T.foothills;
+
+  if (nx < crest) {
+    // West of the crest.
+    if (nx < oceanEdge(nyWA) + 0.012) return T.beach;                            // Pacific beach
+    if (nx < 0.20) return fbm(nx, nyWA, 55) > 0.2 ? T.foothills : T.montane;     // Coast Range
+    if (nx < 0.52) return fbm(nx, nyWA, 40) > 0.15 ? T.farmland : T.grassland;   // Willamette Valley
+    return fbm(nx, nyWA, 55) > 0.3 ? T.foothills : T.montane;                    // W Cascade slope
+  }
+
+  // East of the crest — high desert, with forested Blue Mountains in the NE.
+  if (nx > 0.80 && nyWA < 1.05) return fbm(nx, nyWA, 50) > 0.25 ? T.foothills : T.montane;
+  if (distCrest < 0.10) return fbm(nx, nyWA, 45) > 0.15 ? T.montane : T.steppe;  // E Cascade slope
+  if (nx > 0.62 && nx < 0.85 && fbm(nx, nyWA, 32) > 0.25) return T.scabland;     // scabland patch
+  return T.steppe;                                                              // shrub-steppe / high desert
+}
+function oregonTerrainAt(nx, nyWA, n) {
+  if (nx < oceanEdge(nyWA) + n * 0.010) return T.ocean;                          // Pacific
+  if (distToPolyline(nx + n * 0.006, nyWA, COLUMBIA) < 0.0085) return T.river;   // shared WA/OR border
+  return oregonLand(nx, nyWA, n);
+}
+
+// ---------------------------------------------------------------------------
 // Water masks
 // ---------------------------------------------------------------------------
 function oceanEdge(ny) {
@@ -377,19 +448,25 @@ function landTerrain(nx, ny, n) {
 // ---------------------------------------------------------------------------
 function terrainAt(tx, ty) {
   const nx = tx / (WIDTH - 1);
-  const ny = ty / (HEIGHT - 1);
-  const n = fbm(nx, ny, 22); // organic edge wobble
+  // Latitude stays anchored to the original Washington height, so WA features
+  // land on the exact same rows as before and Oregon simply continues south.
+  const nyWA = ty / (WA_ROWS - 1);
+  const n = fbm(nx, nyWA, 22); // organic edge wobble
 
-  if (isOcean(nx, ny, n)) return T.ocean;
+  // South of the WA/OR border: the continuous Oregon extension.
+  if (isOregon(nx, nyWA)) return oregonTerrainAt(nx, nyWA, n);
 
-  const island = isIsland(nx, ny);
+  // ---- Washington (unchanged) ----
+  if (isOcean(nx, nyWA, n)) return T.ocean;
+
+  const island = isIsland(nx, nyWA);
   if (!island) {
-    if (isLake(nx, ny)) return T.lake;
-    if (isSound(nx, ny, n)) return T.sound;
-    if (isRiver(nx, ny, n)) return T.river;
-    if (isWetland(nx, ny, n) && nx < 0.5) return T.wetland;
+    if (isLake(nx, nyWA)) return T.lake;
+    if (isSound(nx, nyWA, n)) return T.sound;
+    if (isRiver(nx, nyWA, n)) return T.river;
+    if (isWetland(nx, nyWA, n) && nx < 0.5) return T.wetland;
   }
-  return landTerrain(nx, ny, n);
+  return landTerrain(nx, nyWA, n);
 }
 
 // ---------------------------------------------------------------------------
@@ -429,7 +506,7 @@ function placeBridge(bridge) {
   const dir = Math.abs(p.dy) > Math.abs(p.dx) ? 'h' : 'v'; // bridge runs across flow
   const step = dir === 'h' ? [1, 0] : [0, 1];
   let cx = Math.round(p.x * (WIDTH - 1));
-  let cy = Math.round(p.y * (HEIGHT - 1));
+  let cy = Math.round(p.y * (WA_ROWS - 1)); // river anchors live in WA-anchored latitude
 
   // Nudge onto an actual river/sound tile (search a small neighbourhood).
   if (!CROSSABLE.has(grid[cy]?.[cx])) {
@@ -493,7 +570,7 @@ function nearestWalkable(cx, cy) {
 const seattle = CITIES[0];
 const spawnTile = nearestWalkable(
   Math.round(seattle.x * (WIDTH - 1)),
-  Math.round(seattle.y * (HEIGHT - 1)),
+  Math.round(seattle.y * (WA_ROWS - 1)),
 );
 
 function connectivityReport() {
@@ -515,7 +592,7 @@ function connectivityReport() {
       }
     }
   }
-  const tile = (nx, ny) => [Math.round(nx * (WIDTH - 1)), Math.round(ny * (HEIGHT - 1))];
+  const tile = (nx, ny) => [Math.round(nx * (WIDTH - 1)), Math.round(ny * (WA_ROWS - 1))];
   const nearReach = (tx, ty) => {
     for (let r = 0; r < 12; r++) {
       for (let dy = -r; dy <= r; dy++) {
@@ -540,6 +617,12 @@ function connectivityReport() {
     'Tri-Cities': tile(0.715, 0.69),
     'Walla Walla (SE)': tile(0.84, 0.715),
     'Palouse (SE)': tile(0.92, 0.78),
+    'Portland OR': tile(0.470, 0.820),
+    'Salem OR': tile(0.452, 0.892),
+    'Eugene OR': tile(0.448, 0.988),
+    'Bend OR (E)': tile(0.610, 0.966),
+    'OR coast': tile(0.060, 0.900),
+    'S Oregon': tile(0.470, 1.150),
   };
   console.log('Connectivity from spawn', spawnTile, ':');
   let allOk = true;
@@ -575,10 +658,10 @@ for (let zy = 0; zy < zonesY; zy++) {
   }
 }
 
-const cities = CITIES.map((c) => ({
+const cities = [...CITIES, ...OR_CITIES].map((c) => ({
   name: c.name,
   tx: Math.round(c.x * (WIDTH - 1)),
-  ty: Math.round(c.y * (HEIGHT - 1)),
+  ty: Math.round(c.y * (WA_ROWS - 1)),
 }));
 
 const out = {
