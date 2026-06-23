@@ -9,16 +9,19 @@ export class HealthBar {
   readonly bg: Phaser.GameObjects.Rectangle;
   readonly fill: Phaser.GameObjects.Rectangle;
   private readonly w: number;
+  /** When set, the fill keeps this color instead of the green→amber→red ramp. */
+  private readonly fixedColor?: number;
 
-  constructor(scene: Phaser.Scene, width: number, height: number, depth: number) {
+  constructor(scene: Phaser.Scene, width: number, height: number, depth: number, fixedColor?: number) {
     this.w = width;
+    this.fixedColor = fixedColor;
     this.bg = scene.add
       .rectangle(0, 0, width + 2, height + 2, 0x05080c, 0.85)
       .setOrigin(0, 0.5)
       .setStrokeStyle(1, 0x000000, 0.6)
       .setDepth(depth);
     this.fill = scene.add
-      .rectangle(1, 0, width, height, 0x4cd964, 1)
+      .rectangle(1, 0, width, height, fixedColor ?? 0x4cd964, 1)
       .setOrigin(0, 0.5)
       .setDepth(depth + 1);
   }
@@ -40,11 +43,12 @@ export class HealthBar {
     this.fill.setVisible(visible);
   }
 
-  /** ratio 0..1 — width shrinks from the right; color shifts green→amber→red. */
+  /** ratio 0..1 — width shrinks from the right; color shifts green→amber→red
+   *  unless a fixedColor was supplied (e.g. the XP bar). */
   setRatio(ratio: number): void {
     const r = Phaser.Math.Clamp(ratio, 0, 1);
     this.fill.width = Math.max(0, this.w * r);
-    const color = r > 0.5 ? 0x4cd964 : r > 0.25 ? 0xf5c542 : 0xe54b4b;
+    const color = this.fixedColor ?? (r > 0.5 ? 0x4cd964 : r > 0.25 ? 0xf5c542 : 0xe54b4b);
     this.fill.setFillStyle(color, 1);
   }
 

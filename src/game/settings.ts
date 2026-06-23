@@ -56,12 +56,45 @@ export const ZOOM_IN_LIMIT = 1.7;
 export const ZOOM_OUT_MARGIN = 1.08;
 
 
-// --- Combat v1 (melee vs. the Sasquatch) -----------------------------------
+// --- Progression / Leveling v1 ---------------------------------------------
+//
+// XP curve: xpToNext(level) = round(BASE_XP * GROWTH_FACTOR^(level-1)). This is
+// a smooth geometric climb — edit the two constants to reshape the whole curve.
+// At BASE_XP=50, GROWTH_FACTOR=1.18: Lv1→2 needs 50, Lv10→11 ~234, Lv20→21
+// ~1218, Lv40→41 ~33k — a sensible, accelerating curve well past level 50.
 
-/** Player health pool. */
-export const PLAYER_MAX_HP = 100;
-/** Damage one player melee swing deals. */
-export const PLAYER_ATTACK_DAMAGE = 25;
+/** XP required for the very first level (Lv1 → Lv2). */
+export const BASE_XP = 50;
+/** Per-level multiplier on the XP requirement (>1 = each level costs more). */
+export const GROWTH_FACTOR = 1.18;
+/** Level cap. At cap the XP bar shows full and no further leveling occurs. */
+export const MAX_LEVEL = 50;
+
+/** XP granted for completing the opening quest (on top of its heal + title). */
+export const QUEST_XP_REWARD = 120;
+/** XP a single press of the dev "grant XP" key awards. */
+export const DEV_GRANT_XP_CHUNK = 40;
+
+// --- Combat v1 (melee vs. the Sasquatch) -----------------------------------
+//
+// The player's effective maxHP and melee damage are DERIVED from level:
+//   effectiveMaxHP  = BASE_MAX_HP + (level - 1) * HP_PER_LEVEL
+//   effectiveDamage = BASE_DAMAGE + (level - 1) * DMG_PER_LEVEL
+// so leveling is felt directly in the existing combat. Edit the four constants
+// to tune how strong each level makes you.
+
+/** Player health pool at level 1. */
+export const BASE_MAX_HP = 100;
+/** Extra max HP gained per level. */
+export const HP_PER_LEVEL = 20;
+/** Melee swing damage at level 1. */
+export const BASE_DAMAGE = 25;
+/** Extra melee damage gained per level. */
+export const DMG_PER_LEVEL = 5;
+
+/** XP awarded for defeating the Sasquatch (each enemy carries its own xpReward). */
+export const SASQUATCH_XP_REWARD = 35;
+
 /** Player melee reach in px (~1.75 tiles at 32px). */
 export const PLAYER_ATTACK_RANGE = 58;
 /** Minimum time between player swings, in ms. */

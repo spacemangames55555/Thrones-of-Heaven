@@ -20,18 +20,19 @@ import { QuestManager } from '../quest/QuestManager';
 import { THE_CORRUPTION_AT_THE_GATES, type ObjectiveTrigger } from '../quest/questData';
 import { ObjectiveMarker } from '../quest/ObjectiveMarker';
 import { QuestTracker } from '../ui/QuestTracker';
+import { PlayerProgression } from '../progression/PlayerProgression';
 import type { Interactable } from '../entities/Interactable';
 import type { PlayerPath } from '../story/playerPath';
 import { getInsets, UI_MARGIN } from '../ui/uiLayout';
 import {
   CAMERA_ZOOM,
-  PLAYER_MAX_HP,
-  PLAYER_ATTACK_DAMAGE,
   PLAYER_ATTACK_RANGE,
   PLAYER_ATTACK_COOLDOWN_MS,
   PLAYER_HP_REGEN_PER_SEC,
   PLAYER_HP_REGEN_DELAY_MS,
   SASQUATCH_DAMAGE,
+  QUEST_XP_REWARD,
+  DEV_GRANT_XP_CHUNK,
 } from './settings';
 import { TOWN_TILES } from '../town/townTiles';
 import { buildTown, type TownFeatures, type DoorFeature } from '../town/TownBuilder';
@@ -78,6 +79,12 @@ export class MainScene extends Phaser.Scene {
   private attackCooldownUntil = 0;
   private lastCombatTime = -1e9;
   private playerDead = false;
+
+  // Progression / leveling. Level-derived maxHP + damage feed the combat above.
+  private progression!: PlayerProgression;
+  private xpBar!: HealthBar;
+  private levelBadge!: Phaser.GameObjects.Text;
+  private levelBanner!: Phaser.GameObjects.Text;
 
   // Story / alignment state.
   private playerPath: PlayerPath = 'neutral';
@@ -139,7 +146,10 @@ export class MainScene extends Phaser.Scene {
     // Combat: a world-space FX layer (damage numbers, swings) + the Sasquatch.
     // Created here so they fall in the WORLD snapshot (drawn by the main camera).
     this.worldFx = this.add.layer().setDepth(12);
-    this.playerHealth = new Health(PLAYER_MAX_HP);
+    // Progression first: the player's HP pool is the level-derived max (Lv1 → BASE_MAX_HP).
+    this.progression = new PlayerProgression();
+    this.progression.onChange = () => this.refreshXpUi();
+    this.playerHealth = new Health(this.progression.effectiveMaxHP);
     this.sasquatch = new Sasquatch(this, SASQUATCH_SPAWN.x, SASQUATCH_SPAWN.y);
     this.sasquatch.onStrike = () => this.onSasquatchStrike();
     this.physics.add.collider(this.sasquatch.sprite, this.map.layer);
@@ -233,10 +243,24 @@ export class MainScene extends Phaser.Scene {
 
   private createCombatHud(): void {
     const depth = 2000;
-    this.playerBar = new HealthBar(this, 150, 12, depth);
+    // Top-left cluster: a level badge + HP numbers on top, HP bar, then a thin
+    // XP bar directly beneath — a clean HP + XP group above the debug readout.
+    this.playerBar = new HealthBar(this, 150, 11, depth);
     this.playerBar.setScrollFactor(0);
+    this.xpBar = new HealthBar(this, 150, 5, depth, 0x49b6ff); // fixed blue XP fill
+    this.xpBar.setScrollFactor(0);
     this.playerHpText = this.add
       .text(0, 0, '', { fontFamily: 'ui-monospace, monospace', fontSize: '11px', color: '#eafff0' })
+      .setOrigin(0, 0.5)
+      .setScrollFactor(0)
+      .setDepth(depth + 2);
+    this.levelBadge = this.add
+      .text(0, 0, 'Lv 1', {
+        fontFamily: 'system-ui, sans-serif',
+        fontSize: '12px',
+        color: '#9fd0ff',
+        fontStyle: 'bold',
+      })
       .setOrigin(0, 0.5)
       .setScrollFactor(0)
       .setDepth(depth + 2);
@@ -254,21 +278,44 @@ export class MainScene extends Phaser.Scene {
       .setDepth(2100)
       .setStroke('#1a1008', 6)
       .setVisible(false);
+    // Dedicated level-up banner (sits above the combat banner so the two never
+    // clobber each other when a kill both completes a quest and levels you).
+    this.levelBanner = this.add
+      .text(0, 0, '', {
+        fontFamily: 'system-ui, sans-serif',
+        fontSize: '28px',
+        color: '#9fd0ff',
+        fontStyle: 'bold',
+        align: 'center',
+      })
+      .setOrigin(0.5)
+      .setScrollFactor(0)
+      .setDepth(2101)
+      .setStroke('#08131f', 6)
+      .setVisible(false);
 
     const layout = (): void => {
       const ins = getInsets(this);
       const x = ins.left + UI_MARGIN;
-      const y = ins.top + UI_MARGIN + 8;
-      this.playerBar.setPosition(x, y);
-      this.playerHpText.setPosition(x + 158, y);
+      const hpY = ins.top + UI_MARGIN + 7;
+      const xpY = ins.top + UI_MARGIN + 18;
+      this.playerBar.setPosition(x, hpY);
+      this.playerHpText.setPosition(x + 158, hpY);
+      this.xpBar.setPosition(x, xpY);
+      this.levelBadge.setPosition(x + 158, xpY);
     };
     layout();
     this.scale.on(Phaser.Scale.Events.RESIZE, layout);
 
     const kb = this.input.keyboard;
-    kb?.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE).on('down', () => this.tryAttack());
-    kb?.addKey(Phaser.Input.Keyboard.KeyCodes.H).on('down', () => this.playerHealth.full()); // dev: heal
-    kb?.addKey(Phaser.Input.Keyboard.KeyCodes.K).on('down', () => this.sasquatch.reset()); // dev: respawn enemy
+    const KC = Phaser.Input.Keyboard.KeyCodes;
+    kb?.addKey(KC.SPACE).on('down', () => this.tryAttack());
+    kb?.addKey(KC.H).on('down', () => this.playerHealth.full()); // dev: heal
+    kb?.addKey(KC.K).on('down', () => this.sasquatch.reset()); // dev: respawn enemy
+    kb?.addKey(KC.X).on('down', () => this.gainXP(DEV_GRANT_XP_CHUNK)); // dev: grant XP chunk
+    kb?.addKey(KC.L).on('down', () => this.gainXP(this.progression.xpRemainingToLevel())); // dev: instant level
+
+    this.refreshXpUi();
   }
 
   private updateCombatHud(): void {
@@ -276,6 +323,50 @@ export class MainScene extends Phaser.Scene {
     this.attackButton.setCooldownRatio(remaining / PLAYER_ATTACK_COOLDOWN_MS);
     this.playerBar.setRatio(this.playerHealth.ratio);
     this.playerHpText.setText(`${Math.ceil(this.playerHealth.current)} / ${this.playerHealth.max}`);
+  }
+
+  /** Refresh the XP bar fill + level badge (called on every XP/level change). */
+  private refreshXpUi(): void {
+    this.xpBar.setRatio(this.progression.xpRatio);
+    this.levelBadge.setText(`Lv ${this.progression.level}`);
+  }
+
+  // --- Progression / leveling -----------------------------------------------
+
+  /** Single XP entry point for every source (kills, quest, dev keys). */
+  private gainXP(amount: number): void {
+    const levelsGained = this.progression.addXP(amount);
+    if (levelsGained > 0) this.onLevelUp();
+  }
+
+  /** Apply level-derived stats, heal to full, and play the level-up moment. */
+  private onLevelUp(): void {
+    this.playerHealth.setMax(this.progression.effectiveMaxHP);
+    this.playerHealth.full();
+    this.levelBanner
+      .setText(`LEVEL UP — Lv ${this.progression.level}`)
+      .setPosition(this.scale.width / 2, this.scale.height * 0.3)
+      .setVisible(true);
+    this.time.delayedCall(1100, () => this.levelBanner.setVisible(false));
+    this.player.levelUpFlash();
+    this.spawnLevelUpBurst();
+  }
+
+  /** A quick gold ring bursting from the player (world FX, main camera). */
+  private spawnLevelUpBurst(): void {
+    const ring = this.add
+      .circle(this.player.x, this.player.y, 18, 0xffe9a8, 0)
+      .setStrokeStyle(3, 0xffe9a8, 0.9)
+      .setDepth(13);
+    this.worldFx.add(ring);
+    this.tweens.add({
+      targets: ring,
+      scale: 3,
+      alpha: 0,
+      duration: 520,
+      ease: 'Quad.out',
+      onComplete: () => ring.destroy(),
+    });
   }
 
   private tryAttack(): void {
@@ -289,12 +380,13 @@ export class MainScene extends Phaser.Scene {
     this.spawnSlash(sx, sy, Math.atan2(this.player.facingY, this.player.facingX));
 
     if (this.sasquatch.isAlive && this.sasquatch.distanceTo(sx, sy) <= PLAYER_ATTACK_RANGE + 24) {
-      const dealt = this.sasquatch.takeHit(PLAYER_ATTACK_DAMAGE);
+      const dealt = this.sasquatch.takeHit(this.progression.effectiveDamage);
       this.spawnDamageNumber(this.sasquatch.x, this.sasquatch.y - 24, dealt, '#ffffff');
       this.lastCombatTime = this.time.now;
       if (!this.sasquatch.isAlive) {
         this.showBanner('Sasquatch defeated', 1600);
         this.notifyQuest('sasquatch-defeated');
+        this.gainXP(this.sasquatch.xpReward); // enemy data drives the award
       }
     }
   }
@@ -557,10 +649,14 @@ export class MainScene extends Phaser.Scene {
     this.controls.setEnabled(true);
     this.player.setDirection(0, 0);
 
-    // Full quest replay: back to inactive, title cleared, beast respawned, healed.
+    // Full quest replay: back to inactive, title cleared, beast respawned.
     this.quest.reset();
     this.awardTitle(null);
     this.sasquatch.reset();
+
+    // Progression back to Lv1 / 0 XP, and the HP pool back to the level-1 max.
+    this.progression.reset();
+    this.playerHealth.setMax(this.progression.effectiveMaxHP);
     this.playerHealth.full();
   }
 
@@ -634,6 +730,7 @@ export class MainScene extends Phaser.Scene {
       3400,
     );
     this.refreshQuestUi(); // status is now complete → tracker hides
+    this.gainXP(QUEST_XP_REWARD); // XP chunk on top of the heal + title
   }
 
   /** Store and display the single alignment-title string on the HUD. */

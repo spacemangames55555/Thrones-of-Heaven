@@ -56,6 +56,20 @@ export class Player {
     this.sprite.scene.time.delayedCall(110, () => this.sprite.clearTint());
   }
 
+  /** Brief gold flash + scale pop when the player levels up. */
+  levelUpFlash(): void {
+    const s = this.sprite;
+    s.setTint(0xffe9a8).setTintMode(Phaser.TintModes.FILL);
+    s.scene.time.delayedCall(260, () => s.clearTint());
+    s.scene.tweens.add({
+      targets: s,
+      scale: 1.25,
+      duration: 130,
+      yoyo: true,
+      ease: 'Quad.out',
+    });
+  }
+
   get x(): number {
     return this.sprite.x;
   }
