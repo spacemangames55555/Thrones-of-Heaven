@@ -20,9 +20,9 @@ export class Npc {
 
     // Pulsing "!" so the quest-giver reads as interactive.
     const mark = scene.add
-      .text(x, y - 16, '!', {
+      .text(x, y - 28, '!', {
         fontFamily: 'system-ui, sans-serif',
-        fontSize: '16px',
+        fontSize: '20px',
         color: '#ffd24a',
         fontStyle: 'bold',
       })
@@ -31,7 +31,7 @@ export class Npc {
       .setDepth(9);
     scene.tweens.add({
       targets: mark,
-      y: y - 20,
+      y: y - 33,
       duration: 700,
       yoyo: true,
       repeat: -1,
@@ -45,19 +45,17 @@ export class Npc {
 
   private static ensureTexture(scene: Phaser.Scene): void {
     if (scene.textures.exists(TEXTURE_KEY)) return;
-    const w = 16;
-    const h = 18;
+    const w = 28; // ~0.9 tile wide
+    const h = 40; // ~1.25 tiles tall
     const g = scene.make.graphics({ x: 0, y: 0 }, false);
     g.fillStyle(0x101418, 1);
-    g.fillRoundedRect(2, 4, 12, 13, 3); // dark outline body
+    g.fillRoundedRect(3, 8, w - 6, h - 10, 5); // dark outline body
     g.fillStyle(0x2aa9a0, 1);
-    g.fillRoundedRect(3, 5, 10, 11, 3); // teal robe
-    g.fillStyle(0xf0d2a8, 1);
-    g.fillCircle(8, 5, 3.2); // head
+    g.fillRoundedRect(5, 10, w - 10, h - 14, 4); // teal robe
     g.fillStyle(0x101418, 1);
-    g.fillCircle(8, 5, 3.8);
+    g.fillCircle(w / 2, 10, 7); // head outline
     g.fillStyle(0xf0d2a8, 1);
-    g.fillCircle(8, 5, 3.0);
+    g.fillCircle(w / 2, 10, 5.5); // head
     g.generateTexture(TEXTURE_KEY, w, h);
     g.destroy();
   }

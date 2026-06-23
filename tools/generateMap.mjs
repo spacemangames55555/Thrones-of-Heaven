@@ -27,7 +27,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 // ---------------------------------------------------------------------------
 const WIDTH = 800;   // tiles, west -> east
 const HEIGHT = 500;  // tiles, north -> south (8:5 landscape)
-const TILE_SIZE = 16;
+const TILE_SIZE = 32;
 const ZONE_SIZE = 32;
 
 // ---------------------------------------------------------------------------

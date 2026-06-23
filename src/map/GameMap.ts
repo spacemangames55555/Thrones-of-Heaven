@@ -1,17 +1,20 @@
 import Phaser from 'phaser';
 import type { WashingtonMap, TerrainType, CityMarker, TileCoord } from './mapTypes';
+import { TILE_SIZE, atlasFrameForKey, generatePlaceholderAtlas } from '../render/tileAtlas';
+
+const ATLAS_KEY = 'terrain-atlas';
 
 /**
  * Builds the renderable Washington map from the authored JSON:
  *
  *  1. Stitches the zone chunks back into one full tile grid.
- *  2. Paints a placeholder tileset texture (one flat-color tile per terrain
- *     type) at runtime, so no art assets need to be downloaded.
+ *  2. Renders from a 32x32 TILE ATLAS (see src/render/tileAtlas.ts) via a
+ *     terrain → atlas-frame mapping, instead of a flat color per type.
  *  3. Creates a single GPU tilemap layer (Phaser 4 TilemapGPULayer) for the
  *     whole state, and marks blocking terrain for Arcade Physics collision.
  *
- * Tile data uses terrainId + 1 as the tile index so that index 0 stays the
- * conventional "empty" tile; frames 1..N are the terrain colors.
+ * Tile data stores the atlas frame per cell (frame 0 is the reserved empty
+ * tile); the terrain → frame mapping lives in tileAtlas.ts.
  */
 export class GameMap {
   readonly data: WashingtonMap;
@@ -19,31 +22,37 @@ export class GameMap {
   readonly pixelWidth: number;
   readonly pixelHeight: number;
   readonly layer: Phaser.Tilemaps.TilemapLayerBase;
-  /** Tileset frames (= id + 1) that block movement, for re-marking collision. */
+  /** Atlas frames that block movement, for re-marking collision after edits. */
   readonly blockingFrames: number[];
 
   private readonly terrainById: Map<number, TerrainType>;
   /** Every tile type, base terrain plus any extra (town) tiles. */
   private readonly allTiles: TerrainType[];
+  /** terrain id -> atlas frame (tile index in the atlas). */
+  private readonly idToFrame: Map<number, number>;
   /** Full grid of raw terrain ids, indexed [y][x], for terrain queries. */
   private readonly grid: number[][];
 
   /**
-   * @param extraTiles Additional tile types (e.g. town tiles) appended to the
-   *   tileset after the base terrain, so features can be stamped onto the same
-   *   GPU layer later via {@link setTileId}.
+   * @param extraTiles Additional tile types (e.g. town tiles) whose terrain
+   *   keys also have atlas tiles, so features can be stamped onto the same GPU
+   *   layer later via {@link setTileId}.
    */
   constructor(scene: Phaser.Scene, data: WashingtonMap, extraTiles: TerrainType[] = []) {
+    if (data.tileSize !== TILE_SIZE) {
+      throw new Error(`Map tileSize ${data.tileSize} != atlas TILE_SIZE ${TILE_SIZE}`);
+    }
     this.data = data;
     this.tileSize = data.tileSize;
     this.pixelWidth = data.width * data.tileSize;
     this.pixelHeight = data.height * data.tileSize;
     this.allTiles = [...data.terrain, ...extraTiles];
     this.terrainById = new Map(this.allTiles.map((t) => [t.id, t]));
-    this.blockingFrames = this.allTiles.filter((t) => t.blocks).map((t) => t.id + 1);
+    this.idToFrame = new Map(this.allTiles.map((t) => [t.id, atlasFrameForKey(t.key)]));
+    this.blockingFrames = this.allTiles.filter((t) => t.blocks).map((t) => this.idToFrame.get(t.id)!);
 
     this.grid = GameMap.stitchZones(data);
-    this.buildTilesetTexture(scene, data);
+    generatePlaceholderAtlas(scene, ATLAS_KEY); // swap for a real PNG load to ship art
     this.layer = this.buildLayer(scene, data);
   }
 
@@ -63,33 +72,9 @@ export class GameMap {
     return grid;
   }
 
-  /** Paint a horizontal strip texture: frame 0 empty, frames 1..N = terrain. */
-  private buildTilesetTexture(scene: Phaser.Scene, data: WashingtonMap): void {
-    const ts = data.tileSize;
-    const frames = this.allTiles.length + 1; // +1 for the empty frame 0
-    const key = 'terrain-tiles';
-
-    if (scene.textures.exists(key)) scene.textures.remove(key);
-    const canvasTexture = scene.textures.createCanvas(key, frames * ts, ts);
-    if (!canvasTexture) throw new Error('Failed to create tileset canvas texture');
-
-    const ctx = canvasTexture.context;
-    ctx.clearRect(0, 0, frames * ts, ts); // frame 0 stays transparent
-    for (const terrain of this.allTiles) {
-      const fx = (terrain.id + 1) * ts;
-      ctx.fillStyle = terrain.color;
-      ctx.fillRect(fx, 0, ts, ts);
-      // Subtle inner shade so adjacent same-type tiles still read as a grid.
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.06)';
-      ctx.fillRect(fx, ts - 2, ts, 2);
-      ctx.fillRect(fx + ts - 2, 0, 2, ts);
-    }
-    canvasTexture.refresh();
-  }
-
   private buildLayer(scene: Phaser.Scene, data: WashingtonMap): Phaser.Tilemaps.TilemapLayerBase {
-    // Offset every terrain id by +1 to match the tileset frames.
-    const layerData = this.grid.map((row) => row.map((id) => id + 1));
+    // Each cell stores its atlas frame (terrain key -> frame via the mapping).
+    const layerData = this.grid.map((row) => row.map((id) => this.idToFrame.get(id)!));
 
     const map = scene.make.tilemap({
       data: layerData,
@@ -97,7 +82,7 @@ export class GameMap {
       tileHeight: data.tileSize,
     });
 
-    const tileset = map.addTilesetImage('terrain', 'terrain-tiles', data.tileSize, data.tileSize);
+    const tileset = map.addTilesetImage('terrain', ATLAS_KEY, data.tileSize, data.tileSize);
     if (!tileset) throw new Error('Failed to add terrain tileset');
 
     // Use the GPU layer when WebGL is available (the whole state in one quad);
@@ -106,7 +91,7 @@ export class GameMap {
     const layer = map.createLayer(0, tileset, 0, 0, useGpu);
     if (!layer) throw new Error('Failed to create tilemap layer');
 
-    // Mark blocking terrain (frames = id + 1) as collidable.
+    // Mark blocking terrain (their atlas frames) as collidable.
     layer.setCollision(this.blockingFrames);
 
     return layer;
@@ -118,7 +103,7 @@ export class GameMap {
   setTileId(tx: number, ty: number, id: number): void {
     if (tx < 0 || ty < 0 || tx >= this.data.width || ty >= this.data.height) return;
     this.grid[ty][tx] = id;
-    this.layer.putTileAt(id + 1, tx, ty);
+    this.layer.putTileAt(this.idToFrame.get(id)!, tx, ty);
   }
 
   /**

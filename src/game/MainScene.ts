@@ -31,9 +31,10 @@ const TOWNSFOLK_LINES = [
   'Townsfolk: If you are the sort to look trouble in the eye... someone ought to.',
 ];
 
-const DOOR_TRIGGER = 11; // px — must be < one tile so returning doesn't re-enter
-const NPC_AUTO_RANGE = 26; // px — auto-open dialogue on contact
-const NPC_TALK_RANGE = 50; // px — show the Talk button
+// Proximity ranges in px, tuned for 32px tiles.
+const DOOR_TRIGGER = 20; // < one tile (32) so returning one tile out doesn't re-enter
+const NPC_AUTO_RANGE = 44; // ~1.4 tiles — auto-open dialogue on contact
+const NPC_TALK_RANGE = 80; // ~2.5 tiles — show the Talk button
 
 /**
  * The overworld scene: renders Washington, stamps the Seattle town onto it,
@@ -100,7 +101,7 @@ export class MainScene extends Phaser.Scene {
     this.spirit = new SpiritVision(this);
 
     // The angel manifests above the rift (world-space, created hidden).
-    this.angel = new Angel(this, this.town.rift.x, this.town.rift.y - 30);
+    this.angel = new Angel(this, this.town.rift.x, this.town.rift.y - this.map.tileSize);
 
     const cam = this.cameras.main;
     cam.startFollow(this.player.sprite, true, 0.12, 0.12);
