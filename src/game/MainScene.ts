@@ -16,6 +16,10 @@ import { Health } from '../combat/Health';
 import { HealthBar } from '../combat/HealthBar';
 import { AttackButton } from '../ui/AttackButton';
 import { ANGEL_ENCOUNTER } from '../story/angelData';
+import { QuestManager } from '../quest/QuestManager';
+import { THE_CORRUPTION_AT_THE_GATES, type ObjectiveTrigger } from '../quest/questData';
+import { ObjectiveMarker } from '../quest/ObjectiveMarker';
+import { QuestTracker } from '../ui/QuestTracker';
 import type { Interactable } from '../entities/Interactable';
 import type { PlayerPath } from '../story/playerPath';
 import { getInsets, UI_MARGIN } from '../ui/uiLayout';
@@ -33,16 +37,6 @@ import { TOWN_TILES } from '../town/townTiles';
 import { buildTown, type TownFeatures, type DoorFeature } from '../town/TownBuilder';
 import type { WashingtonMap } from '../map/mapTypes';
 import washingtonMap from '../map/washington.map.json';
-
-// Placeholder dialogue — hints at the corruption at the town's edge. The user
-// will rewrite this text later.
-const TOWNSFOLK_LINES = [
-  'Townsfolk: Oh — a new face. You picked a grim week to reach Seattle.',
-  'Townsfolk: There is a rift at the eastern edge of town. The ground around it has gone black and violet.',
-  'Townsfolk: We call it the corruption. Every night it creeps a little further up the eastern road.',
-  'Townsfolk: The watch will not go near the gates anymore. Whatever opened down there, it is spreading.',
-  'Townsfolk: If you are the sort to look trouble in the eye... someone ought to.',
-];
 
 // Proximity ranges in px, tuned for 32px tiles.
 const DOOR_TRIGGER = 20; // < one tile (32) so returning one tile out doesn't re-enter
@@ -89,6 +83,13 @@ export class MainScene extends Phaser.Scene {
   private playerPath: PlayerPath = 'neutral';
   private angelEncounterFired = false;
 
+  // Quest: the data-driven opening quest, its tracker UI, and its world marker.
+  private quest!: QuestManager;
+  private tracker!: QuestTracker;
+  private marker!: ObjectiveMarker;
+  // The single stored+displayed alignment title (its text() IS the stored value).
+  private titleText!: Phaser.GameObjects.Text;
+
   // Interaction targets (the real NPC and, when Spirit Vision is on, spirits).
   private talkTarget: Interactable | null = null; // in range now (drives Talk button)
   private guardTarget: Interactable | null = null; // already auto-talked; wait to leave range
@@ -120,8 +121,12 @@ export class MainScene extends Phaser.Scene {
     this.player = new Player(this, this.town.spawn.x, this.town.spawn.y);
     this.physics.add.collider(this.player.sprite, this.map.layer);
 
-    // Quest-giver NPC in the plaza.
-    this.npc = new Npc(this, this.town.npc.x, this.town.npc.y, TOWNSFOLK_LINES);
+    // Quest-giver NPC in the plaza. Its dialogue is chosen per quest-state at
+    // talk time (see openDialogueWith); the lines passed here are the inactive
+    // set as a sensible default.
+    this.npc = new Npc(this, this.town.npc.x, this.town.npc.y, [
+      ...THE_CORRUPTION_AT_THE_GATES.npcInactiveLines,
+    ]);
     this.physics.add.collider(this.player.sprite, this.npc.sprite);
 
     // Spirit entities live in the world (drawn by the main camera), hidden until
@@ -139,6 +144,12 @@ export class MainScene extends Phaser.Scene {
     this.sasquatch.onStrike = () => this.onSasquatchStrike();
     this.physics.add.collider(this.sasquatch.sprite, this.map.layer);
     this.physics.add.collider(this.player.sprite, this.sasquatch.sprite);
+
+    // The opening quest (data-driven). The world objective marker lives in the
+    // worldFx layer, so the main camera draws it and the UI camera ignores it.
+    this.quest = new QuestManager(THE_CORRUPTION_AT_THE_GATES);
+    this.quest.onChange = () => this.refreshQuestUi();
+    this.marker = new ObjectiveMarker(this, this.worldFx);
 
     const cam = this.cameras.main;
     cam.startFollow(this.player.sprite, true, 0.12, 0.12);
@@ -161,6 +172,8 @@ export class MainScene extends Phaser.Scene {
     this.choice = new ChoicePrompt(this, cam);
     this.createDevReset();
     this.createCombatHud();
+    this.tracker = new QuestTracker(this);
+    this.createQuestHud();
 
     // Dedicated UI camera, fixed at zoom 1 and never scrolling, so the on-screen
     // UI is NOT scaled or moved by the main camera's zoom/follow (the bug:
@@ -171,12 +184,17 @@ export class MainScene extends Phaser.Scene {
     this.uiCamera.setName('UICamera');
     cam.ignore(uiObjects);
     this.uiCamera.ignore(worldObjects);
+
+    // Initial quest UI state: tracker hidden (inactive), no title, marker points
+    // the player toward the quest-giver.
+    this.refreshQuestUi();
   }
 
   override update(_time: number, delta: number): void {
     // Zoom keeps smoothing every frame, even during dialogue.
     this.zoomControls.update(delta);
     this.updateCombatHud();
+    this.updateObjectiveMarker();
 
     if (this.playerDead) {
       this.player.setDirection(0, 0);
@@ -203,6 +221,7 @@ export class MainScene extends Phaser.Scene {
     this.player.setDirection(dir.x, dir.y);
 
     this.checkDoors();
+    this.checkQuestProximity();
     this.checkAngelEncounter();
     this.checkInteractions();
     this.sasquatch.update(this.player.x, this.player.y, this.time.now);
@@ -273,7 +292,10 @@ export class MainScene extends Phaser.Scene {
       const dealt = this.sasquatch.takeHit(PLAYER_ATTACK_DAMAGE);
       this.spawnDamageNumber(this.sasquatch.x, this.sasquatch.y - 24, dealt, '#ffffff');
       this.lastCombatTime = this.time.now;
-      if (!this.sasquatch.isAlive) this.showBanner('Sasquatch defeated', 1600);
+      if (!this.sasquatch.isAlive) {
+        this.showBanner('Sasquatch defeated', 1600);
+        this.notifyQuest('sasquatch-defeated');
+      }
     }
   }
 
@@ -352,7 +374,11 @@ export class MainScene extends Phaser.Scene {
   }
 
   private showBanner(text: string, durationMs: number): void {
-    this.banner.setText(text).setPosition(this.scale.width / 2, this.scale.height * 0.38).setVisible(true);
+    this.banner
+      .setWordWrapWidth(Math.min(this.scale.width - 48, 380))
+      .setText(text)
+      .setPosition(this.scale.width / 2, this.scale.height * 0.38)
+      .setVisible(true);
     this.time.delayedCall(durationMs, () => this.banner.setVisible(false));
   }
 
@@ -410,10 +436,36 @@ export class MainScene extends Phaser.Scene {
     this.talkButton.setVisible(false);
     this.controls.setEnabled(false);
     this.player.setDirection(0, 0);
+
+    // The quest-giver speaks a different set per quest state; finishing the
+    // INACTIVE set starts the quest. Other interactables use their own lines.
+    if (target === this.npc) {
+      const startNow = this.quest.status === 'inactive';
+      this.dialogue.open(this.npcLinesForState(), () => {
+        if (startNow) this.startQuest();
+        this.reenableControls = true;
+      });
+      return;
+    }
+
     this.dialogue.open(target.lines, () => {
       // Re-enable on the next frame so the closing tap can't spawn the joystick.
       this.reenableControls = true;
     });
+  }
+
+  /** Pick the NPC's dialogue for the current quest state (all text in questData). */
+  private npcLinesForState(): string[] {
+    const q = this.quest.quest;
+    if (this.quest.status === 'complete') return [...q.npcCompleteLines];
+    if (this.quest.status === 'active') return [...q.npcActiveLines];
+    return [...q.npcInactiveLines];
+  }
+
+  /** Begin the quest; respawn the beast if it was already dead so OBJ 1 is doable. */
+  private startQuest(): void {
+    this.quest.start();
+    if (!this.sasquatch.isAlive) this.sasquatch.reset();
   }
 
   // --- The Angel's Choice ---------------------------------------------------
@@ -456,10 +508,23 @@ export class MainScene extends Phaser.Scene {
   }
 
   private presentAngelChoice(): void {
+    // Within the opening quest (objective "Face what stirs at the rift"), only
+    // refusing advances the story: tapping Accept plays a placeholder line and
+    // re-opens the choice. Outside the quest, the standalone two-branch logic is
+    // untouched.
+    const forced = this.quest.isActive && this.quest.currentTrigger === 'angel-refused';
     this.choice.open(ANGEL_ENCOUNTER.prompt, [
-      { label: ANGEL_ENCOUNTER.acceptLabel, onSelect: () => this.onAcceptLight() },
+      {
+        label: ANGEL_ENCOUNTER.acceptLabel,
+        onSelect: () => (forced ? this.onForcedAccept() : this.onAcceptLight()),
+      },
       { label: ANGEL_ENCOUNTER.refuseLabel, onSelect: () => this.onRefuse() },
     ]);
+  }
+
+  /** Quest-forced encounter: Accept can't take hold — show a line, re-offer the choice. */
+  private onForcedAccept(): void {
+    this.dialogue.open([...this.quest.quest.forcedAcceptLines], () => this.presentAngelChoice());
   }
 
   private onAcceptLight(): void {
@@ -476,9 +541,11 @@ export class MainScene extends Phaser.Scene {
     this.angel.dismiss();
     this.spirit.fadeTintIn(1000); // the "sight opens" moment
     this.reenableControls = true; // resume play; the wraith is now visible
+    // Within the quest this completes the final objective ("Face what stirs").
+    this.notifyQuest('angel-refused');
   }
 
-  /** DEV-ONLY: replay the encounter without reloading (key R or the corner button). */
+  /** DEV-ONLY: replay the whole opening quest without reloading (key R or the corner button). */
   private devReset(): void {
     this.setPlayerPath('neutral');
     this.spirit.setSpiritVision(false); // 'neutral' alone doesn't turn it off
@@ -489,6 +556,12 @@ export class MainScene extends Phaser.Scene {
     this.guardTarget = null;
     this.controls.setEnabled(true);
     this.player.setDirection(0, 0);
+
+    // Full quest replay: back to inactive, title cleared, beast respawned, healed.
+    this.quest.reset();
+    this.awardTitle(null);
+    this.sasquatch.reset();
+    this.playerHealth.full();
   }
 
   private createDevReset(): void {
@@ -515,6 +588,116 @@ export class MainScene extends Phaser.Scene {
       const cy = insets.top + UI_MARGIN + bh / 2;
       bg.setPosition(cx, cy);
       label.setPosition(cx, cy);
+    };
+    layout();
+    this.scale.on(Phaser.Scale.Events.RESIZE, layout);
+  }
+
+  // --- Quest ----------------------------------------------------------------
+
+  /**
+   * Feed a world event to the quest. Advances only if it matches the current
+   * objective. Handles the two no-soft-lock cases: a finished quest triggers the
+   * reward; reaching the angel objective while already corrupted auto-completes
+   * it (the angel will not manifest a second time).
+   */
+  private notifyQuest(trigger: ObjectiveTrigger): void {
+    const result = this.quest.notify(trigger);
+    if (!result.advanced) return;
+    if (result.questCompleted) {
+      this.onQuestComplete();
+      return;
+    }
+    if (this.quest.currentTrigger === 'angel-refused' && this.playerPath === 'corrupted') {
+      this.notifyQuest('angel-refused');
+    }
+  }
+
+  /** OBJ 2 completes when the player gets close to the rift (independent of the angel). */
+  private checkQuestProximity(): void {
+    if (this.quest.currentTrigger !== 'rift-reached') return;
+    const d = Phaser.Math.Distance.Between(
+      this.player.x,
+      this.player.y,
+      this.town.rift.x,
+      this.town.rift.y,
+    );
+    if (d <= ANGEL_ENCOUNTER.triggerRange) this.notifyQuest('rift-reached');
+  }
+
+  /** Completion + reward: heal to full, award the alignment title, banner, clear tracker. */
+  private onQuestComplete(): void {
+    this.playerHealth.full();
+    this.awardTitle(this.quest.quest.awardedTitle);
+    this.showBanner(
+      `${this.quest.quest.completionBanner}\n\n${this.quest.quest.titleNote}`,
+      3400,
+    );
+    this.refreshQuestUi(); // status is now complete → tracker hides
+  }
+
+  /** Store and display the single alignment-title string on the HUD. */
+  private awardTitle(title: string | null): void {
+    this.titleText.setText(title ? `Title: ${title}` : '').setVisible(!!title);
+  }
+
+  /** Sync the tracker panel to the live quest state. */
+  private refreshQuestUi(): void {
+    if (this.quest.isActive) {
+      const obj = this.quest.objective;
+      this.tracker.show(this.quest.title, obj ? obj.text : '');
+    } else {
+      this.tracker.hide();
+    }
+  }
+
+  /** Position the world marker on the current target and update the edge arrow. */
+  private updateObjectiveMarker(): void {
+    const t = this.currentMarkerTarget();
+    if (t) this.marker.show(t.x, t.y, t.label);
+    else this.marker.hide();
+    this.tracker.updateArrow(this.cameras.main, t);
+  }
+
+  /** Where the objective marker should point right now, or null for none. */
+  private currentMarkerTarget(): { x: number; y: number; label: string } | null {
+    if (this.quest.isComplete) return null;
+    // Before the quest starts, point the player at the quest-giver.
+    if (this.quest.status === 'inactive') {
+      return { x: this.npc.sprite.x, y: this.npc.sprite.y, label: this.quest.quest.preAcceptHint };
+    }
+    const obj = this.quest.objective;
+    if (!obj || !obj.target) return null;
+    switch (obj.target) {
+      case 'sasquatch':
+        return this.sasquatch.isAlive ? { x: this.sasquatch.x, y: this.sasquatch.y, label: '' } : null;
+      case 'rift':
+        return { x: this.town.rift.x, y: this.town.rift.y, label: '' };
+      case 'npc':
+        return { x: this.npc.sprite.x, y: this.npc.sprite.y, label: '' };
+    }
+  }
+
+  /** The awarded-title HUD line (top-left, just under the health bar + readout). */
+  private createQuestHud(): void {
+    this.titleText = this.add
+      .text(0, 0, '', {
+        fontFamily: 'system-ui, sans-serif',
+        fontSize: '13px',
+        color: '#ffd24a',
+        fontStyle: 'bold',
+        backgroundColor: 'rgba(8, 16, 28, 0.55)',
+        padding: { x: 6, y: 4 },
+      })
+      .setScrollFactor(0)
+      .setDepth(2000)
+      .setVisible(false);
+
+    const layout = (): void => {
+      const insets = getInsets(this);
+      // Below the 3-line debug readout (which starts at +26). Only ever visible
+      // once the quest is complete, by which point the tracker has hidden.
+      this.titleText.setPosition(insets.left + UI_MARGIN, insets.top + UI_MARGIN + 86);
     };
     layout();
     this.scale.on(Phaser.Scale.Events.RESIZE, layout);
