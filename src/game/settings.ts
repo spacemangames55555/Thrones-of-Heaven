@@ -56,6 +56,14 @@ export const ZOOM_IN_LIMIT = 1.7;
 export const ZOOM_OUT_MARGIN = 1.08;
 
 
+// --- Dev tools -------------------------------------------------------------
+//
+// Master switch for ALL developer/test tooling: the on-screen dev panel AND the
+// keyboard dev shortcuts (grant XP, instant level, full heal, respawn Sasquatch,
+// dev reset). Flip this to false for a shipping build to remove every dev tool in
+// one place. Gameplay is unaffected either way.
+export const DEV_MODE: boolean = true;
+
 // --- Progression / Leveling v1 ---------------------------------------------
 //
 // XP curve: xpToNext(level) = round(BASE_XP * GROWTH_FACTOR^(level-1)). This is
