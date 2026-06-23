@@ -128,3 +128,59 @@ export const SASQUATCH_ATTACK_COOLDOWN_MS = 1500;
 export const SASQUATCH_WINDUP_MS = 750;
 /** Distance (px) at which the Sasquatch gives up the chase and returns home. */
 export const SASQUATCH_LEASH_RANGE = 440;
+
+
+// --- Combat Depth v1: Energy resource --------------------------------------
+//
+// Energy gates the dash only — the basic swing stays free. Energy regenerates
+// over time, pausing briefly right after a spend so dashes can't be chain-cast.
+
+/** Player energy pool (full = this many points). */
+export const MAX_ENERGY = 100;
+/** Energy regenerated per second once regen resumes. */
+export const ENERGY_REGEN_PER_SEC = 18;
+/** Pause after spending energy before regen resumes, in ms. */
+export const ENERGY_REGEN_DELAY_MS = 600;
+
+
+// --- Combat Depth v1: Dash / lunge -----------------------------------------
+//
+// A fast directional lunge: a gap-closer AND a light attack. Costs energy + has
+// its own cooldown. DASH_DAMAGE is the level-1 base; it grows with the player's
+// level at the same rate as the melee swing (DMG_PER_LEVEL), so it stays useful.
+
+/** Dash damage at level 1 (then + DMG_PER_LEVEL per level, like the melee swing). */
+export const DASH_DAMAGE = 35;
+/** Energy spent per dash. */
+export const DASH_ENERGY_COST = 35;
+/** Minimum time between dashes, in ms (prevents spam even at full energy). */
+export const DASH_COOLDOWN_MS = 900;
+/** How far a dash travels, in px (~5 tiles at 32px). */
+export const DASH_DISTANCE = 170;
+/** How fast the dash moves, in px/sec (much faster than walking). */
+export const DASH_SPEED = 760;
+/** Radius (px) around the player that the dash damages enemies it passes through. */
+export const DASH_HIT_RADIUS = 46;
+
+
+// --- Combat Depth v1: Spirit Swarmer enemy (Spirit-Vision-gated) ------------
+//
+// A fast, weak swarmer that exists on the SPIRITUAL layer — only visible and
+// fightable while Spirit Vision is ON. Dangerous in numbers, not individually:
+// rushes the player and bites on contact (short per-swarmer cooldown), no
+// wind-up. Spawns as a pack near the Corruption Rift.
+
+/** Swarmer health pool (dies in ~1–2 player hits). */
+export const SWARMER_MAX_HP = 30;
+/** Swarmer move speed in tiles/sec (faster than the player's 8 — it closes fast). */
+export const SWARMER_MOVE_TILES_PER_SEC = 10;
+/** Contact damage one swarmer bite deals to the player. */
+export const SWARMER_CONTACT_DAMAGE = 6;
+/** Cooldown between a swarmer's bites, in ms (stops instant melt by the pack). */
+export const SWARMER_ATTACK_COOLDOWN_MS = 800;
+/** Distance (px) at which a swarmer notices the player and rushes in. */
+export const SWARMER_AGGRO_RANGE = 320;
+/** XP awarded for killing one swarmer. */
+export const SWARMER_XP_REWARD = 10;
+/** How many swarmers spawn together in a pack. */
+export const SWARM_PACK_SIZE = 4;
