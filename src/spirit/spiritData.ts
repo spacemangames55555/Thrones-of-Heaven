@@ -25,6 +25,9 @@ export interface SpiritEntityData {
   corruptedLines?: string[];
 }
 
+/** Id of the seeded Oregon spirit — the stub quest "A Path Opens" points at it. */
+export const OREGON_SPIRIT_ID = 'oregon-shade';
+
 export const SPIRIT_ENTITIES: SpiritEntityData[] = [
   {
     id: 'rift-wraith',

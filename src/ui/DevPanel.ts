@@ -10,9 +10,14 @@ export interface DevAction {
 const TAB_W = 46;
 const TAB_H = 66;
 const BTN_W = 170;
-const BTN_H = 40;
-const BTN_GAP = 8;
+const BTN_GAP = 6;
+const BTN_H_MAX = 40;
+const BTN_H_MIN = 30;
 const TAB_GAP = 8; // space between the tab and the button column
+// The vertical band the expanded column lives in: below the quest tracker, above
+// the bottom controls. Button height shrinks to fit however many buttons there are.
+const BAND_TOP = 196; // clears the top-left cluster + top-centre quest tracker
+const BAND_BOTTOM_GAP = 190; // clearance kept above the bottom-left joystick + action buttons
 const DEPTH = 1550; // above the static HUD/tracker, below the choice/dialogue modals
 
 /**
@@ -58,7 +63,7 @@ export class DevPanel {
 
     for (const action of actions) {
       const bg = scene.add
-        .rectangle(0, 0, BTN_W, BTN_H, 0x1d2b40, 0.96)
+        .rectangle(0, 0, BTN_W, BTN_H_MAX, 0x1d2b40, 0.96)
         .setStrokeStyle(2, 0xffd24a, 0.9)
         .setScrollFactor(0)
         .setDepth(DEPTH);
@@ -110,15 +115,22 @@ export class DevPanel {
     this.tabBg.setPosition(tabCx, tabCy);
     this.tabLabel.setPosition(tabCx, tabCy);
 
-    // Button column, vertically centered, just right of the tab.
+    // Button column: fit N buttons into the safe band (below the tracker, above
+    // the bottom controls), shrinking the button height as needed so the column
+    // never overlaps gameplay UI however many buttons there are.
     const n = this.buttons.length;
-    const colH = n * BTN_H + (n - 1) * BTN_GAP;
+    const bandTop = insets.top + BAND_TOP;
+    const bandBottom = h - insets.bottom - BAND_BOTTOM_GAP;
+    const band = Math.max(60, bandBottom - bandTop);
+    const btnH = Phaser.Math.Clamp((band - (n - 1) * BTN_GAP) / n, BTN_H_MIN, BTN_H_MAX);
+    const colH = n * btnH + (n - 1) * BTN_GAP;
     const colX = leftX + TAB_W + TAB_GAP + BTN_W / 2;
-    let y = h / 2 - colH / 2 + BTN_H / 2;
+    let y = bandTop + (band - colH) / 2 + btnH / 2;
     for (const b of this.buttons) {
+      b.bg.setSize(BTN_W, btnH);
       b.bg.setPosition(colX, y);
       b.label.setPosition(colX, y);
-      y += BTN_H + BTN_GAP;
+      y += btnH + BTN_GAP;
     }
   }
 }
