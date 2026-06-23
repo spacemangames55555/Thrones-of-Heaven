@@ -19,8 +19,10 @@ export interface SpiritEntityData {
   color: number;
   /** Display name (shown above the spirit when revealed, and in dialogue). */
   name: string;
-  /** Dialogue lines (placeholder — hints at the corruption/evil arc). */
+  /** Default dialogue lines (placeholder — hints at the corruption/evil arc). */
   lines: string[];
+  /** Dialogue shown once the player has taken the corrupted (dark) path. */
+  corruptedLines?: string[];
 }
 
 export const SPIRIT_ENTITIES: SpiritEntityData[] = [
@@ -36,5 +38,11 @@ export const SPIRIT_ENTITIES: SpiritEntityData[] = [
       'Pale Wraith: It drinks a little more of this town each night, and no living eye marks it.',
       'Pale Wraith: You perceive me now — so you are already part of this. Choose your side with care.',
     ],
+    corruptedLines: [
+      'Pale Wraith: Ahh. You refused the bright one. I felt the light go out of your road.',
+      'Pale Wraith: Good. Now your eyes are open for as long as you draw breath — there is no closing them.',
+      'Pale Wraith: The dark has need of hands that can see it work. Come. Let me show you what feeds here.',
+    ],
   },
 ];
+

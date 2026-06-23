@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import type { Interactable } from '../entities/Interactable';
 import type { SpiritEntityData } from './spiritData';
+import type { PlayerPath } from '../story/playerPath';
 
 const TEXTURE_KEY = 'spirit-ghost';
 
@@ -8,12 +9,16 @@ const TEXTURE_KEY = 'spirit-ghost';
  * A runtime spirit entity: a translucent, eerily-tinted placeholder sprite that
  * lives at a real world position (drawn by the main/zoomable camera) but is only
  * shown when Spirit Vision is revealed. Implements {@link Interactable} so it
- * plugs straight into the existing dialogue/proximity flow.
+ * plugs straight into the existing dialogue/proximity flow, and serves
+ * different dialogue depending on the player's path.
  */
 export class SpiritEntity implements Interactable {
   readonly id: string;
   readonly name: string;
-  readonly lines: string[];
+
+  private readonly defaultLines: string[];
+  private readonly corruptedLines?: string[];
+  private path: PlayerPath = 'neutral';
 
   private readonly sprite: Phaser.GameObjects.Sprite;
   private readonly label: Phaser.GameObjects.Text;
@@ -21,7 +26,8 @@ export class SpiritEntity implements Interactable {
   constructor(scene: Phaser.Scene, data: SpiritEntityData) {
     this.id = data.id;
     this.name = data.name;
-    this.lines = data.lines;
+    this.defaultLines = data.lines;
+    this.corruptedLines = data.corruptedLines;
     SpiritEntity.ensureTexture(scene);
 
     this.sprite = scene.add
@@ -51,6 +57,16 @@ export class SpiritEntity implements Interactable {
     });
 
     this.setRevealed(false);
+  }
+
+  /** Conditional dialogue: corrupted set once the player has taken the dark path. */
+  get lines(): string[] {
+    return this.path === 'corrupted' && this.corruptedLines ? this.corruptedLines : this.defaultLines;
+  }
+
+  /** Update which dialogue set this entity serves, based on the player's path. */
+  setPath(path: PlayerPath): void {
+    this.path = path;
   }
 
   /** Show/hide the spirit. When hidden it is fully imperceptible. */

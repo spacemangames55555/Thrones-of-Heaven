@@ -8,8 +8,13 @@ import { DebugReadout } from '../ui/DebugReadout';
 import { DialogueBox } from '../ui/DialogueBox';
 import { TouchButton } from '../ui/TouchButton';
 import { ZoomControls } from '../ui/ZoomControls';
+import { ChoicePrompt } from '../ui/ChoicePrompt';
 import { SpiritVision } from '../spirit/SpiritVision';
+import { Angel } from '../entities/Angel';
+import { ANGEL_ENCOUNTER } from '../story/angelData';
 import type { Interactable } from '../entities/Interactable';
+import type { PlayerPath } from '../story/playerPath';
+import { getInsets, UI_MARGIN } from '../ui/uiLayout';
 import { CAMERA_ZOOM } from './settings';
 import { TOWN_TILES } from '../town/townTiles';
 import { buildTown, type TownFeatures, type DoorFeature } from '../town/TownBuilder';
@@ -48,6 +53,12 @@ export class MainScene extends Phaser.Scene {
   private zoomControls!: ZoomControls;
   private uiCamera!: Phaser.Cameras.Scene2D.Camera;
   private spirit!: SpiritVision;
+  private choice!: ChoicePrompt;
+  private angel!: Angel;
+
+  // Story / alignment state.
+  private playerPath: PlayerPath = 'neutral';
+  private angelEncounterFired = false;
 
   // Interaction targets (the real NPC and, when Spirit Vision is on, spirits).
   private talkTarget: Interactable | null = null; // in range now (drives Talk button)
@@ -88,6 +99,9 @@ export class MainScene extends Phaser.Scene {
     // Spirit Vision is revealed. Created here so they fall in the WORLD snapshot.
     this.spirit = new SpiritVision(this);
 
+    // The angel manifests above the rift (world-space, created hidden).
+    this.angel = new Angel(this, this.town.rift.x, this.town.rift.y - 30);
+
     const cam = this.cameras.main;
     cam.startFollow(this.player.sprite, true, 0.12, 0.12);
     cam.setZoom(CAMERA_ZOOM); // tune in src/game/settings.ts
@@ -102,9 +116,12 @@ export class MainScene extends Phaser.Scene {
     this.talkButton = new TouchButton(this, 'Talk', () => this.tryTalk());
     this.zoomControls = new ZoomControls(this, cam, this.map.pixelWidth, this.map.pixelHeight);
     this.readout = new DebugReadout(this, this.map, this.player);
-    // Spirit Vision tint + toggle button are UI (created after the world snapshot
-    // so they land in the UI camera partition below).
-    this.spirit.createUI((on) => this.onSpiritVisionChanged(on));
+    // Spirit Vision tint is UI (created after the world snapshot so it lands in
+    // the UI camera partition below). The reusable choice prompt creates its
+    // objects on demand and tells the main camera to ignore them.
+    this.spirit.createTint();
+    this.choice = new ChoicePrompt(this, cam);
+    this.createDevReset();
 
     // Dedicated UI camera, fixed at zoom 1 and never scrolling, so the on-screen
     // UI is NOT scaled or moved by the main camera's zoom/follow (the bug:
@@ -121,13 +138,13 @@ export class MainScene extends Phaser.Scene {
     // Zoom keeps smoothing every frame, even during dialogue.
     this.zoomControls.update(delta);
 
-    if (this.reenableControls && !this.dialogue.isOpen()) {
+    if (this.reenableControls && !this.dialogue.isOpen() && !this.choice.isOpen()) {
       this.controls.setEnabled(true);
       this.reenableControls = false;
     }
 
-    // Frozen while a conversation is open.
-    if (this.dialogue.isOpen()) {
+    // Frozen while a conversation or a choice is open.
+    if (this.dialogue.isOpen() || this.choice.isOpen()) {
       this.player.setDirection(0, 0);
       this.talkButton.setVisible(false);
       this.readout.update();
@@ -138,6 +155,7 @@ export class MainScene extends Phaser.Scene {
     this.player.setDirection(dir.x, dir.y);
 
     this.checkDoors();
+    this.checkAngelEncounter();
     this.checkInteractions();
     this.readout.update();
   }
@@ -202,12 +220,108 @@ export class MainScene extends Phaser.Scene {
     });
   }
 
-  /** When Spirit Vision turns off mid-conversation with a spirit, end it. */
-  private onSpiritVisionChanged(on: boolean): void {
-    const talkingToSpirit = this.spirit.entities.some((e) => e === this.guardTarget);
-    if (!on && this.dialogue.isOpen() && talkingToSpirit) {
-      this.dialogue.forceClose();
-    }
+  // --- The Angel's Choice ---------------------------------------------------
+
+  /**
+   * THE single control point for alignment. Setting "corrupted" permanently
+   * opens Spirit Vision; all alignment-conditional content keys off the path.
+   *
+   * === FUTURE EVIL-PATH HOOK ===
+   * The corrupted questline branches on this.playerPath === 'corrupted'. New
+   * dark-path content should read it here (or via a getter) rather than adding
+   * a parallel flag.
+   */
+  private setPlayerPath(path: PlayerPath): void {
+    this.playerPath = path;
+    if (path === 'corrupted') this.spirit.setSpiritVision(true);
+    // Conditional content: spirits serve their corrupted dialogue once dark.
+    for (const e of this.spirit.entities) e.setPath(path);
+  }
+
+  private checkAngelEncounter(): void {
+    if (this.angelEncounterFired || this.playerPath !== 'neutral') return;
+    const d = Phaser.Math.Distance.Between(
+      this.player.x,
+      this.player.y,
+      this.town.rift.x,
+      this.town.rift.y,
+    );
+    if (d <= ANGEL_ENCOUNTER.triggerRange) this.startAngelEncounter();
+  }
+
+  private startAngelEncounter(): void {
+    this.angelEncounterFired = true;
+    this.angel.manifest();
+    this.talkButton.setVisible(false);
+    this.controls.setEnabled(false);
+    this.player.setDirection(0, 0);
+    // Angel speaks via the existing dialogue; the choice follows the last line.
+    this.dialogue.open(ANGEL_ENCOUNTER.lines, () => this.presentAngelChoice());
+  }
+
+  private presentAngelChoice(): void {
+    this.choice.open(ANGEL_ENCOUNTER.prompt, [
+      { label: ANGEL_ENCOUNTER.acceptLabel, onSelect: () => this.onAcceptLight() },
+      { label: ANGEL_ENCOUNTER.refuseLabel, onSelect: () => this.onRefuse() },
+    ]);
+  }
+
+  private onAcceptLight(): void {
+    this.setPlayerPath('righteous'); // Spirit Vision stays OFF
+    this.angel.dismiss();
+    // Righteous stub: a short acknowledgment, then back to normal play.
+    this.dialogue.open(ANGEL_ENCOUNTER.righteousAck, () => {
+      this.reenableControls = true;
+    });
+  }
+
+  private onRefuse(): void {
+    this.setPlayerPath('corrupted'); // turns Spirit Vision ON permanently
+    this.angel.dismiss();
+    this.spirit.fadeTintIn(1000); // the "sight opens" moment
+    this.reenableControls = true; // resume play; the wraith is now visible
+  }
+
+  /** DEV-ONLY: replay the encounter without reloading (key R or the corner button). */
+  private devReset(): void {
+    this.setPlayerPath('neutral');
+    this.spirit.setSpiritVision(false); // 'neutral' alone doesn't turn it off
+    this.angelEncounterFired = false;
+    this.angel.dismiss();
+    this.choice.close();
+    if (this.dialogue.isOpen()) this.dialogue.forceClose();
+    this.guardTarget = null;
+    this.controls.setEnabled(true);
+    this.player.setDirection(0, 0);
+  }
+
+  private createDevReset(): void {
+    const depth = 1300;
+    const bw = 112;
+    const bh = 30;
+    const bg = this.add
+      .rectangle(0, 0, bw, bh, 0x3a1414, 0.85)
+      .setStrokeStyle(1, 0xff8a8a, 0.85)
+      .setScrollFactor(0)
+      .setDepth(depth)
+      .setInteractive({ useHandCursor: true });
+    const label = this.add
+      .text(0, 0, 'DEV: Reset', { fontFamily: 'ui-monospace, monospace', fontSize: '12px', color: '#ffb3b3' })
+      .setOrigin(0.5)
+      .setScrollFactor(0)
+      .setDepth(depth + 1);
+    bg.on(Phaser.Input.Events.GAMEOBJECT_POINTER_DOWN, () => this.devReset());
+    this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.R).on('down', () => this.devReset());
+
+    const layout = (): void => {
+      const insets = getInsets(this);
+      const cx = this.scale.width - insets.right - UI_MARGIN - bw / 2;
+      const cy = insets.top + UI_MARGIN + bh / 2;
+      bg.setPosition(cx, cy);
+      label.setPosition(cx, cy);
+    };
+    layout();
+    this.scale.on(Phaser.Scale.Events.RESIZE, layout);
   }
 
   // --- Building interior transitions ---------------------------------------
