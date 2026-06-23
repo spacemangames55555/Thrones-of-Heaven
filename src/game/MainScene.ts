@@ -14,6 +14,9 @@ import { Angel } from '../entities/Angel';
 import { Sasquatch } from '../entities/Sasquatch';
 import { SpiritSwarmer } from '../entities/SpiritSwarmer';
 import { AngelEnemy } from '../entities/AngelEnemy';
+import { Townsfolk } from '../entities/Townsfolk';
+import { DarkPortal } from '../entities/DarkPortal';
+import { PortalDefense } from '../encounter/PortalDefense';
 import { ProjectileSystem } from '../combat/ProjectileSystem';
 import { PickupSystem, type PickupCollected } from '../world/PickupSystem';
 import { HolyPower } from '../progression/HolyPower';
@@ -64,6 +67,9 @@ import {
   HOLY_BOLT_RADIUS,
   PROJECTILE_PLAYER_HIT_RADIUS,
   DEV_GRANT_HOLY_POWER,
+  PORTAL_POSITION,
+  TOWNSFOLK_PORTAL_DAMAGE,
+  TOWNSFOLK_PLAYER_DAMAGE,
 } from './settings';
 import { TOWN_TILES } from '../town/townTiles';
 import { buildTown, type TownFeatures, type DoorFeature } from '../town/TownBuilder';
@@ -148,6 +154,11 @@ export class MainScene extends Phaser.Scene {
   private pickups!: PickupSystem;
   private holyPower = new HolyPower();
   private holyPowerText!: Phaser.GameObjects.Text;
+
+  // Portal Defense: the destructible objective, the townsfolk, and the wave brain.
+  private portal!: DarkPortal;
+  private townsfolk: Townsfolk[] = [];
+  private portalDefense!: PortalDefense;
 
   // Story / alignment state.
   private playerPath: PlayerPath = 'neutral';
@@ -241,6 +252,27 @@ export class MainScene extends Phaser.Scene {
     this.physics.add.collider(this.sasquatch.sprite, this.map.layer);
     this.physics.add.collider(this.player.sprite, this.sasquatch.sprite);
 
+    // Portal Defense objective (world landmark; created here so its sprite + HP
+    // bar fall in the WORLD snapshot) + the wave manager that drives the encounter.
+    this.portal = new DarkPortal(this, PORTAL_POSITION.x, PORTAL_POSITION.y);
+    this.portalDefense = new PortalDefense();
+    this.portalDefense.aliveCount = () => this.townsfolk.length;
+    this.portalDefense.onSpawn = (offset) =>
+      this.spawnTownsfolk(this.portal.x + offset.dx, this.portal.y + offset.dy);
+    this.portalDefense.onWaveStart = (wave, total) => {
+      this.showBanner(`Wave ${wave} of ${total}`, 1600);
+      this.portal.setWaveLabel(`  —  Wave ${wave}/${total}`);
+    };
+    this.portalDefense.onWin = () => {
+      this.showBanner('The portal holds — Victory!', 3200);
+      this.portal.setWaveLabel('');
+    };
+    this.portalDefense.onLose = () => {
+      this.showBanner('The portal has fallen', 3200);
+      this.clearTownsfolk();
+      this.portal.setWaveLabel('');
+    };
+
     // The quest CHAIN (data-driven registry). The world objective marker lives
     // in the worldFx layer, so the main camera draws it and the UI camera ignores
     // it. Quest-givers: which NPC offers which quest ids (it offers the available
@@ -317,6 +349,7 @@ export class MainScene extends Phaser.Scene {
       this.sasquatch.halt();
       this.haltSwarmers();
       this.haltAngels();
+      this.haltTownsfolk();
       this.readout.update();
       return;
     }
@@ -334,6 +367,7 @@ export class MainScene extends Phaser.Scene {
       this.sasquatch.halt();
       this.haltSwarmers();
       this.haltAngels();
+      this.haltTownsfolk();
       this.readout.update();
       return;
     }
@@ -358,6 +392,8 @@ export class MainScene extends Phaser.Scene {
     this.sasquatch.update(this.player.x, this.player.y, this.time.now);
     this.updateSwarmers();
     this.updateAngels();
+    this.updateTownsfolk(); // prune dead first so the wave manager sees the live count
+    this.portalDefense.update(this.time.now);
     this.projectiles.update(delta, this.player.x, this.player.y, PROJECTILE_PLAYER_HIT_RADIUS);
     this.pickups.update(this.player.x, this.player.y);
     this.regenTick(delta);
@@ -521,9 +557,25 @@ export class MainScene extends Phaser.Scene {
       }
     }
 
-    // The same free swing also cleaves any swarmers / angels caught in the arc.
+    // The same free swing also cleaves any swarmers / angels / townsfolk in the arc.
     this.hitSwarmersInRange(sx, sy, PLAYER_ATTACK_RANGE, this.progression.effectiveDamage);
     this.hitAngelsInRange(sx, sy, PLAYER_ATTACK_RANGE, this.progression.effectiveDamage);
+    this.hitTownsfolkInRange(sx, sy, PLAYER_ATTACK_RANGE, this.progression.effectiveDamage);
+  }
+
+  /** Apply damage to every townsfolk within `range` of (x,y); award XP on kills. */
+  private hitTownsfolkInRange(x: number, y: number, range: number, damage: number): void {
+    for (const t of this.townsfolk) {
+      if (!t.isAlive) continue;
+      if (t.distanceTo(x, y) <= range) {
+        const dealt = t.takeHit(damage);
+        if (dealt > 0) {
+          this.spawnDamageNumber(t.x, t.y - 20, dealt, '#ffffff');
+          this.lastCombatTime = this.time.now;
+          if (!t.isAlive) this.onTownsfolkKilled(t);
+        }
+      }
+    }
   }
 
   /** Apply damage to every angel within `range` of (x,y); award XP on kills. */
@@ -577,9 +629,15 @@ export class MainScene extends Phaser.Scene {
 
   private respawnPlayer(): void {
     this.playerHealth.full();
-    this.player.sprite.setPosition(this.town.spawn.x, this.town.spawn.y);
+    // During a portal-defense encounter, respawn at the portal so the player can
+    // keep defending (the encounter CONTINUES on death); otherwise the town spawn.
+    if (this.portalDefense.isActive) {
+      this.player.sprite.setPosition(this.portal.x, this.portal.y + 90);
+    } else {
+      this.player.sprite.setPosition(this.town.spawn.x, this.town.spawn.y);
+      this.sasquatch.reset(); // clean, repeatable fight
+    }
     this.player.setDirection(0, 0);
-    this.sasquatch.reset(); // clean, repeatable fight
     this.projectiles.clear(); // drop any bolts still in flight
     this.lastCombatTime = -1e9;
     this.playerDead = false;
@@ -588,7 +646,10 @@ export class MainScene extends Phaser.Scene {
 
   private regenTick(delta: number): void {
     const enemiesEngaged =
-      this.sasquatch.isAggro || this.swarmers.some((s) => s.isAggro) || this.angels.some((a) => a.isAggro);
+      this.sasquatch.isAggro ||
+      this.swarmers.some((s) => s.isAggro) ||
+      this.angels.some((a) => a.isAggro) ||
+      this.townsfolk.length > 0;
     if (enemiesEngaged) this.lastCombatTime = this.time.now;
     const outOfCombat = !enemiesEngaged && this.time.now - this.lastCombatTime > PLAYER_HP_REGEN_DELAY_MS;
     if (outOfCombat && this.playerHealth.current < this.playerHealth.max) {
@@ -685,6 +746,19 @@ export class MainScene extends Phaser.Scene {
           this.spawnDamageNumber(a.x, a.y - 28 * a.variant.scale, dealt, '#ffe9a8');
           this.lastCombatTime = this.time.now;
           if (!a.isAlive) this.onAngelKilled(a);
+        }
+      }
+    }
+
+    for (const t of this.townsfolk) {
+      if (!t.isAlive || this.dashHits.has(t)) continue;
+      if (t.distanceTo(px, py) <= DASH_HIT_RADIUS) {
+        this.dashHits.add(t);
+        const dealt = t.takeHit(dmg);
+        if (dealt > 0) {
+          this.spawnDamageNumber(t.x, t.y - 20, dealt, '#ffe9a8');
+          this.lastCombatTime = this.time.now;
+          if (!t.isAlive) this.onTownsfolkKilled(t);
         }
       }
     }
@@ -908,6 +982,75 @@ export class MainScene extends Phaser.Scene {
       this.player.x + (this.player.facingX / len) * v.preferredRange,
       this.player.y + (this.player.facingY / len) * v.preferredRange,
     );
+  }
+
+  // --- Portal Defense: townsfolk + the wave encounter -----------------------
+
+  /** Spawn one townsfolk; wire its strikes to the portal / player. */
+  private spawnTownsfolk(x: number, y: number): void {
+    const t = new Townsfolk(this, x, y);
+    t.onHitPortal = () => this.damagePortal(TOWNSFOLK_PORTAL_DAMAGE);
+    t.onHitPlayer = () => this.onTownsfolkHitPlayer();
+    this.physics.add.collider(t.sprite, this.map.layer);
+    this.uiCamera?.ignore(t.sprite); // runtime world object: keep off the UI camera
+    this.townsfolk.push(t);
+  }
+
+  /** Advance every townsfolk toward the portal, then prune the dead. */
+  private updateTownsfolk(): void {
+    for (const t of this.townsfolk) {
+      t.update(this.portal.x, this.portal.y, this.player.x, this.player.y, this.time.now);
+    }
+    if (this.townsfolk.some((t) => !t.isAlive)) this.townsfolk = this.townsfolk.filter((t) => t.isAlive);
+  }
+
+  private haltTownsfolk(): void {
+    for (const t of this.townsfolk) t.halt();
+  }
+
+  private onTownsfolkKilled(t: Townsfolk): void {
+    this.gainXP(t.xpReward); // enemy data drives the award, same as every enemy
+  }
+
+  /** A townsfolk struck the portal: drop its HP and check for the loss condition. */
+  private damagePortal(amount: number): void {
+    if (!this.portalDefense.isActive) return;
+    this.portal.takeDamage(amount);
+    this.spawnDamageNumber(this.portal.x + (Math.random() * 30 - 15), this.portal.y - 10, amount, '#ff8a8a');
+    if (this.portal.isDestroyed) this.portalDefense.notifyPortalDestroyed();
+  }
+
+  /** A townsfolk struck the player (intercepted / adjacent). */
+  private onTownsfolkHitPlayer(): void {
+    if (this.playerDead) return;
+    const dealt = this.playerHealth.damage(TOWNSFOLK_PLAYER_DAMAGE);
+    this.player.flash();
+    this.spawnDamageNumber(this.player.x, this.player.y - 26, dealt, '#ff9a6a');
+    this.lastCombatTime = this.time.now;
+    if (this.playerHealth.isDead) this.onPlayerDeath();
+  }
+
+  private clearTownsfolk(): void {
+    for (const t of this.townsfolk) t.destroy();
+    this.townsfolk = [];
+  }
+
+  /** End + reset the encounter: stop waves, clear townsfolk, restore the portal. */
+  private resetPortalDefense(): void {
+    this.portalDefense.stop();
+    this.clearTownsfolk();
+    this.portal.reset();
+    this.portal.setWaveLabel('');
+  }
+
+  /** DEV: teleport next to the portal and begin the wave encounter. */
+  private devStartPortalDefense(): void {
+    this.cancelDash();
+    this.player.sprite.setPosition(this.portal.x, this.portal.y + 90); // just south of the portal
+    this.player.setDirection(0, 0);
+    this.cameras.main.centerOn(this.portal.x, this.portal.y);
+    this.resetPortalDefense(); // clean slate
+    this.portalDefense.start(this.time.now);
   }
 
   /**
@@ -1251,6 +1394,9 @@ export class MainScene extends Phaser.Scene {
     // Clear uncollected pickups and zero the Holy Power count.
     this.pickups.clear();
     this.holyPower.reset();
+
+    // Stop + reset any active portal-defense encounter (restores portal HP).
+    this.resetPortalDefense();
   }
 
   /**
@@ -1275,6 +1421,8 @@ export class MainScene extends Phaser.Scene {
       { label: 'Spawn Archangel', onPress: () => this.devSpawnAngel('archangel') },
       { label: 'Grant Holy Power', onPress: () => this.holyPower.add(DEV_GRANT_HOLY_POWER) },
       { label: 'Reset Holy Power', onPress: () => this.holyPower.reset() },
+      { label: 'Start Portal Defense', onPress: () => this.devStartPortalDefense() },
+      { label: 'Stop Portal Defense', onPress: () => this.resetPortalDefense() },
       { label: 'Refill Energy', onPress: () => this.energy.full() },
       { label: 'Teleport to Oregon', onPress: () => this.devTeleportToOregon() },
       { label: 'Complete Active Quest', onPress: () => this.chain.completeActive() },

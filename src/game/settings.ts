@@ -274,3 +274,53 @@ export const ANGEL_VARIANTS: Record<AngelVariantKey, AngelVariantConfig> = {
 
 /** How much one press of the dev "Grant Holy Power" button adds. */
 export const DEV_GRANT_HOLY_POWER = 5;
+
+
+// --- Portal Defense (wave-defense encounter) -------------------------------
+//
+// Protect a destructible Dark Portal from waves of townsfolk. Win by surviving
+// all waves; lose if the portal's HP reaches 0. A self-contained, triggerable
+// encounter (PortalDefense + Townsfolk + DarkPortal) — not wired to a quest.
+
+// --- The portal objective ---
+/** Portal health pool — the player loses if it hits 0. */
+export const PORTAL_MAX_HP = 300;
+/** Portal world position (Oregon, near the spirit corridor — placeholder spot). */
+export const PORTAL_POSITION = { x: 12432, y: 13776 };
+/** Distance (px) within which a townsfolk can strike the portal. */
+export const PORTAL_ATTACK_RANGE = 56;
+
+// --- The townsfolk enemy (melee; targets the PORTAL, hits the player if in the way) ---
+/** Townsfolk health pool (a couple of player hits). */
+export const TOWNSFOLK_MAX_HP = 40;
+/** Townsfolk move speed in tiles/sec (slower than the player → interceptable). */
+export const TOWNSFOLK_MOVE_TILES_PER_SEC = 4.5;
+/** Damage one townsfolk strike deals to the PORTAL. */
+export const TOWNSFOLK_PORTAL_DAMAGE = 8;
+/** Damage one townsfolk strike deals to the PLAYER (when blocked / adjacent). */
+export const TOWNSFOLK_PLAYER_DAMAGE = 7;
+/** Cooldown between a townsfolk's strikes, in ms. */
+export const TOWNSFOLK_ATTACK_COOLDOWN_MS = 1000;
+/** Distance (px) within which a townsfolk hits the player instead of advancing. */
+export const TOWNSFOLK_CONTACT_RANGE = 28;
+/** XP awarded for killing one townsfolk. */
+export const TOWNSFOLK_XP_REWARD = 12;
+
+// --- The wave sequence ---
+/** Enemies per wave (escalating); the array LENGTH is the number of waves. */
+export const PORTAL_DEFENSE_WAVES = [3, 5, 7];
+/** Pause (ms) between a cleared wave and the next. */
+export const PORTAL_DEFENSE_BREATHER_MS = 4000;
+/** Short pause (ms) after Start before wave 1 spawns. */
+export const PORTAL_DEFENSE_INTRO_MS = 1500;
+/** Safety: force-advance a non-final wave after this long if it stalls (ms). */
+export const PORTAL_DEFENSE_WAVE_TIMEOUT_MS = 30000;
+/** Townsfolk spawn points, as offsets (px) from the portal; cycled per wave. */
+export const PORTAL_SPAWN_OFFSETS: { dx: number; dy: number }[] = [
+  { dx: 0, dy: -200 },
+  { dx: 190, dy: -70 },
+  { dx: 190, dy: 70 },
+  { dx: 0, dy: 200 },
+  { dx: -190, dy: 70 },
+  { dx: -190, dy: -70 },
+];
