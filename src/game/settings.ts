@@ -185,3 +185,80 @@ export const SWARMER_AGGRO_RANGE = 320;
 export const SWARMER_XP_REWARD = 10;
 /** How many swarmers spawn together in a pack. */
 export const SWARM_PACK_SIZE = 4;
+
+
+// --- Angel enemy + projectiles (the first RANGED enemy + projectile system) --
+//
+// A ranged, kiting angel on the NORMAL world layer (NOT Spirit-Vision-gated),
+// with two data-driven variants from one definition: ANGEL (elite) and ARCHANGEL
+// (boss). It maintains a preferred range and fires travelling holy bolts the
+// player can DODGE; bolts are stopped by blocking terrain and despawn at range.
+
+/** Collision radius (px) of a holy bolt. */
+export const HOLY_BOLT_RADIUS = 7;
+/** Radius (px) around the player a bolt must reach to hit (small → dodgeable). */
+export const PROJECTILE_PLAYER_HIT_RADIUS = 12;
+
+export interface AngelVariantConfig {
+  /** Health pool. */
+  readonly maxHP: number;
+  /** Damage one holy bolt deals to the player. */
+  readonly projectileDamage: number;
+  /** Bolt travel speed in px/sec. */
+  readonly projectileSpeed: number;
+  /** Bolt max travel distance in px before it despawns. */
+  readonly projectileRange: number;
+  /** Time between volleys, in ms. */
+  readonly fireCooldownMs: number;
+  /** Bolts loosed per volley (1 = single shot; >1 = a spread). */
+  readonly boltsPerVolley: number;
+  /** Distance (px) at which it notices the player and engages. */
+  readonly aggroRange: number;
+  /** The standoff distance (px) it tries to hold: backs off if closer, advances if farther. */
+  readonly preferredRange: number;
+  /** Move speed in tiles/sec (slower than the player so it can be cornered + meleed). */
+  readonly moveTilesPerSec: number;
+  /** XP awarded on death. */
+  readonly xpReward: number;
+  /** Sprite scale (the Archangel is visibly larger). */
+  readonly scale: number;
+  /** Sprite tint. */
+  readonly color: number;
+}
+
+export type AngelVariantKey = 'angel' | 'archangel';
+
+/**
+ * The two angel variants — pure DATA. Edit a field to retune that variant; both
+ * run the SAME behavior/code (AngelEnemy). The Archangel is the boss config.
+ */
+export const ANGEL_VARIANTS: Record<AngelVariantKey, AngelVariantConfig> = {
+  angel: {
+    maxHP: 150,
+    projectileDamage: 12,
+    projectileSpeed: 260,
+    projectileRange: 520,
+    fireCooldownMs: 1500,
+    boltsPerVolley: 1,
+    aggroRange: 460,
+    preferredRange: 300,
+    moveTilesPerSec: 5,
+    xpReward: 45,
+    scale: 1.0,
+    color: 0xffe6a0,
+  },
+  archangel: {
+    maxHP: 520,
+    projectileDamage: 22,
+    projectileSpeed: 330,
+    projectileRange: 620,
+    fireCooldownMs: 950,
+    boltsPerVolley: 3,
+    aggroRange: 560,
+    preferredRange: 340,
+    moveTilesPerSec: 5.5,
+    xpReward: 160,
+    scale: 1.5,
+    color: 0xfff4d0,
+  },
+};

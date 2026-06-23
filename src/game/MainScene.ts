@@ -13,6 +13,8 @@ import { SpiritVision } from '../spirit/SpiritVision';
 import { Angel } from '../entities/Angel';
 import { Sasquatch } from '../entities/Sasquatch';
 import { SpiritSwarmer } from '../entities/SpiritSwarmer';
+import { AngelEnemy } from '../entities/AngelEnemy';
+import { ProjectileSystem } from '../combat/ProjectileSystem';
 import { Health } from '../combat/Health';
 import { HealthBar } from '../combat/HealthBar';
 import { AttackButton } from '../ui/AttackButton';
@@ -55,6 +57,10 @@ import {
   DASH_HIT_RADIUS,
   SWARMER_CONTACT_DAMAGE,
   SWARM_PACK_SIZE,
+  ANGEL_VARIANTS,
+  type AngelVariantKey,
+  HOLY_BOLT_RADIUS,
+  PROJECTILE_PLAYER_HIT_RADIUS,
 } from './settings';
 import { TOWN_TILES } from '../town/townTiles';
 import { buildTown, type TownFeatures, type DoorFeature } from '../town/TownBuilder';
@@ -131,6 +137,10 @@ export class MainScene extends Phaser.Scene {
   private swarmers: SpiritSwarmer[] = [];
   private swarmersRevealed = false;
 
+  // Ranged combat: the angel enemies (normal-layer) + the reusable projectiles.
+  private angels: AngelEnemy[] = [];
+  private projectiles!: ProjectileSystem;
+
   // Story / alignment state.
   private playerPath: PlayerPath = 'neutral';
   private angelEncounterFired = false;
@@ -204,6 +214,11 @@ export class MainScene extends Phaser.Scene {
     // Combat: a world-space FX layer (damage numbers, swings) + the Sasquatch.
     // Created here so they fall in the WORLD snapshot (drawn by the main camera).
     this.worldFx = this.add.layer().setDepth(12);
+    // The reusable projectile system draws bolts into the world-FX layer (so the
+    // UI camera ignores them). Enemy bolts damage the player; impacts spawn a poof.
+    this.projectiles = new ProjectileSystem(this, this.map, this.worldFx);
+    this.projectiles.onPlayerHit = (dmg) => this.onProjectileHitPlayer(dmg);
+    this.projectiles.onImpact = (x, y, color) => this.spawnBoltImpact(x, y, color);
     // Progression first: the player's HP pool is the level-derived max (Lv1 → BASE_MAX_HP).
     this.progression = new PlayerProgression();
     this.progression.onChange = () => this.refreshXpUi();
@@ -287,6 +302,7 @@ export class MainScene extends Phaser.Scene {
       this.player.setDirection(0, 0);
       this.sasquatch.halt();
       this.haltSwarmers();
+      this.haltAngels();
       this.readout.update();
       return;
     }
@@ -303,6 +319,7 @@ export class MainScene extends Phaser.Scene {
       this.talkButton.setVisible(false);
       this.sasquatch.halt();
       this.haltSwarmers();
+      this.haltAngels();
       this.readout.update();
       return;
     }
@@ -326,6 +343,8 @@ export class MainScene extends Phaser.Scene {
     else this.checkInteractions();
     this.sasquatch.update(this.player.x, this.player.y, this.time.now);
     this.updateSwarmers();
+    this.updateAngels();
+    this.projectiles.update(delta, this.player.x, this.player.y, PROJECTILE_PLAYER_HIT_RADIUS);
     this.regenTick(delta);
     this.readout.update();
   }
@@ -487,8 +506,24 @@ export class MainScene extends Phaser.Scene {
       }
     }
 
-    // The same free swing also cleaves any swarmers caught in the arc.
+    // The same free swing also cleaves any swarmers / angels caught in the arc.
     this.hitSwarmersInRange(sx, sy, PLAYER_ATTACK_RANGE, this.progression.effectiveDamage);
+    this.hitAngelsInRange(sx, sy, PLAYER_ATTACK_RANGE, this.progression.effectiveDamage);
+  }
+
+  /** Apply damage to every angel within `range` of (x,y); award XP on kills. */
+  private hitAngelsInRange(x: number, y: number, range: number, damage: number): void {
+    for (const a of this.angels) {
+      if (!a.isAlive) continue;
+      if (a.distanceTo(x, y) <= range + 8) {
+        const dealt = a.takeHit(damage);
+        if (dealt > 0) {
+          this.spawnDamageNumber(a.x, a.y - 28 * a.variant.scale, dealt, '#ffffff');
+          this.lastCombatTime = this.time.now;
+          if (!a.isAlive) this.onAngelKilled(a);
+        }
+      }
+    }
   }
 
   /** Apply damage to every revealed swarmer within `range` of (x,y); award XP on kills. */
@@ -530,13 +565,15 @@ export class MainScene extends Phaser.Scene {
     this.player.sprite.setPosition(this.town.spawn.x, this.town.spawn.y);
     this.player.setDirection(0, 0);
     this.sasquatch.reset(); // clean, repeatable fight
+    this.projectiles.clear(); // drop any bolts still in flight
     this.lastCombatTime = -1e9;
     this.playerDead = false;
     this.controls.setEnabled(true);
   }
 
   private regenTick(delta: number): void {
-    const enemiesEngaged = this.sasquatch.isAggro || this.swarmers.some((s) => s.isAggro);
+    const enemiesEngaged =
+      this.sasquatch.isAggro || this.swarmers.some((s) => s.isAggro) || this.angels.some((a) => a.isAggro);
     if (enemiesEngaged) this.lastCombatTime = this.time.now;
     const outOfCombat = !enemiesEngaged && this.time.now - this.lastCombatTime > PLAYER_HP_REGEN_DELAY_MS;
     if (outOfCombat && this.playerHealth.current < this.playerHealth.max) {
@@ -623,6 +660,19 @@ export class MainScene extends Phaser.Scene {
         }
       }
     }
+
+    for (const a of this.angels) {
+      if (!a.isAlive || this.dashHits.has(a)) continue;
+      if (a.distanceTo(px, py) <= DASH_HIT_RADIUS + 12) {
+        this.dashHits.add(a);
+        const dealt = a.takeHit(dmg);
+        if (dealt > 0) {
+          this.spawnDamageNumber(a.x, a.y - 28 * a.variant.scale, dealt, '#ffe9a8');
+          this.lastCombatTime = this.time.now;
+          if (!a.isAlive) this.onAngelKilled(a);
+        }
+      }
+    }
   }
 
   /** A fading after-image streak so the lunge reads clearly. */
@@ -690,6 +740,109 @@ export class MainScene extends Phaser.Scene {
     for (const s of this.swarmers) s.destroy();
     this.swarmers = [];
     this.swarmersRevealed = false;
+  }
+
+  // --- Ranged: angels + projectiles -----------------------------------------
+
+  /** Spawn an angel of the given variant; wire its volleys to the projectile system. */
+  private spawnAngel(variantKey: AngelVariantKey, x: number, y: number): void {
+    const a = new AngelEnemy(this, x, y, variantKey);
+    const v = a.variant;
+    a.onFire = (origin, dirs) => {
+      for (const d of dirs) {
+        this.projectiles.spawn({
+          x: origin.x,
+          y: origin.y,
+          dirX: d.x,
+          dirY: d.y,
+          speed: v.projectileSpeed,
+          damage: v.projectileDamage,
+          maxRange: v.projectileRange,
+          faction: 'enemy',
+          color: 0xffe9a8,
+          radius: HOLY_BOLT_RADIUS,
+        });
+      }
+    };
+    this.physics.add.collider(a.sprite, this.map.layer);
+    this.uiCamera?.ignore(a.objects()); // runtime world objects: keep off the UI camera
+    this.angels.push(a);
+  }
+
+  /** Drive each angel with line-of-sight from the scene, then prune the dead. */
+  private updateAngels(): void {
+    for (const a of this.angels) {
+      const los = this.hasLineOfSight(a.x, a.y, this.player.x, this.player.y);
+      a.update(this.player.x, this.player.y, this.time.now, los);
+    }
+    if (this.angels.some((a) => !a.isAlive)) this.angels = this.angels.filter((a) => a.isAlive);
+  }
+
+  private haltAngels(): void {
+    for (const a of this.angels) a.halt();
+  }
+
+  private onAngelKilled(a: AngelEnemy): void {
+    this.showBanner(a.variantKey === 'archangel' ? 'Archangel vanquished' : 'Angel vanquished', 1600);
+    this.gainXP(a.xpReward); // enemy data drives the award, same as every enemy
+  }
+
+  /** Damage the player when an enemy bolt connects. */
+  private onProjectileHitPlayer(damage: number): void {
+    if (this.playerDead) return;
+    const dealt = this.playerHealth.damage(damage);
+    this.player.flash();
+    this.spawnDamageNumber(this.player.x, this.player.y - 26, dealt, '#ffd27a');
+    this.lastCombatTime = this.time.now;
+    if (this.playerHealth.isDead) this.onPlayerDeath();
+  }
+
+  /**
+   * True if no BLOCKING terrain lies between two world points — sampled along the
+   * segment (deliberately simple, no pathfinding). Lets the player break the
+   * angel's line of sight behind a mountain so it stops firing and repositions.
+   */
+  private hasLineOfSight(ax: number, ay: number, bx: number, by: number): boolean {
+    const dist = Phaser.Math.Distance.Between(ax, ay, bx, by);
+    const steps = Math.max(1, Math.ceil(dist / (this.map.tileSize * 0.5)));
+    for (let i = 1; i < steps; i++) {
+      const t = i / steps;
+      const terr = this.map.terrainAtWorld(ax + (bx - ax) * t, ay + (by - ay) * t);
+      if (terr?.blocks) return false;
+    }
+    return true;
+  }
+
+  /** A small fading flash where a bolt impacts. */
+  private spawnBoltImpact(x: number, y: number, color: number): void {
+    const flash = this.add.circle(x, y, 6, color, 0.85).setDepth(13);
+    this.worldFx.add(flash);
+    this.tweens.add({
+      targets: flash,
+      scale: 2.2,
+      alpha: 0,
+      duration: 180,
+      ease: 'Quad.out',
+      onComplete: () => flash.destroy(),
+    });
+  }
+
+  /** Remove all angels and any bolts in flight (dev reset). */
+  private clearAngels(): void {
+    for (const a of this.angels) a.destroy();
+    this.angels = [];
+    this.projectiles.clear();
+  }
+
+  /** DEV: spawn an angel variant out at its preferred range so it engages at once. */
+  private devSpawnAngel(variantKey: AngelVariantKey): void {
+    const v = ANGEL_VARIANTS[variantKey];
+    const len = Math.hypot(this.player.facingX, this.player.facingY) || 1;
+    this.spawnAngel(
+      variantKey,
+      this.player.x + (this.player.facingX / len) * v.preferredRange,
+      this.player.y + (this.player.facingY / len) * v.preferredRange,
+    );
   }
 
   /**
@@ -1026,6 +1179,9 @@ export class MainScene extends Phaser.Scene {
     this.clearSwarmers();
     this.spawnSwarmPack(this.town.rift.x, this.town.rift.y);
     this.spawnSwarmPack(OREGON_SWARM_SPAWN.x, OREGON_SWARM_SPAWN.y);
+
+    // Clear any spawned angels and their bolts.
+    this.clearAngels();
   }
 
   /**
@@ -1046,6 +1202,8 @@ export class MainScene extends Phaser.Scene {
       { label: 'Full Heal', key: KC.H, onPress: () => this.playerHealth.full() },
       { label: 'Respawn Sasquatch', key: KC.K, onPress: () => this.sasquatch.reset() },
       { label: 'Spawn Spirit Swarm', onPress: () => this.devSpawnSwarm() },
+      { label: 'Spawn Angel', onPress: () => this.devSpawnAngel('angel') },
+      { label: 'Spawn Archangel', onPress: () => this.devSpawnAngel('archangel') },
       { label: 'Refill Energy', onPress: () => this.energy.full() },
       { label: 'Teleport to Oregon', onPress: () => this.devTeleportToOregon() },
       { label: 'Complete Active Quest', onPress: () => this.chain.completeActive() },
