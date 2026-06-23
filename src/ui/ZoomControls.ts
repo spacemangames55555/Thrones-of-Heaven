@@ -188,10 +188,11 @@ export class ZoomControls {
     const w = this.scene.scale.width;
     const h = this.scene.scale.height;
     const insets = getInsets(this.scene);
-    // Bottom-right, inside the safe area: − at the bottom, + stacked above it.
+    // Right edge, vertically centered (the bottom-right corner is the Attack
+    // button now): + above −, clear of the top dev button and bottom Attack.
     const cx = w - insets.right - UI_MARGIN - BTN / 2;
-    const outY = h - insets.bottom - UI_MARGIN - BTN / 2;
-    const inY = outY - (BTN + GAP);
+    const inY = h / 2 - (BTN / 2 + GAP / 2);
+    const outY = h / 2 + (BTN / 2 + GAP / 2);
     this.inBtn.bg.setPosition(cx, inY);
     this.inBtn.label.setPosition(cx, inY);
     this.outBtn.bg.setPosition(cx, outY);

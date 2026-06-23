@@ -38,7 +38,22 @@ export class Player {
       x /= len;
       y /= len;
     }
+    if (len > 0.01) {
+      const f = Math.hypot(x, y);
+      this.facingX = x / f;
+      this.facingY = y / f;
+    }
     this.sprite.setVelocity(x * SPEED, y * SPEED);
+  }
+
+  /** Last-moved direction (defaults to facing down), for the melee swing. */
+  facingX = 0;
+  facingY = 1;
+
+  /** Brief red flash when the player is hit. */
+  flash(): void {
+    this.sprite.setTint(0xff4444).setTintMode(Phaser.TintModes.FILL);
+    this.sprite.scene.time.delayedCall(110, () => this.sprite.clearTint());
   }
 
   get x(): number {
