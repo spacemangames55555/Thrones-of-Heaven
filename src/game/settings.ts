@@ -220,6 +220,8 @@ export interface AngelVariantConfig {
   readonly moveTilesPerSec: number;
   /** XP awarded on death. */
   readonly xpReward: number;
+  /** Holy Power pickups dropped on death (Angel 1, Archangel more). */
+  readonly holyPowerDrop: number;
   /** Sprite scale (the Archangel is visibly larger). */
   readonly scale: number;
   /** Sprite tint. */
@@ -244,6 +246,7 @@ export const ANGEL_VARIANTS: Record<AngelVariantKey, AngelVariantConfig> = {
     preferredRange: 300,
     moveTilesPerSec: 5,
     xpReward: 45,
+    holyPowerDrop: 1,
     scale: 1.0,
     color: 0xffe6a0,
   },
@@ -258,7 +261,16 @@ export const ANGEL_VARIANTS: Record<AngelVariantKey, AngelVariantConfig> = {
     preferredRange: 340,
     moveTilesPerSec: 5.5,
     xpReward: 160,
+    holyPowerDrop: 3,
     scale: 1.5,
     color: 0xfff4d0,
   },
 };
+
+
+// --- Holy Power (collectible quest item dropped by angels) ------------------
+// (The pickup mote's collect radius + color are data in src/world/pickupData.ts;
+//  per-variant drop amounts are `holyPowerDrop` on ANGEL_VARIANTS above.)
+
+/** How much one press of the dev "Grant Holy Power" button adds. */
+export const DEV_GRANT_HOLY_POWER = 5;
