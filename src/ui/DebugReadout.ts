@@ -37,8 +37,8 @@ export class DebugReadout {
 
   private layout(): void {
     const insets = getInsets(this.scene);
-    // Below the player HP bar (top-left HUD).
-    this.text.setPosition(insets.left + UI_MARGIN, insets.top + UI_MARGIN + 26);
+    // Below the player HP + XP + Energy bar cluster (top-left HUD).
+    this.text.setPosition(insets.left + UI_MARGIN, insets.top + UI_MARGIN + 33);
   }
 
   update(): void {

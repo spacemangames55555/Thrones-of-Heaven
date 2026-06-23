@@ -12,9 +12,11 @@ import { ChoicePrompt } from '../ui/ChoicePrompt';
 import { SpiritVision } from '../spirit/SpiritVision';
 import { Angel } from '../entities/Angel';
 import { Sasquatch } from '../entities/Sasquatch';
+import { SpiritSwarmer } from '../entities/SpiritSwarmer';
 import { Health } from '../combat/Health';
 import { HealthBar } from '../combat/HealthBar';
 import { AttackButton } from '../ui/AttackButton';
+import { DashButton } from '../ui/DashButton';
 import { ANGEL_ENCOUNTER } from '../story/angelData';
 import { QuestManager } from '../quest/QuestManager';
 import { THE_CORRUPTION_AT_THE_GATES, type ObjectiveTrigger } from '../quest/questData';
@@ -35,6 +37,18 @@ import {
   QUEST_XP_REWARD,
   DEV_GRANT_XP_CHUNK,
   DEV_MODE,
+  DMG_PER_LEVEL,
+  MAX_ENERGY,
+  ENERGY_REGEN_PER_SEC,
+  ENERGY_REGEN_DELAY_MS,
+  DASH_DAMAGE,
+  DASH_ENERGY_COST,
+  DASH_COOLDOWN_MS,
+  DASH_DISTANCE,
+  DASH_SPEED,
+  DASH_HIT_RADIUS,
+  SWARMER_CONTACT_DAMAGE,
+  SWARM_PACK_SIZE,
 } from './settings';
 import { TOWN_TILES } from '../town/townTiles';
 import { buildTown, type TownFeatures, type DoorFeature } from '../town/TownBuilder';
@@ -87,6 +101,20 @@ export class MainScene extends Phaser.Scene {
   private xpBar!: HealthBar;
   private levelBadge!: Phaser.GameObjects.Text;
   private levelBanner!: Phaser.GameObjects.Text;
+
+  // Combat Depth v1: energy resource + dash ability.
+  private energy!: Health;
+  private energyBar!: HealthBar;
+  private lastEnergySpendTime = -1e9;
+  private dashButton!: DashButton;
+  private dashCooldownUntil = 0;
+  private dashEndsAt = 0;
+  private dashDir = { x: 0, y: 1 };
+  private dashHits = new Set<object>();
+
+  // Combat Depth v1: the Spirit-Vision-gated swarmer pack.
+  private swarmers: SpiritSwarmer[] = [];
+  private swarmersRevealed = false;
 
   // Story / alignment state.
   private playerPath: PlayerPath = 'neutral';
@@ -152,6 +180,7 @@ export class MainScene extends Phaser.Scene {
     this.progression = new PlayerProgression();
     this.progression.onChange = () => this.refreshXpUi();
     this.playerHealth = new Health(this.progression.effectiveMaxHP);
+    this.energy = new Health(MAX_ENERGY); // energy is a generic clamped pool
     this.sasquatch = new Sasquatch(this, SASQUATCH_SPAWN.x, SASQUATCH_SPAWN.y);
     this.sasquatch.onStrike = () => this.onSasquatchStrike();
     this.physics.add.collider(this.sasquatch.sprite, this.map.layer);
@@ -200,6 +229,11 @@ export class MainScene extends Phaser.Scene {
     // Initial quest UI state: tracker hidden (inactive), no title, marker points
     // the player toward the quest-giver.
     this.refreshQuestUi();
+
+    // A dormant pack of spirit swarmers waits near the Corruption Rift — unseen
+    // and intangible until Spirit Vision is earned. Spawned after the UI camera
+    // exists so each is routed past it (world camera draws them).
+    this.spawnSwarmPack(this.town.rift.x, this.town.rift.y);
   }
 
   override update(_time: number, delta: number): void {
@@ -209,8 +243,10 @@ export class MainScene extends Phaser.Scene {
     this.updateObjectiveMarker();
 
     if (this.playerDead) {
+      this.cancelDash();
       this.player.setDirection(0, 0);
       this.sasquatch.halt();
+      this.haltSwarmers();
       this.readout.update();
       return;
     }
@@ -222,21 +258,34 @@ export class MainScene extends Phaser.Scene {
 
     // Frozen while a conversation or a choice is open.
     if (this.dialogue.isOpen() || this.choice.isOpen()) {
+      this.cancelDash();
       this.player.setDirection(0, 0);
       this.talkButton.setVisible(false);
       this.sasquatch.halt();
+      this.haltSwarmers();
       this.readout.update();
       return;
     }
 
-    const dir = this.controls.getDirection();
-    this.player.setDirection(dir.x, dir.y);
+    // Dashing overrides normal movement: hold the dash velocity (terrain colliders
+    // still stop the player), damage enemies passed through, then resume control.
+    if (this.isDashing()) {
+      this.player.sprite.setVelocity(this.dashDir.x * DASH_SPEED, this.dashDir.y * DASH_SPEED);
+      this.spawnDashTrail();
+      this.dashDamageTick();
+      if (this.time.now >= this.dashEndsAt) this.endDash();
+    } else {
+      const dir = this.controls.getDirection();
+      this.player.setDirection(dir.x, dir.y);
+    }
 
     this.checkDoors();
     this.checkQuestProximity();
     this.checkAngelEncounter();
-    this.checkInteractions();
+    if (this.isDashing()) this.talkButton.setVisible(false);
+    else this.checkInteractions();
     this.sasquatch.update(this.player.x, this.player.y, this.time.now);
+    this.updateSwarmers();
     this.regenTick(delta);
     this.readout.update();
   }
@@ -247,10 +296,12 @@ export class MainScene extends Phaser.Scene {
     const depth = 2000;
     // Top-left cluster: a level badge + HP numbers on top, HP bar, then a thin
     // XP bar directly beneath — a clean HP + XP group above the debug readout.
-    this.playerBar = new HealthBar(this, 150, 11, depth);
+    this.playerBar = new HealthBar(this, 150, 10, depth);
     this.playerBar.setScrollFactor(0);
     this.xpBar = new HealthBar(this, 150, 5, depth, 0x49b6ff); // fixed blue XP fill
     this.xpBar.setScrollFactor(0);
+    this.energyBar = new HealthBar(this, 150, 5, depth, 0xb45cff); // fixed violet energy fill
+    this.energyBar.setScrollFactor(0);
     this.playerHpText = this.add
       .text(0, 0, '', { fontFamily: 'ui-monospace, monospace', fontSize: '11px', color: '#eafff0' })
       .setOrigin(0, 0.5)
@@ -267,6 +318,7 @@ export class MainScene extends Phaser.Scene {
       .setScrollFactor(0)
       .setDepth(depth + 2);
     this.attackButton = new AttackButton(this, () => this.tryAttack());
+    this.dashButton = new DashButton(this, () => this.tryDash());
     this.banner = this.add
       .text(0, 0, '', {
         fontFamily: 'system-ui, sans-serif',
@@ -299,18 +351,23 @@ export class MainScene extends Phaser.Scene {
     const layout = (): void => {
       const ins = getInsets(this);
       const x = ins.left + UI_MARGIN;
-      const hpY = ins.top + UI_MARGIN + 7;
-      const xpY = ins.top + UI_MARGIN + 18;
-      this.playerBar.setPosition(x, hpY);
-      this.playerHpText.setPosition(x + 158, hpY);
-      this.xpBar.setPosition(x, xpY);
-      this.levelBadge.setPosition(x + 158, xpY);
+      const base = ins.top + UI_MARGIN;
+      // Three stacked bars: HP (thick) → XP → Energy, with HP numbers and the
+      // level badge in the right column. Energy ends above the debug readout.
+      this.playerBar.setPosition(x, base + 7);
+      this.playerHpText.setPosition(x + 158, base + 7);
+      this.xpBar.setPosition(x, base + 17);
+      this.energyBar.setPosition(x, base + 26);
+      this.levelBadge.setPosition(x + 158, base + 26);
     };
     layout();
     this.scale.on(Phaser.Scale.Events.RESIZE, layout);
 
-    // Attack is gameplay (also the on-screen Attack button) — never gated by DEV_MODE.
-    this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE).on('down', () => this.tryAttack());
+    // Gameplay keys (never gated by DEV_MODE): Attack (also the on-screen button)
+    // and a desktop-convenience Dash key alongside the on-screen Dash button.
+    const kb = this.input.keyboard;
+    kb?.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE).on('down', () => this.tryAttack());
+    kb?.addKey(Phaser.Input.Keyboard.KeyCodes.SHIFT).on('down', () => this.tryDash());
 
     this.refreshXpUi();
   }
@@ -320,6 +377,9 @@ export class MainScene extends Phaser.Scene {
     this.attackButton.setCooldownRatio(remaining / PLAYER_ATTACK_COOLDOWN_MS);
     this.playerBar.setRatio(this.playerHealth.ratio);
     this.playerHpText.setText(`${Math.ceil(this.playerHealth.current)} / ${this.playerHealth.max}`);
+    this.energyBar.setRatio(this.energy.ratio);
+    const dashCdRatio = (this.dashCooldownUntil - this.time.now) / DASH_COOLDOWN_MS;
+    this.dashButton.setState(dashCdRatio, this.energy.current < DASH_ENERGY_COST);
   }
 
   /** Refresh the XP bar fill + level badge (called on every XP/level change). */
@@ -386,6 +446,25 @@ export class MainScene extends Phaser.Scene {
         this.gainXP(this.sasquatch.xpReward); // enemy data drives the award
       }
     }
+
+    // The same free swing also cleaves any swarmers caught in the arc.
+    this.hitSwarmersInRange(sx, sy, PLAYER_ATTACK_RANGE, this.progression.effectiveDamage);
+  }
+
+  /** Apply damage to every revealed swarmer within `range` of (x,y); award XP on kills. */
+  private hitSwarmersInRange(x: number, y: number, range: number, damage: number): void {
+    if (!this.swarmersRevealed) return;
+    for (const s of this.swarmers) {
+      if (!s.isAlive) continue;
+      if (s.distanceTo(x, y) <= range) {
+        const dealt = s.takeHit(damage);
+        if (dealt > 0) {
+          this.spawnDamageNumber(s.x, s.y - 16, dealt, '#d6b4ff');
+          this.lastCombatTime = this.time.now;
+          if (!s.isAlive) this.onSwarmerKilled(s);
+        }
+      }
+    }
   }
 
   private onSasquatchStrike(): void {
@@ -417,11 +496,174 @@ export class MainScene extends Phaser.Scene {
   }
 
   private regenTick(delta: number): void {
-    if (this.sasquatch.isAggro) this.lastCombatTime = this.time.now;
-    const outOfCombat = !this.sasquatch.isAggro && this.time.now - this.lastCombatTime > PLAYER_HP_REGEN_DELAY_MS;
+    const enemiesEngaged = this.sasquatch.isAggro || this.swarmers.some((s) => s.isAggro);
+    if (enemiesEngaged) this.lastCombatTime = this.time.now;
+    const outOfCombat = !enemiesEngaged && this.time.now - this.lastCombatTime > PLAYER_HP_REGEN_DELAY_MS;
     if (outOfCombat && this.playerHealth.current < this.playerHealth.max) {
       this.playerHealth.heal((PLAYER_HP_REGEN_PER_SEC * delta) / 1000);
     }
+
+    // Energy regenerates continuously, pausing briefly after each spend.
+    if (this.time.now - this.lastEnergySpendTime > ENERGY_REGEN_DELAY_MS && this.energy.current < this.energy.max) {
+      this.energy.heal((ENERGY_REGEN_PER_SEC * delta) / 1000);
+    }
+  }
+
+  // --- Combat Depth v1: Dash ------------------------------------------------
+
+  private isDashing(): boolean {
+    return this.time.now < this.dashEndsAt;
+  }
+
+  /** Energy-gated lunge: spend energy, start the dash burst in the facing direction. */
+  private tryDash(): void {
+    if (this.playerDead || this.dialogue.isOpen() || this.choice.isOpen()) return;
+    if (this.isDashing() || this.time.now < this.dashCooldownUntil) return;
+    if (this.energy.current < DASH_ENERGY_COST) return; // button already shows disabled
+
+    this.energy.damage(DASH_ENERGY_COST);
+    this.lastEnergySpendTime = this.time.now;
+    this.dashCooldownUntil = this.time.now + DASH_COOLDOWN_MS;
+
+    // Facing = last movement direction (or last-faced if idle); already unit-length.
+    const len = Math.hypot(this.player.facingX, this.player.facingY) || 1;
+    this.dashDir = { x: this.player.facingX / len, y: this.player.facingY / len };
+    this.dashEndsAt = this.time.now + (DASH_DISTANCE / DASH_SPEED) * 1000;
+    this.dashHits.clear();
+  }
+
+  private endDash(): void {
+    this.dashEndsAt = 0;
+    this.player.sprite.setVelocity(0, 0);
+  }
+
+  /** Abort an in-progress dash (used when control is frozen mid-lunge). */
+  private cancelDash(): void {
+    this.dashEndsAt = 0;
+  }
+
+  /** Dash damage reuses the level-derived growth: base + the melee per-level slope. */
+  private dashDamage(): number {
+    return DASH_DAMAGE + (this.progression.level - 1) * DMG_PER_LEVEL;
+  }
+
+  /** Damage each enemy the dash passes through, once per dash. */
+  private dashDamageTick(): void {
+    const px = this.player.x;
+    const py = this.player.y;
+    const dmg = this.dashDamage();
+
+    if (
+      this.sasquatch.isAlive &&
+      !this.dashHits.has(this.sasquatch) &&
+      this.sasquatch.distanceTo(px, py) <= DASH_HIT_RADIUS + 20
+    ) {
+      this.dashHits.add(this.sasquatch);
+      const dealt = this.sasquatch.takeHit(dmg);
+      this.spawnDamageNumber(this.sasquatch.x, this.sasquatch.y - 24, dealt, '#ffe9a8');
+      this.lastCombatTime = this.time.now;
+      if (!this.sasquatch.isAlive) {
+        this.showBanner('Sasquatch defeated', 1600);
+        this.notifyQuest('sasquatch-defeated');
+        this.gainXP(this.sasquatch.xpReward);
+      }
+    }
+
+    if (this.swarmersRevealed) {
+      for (const s of this.swarmers) {
+        if (!s.isAlive || this.dashHits.has(s)) continue;
+        if (s.distanceTo(px, py) <= DASH_HIT_RADIUS) {
+          this.dashHits.add(s);
+          const dealt = s.takeHit(dmg);
+          if (dealt > 0) {
+            this.spawnDamageNumber(s.x, s.y - 16, dealt, '#ffe9a8');
+            this.lastCombatTime = this.time.now;
+            if (!s.isAlive) this.onSwarmerKilled(s);
+          }
+        }
+      }
+    }
+  }
+
+  /** A fading after-image streak so the lunge reads clearly. */
+  private spawnDashTrail(): void {
+    const ghost = this.add
+      .rectangle(this.player.x, this.player.y, 18, 34, 0x9fe0ff, 0.35)
+      .setDepth(11);
+    this.worldFx.add(ghost);
+    this.tweens.add({
+      targets: ghost,
+      alpha: 0,
+      duration: 220,
+      ease: 'Quad.out',
+      onComplete: () => ghost.destroy(),
+    });
+  }
+
+  // --- Combat Depth v1: Spirit swarmers -------------------------------------
+
+  /** Spawn a fresh pack of swarmers spread around a world point. */
+  private spawnSwarmPack(cx: number, cy: number): void {
+    for (let i = 0; i < SWARM_PACK_SIZE; i++) {
+      const a = (Math.PI * 2 * i) / SWARM_PACK_SIZE + Math.random() * 0.5;
+      const r = 36 + Math.random() * 34;
+      const s = new SpiritSwarmer(this, cx + Math.cos(a) * r, cy + Math.sin(a) * r);
+      s.onContact = () => this.onSwarmerContact();
+      this.physics.add.collider(s.sprite, this.map.layer);
+      s.setRevealed(this.spirit.isActive());
+      this.uiCamera?.ignore(s.sprite); // runtime world object: keep it off the UI camera
+      this.swarmers.push(s);
+    }
+    this.swarmersRevealed = this.spirit.isActive();
+  }
+
+  /** Sync swarmer visibility/tangibility to Spirit Vision, then advance + prune them. */
+  private updateSwarmers(): void {
+    const sv = this.spirit.isActive();
+    if (sv !== this.swarmersRevealed) {
+      this.swarmersRevealed = sv;
+      for (const s of this.swarmers) s.setRevealed(sv);
+    }
+    for (const s of this.swarmers) s.update(this.player.x, this.player.y, this.time.now);
+    if (this.swarmers.some((s) => !s.isAlive)) this.swarmers = this.swarmers.filter((s) => s.isAlive);
+  }
+
+  private haltSwarmers(): void {
+    for (const s of this.swarmers) s.halt();
+  }
+
+  private onSwarmerContact(): void {
+    if (this.playerDead) return;
+    const dealt = this.playerHealth.damage(SWARMER_CONTACT_DAMAGE);
+    this.player.flash();
+    this.spawnDamageNumber(this.player.x, this.player.y - 26, dealt, '#c89bff');
+    this.lastCombatTime = this.time.now;
+    if (this.playerHealth.isDead) this.onPlayerDeath();
+  }
+
+  private onSwarmerKilled(s: SpiritSwarmer): void {
+    this.gainXP(s.xpReward); // enemy data drives the award, same as the Sasquatch
+  }
+
+  /** Remove all swarmers from the world (dev reset). */
+  private clearSwarmers(): void {
+    for (const s of this.swarmers) s.destroy();
+    this.swarmers = [];
+    this.swarmersRevealed = false;
+  }
+
+  /**
+   * DEV: spawn a pack just ahead of the player and force Spirit Vision on, so the
+   * encounter is immediately testable on demand regardless of story state.
+   */
+  private devSpawnSwarm(): void {
+    this.spirit.setSpiritVision(true);
+    const len = Math.hypot(this.player.facingX, this.player.facingY) || 1;
+    const ahead = 150;
+    this.spawnSwarmPack(
+      this.player.x + (this.player.facingX / len) * ahead,
+      this.player.y + (this.player.facingY / len) * ahead,
+    );
   }
 
   private spawnDamageNumber(x: number, y: number, amount: number, color: string): void {
@@ -655,6 +897,15 @@ export class MainScene extends Phaser.Scene {
     this.progression.reset();
     this.playerHealth.setMax(this.progression.effectiveMaxHP);
     this.playerHealth.full();
+
+    // Combat Depth: refill energy, end any dash, and reset the swarm to its
+    // dormant starting pack near the rift.
+    this.energy.full();
+    this.lastEnergySpendTime = -1e9;
+    this.dashEndsAt = 0;
+    this.dashCooldownUntil = 0;
+    this.clearSwarmers();
+    this.spawnSwarmPack(this.town.rift.x, this.town.rift.y);
   }
 
   /**
@@ -667,16 +918,20 @@ export class MainScene extends Phaser.Scene {
     if (!DEV_MODE) return;
 
     const KC = Phaser.Input.Keyboard.KeyCodes;
-    const actions = [
+    // Buttons carry an optional key (keyboard convenience for desktop). The two
+    // panel-only actions (no key) spawn a swarm and refill energy for testing.
+    const actions: { label: string; key?: number; onPress: () => void }[] = [
       { label: 'Grant XP', key: KC.X, onPress: () => this.gainXP(DEV_GRANT_XP_CHUNK) },
       { label: 'Instant Level-Up', key: KC.L, onPress: () => this.gainXP(this.progression.xpRemainingToLevel()) },
       { label: 'Full Heal', key: KC.H, onPress: () => this.playerHealth.full() },
       { label: 'Respawn Sasquatch', key: KC.K, onPress: () => this.sasquatch.reset() },
+      { label: 'Spawn Spirit Swarm', onPress: () => this.devSpawnSwarm() },
+      { label: 'Refill Energy', onPress: () => this.energy.full() },
       { label: 'Dev Reset', key: KC.R, onPress: () => this.devReset() },
     ];
 
     const kb = this.input.keyboard;
-    for (const a of actions) kb?.addKey(a.key).on('down', a.onPress);
+    for (const a of actions) if (a.key !== undefined) kb?.addKey(a.key).on('down', a.onPress);
 
     new DevPanel(this, actions.map((a) => ({ label: a.label, onPress: a.onPress })));
   }
@@ -784,9 +1039,9 @@ export class MainScene extends Phaser.Scene {
 
     const layout = (): void => {
       const insets = getInsets(this);
-      // Below the 3-line debug readout (which starts at +26). Only ever visible
+      // Below the 3-line debug readout (which starts at +33). Only ever visible
       // once the quest is complete, by which point the tracker has hidden.
-      this.titleText.setPosition(insets.left + UI_MARGIN, insets.top + UI_MARGIN + 86);
+      this.titleText.setPosition(insets.left + UI_MARGIN, insets.top + UI_MARGIN + 95);
     };
     layout();
     this.scale.on(Phaser.Scale.Events.RESIZE, layout);

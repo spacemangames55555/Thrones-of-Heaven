@@ -3,7 +3,7 @@ import { getInsets, UI_MARGIN } from './uiLayout';
 
 // Sits TOP-CENTER, dropped below the top HUD row so it never overlaps the
 // top-left health bar + debug readout or the top-right dev button.
-const TOP_OFFSET = 92;
+const TOP_OFFSET = 100;
 const PANEL_W = 320;
 const PAD = 10;
 const TITLE_GAP = 4;
