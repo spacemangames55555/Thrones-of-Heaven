@@ -12,45 +12,12 @@ import { viewportSize, type Insets } from './ui/uiLayout';
  */
 const game = new Phaser.Game(gameConfig);
 
-// ---------------------------------------------------------------------------
-// Diagnostic overlay (plain DOM, NOT a Phaser object). Fixed-position div with
-// a very high z-index, so it bypasses the game canvas and all Phaser scaling —
-// if the deploy reaches the device, this WILL show. Bump BUILD each deploy to
-// confirm new code is live. pointer-events:none so it never blocks taps.
-// ---------------------------------------------------------------------------
-const BUILD_MARKER = 'BUILD 8';
-const SCALE_MODE_NAMES = [
-  'NONE',
-  'WIDTH_CONTROLS_HEIGHT',
-  'HEIGHT_CONTROLS_WIDTH',
-  'FIT',
-  'ENVELOP',
-  'RESIZE',
-  'EXPAND',
-];
-
-const diag = document.createElement('div');
-diag.id = 'diag-overlay';
-diag.style.cssText =
-  'position:fixed;top:0;left:0;z-index:2147483647;pointer-events:none;' +
-  'background:#000;color:#fff;opacity:0.92;padding:4px 7px;' +
-  'font:12px/1.35 ui-monospace,Menlo,Consolas,monospace;white-space:pre;' +
-  'border-bottom-right-radius:5px;max-width:100vw;';
-document.body.appendChild(diag);
-
-function updateDiag(): void {
-  const gs = game.scale.gameSize;
-  const mode = SCALE_MODE_NAMES[game.scale.scaleMode] ?? String(game.scale.scaleMode);
-  diag.textContent = [
-    BUILD_MARKER,
-    `win ${window.innerWidth} x ${window.innerHeight} css`,
-    `dpr ${window.devicePixelRatio}`,
-    `game ${Math.round(gs.width)} x ${Math.round(gs.height)}  ${mode}`,
-  ].join('\n');
-}
-updateDiag();
-game.scale.on(Phaser.Scale.Events.RESIZE, updateDiag);
-game.events.once(Phaser.Core.Events.READY, updateDiag);
+// Build identifier — console-only, no on-screen overlay. __BUILD_ID__ is injected
+// at build time by Vite (commit short-hash when the host provides it, else an ISO
+// timestamp; see vite.config.ts). To verify which build is live, open the browser
+// console and look for this line.
+declare const __BUILD_ID__: string;
+console.log('ToH build:', __BUILD_ID__);
 
 // Read CSS env(safe-area-inset-*) via a hidden probe element.
 let probe: HTMLDivElement | null = null;
@@ -81,7 +48,6 @@ function applySize(force = false): void {
   lastH = h;
   game.registry.set('safeInsets', readSafeInsets());
   game.scale.resize(w, h); // emits RESIZE → cameras + every UI element re-layout
-  updateDiag();
 }
 
 game.events.once(Phaser.Core.Events.READY, () => applySize(true));
