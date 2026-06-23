@@ -20,6 +20,7 @@ import { QuestManager } from '../quest/QuestManager';
 import { THE_CORRUPTION_AT_THE_GATES, type ObjectiveTrigger } from '../quest/questData';
 import { ObjectiveMarker } from '../quest/ObjectiveMarker';
 import { QuestTracker } from '../ui/QuestTracker';
+import { DevPanel } from '../ui/DevPanel';
 import { PlayerProgression } from '../progression/PlayerProgression';
 import type { Interactable } from '../entities/Interactable';
 import type { PlayerPath } from '../story/playerPath';
@@ -33,6 +34,7 @@ import {
   SASQUATCH_DAMAGE,
   QUEST_XP_REWARD,
   DEV_GRANT_XP_CHUNK,
+  DEV_MODE,
 } from './settings';
 import { TOWN_TILES } from '../town/townTiles';
 import { buildTown, type TownFeatures, type DoorFeature } from '../town/TownBuilder';
@@ -180,10 +182,10 @@ export class MainScene extends Phaser.Scene {
     // objects on demand and tells the main camera to ignore them.
     this.spirit.createTint();
     this.choice = new ChoicePrompt(this, cam);
-    this.createDevReset();
     this.createCombatHud();
     this.tracker = new QuestTracker(this);
     this.createQuestHud();
+    this.createDevTools(); // dev panel + dev keys (gated by DEV_MODE)
 
     // Dedicated UI camera, fixed at zoom 1 and never scrolling, so the on-screen
     // UI is NOT scaled or moved by the main camera's zoom/follow (the bug:
@@ -307,13 +309,8 @@ export class MainScene extends Phaser.Scene {
     layout();
     this.scale.on(Phaser.Scale.Events.RESIZE, layout);
 
-    const kb = this.input.keyboard;
-    const KC = Phaser.Input.Keyboard.KeyCodes;
-    kb?.addKey(KC.SPACE).on('down', () => this.tryAttack());
-    kb?.addKey(KC.H).on('down', () => this.playerHealth.full()); // dev: heal
-    kb?.addKey(KC.K).on('down', () => this.sasquatch.reset()); // dev: respawn enemy
-    kb?.addKey(KC.X).on('down', () => this.gainXP(DEV_GRANT_XP_CHUNK)); // dev: grant XP chunk
-    kb?.addKey(KC.L).on('down', () => this.gainXP(this.progression.xpRemainingToLevel())); // dev: instant level
+    // Attack is gameplay (also the on-screen Attack button) — never gated by DEV_MODE.
+    this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE).on('down', () => this.tryAttack());
 
     this.refreshXpUi();
   }
@@ -660,33 +657,28 @@ export class MainScene extends Phaser.Scene {
     this.playerHealth.full();
   }
 
-  private createDevReset(): void {
-    const depth = 1300;
-    const bw = 112;
-    const bh = 30;
-    const bg = this.add
-      .rectangle(0, 0, bw, bh, 0x3a1414, 0.85)
-      .setStrokeStyle(1, 0xff8a8a, 0.85)
-      .setScrollFactor(0)
-      .setDepth(depth)
-      .setInteractive({ useHandCursor: true });
-    const label = this.add
-      .text(0, 0, 'DEV: Reset', { fontFamily: 'ui-monospace, monospace', fontSize: '12px', color: '#ffb3b3' })
-      .setOrigin(0.5)
-      .setScrollFactor(0)
-      .setDepth(depth + 1);
-    bg.on(Phaser.Input.Events.GAMEOBJECT_POINTER_DOWN, () => this.devReset());
-    this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.R).on('down', () => this.devReset());
+  /**
+   * All developer/testing tools — the on-screen collapsible DevPanel AND the
+   * keyboard shortcuts (desktop convenience). Both are gated by the single
+   * DEV_MODE flag in src/game/settings.ts; off → no panel, no dev keys. Each
+   * panel button mirrors exactly one keyboard shortcut.
+   */
+  private createDevTools(): void {
+    if (!DEV_MODE) return;
 
-    const layout = (): void => {
-      const insets = getInsets(this);
-      const cx = this.scale.width - insets.right - UI_MARGIN - bw / 2;
-      const cy = insets.top + UI_MARGIN + bh / 2;
-      bg.setPosition(cx, cy);
-      label.setPosition(cx, cy);
-    };
-    layout();
-    this.scale.on(Phaser.Scale.Events.RESIZE, layout);
+    const KC = Phaser.Input.Keyboard.KeyCodes;
+    const actions = [
+      { label: 'Grant XP', key: KC.X, onPress: () => this.gainXP(DEV_GRANT_XP_CHUNK) },
+      { label: 'Instant Level-Up', key: KC.L, onPress: () => this.gainXP(this.progression.xpRemainingToLevel()) },
+      { label: 'Full Heal', key: KC.H, onPress: () => this.playerHealth.full() },
+      { label: 'Respawn Sasquatch', key: KC.K, onPress: () => this.sasquatch.reset() },
+      { label: 'Dev Reset', key: KC.R, onPress: () => this.devReset() },
+    ];
+
+    const kb = this.input.keyboard;
+    for (const a of actions) kb?.addKey(a.key).on('down', a.onPress);
+
+    new DevPanel(this, actions.map((a) => ({ label: a.label, onPress: a.onPress })));
   }
 
   // --- Quest ----------------------------------------------------------------
