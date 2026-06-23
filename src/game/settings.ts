@@ -1,7 +1,8 @@
 /**
  * Tunable gameplay constants. Edit these to change how the world feels.
  *
- * The map is 800 x 500 tiles at 32px each = 25,600 x 16,000 px.
+ * The map is 800 x 800 tiles at 32px each = 25,600 x 25,600 px (Washington in
+ * the north 500 rows, Oregon appended below as one continuous landmass).
  */
 
 /**

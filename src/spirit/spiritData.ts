@@ -46,5 +46,26 @@ export const SPIRIT_ENTITIES: SpiritEntityData[] = [
       'Pale Wraith: The dark has need of hands that can see it work. Come. Let me show you what feeds here.',
     ],
   },
+  {
+    // OREGON SEED — proves the spirit-layer corridor extends south. Sits in the
+    // Willamette Valley just SOUTH of Portland (city tile 376,409 → world
+    // 12048,13104; this spirit is ~11 tiles south at tile 376,420). Visible and
+    // talkable ONLY with Spirit Vision on. >>> EDIT ITS DIALOGUE HERE. <<<
+    id: 'oregon-shade',
+    x: 12048,
+    y: 13456,
+    color: 0x8cd0ff,
+    name: 'Hollow Pilgrim',
+    lines: [
+      'Hollow Pilgrim: You followed it south. Few do. Fewer still can see me to know they have.',
+      'Hollow Pilgrim: The rift at Seattle was only the wound. This — Oregon — is the long throat beneath it.',
+      'Hollow Pilgrim: Keep descending and the world thins to spirit. This is the road the marked are meant to walk.',
+      'Hollow Pilgrim: I am only the first marker on it. What waits further down has been waiting a very long time.',
+    ],
+    corruptedLines: [
+      'Hollow Pilgrim: Marked already — good. Then you feel it too, the pull downward.',
+      'Hollow Pilgrim: Walk on when you are ready. The descent does not open for the living, only for the claimed.',
+    ],
+  },
 ];
 
