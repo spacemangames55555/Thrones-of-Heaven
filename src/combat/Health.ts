@@ -2,12 +2,21 @@
  * A reusable health pool. Generic across the player and any enemy.
  */
 export class Health {
-  readonly max: number;
+  max: number;
   current: number;
 
   constructor(max: number) {
     this.max = max;
     this.current = max;
+  }
+
+  /**
+   * Change the maximum pool (e.g. when the player levels up). Current HP is kept
+   * but clamped to the new max; callers that want a heal call full() after.
+   */
+  setMax(max: number): void {
+    this.max = max;
+    this.current = Math.min(this.current, max);
   }
 
   get ratio(): number {

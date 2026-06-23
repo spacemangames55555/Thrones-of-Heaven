@@ -10,6 +10,7 @@ import {
   SASQUATCH_ATTACK_COOLDOWN_MS,
   SASQUATCH_WINDUP_MS,
   SASQUATCH_LEASH_RANGE,
+  SASQUATCH_XP_REWARD,
 } from '../game/settings';
 
 const TEXTURE_KEY = 'sasquatch';
@@ -24,6 +25,8 @@ type State = 'idle' | 'chase' | 'attack' | 'leash' | 'dead';
 export class Sasquatch {
   readonly sprite: Phaser.Physics.Arcade.Sprite;
   readonly health: Health;
+  /** XP granted to the player on defeat (data — each enemy carries its own). */
+  readonly xpReward = SASQUATCH_XP_REWARD;
   /** Called the moment a strike lands while the player is in range. */
   onStrike?: () => void;
 
