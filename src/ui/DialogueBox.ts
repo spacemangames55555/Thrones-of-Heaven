@@ -79,9 +79,15 @@ export class DialogueBox {
     }
   }
 
-  /** Force the box closed (e.g. the spirit you were talking to just vanished). */
+  /**
+   * Force the box closed WITHOUT firing the onClose callback (e.g. a dev reset
+   * interrupting the angel's dialogue must not then trigger the choice prompt).
+   */
   forceClose(): void {
-    if (this.open_) this.close();
+    if (!this.open_) return;
+    this.open_ = false;
+    this.setVisible(false);
+    this.onClose = undefined;
   }
 
   private close(): void {
