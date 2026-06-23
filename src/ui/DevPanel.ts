@@ -12,14 +12,14 @@ const TAB_H = 66;
 const BTN_W = 170;
 const BTN_GAP = 6;
 const BTN_H_MAX = 40;
-const BTN_H_MIN = 26;
+const BTN_H_MIN = 24;
 const TAB_GAP = 8; // space between the tab and the button column
 // The vertical band the expanded column lives in: below the quest tracker, above
 // the bottom controls. Button height shrinks to fit however many buttons there are
 // (the expanded buttons capture their own taps, so the joystick never spawns under
 // them; the bottom action buttons are on the right, clear of this left column).
 const BAND_TOP = 196; // clears the top-left cluster + top-centre quest tracker
-const BAND_BOTTOM_GAP = 110; // clearance kept above the very bottom controls
+const BAND_BOTTOM_GAP = 96; // clearance kept above the very bottom controls
 const DEPTH = 1550; // above the static HUD/tracker, below the choice/dialogue modals
 
 /**

@@ -15,6 +15,8 @@ import { Sasquatch } from '../entities/Sasquatch';
 import { SpiritSwarmer } from '../entities/SpiritSwarmer';
 import { AngelEnemy } from '../entities/AngelEnemy';
 import { ProjectileSystem } from '../combat/ProjectileSystem';
+import { PickupSystem, type PickupCollected } from '../world/PickupSystem';
+import { HolyPower } from '../progression/HolyPower';
 import { Health } from '../combat/Health';
 import { HealthBar } from '../combat/HealthBar';
 import { AttackButton } from '../ui/AttackButton';
@@ -61,6 +63,7 @@ import {
   type AngelVariantKey,
   HOLY_BOLT_RADIUS,
   PROJECTILE_PLAYER_HIT_RADIUS,
+  DEV_GRANT_HOLY_POWER,
 } from './settings';
 import { TOWN_TILES } from '../town/townTiles';
 import { buildTown, type TownFeatures, type DoorFeature } from '../town/TownBuilder';
@@ -141,6 +144,11 @@ export class MainScene extends Phaser.Scene {
   private angels: AngelEnemy[] = [];
   private projectiles!: ProjectileSystem;
 
+  // Collectibles: the reusable world-pickup system + the Holy Power count + HUD.
+  private pickups!: PickupSystem;
+  private holyPower = new HolyPower();
+  private holyPowerText!: Phaser.GameObjects.Text;
+
   // Story / alignment state.
   private playerPath: PlayerPath = 'neutral';
   private angelEncounterFired = false;
@@ -219,6 +227,10 @@ export class MainScene extends Phaser.Scene {
     this.projectiles = new ProjectileSystem(this, this.map, this.worldFx);
     this.projectiles.onPlayerHit = (dmg) => this.onProjectileHitPlayer(dmg);
     this.projectiles.onImpact = (x, y, color) => this.spawnBoltImpact(x, y, color);
+    // Collectibles: motes draw into the world-FX layer (main camera only).
+    this.pickups = new PickupSystem(this, this.worldFx);
+    this.pickups.onCollect = (e) => this.onPickupCollected(e);
+    this.holyPower.onChange = () => this.refreshHolyPowerUi();
     // Progression first: the player's HP pool is the level-derived max (Lv1 → BASE_MAX_HP).
     this.progression = new PlayerProgression();
     this.progression.onChange = () => this.refreshXpUi();
@@ -264,6 +276,7 @@ export class MainScene extends Phaser.Scene {
     this.spirit.createTint();
     this.choice = new ChoicePrompt(this, cam);
     this.createCombatHud();
+    this.createHolyPowerHud();
     this.tracker = new QuestTracker(this);
     this.createQuestHud();
     this.createDevTools(); // dev panel + dev keys (gated by DEV_MODE)
@@ -281,6 +294,7 @@ export class MainScene extends Phaser.Scene {
     // Initial quest UI state: tracker hidden (inactive), no title, marker points
     // the player toward the quest-giver.
     this.refreshQuestUi();
+    this.refreshHolyPowerUi();
 
     // A dormant pack of spirit swarmers waits near the Corruption Rift — unseen
     // and intangible until Spirit Vision is earned. Spawned after the UI camera
@@ -345,6 +359,7 @@ export class MainScene extends Phaser.Scene {
     this.updateSwarmers();
     this.updateAngels();
     this.projectiles.update(delta, this.player.x, this.player.y, PROJECTILE_PLAYER_HIT_RADIUS);
+    this.pickups.update(this.player.x, this.player.y);
     this.regenTick(delta);
     this.readout.update();
   }
@@ -785,6 +800,56 @@ export class MainScene extends Phaser.Scene {
   private onAngelKilled(a: AngelEnemy): void {
     this.showBanner(a.variantKey === 'archangel' ? 'Archangel vanquished' : 'Angel vanquished', 1600);
     this.gainXP(a.xpReward); // enemy data drives the award, same as every enemy
+    // Angels (and only angels) drop Holy Power at the death spot — a per-variant
+    // amount of motes the player walks over to collect.
+    this.dropHolyPower(a.x, a.y, a.variant.holyPowerDrop);
+  }
+
+  /** Drop `n` Holy Power motes spread slightly around a world point. */
+  private dropHolyPower(x: number, y: number, n: number): void {
+    for (let i = 0; i < n; i++) {
+      const ang = (Math.PI * 2 * i) / Math.max(1, n) + Math.random() * 0.6;
+      const r = n > 1 ? 18 + Math.random() * 14 : 0;
+      this.pickups.spawn({
+        x: x + Math.cos(ang) * r,
+        y: y + Math.sin(ang) * r,
+        type: 'holy-power',
+        amount: 1,
+      });
+    }
+  }
+
+  /** Apply a collected pickup's effect (keyed by type) + brief feedback. */
+  private onPickupCollected(e: PickupCollected): void {
+    if (e.type === 'holy-power') this.holyPower.add(e.amount); // HUD ticks via onChange
+    this.spawnPickupPop(e.x, e.y, e.color);
+  }
+
+  /** A quick rising sparkle + ring when a mote is collected. */
+  private spawnPickupPop(x: number, y: number, color: number): void {
+    const ring = this.add.circle(x, y, 8, color, 0).setStrokeStyle(3, color, 0.9).setDepth(13);
+    this.worldFx.add(ring);
+    this.tweens.add({
+      targets: ring,
+      scale: 2.4,
+      alpha: 0,
+      duration: 320,
+      ease: 'Quad.out',
+      onComplete: () => ring.destroy(),
+    });
+    const spark = this.add
+      .text(x, y, '✦', { fontFamily: 'system-ui, sans-serif', fontSize: '16px', color: '#fff1b8' })
+      .setOrigin(0.5)
+      .setDepth(13);
+    this.worldFx.add(spark);
+    this.tweens.add({
+      targets: spark,
+      y: y - 26,
+      alpha: 0,
+      duration: 520,
+      ease: 'Quad.out',
+      onComplete: () => spark.destroy(),
+    });
   }
 
   /** Damage the player when an enemy bolt connects. */
@@ -1182,6 +1247,10 @@ export class MainScene extends Phaser.Scene {
 
     // Clear any spawned angels and their bolts.
     this.clearAngels();
+
+    // Clear uncollected pickups and zero the Holy Power count.
+    this.pickups.clear();
+    this.holyPower.reset();
   }
 
   /**
@@ -1204,6 +1273,8 @@ export class MainScene extends Phaser.Scene {
       { label: 'Spawn Spirit Swarm', onPress: () => this.devSpawnSwarm() },
       { label: 'Spawn Angel', onPress: () => this.devSpawnAngel('angel') },
       { label: 'Spawn Archangel', onPress: () => this.devSpawnAngel('archangel') },
+      { label: 'Grant Holy Power', onPress: () => this.holyPower.add(DEV_GRANT_HOLY_POWER) },
+      { label: 'Reset Holy Power', onPress: () => this.holyPower.reset() },
       { label: 'Refill Energy', onPress: () => this.energy.full() },
       { label: 'Teleport to Oregon', onPress: () => this.devTeleportToOregon() },
       { label: 'Complete Active Quest', onPress: () => this.chain.completeActive() },
@@ -1325,6 +1396,39 @@ export class MainScene extends Phaser.Scene {
     };
     layout();
     this.scale.on(Phaser.Scale.Events.RESIZE, layout);
+  }
+
+  /**
+   * The Holy Power counter — a fixed, right-anchored HUD readout in the free
+   * TOP-RIGHT corner, grouped with the resource cluster but clear of the top-left
+   * HP/XP/energy bars, the top-centre quest tracker, the joystick, and the action
+   * buttons. Routed through the UI camera (fixed across zoom).
+   */
+  private createHolyPowerHud(): void {
+    this.holyPowerText = this.add
+      .text(0, 0, '', {
+        fontFamily: 'system-ui, sans-serif',
+        fontSize: '13px',
+        color: '#ffe06a',
+        fontStyle: 'bold',
+        backgroundColor: 'rgba(8, 16, 28, 0.5)',
+        padding: { x: 6, y: 4 },
+      })
+      .setOrigin(1, 0) // right-anchored
+      .setScrollFactor(0)
+      .setDepth(2000);
+
+    const layout = (): void => {
+      const insets = getInsets(this);
+      this.holyPowerText.setPosition(this.scale.width - insets.right - UI_MARGIN, insets.top + UI_MARGIN + 4);
+    };
+    layout();
+    this.scale.on(Phaser.Scale.Events.RESIZE, layout);
+  }
+
+  /** Refresh the Holy Power counter (called on every count change). */
+  private refreshHolyPowerUi(): void {
+    this.holyPowerText.setText(`✦ Holy Power: ${this.holyPower.count}`);
   }
 
   // --- Building interior transitions ---------------------------------------
