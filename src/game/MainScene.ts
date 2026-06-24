@@ -1334,6 +1334,37 @@ export class MainScene extends Phaser.Scene {
     );
   }
 
+  /**
+   * DEV-ONLY NUKE (gated by DEV_MODE with the rest of the dev panel; NOT a player
+   * ability). Deals massive damage to every active enemy via their EXISTING
+   * hit/death paths, so XP + Holy Power drops still happen normally. `includeBoss`
+   * = true nukes Archangel Michael too (skip the fight); false leaves the boss
+   * alive (clear trash / his summoned adds while testing him solo).
+   */
+  private devSmite(includeBoss: boolean): void {
+    const HUGE = 1_000_000; // enough to one-shot anything (damage is clamped to HP)
+    const R = 1e9; // unbounded range — hits every enemy regardless of distance
+    const px = this.player.x;
+    const py = this.player.y;
+
+    // Sasquatch (killed inline elsewhere; replicate its on-death rewards here).
+    if (this.sasquatch.isAlive) {
+      const dealt = this.sasquatch.takeHit(HUGE);
+      if (dealt > 0 && !this.sasquatch.isAlive) {
+        this.showBanner('Sasquatch defeated', 1600);
+        this.notifyQuest('sasquatch-defeated');
+        this.gainXP(this.sasquatch.xpReward);
+      }
+    }
+    // Every range-killable enemy routes through its normal kill handler (XP/drops).
+    this.hitSwarmersInRange(px, py, R, HUGE); // (revealed swarmers only, as in normal play)
+    this.hitAngelsInRange(px, py, R, HUGE);
+    this.hitTownsfolkInRange(px, py, R, HUGE);
+    this.hitGuardiansInRange(px, py, R, HUGE);
+    this.hitCherubsInRange(px, py, R, HUGE); // includes Michael's summoned adds
+    if (includeBoss) this.hitMichael(px, py, R, HUGE); // → die → onDefeat (rewards + hook)
+  }
+
   // --- Archangel Michael: the multi-phase, summoning boss -------------------
   //
   // A TRIGGERABLE unit (approach → activate → phased fight w/ capped summons →
@@ -2562,6 +2593,8 @@ export class MainScene extends Phaser.Scene {
       { label: 'Reset Portal', onPress: () => this.resetGuardianEncounter() },
       { label: 'Spawn Cherub', onPress: () => this.devSpawnCherub('cherub') },
       { label: 'Spawn Cherubim', onPress: () => this.devSpawnCherub('cherubim') },
+      { label: 'Smite All (Dev)', onPress: () => this.devSmite(true) },
+      { label: 'Smite Adds (Dev)', onPress: () => this.devSmite(false) },
       { label: 'Teleport to Michael', onPress: () => this.devTeleportToMichael() },
       { label: 'Start Michael Fight', onPress: () => this.startMichaelFight() },
       { label: 'Reset Michael', onPress: () => this.resetMichael() },
