@@ -25,6 +25,8 @@ export class GameMap {
    *  in disjoint coordinate regions; defaults to 0,0 — the Earth map). */
   readonly originX: number;
   readonly originY: number;
+  /** Force the CPU TilemapLayer (instead of the GPU layer) for this map. */
+  private readonly forceCpuLayer: boolean;
   readonly layer: Phaser.Tilemaps.TilemapLayerBase;
   /** Atlas frames that block movement, for re-marking collision after edits. */
   readonly blockingFrames: number[];
@@ -49,6 +51,7 @@ export class GameMap {
     data: WashingtonMap,
     extraTiles: TerrainType[] = [],
     origin: { x: number; y: number } = { x: 0, y: 0 },
+    opts: { forceCpuLayer?: boolean } = {},
   ) {
     if (data.tileSize !== TILE_SIZE) {
       throw new Error(`Map tileSize ${data.tileSize} != atlas TILE_SIZE ${TILE_SIZE}`);
@@ -59,6 +62,7 @@ export class GameMap {
     this.pixelHeight = data.height * data.tileSize;
     this.originX = origin.x;
     this.originY = origin.y;
+    this.forceCpuLayer = opts.forceCpuLayer ?? false;
     this.allTiles = [...data.terrain, ...extraTiles];
     this.terrainById = new Map(this.allTiles.map((t) => [t.id, t]));
     this.idToFrame = new Map(this.allTiles.map((t) => [t.id, atlasFrameForKey(t.key)]));
@@ -108,7 +112,14 @@ export class GameMap {
 
     // Use the GPU layer when WebGL is available (the whole state in one quad);
     // fall back to the CPU layer on the rare Canvas-only device.
-    const useGpu = scene.game.renderer.type === Phaser.WEBGL;
+    //
+    // EXCEPTION: a map at a non-zero world ORIGIN (e.g. the Heaven world, built at
+    // an offset so it never overlaps Earth) MUST use the CPU layer. Phaser 4.2's
+    // GPU tilemap submitter double-applies the layer's x/y offset (it passes the
+    // world-space quad corners AND multiplies by a matrix already translated by
+    // x/y), so a GPU layer at offset X renders at 2X — off-screen, leaving the
+    // camera background showing through. The CPU TilemapLayer positions correctly.
+    const useGpu = !this.forceCpuLayer && scene.game.renderer.type === Phaser.WEBGL;
     const layer = map.createLayer(0, tileset, this.originX, this.originY, useGpu);
     if (!layer) throw new Error('Failed to create tilemap layer');
 

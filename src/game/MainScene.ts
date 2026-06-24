@@ -1396,7 +1396,10 @@ export class MainScene extends Phaser.Scene {
   private setupHeaven(): void {
     const ts = this.map.tileSize;
     const origin = { x: this.map.pixelWidth + HEAVEN_WORLD_GAP, y: 0 };
-    this.heavenMap = new GameMap(this, buildHeavenMapData(), [], origin);
+    // forceCpuLayer: Heaven is built at a world offset; the GPU tilemap layer
+    // mis-renders at an offset (Phaser 4.2 double-applies the layer position), so
+    // Heaven uses the CPU TilemapLayer, which positions correctly. See GameMap.
+    this.heavenMap = new GameMap(this, buildHeavenMapData(), [], origin, { forceCpuLayer: true });
 
     // Heaven's walkable centre — where the (corrupted) return portal + arrival sit.
     const cx = origin.x + (HEAVEN_WIDTH * ts) / 2;
