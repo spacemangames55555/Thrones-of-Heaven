@@ -66,6 +66,11 @@ Currently mapped real tiles:
 | `Beachcoast.png` | `beach` | Beach / Coast |
 | `Coastal_rainforest.png` | `rainforest` | Coastal Rainforest |
 | `Soundinlet.png` | `sound` | Puget Sound |
+| `Ocean.png` | `ocean` | Pacific Ocean |
+| `River.png` | `river` | River |
+| `Lake.png` | `lake` | Lake |
+| `Lowland_forest.png` | `forest` | Lowland Forest |
+| `Wetlandmarsh.png` | `wetland` | Wetland / Marsh |
 
 ## Swapping the WHOLE atlas at once (alternative)
 

@@ -120,6 +120,11 @@ export const TERRAIN_TILE_IMAGES: { key: string; file: string }[] = [
   { key: 'beach', file: 'tiles/terrain/Beachcoast.png' }, // Beachcoast.png  → "Beach / Coast"
   { key: 'rainforest', file: 'tiles/terrain/Coastal_rainforest.png' }, // Coastal_rainforest.png → "Coastal Rainforest"
   { key: 'sound', file: 'tiles/terrain/Soundinlet.png' }, // Soundinlet.png → "Puget Sound"
+  { key: 'ocean', file: 'tiles/terrain/Ocean.png' }, // Ocean.png → "Pacific Ocean"
+  { key: 'river', file: 'tiles/terrain/River.png' }, // River.png → "River"
+  { key: 'lake', file: 'tiles/terrain/Lake.png' }, // Lake.png → "Lake"
+  { key: 'forest', file: 'tiles/terrain/Lowland_forest.png' }, // Lowland_forest.png → "Lowland Forest"
+  { key: 'wetland', file: 'tiles/terrain/Wetlandmarsh.png' }, // Wetlandmarsh.png → "Wetland / Marsh"
 ];
 
 /** Texture cache key under which a terrain's real tile PNG is loaded. */
