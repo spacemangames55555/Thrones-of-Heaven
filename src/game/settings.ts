@@ -367,6 +367,64 @@ export const CHERUB_VARIANTS: Record<CherubVariantKey, CherubVariantConfig> = {
 export const CHERUB_BOLT_RADIUS = 8;
 
 
+// --- Archangel Michael: the multi-phase, summoning Heaven boss --------------
+//
+// THE climactic fight. A single unique boss (not a spawnable type) — a hybrid
+// (holy bolts + flaming-sword melee) who ESCALATES across 3 HP-gated PHASES and
+// SUMMONS Cherub reinforcements. The ONE new system is the phase state machine
+// (see ArchangelMichael.ts); attacks/summons/drops all reuse existing systems.
+// Edit any field to retune the hardest fight in the game.
+
+/** One phase's escalating attack profile (Phase 3 is the most intense). */
+export interface MichaelPhaseConfig {
+  readonly meleeDamage: number;
+  readonly meleeCooldownMs: number;
+  readonly projectileDamage: number;
+  readonly fireCooldownMs: number;
+  readonly boltsPerVolley: number;
+  /** Reinforcements summoned at phase entry (capped by summonCap). */
+  readonly summonCount: number;
+  /** Ongoing summon timer within this phase (ms); 0 = only summon on phase entry. */
+  readonly summonCadenceMs: number;
+}
+
+export const MICHAEL = {
+  /** Total HP — far beyond the Cherubim (1700); the hardest fight. */
+  maxHP: 6000,
+  moveTilesPerSec: 4.6,
+  /** Sprite scale (larger/more imposing than the Cherubim's 2.4). */
+  scale: 3.2,
+  color: 0xffffff,
+  /** Distance (px) within which he strikes in melee instead of firing. */
+  meleeRange: 66,
+  projectileSpeed: 360,
+  projectileRange: 660,
+  /** Preferred standoff (px): advances to here, never backs off when rushed. */
+  preferredRange: 280,
+  /** Player within this range of the sanctum activates the boss. */
+  activationRange: 300,
+  /** Holy-bolt collision radius. */
+  boltRadius: 9,
+
+  /** Phase HP thresholds (ratios): Phase 1 above [0], Phase 2 between, Phase 3 below [1]. */
+  phaseThresholds: [0.66, 0.33] as [number, number],
+  /** Per-phase attack + summon escalation (index 0 = Phase 1). */
+  phases: [
+    { meleeDamage: 34, meleeCooldownMs: 850, projectileDamage: 20, fireCooldownMs: 1500, boltsPerVolley: 2, summonCount: 2, summonCadenceMs: 0 },
+    { meleeDamage: 40, meleeCooldownMs: 750, projectileDamage: 24, fireCooldownMs: 1100, boltsPerVolley: 3, summonCount: 2, summonCadenceMs: 9000 },
+    { meleeDamage: 48, meleeCooldownMs: 600, projectileDamage: 28, fireCooldownMs: 800, boltsPerVolley: 4, summonCount: 3, summonCadenceMs: 6000 },
+  ] as [MichaelPhaseConfig, MichaelPhaseConfig, MichaelPhaseConfig],
+
+  /** Which enemy he summons (reuses the Cherub), and the concurrent cap. */
+  summonType: 'cherub' as CherubVariantKey,
+  summonCap: 4,
+
+  /** Defeat rewards (large). */
+  xpReward: 3000,
+  holyPowerDrop: 40,
+} as const;
+
+
 // --- The Descent arc (quests 1–4) ------------------------------------------
 //
 // Authored, corruption-gated quest chain in Oregon. Locations are placeholder
