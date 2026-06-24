@@ -18,8 +18,9 @@ import { Townsfolk } from '../entities/Townsfolk';
 import { DarkPortal } from '../entities/DarkPortal';
 import { HeavenPortal } from '../entities/HeavenPortal';
 import { FlamingSword } from '../entities/FlamingSword';
+import { Cherub } from '../entities/Cherub';
 import { PortalDefense } from '../encounter/PortalDefense';
-import { buildHeavenMapData, HEAVEN_WIDTH, HEAVEN_HEIGHT } from '../map/heavenWorld';
+import { buildHeavenMapData, HEAVEN_WIDTH, HEAVEN_HEIGHT, HEAVEN_CHERUB_SPAWNS } from '../map/heavenWorld';
 import { WORLD_EARTH, WORLD_HEAVEN, type WorldId, type WorldRuntime } from '../world/worlds';
 import { ProjectileSystem } from '../combat/ProjectileSystem';
 import { PickupSystem, type PickupCollected } from '../world/PickupSystem';
@@ -96,6 +97,8 @@ import {
   PORTAL_ENTER_RANGE,
   PORTAL_CORRUPT_DURATION_MS,
   GUARDIAN_BOLT_RADIUS,
+  CHERUB_BOLT_RADIUS,
+  type CherubVariantKey,
   HEAVEN_WORLD_GAP,
   HEAVEN_ARRIVAL_OFFSET,
   EARTH_RETURN_OFFSET,
@@ -210,6 +213,9 @@ export class MainScene extends Phaser.Scene {
   private activeWorld: WorldId = WORLD_EARTH;
   private worlds: Record<WorldId, WorldRuntime> = {};
   private worldPos: Record<WorldId, { x: number; y: number }> = {}; // remembered per-world player position
+  // Heaven's Defenders: the hybrid Cherub / Cherubim enemies (placed in Heaven +
+  // dev-spawnable). They live in whichever world they were spawned in.
+  private cherubs: Cherub[] = [];
   private heavenMap!: GameMap;
   private heavenReturnPortal!: HeavenPortal;
   private heavenArrivalPos = { x: 0, y: 0 };
@@ -465,6 +471,7 @@ export class MainScene extends Phaser.Scene {
       this.haltAngels();
       this.haltTownsfolk();
       this.haltGuardians();
+      this.haltCherubs();
       this.corruptButton.setVisible(false);
       this.readout.update();
       return;
@@ -486,6 +493,7 @@ export class MainScene extends Phaser.Scene {
       this.haltAngels();
       this.haltTownsfolk();
       this.haltGuardians();
+      this.haltCherubs();
       this.readout.update();
       return;
     }
@@ -520,12 +528,16 @@ export class MainScene extends Phaser.Scene {
       this.updateTownsfolk(); // prune dead first so the wave manager sees the live count
       this.portalDefense.update(this.time.now);
       this.updateGuardianEncounter();
-      this.pickups.update(this.player.x, this.player.y);
     } else {
       this.talkButton.setVisible(false);
       this.updateHeaven();
     }
+    // World-agnostic: Cherubs (Heaven defenders + dev spawns), projectiles, and
+    // pickups run for both worlds — Cherubs idle when the player is far, and the
+    // pickup/projectile systems carry drops/bolts in whichever world they exist.
+    this.updateCherubs();
     this.projectiles.update(delta, this.player.x, this.player.y, PROJECTILE_PLAYER_HIT_RADIUS);
+    this.pickups.update(this.player.x, this.player.y);
     this.regenTick(delta);
     this.readout.update();
   }
@@ -694,6 +706,7 @@ export class MainScene extends Phaser.Scene {
     this.hitAngelsInRange(sx, sy, PLAYER_ATTACK_RANGE, this.progression.effectiveDamage);
     this.hitTownsfolkInRange(sx, sy, PLAYER_ATTACK_RANGE, this.progression.effectiveDamage);
     this.hitGuardiansInRange(sx, sy, PLAYER_ATTACK_RANGE, this.progression.effectiveDamage);
+    this.hitCherubsInRange(sx, sy, PLAYER_ATTACK_RANGE, this.progression.effectiveDamage);
   }
 
   /** Apply damage to every flaming-sword guardian within `range` of (x,y); award XP on kills. */
@@ -798,7 +811,8 @@ export class MainScene extends Phaser.Scene {
       this.swarmers.some((s) => s.isAggro) ||
       this.angels.some((a) => a.isAggro) ||
       this.townsfolk.length > 0 ||
-      this.guardians.some((g) => g.isAggro);
+      this.guardians.some((g) => g.isAggro) ||
+      this.cherubs.some((c) => c.isAggro);
     if (enemiesEngaged) this.lastCombatTime = this.time.now;
     const outOfCombat = !enemiesEngaged && this.time.now - this.lastCombatTime > PLAYER_HP_REGEN_DELAY_MS;
     if (outOfCombat && this.playerHealth.current < this.playerHealth.max) {
@@ -921,6 +935,19 @@ export class MainScene extends Phaser.Scene {
           this.spawnDamageNumber(g.x, g.y - 26, dealt, '#ffe9a8');
           this.lastCombatTime = this.time.now;
           if (!g.isAlive) this.onGuardianKilled(g);
+        }
+      }
+    }
+
+    for (const c of this.cherubs) {
+      if (!c.isAlive || this.dashHits.has(c)) continue;
+      if (c.distanceTo(px, py) <= DASH_HIT_RADIUS + 16) {
+        this.dashHits.add(c);
+        const dealt = c.takeHit(dmg);
+        if (dealt > 0) {
+          this.spawnDamageNumber(c.x, c.y - 30 * c.variant.scale, dealt, '#ffe9a8');
+          this.lastCombatTime = this.time.now;
+          if (!c.isAlive) this.onCherubKilled(c);
         }
       }
     }
@@ -1049,10 +1076,11 @@ export class MainScene extends Phaser.Scene {
    * descent's "collect their Holy Power" objectives, where each angel drops one.
    */
   private dropHolyPower(x: number, y: number, n: number): void {
+    const map = this.activeMap(); // clamp on the world the kill happened in (Earth or Heaven)
     for (let i = 0; i < n; i++) {
       const ang = (Math.PI * 2 * i) / Math.max(1, n) + Math.random() * 0.6;
       const r = n > 1 ? 18 + Math.random() * 14 : 0;
-      const spot = this.map.nearestWalkableWorld(x + Math.cos(ang) * r, y + Math.sin(ang) * r);
+      const spot = map.nearestWalkableWorld(x + Math.cos(ang) * r, y + Math.sin(ang) * r);
       this.pickups.spawn({
         x: spot.x,
         y: spot.y,
@@ -1151,6 +1179,115 @@ export class MainScene extends Phaser.Scene {
       variantKey,
       this.player.x + (this.player.facingX / len) * v.preferredRange,
       this.player.y + (this.player.facingY / len) * v.preferredRange,
+    );
+  }
+
+  // --- Heaven's Defenders: the Cherub / Cherubim ----------------------------
+
+  /** The active world's map (Earth or Heaven) — for terrain-aware drops/queries. */
+  private activeMap(): GameMap {
+    return this.worlds[this.activeWorld]?.map ?? this.map;
+  }
+
+  /**
+   * Spawn a Cherub of the given variant; wire its volleys (reusing the projectile
+   * system) and its melee strike. It collides with the given terrain layer (the
+   * world it belongs to). A hybrid, dangerous-at-all-ranges divine guardian.
+   */
+  private spawnCherub(variantKey: CherubVariantKey, x: number, y: number, mapLayer: Phaser.Tilemaps.TilemapLayerBase): Cherub {
+    const c = new Cherub(this, x, y, variantKey);
+    const v = c.variant;
+    c.onFire = (origin, dirs) => {
+      for (const d of dirs) {
+        this.projectiles.spawn({
+          x: origin.x,
+          y: origin.y,
+          dirX: d.x,
+          dirY: d.y,
+          speed: v.projectileSpeed,
+          damage: v.projectileDamage,
+          maxRange: v.projectileRange,
+          faction: 'enemy',
+          color: 0xfff1b8, // radiant gold-white
+          radius: CHERUB_BOLT_RADIUS,
+        });
+      }
+    };
+    c.onMelee = (dmg) => this.onCherubMelee(dmg);
+    this.physics.add.collider(c.sprite, mapLayer);
+    this.uiCamera?.ignore(c.objects()); // runtime world objects: keep off the UI camera
+    this.cherubs.push(c);
+    return c;
+  }
+
+  /** Drive every Cherub (line of sight from the scene), then prune the dead. */
+  private updateCherubs(): void {
+    for (const c of this.cherubs) {
+      const los = this.hasLineOfSight(c.x, c.y, this.player.x, this.player.y);
+      c.update(this.player.x, this.player.y, this.time.now, los);
+    }
+    if (this.cherubs.some((c) => !c.isAlive)) this.cherubs = this.cherubs.filter((c) => c.isAlive);
+  }
+
+  private haltCherubs(): void {
+    for (const c of this.cherubs) c.halt();
+  }
+
+  /** A Cherub's melee strike landed on the player. */
+  private onCherubMelee(damage: number): void {
+    if (this.playerDead) return;
+    const dealt = this.playerHealth.damage(damage);
+    this.player.flash();
+    this.spawnDamageNumber(this.player.x, this.player.y - 26, dealt, '#fff1b8');
+    this.lastCombatTime = this.time.now;
+    if (this.playerHealth.isDead) this.onPlayerDeath();
+  }
+
+  private onCherubKilled(c: Cherub): void {
+    this.showBanner(c.variantKey === 'cherubim' ? 'The Cherubim falls!' : 'Cherub vanquished', 1800);
+    this.gainXP(c.xpReward); // enemy data drives the award
+    this.dropHolyPower(c.x, c.y, c.holyPowerDrop); // larger drops than Earth angels
+  }
+
+  /** Apply damage to every Cherub within `range` of (x,y); award XP + drops on kills. */
+  private hitCherubsInRange(x: number, y: number, range: number, damage: number): void {
+    for (const c of this.cherubs) {
+      if (!c.isAlive) continue;
+      if (c.distanceTo(x, y) <= range + 14) {
+        const dealt = c.takeHit(damage);
+        if (dealt > 0) {
+          this.spawnDamageNumber(c.x, c.y - 30 * c.variant.scale, dealt, '#ffffff');
+          this.lastCombatTime = this.time.now;
+          if (!c.isAlive) this.onCherubKilled(c);
+        }
+      }
+    }
+  }
+
+  /** Remove all Cherubs (and their bolts) — dev reset / teardown. */
+  private clearCherubs(): void {
+    for (const c of this.cherubs) c.destroy();
+    this.cherubs = [];
+    this.projectiles.clear();
+  }
+
+  /** Seed the placed Heaven defenders (their fixed positions live in heavenWorld.ts). */
+  private seedHeavenCherubs(): void {
+    const o = this.heavenMap.bounds;
+    for (const s of HEAVEN_CHERUB_SPAWNS) {
+      this.spawnCherub(s.variant, o.x + s.x, o.y + s.y, this.heavenMap.layer);
+    }
+  }
+
+  /** DEV: spawn a Cherub variant just ahead of the player, in the ACTIVE world. */
+  private devSpawnCherub(variantKey: CherubVariantKey): void {
+    const len = Math.hypot(this.player.facingX, this.player.facingY) || 1;
+    const ahead = 200;
+    this.spawnCherub(
+      variantKey,
+      this.player.x + (this.player.facingX / len) * ahead,
+      this.player.y + (this.player.facingY / len) * ahead,
+      this.activeMap().layer,
     );
   }
 
@@ -1441,6 +1578,9 @@ export class MainScene extends Phaser.Scene {
     };
     this.worldPos[WORLD_EARTH] = { x: this.town.spawn.x, y: this.town.spawn.y };
     this.worldPos[WORLD_HEAVEN] = { ...this.heavenArrivalPos };
+
+    // Populate Heaven with its defenders (positions in heavenWorld.ts).
+    this.seedHeavenCherubs();
   }
 
   /** A small Heaven world-space label. */
@@ -2143,6 +2283,10 @@ export class MainScene extends Phaser.Scene {
     // Reset the descent climax: guardians dormant + full HP, Heaven Portal holy.
     this.resetGuardianEncounter();
 
+    // Clear all Cherubs/Cherubim (+ their bolts), then re-seed Heaven's defenders.
+    this.clearCherubs();
+    this.seedHeavenCherubs();
+
     // Return to Earth if currently in Heaven (instant — no fade), and forget the
     // remembered Heaven position so a fresh visit starts at the arrival point.
     this.tweens.killTweensOf(this.fadeOverlay);
@@ -2187,6 +2331,8 @@ export class MainScene extends Phaser.Scene {
       { label: 'Teleport to Holy Outpost', onPress: () => this.devTeleportToHolyOutpost() },
       { label: 'Start Guardian Fight', onPress: () => this.startGuardianFight() },
       { label: 'Reset Portal', onPress: () => this.resetGuardianEncounter() },
+      { label: 'Spawn Cherub', onPress: () => this.devSpawnCherub('cherub') },
+      { label: 'Spawn Cherubim', onPress: () => this.devSpawnCherub('cherubim') },
       { label: 'Go to Heaven', onPress: () => this.devGoToHeaven() },
       { label: 'Return to Earth', onPress: () => this.devReturnToEarth() },
       { label: 'Toggle World', onPress: () => this.devToggleWorld() },
