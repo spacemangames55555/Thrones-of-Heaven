@@ -315,6 +315,9 @@ export class MainScene extends Phaser.Scene {
   // The redemption ENDING (on Satan's defeat): the friendly angel, the Earth portal
   // home, and the transient hellfire-eruption visuals.
   private earthPortal?: EarthPortal;
+  /** Time before the ending Earth portal accepts a walk-through (a grace so it can't
+   *  trigger on the spawn frame — the player must actually walk into it). */
+  private earthPortalArmedAt = 0;
   private endingFx: Phaser.GameObjects.GameObject[] = [];
   private hellfireFx: Phaser.GameObjects.GameObject[] = [];
   private bossBar!: HealthBar;
@@ -2091,19 +2094,30 @@ export class MainScene extends Phaser.Scene {
   }
 
   /** Open the Earth portal home after the angel's speech. */
-  private openEarthPortal(x: number, y: number, angel: Phaser.GameObjects.GameObject): void {
+  private openEarthPortal(_x: number, y: number, angel: Phaser.GameObjects.GameObject): void {
     // The angel ascends back into the light as the way home opens.
     this.tweens.add({ targets: angel, y: y - 280, alpha: 0, duration: 1200, ease: 'Quad.in' });
-    this.earthPortal = new EarthPortal(this, x, y + 70);
-    this.uiCamera?.ignore(this.earthPortal.objects());
-    this.showBanner('A way home opens. Step through to return to Earth.', 3200);
+    // Open the portal a clear WALKING distance from the player (never on top of
+    // them — that would feel like a teleport). It's a real one-way walk-through.
+    this.spawnEarthPortal(this.player.x, this.player.y + 210);
+    this.showBanner('A way home opens. Step through to return to Earth.', 3600);
     this.controls.setEnabled(true); // let the player walk into the portal
+  }
+
+  /** Create/arm the one-way ending Earth portal at the nearest walkable spot to (x,y). */
+  private spawnEarthPortal(x: number, y: number): void {
+    this.earthPortal?.destroy();
+    const spot = this.activeMap().nearestWalkableWorld(x, y);
+    this.earthPortal = new EarthPortal(this, spot.x, spot.y);
+    this.uiCamera?.ignore(this.earthPortal.objects());
+    this.earthPortalArmedAt = this.time.now + 500; // grace: don't trigger on the spawn frame
   }
 
   /** Per-frame: stepping into the Earth portal returns the player to Seattle (intact). */
   private updateEarthPortal(): void {
     if (!this.earthPortal || this.transitioning || this.time.now < this.worldCooldownUntil) return;
-    if (this.activeWorld !== WORLD_HELL) return;
+    if (this.time.now < this.earthPortalArmedAt) return; // arming grace (so it's a real walk-through)
+    if (this.activeWorld !== WORLD_HELL) return; // ONE-WAY: only ever lair (Hell) → Seattle
     if (Phaser.Math.Distance.Between(this.player.x, this.player.y, this.earthPortal.x, this.earthPortal.y) <= PORTAL_ENTER_RANGE) {
       this.returnToEarth();
     }
@@ -2218,6 +2232,29 @@ export class MainScene extends Phaser.Scene {
     }
     this.trinity.toEnding();
     this.time.delayedCall(this.activeWorld === WORLD_HELL ? 100 : WORLD_TRANSITION_MS + 200, () => this.playRedemptionEnding(ax, ay));
+  }
+
+  /** DEV: spawn the one-way walk-through ENDING Earth portal directly (skips the
+   *  Satan fight + angel speech), to test the lair → Seattle walk-through. */
+  private devSpawnEndingPortal(): void {
+    this.cancelDash();
+    const o = this.hellMap.bounds;
+    const ax = o.x + TRINITY_ARENA.x;
+    const ay = o.y + TRINITY_ARENA.y;
+    // Place the player well clear of the portal so the walk-through is real, not instant.
+    const spawnPortal = (): void => {
+      this.spawnEarthPortal(ax, ay - 60);
+      this.showBanner('A way home opens. Walk into it to return to Earth.', 2800);
+    };
+    if (this.activeWorld !== WORLD_HELL) {
+      this.travelToWorld(WORLD_HELL, { x: ax, y: ay + 220 });
+      this.time.delayedCall(WORLD_TRANSITION_MS + 150, spawnPortal);
+    } else {
+      this.player.sprite.setPosition(ax, ay + 220);
+      this.player.setDirection(0, 0);
+      this.cameras.main.centerOn(ax, ay);
+      spawnPortal();
+    }
   }
 
   // --- HELLFIRE eruption (Satan's signature pattern): scene-side visuals + damage --
@@ -2383,10 +2420,9 @@ export class MainScene extends Phaser.Scene {
     else if (stage === 'beast') this.beastBoss = this.spawnTrinityBoss(BEAST_DEF);
     else if (stage === 'satan') this.satanBoss = this.spawnTrinityBoss(SATAN_DEF);
     else if (stage === 'ending') {
-      // Saved mid-cutscene → just re-open the way home so it can't soft-lock.
+      // Saved mid-cutscene → just re-open the way home (walk-through) so it can't soft-lock.
       const o = this.hellMap.bounds;
-      this.earthPortal = new EarthPortal(this, o.x + TRINITY_ARENA.x, o.y + TRINITY_ARENA.y + 70);
-      this.uiCamera?.ignore(this.earthPortal.objects());
+      this.spawnEarthPortal(o.x + TRINITY_ARENA.x, o.y + TRINITY_ARENA.y + 210);
     }
     // 'none' / 'complete' → nothing to spawn.
   }
@@ -2413,6 +2449,21 @@ export class MainScene extends Phaser.Scene {
     this.writeSave();
   }
 
+  /** PUBLIC hook for the PauseScene to trigger a manual save. Writes WITHOUT the
+   *  on-screen flash (MainScene is paused under the menu, so its tween wouldn't run;
+   *  the PauseScene shows its own toast). Returns whether the write succeeded. */
+  requestSave(): boolean {
+    if (!this.gameReady) return false;
+    return SaveSystem.write(this.serialize());
+  }
+
+  /** Open the in-game pause menu: launch the overlay scene + freeze this scene. */
+  private openPauseMenu(): void {
+    if (this.transitioning) return; // not mid-fade
+    this.scene.launch('PauseScene');
+    this.scene.pause();
+  }
+
   /** DEV: load the slot into the running game (no relaunch needed). */
   private devLoadSave(): void {
     const save = SaveSystem.read();
@@ -2430,13 +2481,23 @@ export class MainScene extends Phaser.Scene {
     this.showBanner('Save deleted.', 1600);
   }
 
-  /** The on-screen manual SAVE button + a subtle "Saved" indicator (UI camera). */
+  /** The always-visible PAUSE / MENU button (top-right, UI camera) + a subtle
+   *  "Saved" indicator (flashed by autosave). Tapping opens the pause menu overlay
+   *  (Resume / Save Game / Return to Title). */
   private createSaveUi(): void {
     const depth = 1360;
-    const w = 64;
-    const h = 30;
-    const bg = this.add.rectangle(0, 0, w, h, 0x1d2b40, 0.92).setStrokeStyle(2, 0x9fd0ff, 0.95).setScrollFactor(0).setDepth(depth).setInteractive({ useHandCursor: true });
-    const label = this.add.text(0, 0, 'Save', { fontFamily: 'system-ui, sans-serif', fontSize: '14px', color: '#dff0ff', fontStyle: 'bold' }).setOrigin(0.5).setScrollFactor(0).setDepth(depth + 1);
+    const s = 38;
+    const bg = this.add
+      .rectangle(0, 0, s, s, 0x1d2b40, 0.92)
+      .setStrokeStyle(2, 0x9fd0ff, 0.95)
+      .setScrollFactor(0)
+      .setDepth(depth)
+      .setInteractive({ useHandCursor: true });
+    const icon = this.add
+      .text(0, 0, '☰', { fontFamily: 'system-ui, sans-serif', fontSize: '22px', color: '#dff0ff', fontStyle: 'bold' }) // ☰ menu glyph
+      .setOrigin(0.5)
+      .setScrollFactor(0)
+      .setDepth(depth + 1);
     this.savedFlash = this.add
       .text(0, 0, 'Saved ✓', { fontFamily: 'system-ui, sans-serif', fontSize: '13px', color: '#a8ffb0', fontStyle: 'bold' })
       .setOrigin(1, 0.5)
@@ -2444,21 +2505,21 @@ export class MainScene extends Phaser.Scene {
       .setStroke('#0a1a0a', 4)
       .setDepth(depth + 1)
       .setVisible(false);
-    bg.on(Phaser.Input.Events.GAMEOBJECT_POINTER_DOWN, () => this.manualSave());
+    bg.on(Phaser.Input.Events.GAMEOBJECT_POINTER_DOWN, () => this.openPauseMenu());
 
     const layout = (): void => {
       const insets = getInsets(this);
-      const cx = this.scale.width - insets.right - UI_MARGIN - w / 2;
-      const cy = insets.top + UI_MARGIN + h / 2;
+      const cx = this.scale.width - insets.right - UI_MARGIN - s / 2;
+      const cy = insets.top + UI_MARGIN + s / 2;
       bg.setPosition(cx, cy);
-      label.setPosition(cx, cy);
-      this.savedFlash?.setPosition(cx - w / 2 - 8, cy);
+      icon.setPosition(cx, cy);
+      this.savedFlash?.setPosition(cx - s / 2 - 8, cy);
     };
     layout();
     this.scale.on(Phaser.Scale.Events.RESIZE, layout);
   }
 
-  /** A brief, non-intrusive "Saved ✓" flash next to the Save button. */
+  /** A brief, non-intrusive "Saved ✓" flash next to the menu button (autosave feedback). */
   private flashSaved(): void {
     if (!this.savedFlash) return;
     this.tweens.killTweensOf(this.savedFlash);
@@ -4131,6 +4192,7 @@ export class MainScene extends Phaser.Scene {
       { label: 'Start Beast', onPress: () => this.devStartTrinityBoss('beast') },
       { label: 'Start Satan', onPress: () => this.devStartTrinityBoss('satan') },
       { label: 'Trigger Ending', onPress: () => this.devTriggerEnding() },
+      { label: 'Spawn Ending Earth Portal', onPress: () => this.devSpawnEndingPortal() },
       { label: 'Reset Trinity', onPress: () => this.resetTrinity() },
       { label: 'Go to Heaven', onPress: () => this.devGoToHeaven() },
       { label: 'Return to Earth', onPress: () => this.devReturnToEarth() },

@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { TitleScene } from '../ui/TitleScene';
 import { MainScene } from './MainScene';
 import { InteriorScene } from '../interior/InteriorScene';
+import { PauseScene } from '../ui/PauseScene';
 import { viewportSize } from '../ui/uiLayout';
 
 const { w, h } = viewportSize();
@@ -38,6 +39,6 @@ export const gameConfig: Phaser.Types.Core.GameConfig = {
     },
   },
   // TitleScene starts automatically (the start screen); it launches MainScene with
-  // { mode: 'new' | 'continue' }. InteriorScene is launched on demand.
-  scene: [TitleScene, MainScene, InteriorScene],
+  // { mode: 'new' | 'continue' }. InteriorScene + PauseScene are launched on demand.
+  scene: [TitleScene, MainScene, InteriorScene, PauseScene],
 };
