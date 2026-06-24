@@ -31,7 +31,8 @@ export class Boss {
 
   private readonly scene: Phaser.Scene;
   private readonly hooks: BossHooks;
-  private readonly speed: number;
+  /** Current move speed (px/sec) — a phase may override the def's base (e.g. Wrath P2). */
+  private speed: number;
   private readonly homeX: number;
   private readonly homeY: number;
   private state: State = 'dormant';
@@ -42,8 +43,8 @@ export class Boss {
   private playerNear = false;
   /** A special move winding up: fires its effect at `at`. */
   private pending?: { attack: BossAttack; at: number; tx: number; ty: number };
-  /** An in-progress charge dash. */
-  private charge?: { dx: number; dy: number; until: number; damage: number; hit: boolean };
+  /** An in-progress charge dash. `speed` is the dash velocity (px/sec). */
+  private charge?: { dx: number; dy: number; speed: number; until: number; damage: number; hit: boolean };
 
   constructor(scene: Phaser.Scene, def: BossDef, worldX: number, worldY: number, hooks: BossHooks) {
     this.id = `${def.id}-${NEXT++}`;
@@ -130,7 +131,7 @@ export class Boss {
 
     // In-progress charge dash overrides movement + attacks.
     if (this.charge) {
-      body.velocity.set(this.charge.dx * this.speed * 2.4, this.charge.dy * this.speed * 2.4);
+      body.velocity.set(this.charge.dx * this.charge.speed, this.charge.dy * this.charge.speed);
       if (!this.charge.hit && dist <= this.def.meleeRange + 8) {
         this.charge.hit = true;
         this.hooks.meleeHit(this.charge.damage);
@@ -224,6 +225,8 @@ export class Boss {
   private enterPhase(i: number): void {
     this.phaseIndex = i;
     const phase = this.def.phases[i];
+    // A phase may speed the boss up/down (e.g. Wrath accelerates in Phase 2).
+    this.speed = (phase.moveTilesPerSec ?? this.def.moveTilesPerSec) * TILE_SIZE;
     this.onPhaseChange?.(i + 1); // telegraph (scene)
     if (phase.summon) this.hooks.summon(this, phase.summon.enemy, phase.summon.count, phase.summon.cap); // wave on entry
     this.nextSummonAt = phase.summon && phase.summon.cadenceMs > 0 ? this.scene.time.now + phase.summon.cadenceMs : Number.POSITIVE_INFINITY;
@@ -285,8 +288,10 @@ export class Boss {
       this.hooks.slam(this.x, this.y, atk.radius ?? 120, atk.damage);
     } else if (atk.kind === 'charge') {
       const a = Phaser.Math.Angle.Between(this.x, this.y, pending.tx, pending.ty);
-      const dur = Math.min(700, ((atk.range ?? 300) / (this.speed * 2.4)) * 1000);
-      this.charge = { dx: Math.cos(a), dy: Math.sin(a), until: time + dur, damage: atk.damage, hit: false };
+      // Dash velocity: a per-attack speed if given, else the legacy moveSpeed × 2.4.
+      const speed = atk.speed ?? this.speed * 2.4;
+      const dur = Math.min(700, ((atk.range ?? 300) / speed) * 1000);
+      this.charge = { dx: Math.cos(a), dy: Math.sin(a), speed, until: time + dur, damage: atk.damage, hit: false };
     }
   }
 

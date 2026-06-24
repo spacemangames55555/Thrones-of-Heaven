@@ -54,6 +54,8 @@ export interface BossPhase {
   readonly fromRatio: number;
   readonly attacks: readonly BossAttack[];
   readonly summon?: BossSummon;
+  /** Optional per-phase move-speed override (tiles/sec); falls back to the def's. */
+  readonly moveTilesPerSec?: number;
 }
 
 /** Which placeholder sprite (bossSprites.ts) + how it's scaled/tinted. */
