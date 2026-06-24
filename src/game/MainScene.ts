@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { GameMap } from '../map/GameMap';
+import { preloadTerrainTiles } from '../render/tileAtlas';
 import { Player } from '../entities/Player';
 import { Npc } from '../entities/Npc';
 import { Controls } from '../input/Controls';
@@ -432,6 +433,11 @@ export class MainScene extends Phaser.Scene {
   /** Receive the launch mode from the TitleScene (before create()). */
   init(data?: { mode?: 'new' | 'continue' }): void {
     this.launchMode = data?.mode === 'continue' ? 'continue' : 'new';
+  }
+
+  /** Load real terrain tile art before create() builds the atlas (drop-in PNG path). */
+  preload(): void {
+    preloadTerrainTiles(this);
   }
 
   create(): void {

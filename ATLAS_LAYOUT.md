@@ -37,7 +37,37 @@
 | 26 | 2 | 3 | `corrupted_ground` | #2b1640 |
 | 27 | 3 | 3 | `corruption_rift` | #8a2be2 |
 
-## Swapping in real art (no code changes)
+## Swapping in real art — per-tile drop-in (the easy path, used now)
+
+You do **not** have to author a whole atlas to ship one real tile. A real PNG can
+replace a single terrain's placeholder cell, one terrain at a time (partial passes
+are fine — terrains without a real tile keep their placeholder color).
+
+**To add one real terrain tile (the entire step):**
+
+1. **Drop the PNG** in `public/tiles/terrain/<Name>.png` (Vercel serves it at
+   `/tiles/terrain/<Name>.png`). Any square pixel-art size works — it's downscaled
+   into the 32px atlas cell and rendered pixel-crisp (nearest-neighbor).
+2. **Add ONE line** to `TERRAIN_TILE_IMAGES` in `src/render/tileAtlas.ts`:
+   ```ts
+   { key: '<terrainKey>', file: 'tiles/terrain/<Name>.png' },
+   ```
+   where `<terrainKey>` is a terrain key from the `ATLAS_TILES` table above.
+
+That's it — no other code changes. `preloadTerrainTiles()` (called from
+`MainScene.preload()`) loads each PNG, and `generatePlaceholderAtlas()` draws it
+over that terrain's cell. Collision/walkability is unaffected (it derives from the
+terrain's `blocks` flag, not the visual tile).
+
+Currently mapped real tiles:
+
+| File (`public/tiles/terrain/`) | Terrain key | Terrain name |
+|---|---|---|
+| `Beachcoast.png` | `beach` | Beach / Coast |
+| `Coastal_rainforest.png` | `rainforest` | Coastal Rainforest |
+| `Soundinlet.png` | `sound` | Puget Sound |
+
+## Swapping the WHOLE atlas at once (alternative)
 
 1. Paint a PNG matching this grid/order exactly: `public/tiles/terrain-atlas.png`.
 2. In `src/map/GameMap.ts`, replace the `generatePlaceholderAtlas(scene, ATLAS_KEY)` call with loading that PNG as the `ATLAS_KEY` texture (e.g. preload `this.load.image(ATLAS_KEY, ...)`).
