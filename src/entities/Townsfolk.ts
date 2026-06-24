@@ -6,7 +6,9 @@ import {
   TOWNSFOLK_MOVE_TILES_PER_SEC,
   TOWNSFOLK_ATTACK_COOLDOWN_MS,
   TOWNSFOLK_CONTACT_RANGE,
-  TOWNSFOLK_XP_REWARD,
+  TOWNSFOLK_AGGRO_RANGE,
+  TOWNSFOLK_VARIANTS,
+  type TownsfolkVariant,
   PORTAL_ATTACK_RANGE,
 } from '../game/settings';
 
@@ -14,37 +16,50 @@ const TEXTURE_KEY = 'townsfolk';
 let NEXT_ID = 1;
 
 /**
- * A melee townsfolk enemy for the portal-defense encounter. Unlike every prior
- * enemy it targets a POINT — the Dark Portal — not the player: it paths toward
- * the portal and strikes it in range. But if the PLAYER blocks its way (adjacent)
- * it strikes the player instead, so the player can intercept the advance. A plain
- * villager (clearly not a spirit or angel); a NORMAL-layer enemy (always visible).
- *
- * Pathing is deliberately simple (move-toward + terrain colliders); the portal
- * and spawn points sit in open ground so straight advance works.
+ * A melee townsfolk enemy. It targets a POINT (set via {@link setTarget}) — the
+ * Dark Portal in the portal-defense encounter, or the PLAYER (null target) for
+ * the descent arc's guardsmen/farmers — pathing toward it and striking in range,
+ * and also striking the PLAYER if adjacent so the player can intercept. A plain
+ * human (clearly not a spirit or angel), reskinned per VARIANT (tint + XP); a
+ * NORMAL-layer enemy (always visible). Pathing is deliberately simple (move-
+ * toward + terrain colliders); spawn points sit in open ground.
  */
 export class Townsfolk {
   readonly id: string;
   readonly sprite: Phaser.Physics.Arcade.Sprite;
   readonly health: Health;
-  readonly xpReward = TOWNSFOLK_XP_REWARD;
+  readonly xpReward: number;
+  readonly variant: TownsfolkVariant;
 
-  /** Fired when a strike lands on the portal / the player. */
+  /** Fired when a strike lands on the target point / the player. */
   onHitPortal?: () => void;
   onHitPlayer?: () => void;
 
   private readonly speed = TOWNSFOLK_MOVE_TILES_PER_SEC * TILE_SIZE;
+  private readonly tint: number;
   private nextAttackAt = 0;
   private dead = false;
+  /** Fixed target point; null means target the player directly. */
+  private targetPoint: { x: number; y: number } | null = null;
 
-  constructor(scene: Phaser.Scene, x: number, y: number) {
+  constructor(scene: Phaser.Scene, x: number, y: number, variant: TownsfolkVariant = 'townsperson') {
     this.id = `townsfolk-${NEXT_ID++}`;
+    this.variant = variant;
+    const cfg = TOWNSFOLK_VARIANTS[variant];
+    this.xpReward = cfg.xpReward;
+    this.tint = cfg.color;
     Townsfolk.ensureTexture(scene);
     this.sprite = scene.physics.add.sprite(x, y, TEXTURE_KEY).setDepth(9);
+    if (this.tint !== 0xffffff) this.sprite.setTint(this.tint);
     const body = this.sprite.body as Phaser.Physics.Arcade.Body;
     body.setSize(18, 22);
     this.sprite.setCollideWorldBounds(true);
     this.health = new Health(TOWNSFOLK_MAX_HP);
+  }
+
+  /** Set a fixed target point (e.g. the portal), or null to target the player. */
+  setTarget(point: { x: number; y: number } | null): void {
+    this.targetPoint = point;
   }
 
   get x(): number {
@@ -66,21 +81,30 @@ export class Townsfolk {
     const dealt = this.health.damage(amount);
     this.sprite.setTint(0xffffff).setTintMode(Phaser.TintModes.FILL);
     this.sprite.scene.time.delayedCall(70, () => {
-      if (!this.dead) this.sprite.clearTint();
+      if (this.dead) return;
+      if (this.tint !== 0xffffff) this.sprite.setTint(this.tint).setTintMode(Phaser.TintModes.MULTIPLY);
+      else this.sprite.clearTint();
     });
     if (this.health.isDead) this.die();
     return dealt;
   }
 
   /**
-   * Advance on the portal; strike the player if adjacent, else the portal if in
-   * range, else keep marching toward the portal.
+   * Advance on the target point (or the player if none); strike the player if
+   * adjacent, else strike the target point if in range, else keep marching.
    */
-  update(portalX: number, portalY: number, playerX: number, playerY: number, time: number): void {
+  update(playerX: number, playerY: number, time: number): void {
     if (this.dead) return;
     const body = this.sprite.body as Phaser.Physics.Arcade.Body;
+    const tx = this.targetPoint ? this.targetPoint.x : playerX;
+    const ty = this.targetPoint ? this.targetPoint.y : playerY;
     const dPlayer = this.distanceTo(playerX, playerY);
-    const dPortal = this.distanceTo(portalX, portalY);
+
+    // Player-hunting (arc) townsfolk hold their post until the player draws near.
+    if (this.targetPoint === null && dPlayer > TOWNSFOLK_AGGRO_RANGE) {
+      body.velocity.set(0, 0);
+      return;
+    }
 
     if (dPlayer <= TOWNSFOLK_CONTACT_RANGE) {
       body.velocity.set(0, 0);
@@ -89,17 +113,17 @@ export class Townsfolk {
         this.nextAttackAt = time + TOWNSFOLK_ATTACK_COOLDOWN_MS;
         this.onHitPlayer?.();
       }
-    } else if (dPortal <= PORTAL_ATTACK_RANGE) {
+    } else if (this.targetPoint && this.distanceTo(tx, ty) <= PORTAL_ATTACK_RANGE) {
       body.velocity.set(0, 0);
-      this.sprite.setFlipX(portalX < this.sprite.x);
+      this.sprite.setFlipX(tx < this.sprite.x);
       if (time >= this.nextAttackAt) {
         this.nextAttackAt = time + TOWNSFOLK_ATTACK_COOLDOWN_MS;
         this.onHitPortal?.();
       }
     } else {
-      const a = Phaser.Math.Angle.Between(this.sprite.x, this.sprite.y, portalX, portalY);
+      const a = Phaser.Math.Angle.Between(this.sprite.x, this.sprite.y, tx, ty);
       body.velocity.set(Math.cos(a) * this.speed, Math.sin(a) * this.speed);
-      this.sprite.setFlipX(portalX < this.sprite.x);
+      this.sprite.setFlipX(tx < this.sprite.x);
     }
   }
 

@@ -29,8 +29,10 @@ import { QuestChain, type QuestEvent } from '../quest/QuestChain';
 import {
   QUEST_REGISTRY,
   THE_CORRUPTION_AT_THE_GATES,
+  PATRON_IDLE_LINES,
   type ObjectiveTrigger,
   type TargetKind,
+  type QuestDef,
 } from '../quest/questData';
 import { ObjectiveMarker } from '../quest/ObjectiveMarker';
 import { QuestTracker } from '../ui/QuestTracker';
@@ -70,6 +72,17 @@ import {
   PORTAL_POSITION,
   TOWNSFOLK_PORTAL_DAMAGE,
   TOWNSFOLK_PLAYER_DAMAGE,
+  type TownsfolkVariant,
+  DARK_OUTPOST_POSITION,
+  OREGON_CITY_POSITION,
+  FARM_FIELD_POSITION,
+  DESCENT_LOC_A,
+  DESCENT_LOC_B,
+  REACH_OUTPOST_RANGE,
+  DESCENT_GUARDSMEN_COUNT,
+  DESCENT_FARMERS_COUNT,
+  DESCENT_OC_ANGELS,
+  DESCENT_LOC_ANGELS,
 } from './settings';
 import { TOWN_TILES } from '../town/townTiles';
 import { buildTown, type TownFeatures, type DoorFeature } from '../town/TownBuilder';
@@ -170,10 +183,29 @@ export class MainScene extends Phaser.Scene {
   private chain!: QuestChain;
   private tracker!: QuestTracker;
   private marker!: ObjectiveMarker;
-  private questGivers: { npc: Npc; questIds: string[]; idleLines: string[] }[] = [];
-  private oregonSpirit?: SpiritEntity; // the stub quest's objective target
+  // A quest-giver maps an interactable (NPC or the spirit patron) to the quest ids
+  // it can offer (+ idle lines + an optional corruption gate). `pos` locates it for
+  // the pre-accept marker.
+  private questGivers: {
+    entity: Interactable;
+    pos: () => { x: number; y: number };
+    questIds: string[];
+    idleLines: string[];
+    requiresCorruption?: boolean;
+  }[] = [];
+  private oregonSpirit?: SpiritEntity; // the dark patron (the descent-arc quest-giver)
   // The single stored+displayed alignment title (its text() IS the stored value).
   private titleText!: Phaser.GameObjects.Text;
+
+  // The Descent arc: the per-objective world setup + completion watcher. arcEnemies
+  // are the live spawns for the current objective; arcMode picks the completion test.
+  private readonly DESCENT_IDS = new Set(['descent-1', 'descent-2', 'descent-3', 'descent-4']);
+  private arcEnemies: (Townsfolk | AngelEnemy)[] = [];
+  private arcMode: 'defeat' | 'plunder' | 'reach' | 'pickup' | 'none' = 'none';
+  private arcReach: { x: number; y: number } | null = null;
+  private arcShipmentPos: { x: number; y: number } | null = null;
+  private arcHolyBaseline = 0;
+  private arcHolyRequired = 0;
 
   // Interaction targets (the real NPC and, when Spirit Vision is on, spirits).
   private talkTarget: Interactable | null = null; // in range now (drives Talk button)
@@ -280,13 +312,35 @@ export class MainScene extends Phaser.Scene {
     this.chain = new QuestChain(QUEST_REGISTRY);
     this.chain.onChange = () => this.refreshQuestUi();
     this.chain.onEvent = (e) => this.handleQuestEvent(e);
-    this.questGivers = [
-      { npc: this.npc, questIds: ['corruption-at-the-gates'], idleLines: [] },
-      { npc: this.portlandNpc, questIds: ['a-path-opens'], idleLines: [...PORTLAND_NPC_LINES] },
-    ];
     this.oregonSpirit = this.spirit.entities.find((e) => e.id === OREGON_SPIRIT_ID);
+    // Quest-givers: the Seattle NPC gives the opening quest; the Oregon spirit is
+    // the dark PATRON who gives the whole descent arc — reachable only with Spirit
+    // Vision on AND only offered while the player is corrupted (requiresCorruption).
+    // (The Portland NPC is no longer a giver; talking to it shows its flavor lines.)
+    this.questGivers = [
+      {
+        entity: this.npc,
+        pos: () => ({ x: this.npc.sprite.x, y: this.npc.sprite.y }),
+        questIds: ['corruption-at-the-gates'],
+        idleLines: [],
+      },
+    ];
+    if (this.oregonSpirit) {
+      const patron = this.oregonSpirit;
+      this.questGivers.push({
+        entity: patron,
+        pos: () => ({ x: patron.x, y: patron.y }),
+        questIds: ['descent-1', 'descent-2', 'descent-3', 'descent-4'],
+        idleLines: [...PATRON_IDLE_LINES],
+        requiresCorruption: true,
+      });
+    }
     this.chain.evaluateUnlocks(); // opening quest → available from the start
     this.marker = new ObjectiveMarker(this, this.worldFx);
+
+    // The Dark Outpost — the arc's hub landmark (ominous violet marker) where the
+    // patron dwells. A world object (in the snapshot below → main camera only).
+    this.addOutpostMarker();
 
     const cam = this.cameras.main;
     cam.startFollow(this.player.sprite, true, 0.12, 0.12);
@@ -387,6 +441,8 @@ export class MainScene extends Phaser.Scene {
     this.checkDoors();
     this.checkQuestProximity();
     this.checkAngelEncounter();
+    this.updateArc(); // descent-arc completion watcher (before interactions so a
+    // "return to the outpost" completes before the patron auto-offers the next quest)
     if (this.isDashing()) this.talkButton.setVisible(false);
     else this.checkInteractions();
     this.sasquatch.update(this.player.x, this.player.y, this.time.now);
@@ -834,7 +890,7 @@ export class MainScene extends Phaser.Scene {
   // --- Ranged: angels + projectiles -----------------------------------------
 
   /** Spawn an angel of the given variant; wire its volleys to the projectile system. */
-  private spawnAngel(variantKey: AngelVariantKey, x: number, y: number): void {
+  private spawnAngel(variantKey: AngelVariantKey, x: number, y: number): AngelEnemy {
     const a = new AngelEnemy(this, x, y, variantKey);
     const v = a.variant;
     a.onFire = (origin, dirs) => {
@@ -856,6 +912,7 @@ export class MainScene extends Phaser.Scene {
     this.physics.add.collider(a.sprite, this.map.layer);
     this.uiCamera?.ignore(a.objects()); // runtime world objects: keep off the UI camera
     this.angels.push(a);
+    return a;
   }
 
   /** Drive each angel with line-of-sight from the scene, then prune the dead. */
@@ -896,6 +953,7 @@ export class MainScene extends Phaser.Scene {
   /** Apply a collected pickup's effect (keyed by type) + brief feedback. */
   private onPickupCollected(e: PickupCollected): void {
     if (e.type === 'holy-power') this.holyPower.add(e.amount); // HUD ticks via onChange
+    else if (e.type === 'plunder') this.notifyQuest('shipment-collected'); // descent Quest 2
     this.spawnPickupPop(e.x, e.y, e.color);
   }
 
@@ -986,20 +1044,31 @@ export class MainScene extends Phaser.Scene {
 
   // --- Portal Defense: townsfolk + the wave encounter -----------------------
 
-  /** Spawn one townsfolk; wire its strikes to the portal / player. */
-  private spawnTownsfolk(x: number, y: number): void {
-    const t = new Townsfolk(this, x, y);
-    t.onHitPortal = () => this.damagePortal(TOWNSFOLK_PORTAL_DAMAGE);
+  /**
+   * Spawn one townsfolk. A fixed `target` point (the portal) makes it a portal-
+   * defender; null target makes it hunt the PLAYER (the descent-arc guardsmen /
+   * farmers). `variant` is the reskin (tint + XP).
+   */
+  private spawnTownsfolk(
+    x: number,
+    y: number,
+    target: { x: number; y: number } | null = { x: this.portal.x, y: this.portal.y },
+    variant: TownsfolkVariant = 'townsperson',
+  ): Townsfolk {
+    const t = new Townsfolk(this, x, y, variant);
+    t.setTarget(target);
+    if (target) t.onHitPortal = () => this.damagePortal(TOWNSFOLK_PORTAL_DAMAGE);
     t.onHitPlayer = () => this.onTownsfolkHitPlayer();
     this.physics.add.collider(t.sprite, this.map.layer);
     this.uiCamera?.ignore(t.sprite); // runtime world object: keep off the UI camera
     this.townsfolk.push(t);
+    return t;
   }
 
-  /** Advance every townsfolk toward the portal, then prune the dead. */
+  /** Advance every townsfolk toward its target, then prune the dead. */
   private updateTownsfolk(): void {
     for (const t of this.townsfolk) {
-      t.update(this.portal.x, this.portal.y, this.player.x, this.player.y, this.time.now);
+      t.update(this.player.x, this.player.y, this.time.now);
     }
     if (this.townsfolk.some((t) => !t.isAlive)) this.townsfolk = this.townsfolk.filter((t) => t.isAlive);
   }
@@ -1051,6 +1120,136 @@ export class MainScene extends Phaser.Scene {
     this.cameras.main.centerOn(this.portal.x, this.portal.y);
     this.resetPortalDefense(); // clean slate
     this.portalDefense.start(this.time.now);
+  }
+
+  // --- The Descent arc (quests 1–4) -----------------------------------------
+
+  /** A pulsing violet landmark + label for the Dark Outpost hub. */
+  private addOutpostMarker(): void {
+    const { x, y } = DARK_OUTPOST_POSITION;
+    const ring = this.add.circle(x, y, 16, 0x8a2be2, 0.35).setDepth(6);
+    this.tweens.add({ targets: ring, scale: 1.9, alpha: 0.05, duration: 1300, yoyo: true, repeat: -1, ease: 'Sine.inOut' });
+    const diamond = this.add.rectangle(x, y, 16, 16, 0x6a1fb0, 0.95).setStrokeStyle(2, 0xc06cff, 1).setAngle(45).setDepth(7);
+    this.add
+      .text(x, y - 22, 'Dark Outpost', { fontFamily: 'system-ui, sans-serif', fontSize: '11px', color: '#d6a8ff' })
+      .setOrigin(0.5, 1)
+      .setStroke('#160b22', 4)
+      .setDepth(7);
+    void diamond;
+  }
+
+  private isDescentActive(): boolean {
+    const id = this.chain.activeQuest?.id;
+    return id !== undefined && this.DESCENT_IDS.has(id);
+  }
+
+  /** Set up the world for the active descent objective (spawn enemies / pickup, pick the watcher). */
+  private beginArcObjective(): void {
+    this.clearArcObjective(); // clear any leftover arc spawns first
+    const trig = this.chain.activeTrigger;
+    switch (trig) {
+      case 'guardsmen-defeated':
+        this.spawnArcTownsfolk('guardsman', OREGON_CITY_POSITION, DESCENT_GUARDSMEN_COUNT);
+        this.arcMode = 'defeat';
+        break;
+      case 'farmers-defeated':
+        this.spawnArcTownsfolk('farmer', FARM_FIELD_POSITION, DESCENT_FARMERS_COUNT);
+        this.arcMode = 'defeat';
+        break;
+      case 'shipment-collected':
+        this.arcShipmentPos = { ...FARM_FIELD_POSITION };
+        this.pickups.spawn({ x: FARM_FIELD_POSITION.x, y: FARM_FIELD_POSITION.y, type: 'plunder', amount: 1 });
+        this.arcMode = 'pickup';
+        break;
+      case 'oc-angels-plundered':
+        this.spawnArcAngels(OREGON_CITY_POSITION, DESCENT_OC_ANGELS);
+        this.beginPlunder(DESCENT_OC_ANGELS);
+        break;
+      case 'loca-angels-plundered':
+        this.spawnArcAngels(DESCENT_LOC_A, DESCENT_LOC_ANGELS);
+        this.beginPlunder(DESCENT_LOC_ANGELS);
+        break;
+      case 'locb-angels-plundered':
+        this.spawnArcAngels(DESCENT_LOC_B, DESCENT_LOC_ANGELS);
+        this.beginPlunder(DESCENT_LOC_ANGELS);
+        break;
+      case 'reach-outpost':
+        this.arcMode = 'reach';
+        this.arcReach = { ...DARK_OUTPOST_POSITION };
+        break;
+      default:
+        this.arcMode = 'none';
+    }
+    this.refreshQuestUi();
+  }
+
+  private beginPlunder(required: number): void {
+    this.arcMode = 'plunder';
+    this.arcHolyBaseline = this.holyPower.count;
+    this.arcHolyRequired = required;
+  }
+
+  /** Watch for the active descent objective's completion each frame. */
+  private updateArc(): void {
+    if (!this.isDescentActive()) return;
+    const trig = this.chain.activeTrigger;
+    if (!trig) return;
+    if (this.arcMode === 'defeat') {
+      if (this.arcEnemies.length > 0 && this.arcEnemies.every((e) => !e.isAlive)) this.notifyQuest(trig);
+    } else if (this.arcMode === 'plunder') {
+      const collected = this.holyPower.count - this.arcHolyBaseline;
+      const allDead = this.arcEnemies.length > 0 && this.arcEnemies.every((e) => !e.isAlive);
+      if (allDead && collected >= this.arcHolyRequired) this.notifyQuest(trig);
+    } else if (this.arcMode === 'reach' && this.arcReach) {
+      if (Phaser.Math.Distance.Between(this.player.x, this.player.y, this.arcReach.x, this.arcReach.y) <= REACH_OUTPOST_RANGE) {
+        this.notifyQuest(trig);
+      }
+    }
+    // Keep the tracker's live "(N left)" / "(Holy Power x/y)" suffix current.
+    if (this.arcMode === 'defeat' || this.arcMode === 'plunder') this.refreshQuestUi();
+  }
+
+  private spawnArcTownsfolk(variant: TownsfolkVariant, center: { x: number; y: number }, n: number): void {
+    for (let i = 0; i < n; i++) {
+      const a = (Math.PI * 2 * i) / n + Math.random() * 0.5;
+      const r = 50 + Math.random() * 40;
+      const t = this.spawnTownsfolk(center.x + Math.cos(a) * r, center.y + Math.sin(a) * r, null, variant);
+      this.arcEnemies.push(t);
+    }
+  }
+
+  private spawnArcAngels(center: { x: number; y: number }, n: number): void {
+    for (let i = 0; i < n; i++) {
+      const a = (Math.PI * 2 * i) / n + Math.random() * 0.5;
+      const r = 80 + Math.random() * 50;
+      const angel = this.spawnAngel('angel', center.x + Math.cos(a) * r, center.y + Math.sin(a) * r);
+      this.arcEnemies.push(angel);
+    }
+  }
+
+  /** Clear the current objective's arc enemies + watcher state (not the holy-power motes). */
+  private clearArcObjective(): void {
+    const set = new Set<Townsfolk | AngelEnemy>(this.arcEnemies);
+    for (const e of this.arcEnemies) if (e.isAlive) e.destroy();
+    this.townsfolk = this.townsfolk.filter((t) => !set.has(t));
+    this.angels = this.angels.filter((x) => !set.has(x));
+    this.arcEnemies = [];
+    this.arcMode = 'none';
+    this.arcReach = null;
+    this.arcShipmentPos = null;
+  }
+
+  /** DEV: force the corrupted path (Spirit Vision on) so the descent arc is testable. */
+  private devForceCorrupt(): void {
+    this.setPlayerPath('corrupted');
+  }
+
+  /** DEV: jump to the Dark Outpost (the arc hub / patron). */
+  private devTeleportToOutpost(): void {
+    this.cancelDash();
+    this.player.sprite.setPosition(DARK_OUTPOST_POSITION.x, DARK_OUTPOST_POSITION.y + 70);
+    this.player.setDirection(0, 0);
+    this.cameras.main.centerOn(DARK_OUTPOST_POSITION.x, DARK_OUTPOST_POSITION.y);
   }
 
   /**
@@ -1177,20 +1376,23 @@ export class MainScene extends Phaser.Scene {
     this.controls.setEnabled(false);
     this.player.setDirection(0, 0);
 
-    // A quest-giver NPC speaks per the chain's state (and offering accepts).
-    const giver = this.questGivers.find((g) => (g.npc as Interactable) === target);
+    // A quest-giver (NPC or the spirit patron) speaks per the chain's state.
+    const giver = this.questGivers.find((g) => g.entity === target);
     if (giver) {
       this.openQuestGiverDialogue(giver);
       return;
     }
 
-    // Generic interactable (spirits). Speaking to the seeded Oregon spirit
-    // completes the stub quest's objective (no-op unless that's the active goal).
-    const isOregonSpirit = this.oregonSpirit !== undefined && target === this.oregonSpirit;
+    // Generic interactable (e.g. the Pale Wraith) — just its lines.
     this.dialogue.open(target.lines, () => {
-      if (isOregonSpirit) this.notifyQuest('oregon-spirit-spoken');
       this.reenableControls = true;
     });
+  }
+
+  /** The quest this giver may OFFER right now (available + corruption gate met), or null. */
+  private offerableQuest(giver: { questIds: string[]; requiresCorruption?: boolean }): QuestDef | null {
+    if (giver.requiresCorruption && this.playerPath !== 'corrupted') return null;
+    return this.chain.firstAvailable(giver.questIds);
   }
 
   /**
@@ -1198,7 +1400,11 @@ export class MainScene extends Phaser.Scene {
    * an ACTIVE quest; an OFFER (accepted when the lines finish) if it has an
    * AVAILABLE one; an acknowledgment if its quest is COMPLETE; else idle flavor.
    */
-  private openQuestGiverDialogue(giver: { npc: Npc; questIds: string[]; idleLines: string[] }): void {
+  private openQuestGiverDialogue(giver: {
+    questIds: string[];
+    idleLines: string[];
+    requiresCorruption?: boolean;
+  }): void {
     const activeId = giver.questIds.find((id) => this.chain.status(id) === 'active');
     if (activeId) {
       this.dialogue.open([...this.chain.get(activeId)!.npcActiveLines], () => {
@@ -1206,7 +1412,7 @@ export class MainScene extends Phaser.Scene {
       });
       return;
     }
-    const offer = this.chain.firstAvailable(giver.questIds);
+    const offer = this.offerableQuest(giver);
     if (offer) {
       this.dialogue.open([...offer.npcInactiveLines], () => {
         this.acceptQuest(offer.id);
@@ -1237,12 +1443,18 @@ export class MainScene extends Phaser.Scene {
       case 'started':
         // No-soft-lock: if the opening beast was already slain, respawn it.
         if (e.questId === 'corruption-at-the-gates' && !this.sasquatch.isAlive) this.sasquatch.reset();
+        if (this.DESCENT_IDS.has(e.questId)) this.beginArcObjective(); // set up objective 0
         this.refreshQuestUi();
         break;
       case 'objective-complete':
+        // For descent quests, set up the NEXT objective's world state (the chain
+        // has already advanced; if that was the last objective, activeObjectiveDef
+        // is undefined and quest-complete follows).
+        if (this.DESCENT_IDS.has(e.questId) && this.chain.activeObjectiveDef) this.beginArcObjective();
         this.refreshQuestUi();
         break;
       case 'quest-complete':
+        if (this.DESCENT_IDS.has(e.questId)) this.clearArcObjective();
         this.grantQuestReward(e.questId);
         this.refreshQuestUi();
         break;
@@ -1252,14 +1464,15 @@ export class MainScene extends Phaser.Scene {
     }
   }
 
-  /** Grant a completed quest's data-driven reward block (heal / title / XP + banner). */
+  /** Grant a completed quest's data-driven reward block (heal / title / XP / Holy Power + banner). */
   private grantQuestReward(questId: string): void {
     const def = this.chain.get(questId);
     if (!def) return;
     const r = def.reward;
     if (r.healToFull) this.playerHealth.full();
     if (r.title) this.awardTitle(r.title);
-    this.showBanner(r.note ? `${r.banner}\n\n${r.note}` : r.banner, 3400);
+    if (r.holyPower) this.holyPower.add(r.holyPower);
+    this.showBanner(r.note ? `${r.banner}\n\n${r.note}` : r.banner, 3600);
     if (r.xp > 0) this.gainXP(r.xp);
   }
 
@@ -1356,6 +1569,7 @@ export class MainScene extends Phaser.Scene {
     this.setPlayerPath('neutral');
     this.spirit.setSpiritVision(false); // 'neutral' alone doesn't turn it off
     this.sasquatch.reset();
+    this.clearArcObjective(); // clear any descent-arc spawns + watcher state
     this.guardTarget = null;
     this.refreshQuestUi();
   }
@@ -1425,6 +1639,8 @@ export class MainScene extends Phaser.Scene {
       { label: 'Stop Portal Defense', onPress: () => this.resetPortalDefense() },
       { label: 'Refill Energy', onPress: () => this.energy.full() },
       { label: 'Teleport to Oregon', onPress: () => this.devTeleportToOregon() },
+      { label: 'Force Corrupt', onPress: () => this.devForceCorrupt() },
+      { label: 'Teleport to Dark Outpost', onPress: () => this.devTeleportToOutpost() },
       { label: 'Complete Active Quest', onPress: () => this.chain.completeActive() },
       { label: 'Reset All Quests', onPress: () => this.devResetQuests() },
       { label: 'Dev Reset', key: KC.R, onPress: () => this.devReset() },
@@ -1469,15 +1685,30 @@ export class MainScene extends Phaser.Scene {
     this.titleText.setText(title ? `Title: ${title}` : '').setVisible(!!title);
   }
 
-  /** Sync the tracker panel to the active quest in the chain. */
+  /** Sync the tracker panel to the active quest in the chain (+ live arc progress). */
   private refreshQuestUi(): void {
     const q = this.chain.activeQuest;
     if (q) {
       const obj = this.chain.activeObjectiveDef;
-      this.tracker.show(q.title, obj ? obj.text : '');
+      this.tracker.show(q.title, (obj ? obj.text : '') + this.arcProgressSuffix());
     } else {
       this.tracker.hide();
     }
+  }
+
+  /** A live "(N left)" / "(Holy Power x/y)" suffix for descent-arc objectives. */
+  private arcProgressSuffix(): string {
+    if (!this.isDescentActive()) return '';
+    if (this.arcMode === 'defeat') {
+      const left = this.arcEnemies.filter((e) => e.isAlive).length;
+      return `  (${left} left)`;
+    }
+    if (this.arcMode === 'plunder') {
+      const got = Math.min(this.holyPower.count - this.arcHolyBaseline, this.arcHolyRequired);
+      const left = this.arcEnemies.filter((e) => e.isAlive).length;
+      return `  (Holy Power ${Math.max(0, got)}/${this.arcHolyRequired}, ${left} angels left)`;
+    }
+    return '';
   }
 
   /** Position the world marker on the current target and update the edge arrow. */
@@ -1496,11 +1727,14 @@ export class MainScene extends Phaser.Scene {
       const obj = this.chain.activeObjectiveDef;
       return obj && obj.target ? this.resolveTarget(obj.target) : null;
     }
-    // No active quest → point at the giver of the next AVAILABLE quest (the
+    // No active quest → point at the giver of the next OFFERABLE quest (the
     // pre-accept pointer), so finishing one quest leads to the next.
     for (const g of this.questGivers) {
-      const offer = this.chain.firstAvailable(g.questIds);
-      if (offer) return { x: g.npc.sprite.x, y: g.npc.sprite.y, label: offer.preAcceptHint };
+      const offer = this.offerableQuest(g);
+      if (offer) {
+        const p = g.pos();
+        return { x: p.x, y: p.y, label: offer.preAcceptHint };
+      }
     }
     return null;
   }
@@ -1514,10 +1748,20 @@ export class MainScene extends Phaser.Scene {
         return { x: this.town.rift.x, y: this.town.rift.y, label: '' };
       case 'npc':
         return { x: this.npc.sprite.x, y: this.npc.sprite.y, label: '' };
-      case 'oregon-spirit':
-        return this.oregonSpirit
-          ? { x: this.oregonSpirit.x, y: this.oregonSpirit.y, label: '' }
-          : { x: OREGON_SWARM_SPAWN.x, y: OREGON_SWARM_SPAWN.y, label: '' };
+      case 'outpost':
+        return { x: DARK_OUTPOST_POSITION.x, y: DARK_OUTPOST_POSITION.y, label: '' };
+      case 'oregon-city':
+        return { x: OREGON_CITY_POSITION.x, y: OREGON_CITY_POSITION.y, label: '' };
+      case 'farm-field':
+        return { x: FARM_FIELD_POSITION.x, y: FARM_FIELD_POSITION.y, label: '' };
+      case 'shipment':
+        return this.arcShipmentPos
+          ? { x: this.arcShipmentPos.x, y: this.arcShipmentPos.y, label: '' }
+          : { x: FARM_FIELD_POSITION.x, y: FARM_FIELD_POSITION.y, label: '' };
+      case 'loc-a':
+        return { x: DESCENT_LOC_A.x, y: DESCENT_LOC_A.y, label: '' };
+      case 'loc-b':
+        return { x: DESCENT_LOC_B.x, y: DESCENT_LOC_B.y, label: '' };
     }
   }
 
