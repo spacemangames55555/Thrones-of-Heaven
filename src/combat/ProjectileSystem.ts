@@ -81,6 +81,10 @@ export class ProjectileSystem {
 
   /** Called when an ENEMY bolt strikes the player. */
   onPlayerHit?: (damage: number) => void;
+  /** Called for a PLAYER bolt each step: damage an enemy within (x,y,radius);
+   *  return true if one was hit so the bolt impacts/despawns (like an enemy bolt
+   *  hitting the player). The scene owns the enemy lists, so it resolves the hit. */
+  onEnemyHit?: (x: number, y: number, radius: number, damage: number) => boolean;
   /** Optional impact FX hook (e.g. a small poof). */
   onImpact?: (x: number, y: number, color: number) => void;
 
@@ -131,6 +135,11 @@ export class ProjectileSystem {
         Phaser.Math.Distance.Between(b.sprite.x, b.sprite.y, playerX, playerY) <= b.radius + playerRadius
       ) {
         this.onPlayerHit?.(b.damage);
+        this.impact(b);
+        continue;
+      }
+      // PLAYER bolt: ask the scene to resolve an enemy hit; despawn if it landed.
+      if (b.faction === 'player' && this.onEnemyHit?.(b.sprite.x, b.sprite.y, b.radius, b.damage)) {
         this.impact(b);
       }
     }
