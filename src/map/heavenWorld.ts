@@ -67,6 +67,13 @@ export const HEAVEN_CHERUB_SPAWNS: CherubSpawn[] = [
  */
 export const MICHAEL_SANCTUM = { x: 11520, y: 9200 };
 
+/**
+ * God's THRONE — the climactic set piece, deep north beyond Michael's sanctum
+ * (God is never shown). LOCAL Heaven pixels; MainScene.setupHeaven adds the world
+ * offset. The Hell portal spawns just south of it after judgment. Edit to move it.
+ */
+export const THRONE_POSITION = { x: 11520, y: 8360 };
+
 /** Cheap deterministic hash in [0,1) so the layout is stable across reloads. */
 function hash(x: number, y: number): number {
   let h = Math.imul(x | 0, 374761393) ^ Math.imul(y | 0, 668265263);

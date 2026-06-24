@@ -20,8 +20,9 @@ import { HeavenPortal } from '../entities/HeavenPortal';
 import { FlamingSword } from '../entities/FlamingSword';
 import { Cherub } from '../entities/Cherub';
 import { ArchangelMichael } from '../entities/ArchangelMichael';
+import { HellPortal } from '../entities/HellPortal';
 import { PortalDefense } from '../encounter/PortalDefense';
-import { buildHeavenMapData, HEAVEN_WIDTH, HEAVEN_HEIGHT, HEAVEN_CHERUB_SPAWNS, MICHAEL_SANCTUM } from '../map/heavenWorld';
+import { buildHeavenMapData, HEAVEN_WIDTH, HEAVEN_HEIGHT, HEAVEN_CHERUB_SPAWNS, MICHAEL_SANCTUM, THRONE_POSITION } from '../map/heavenWorld';
 import { WORLD_EARTH, WORLD_HEAVEN, type WorldId, type WorldRuntime } from '../world/worlds';
 import { ProjectileSystem } from '../combat/ProjectileSystem';
 import { PickupSystem, type PickupCollected } from '../world/PickupSystem';
@@ -135,6 +136,26 @@ const CORRUPT_PORTAL_LINE = 'The gate is defiled. The way to Heaven opens…';
 const MICHAEL_VICTORY_LINE = 'Archangel Michael is vanquished!';
 const GOD_JUDGMENT_HOOK = 'The heavens themselves answer your defiance… (to be continued)';
 
+// >>> PLACEHOLDER TEXT — God's judgment beat. God is NEVER shown; only this voice
+// speaks. Edit these arrays/strings to rewrite the scene. The three line groups
+// play in order (God speaks → power-strip → banishment), each tap-advanced like
+// normal dialogue.
+const GOD_JUDGMENT_LINES = [
+  'A Voice from the Clouds: So — the thief climbs even to My throne.',
+  'A Voice from the Clouds: You wear stolen light and name it your own.',
+  'A Voice from the Clouds: For your defiance, child of dust, I pass judgment.',
+];
+const POWER_STRIP_LINES = [
+  'A Voice from the Clouds: The light you stole was never yours to keep.',
+  'Your stolen light is ripped from you…',
+];
+const BANISHMENT_LINES = [
+  'A Voice from the Clouds: Fall, then — out of My sight, into the dark below.',
+  'The ground tears open beneath you. A way down has been made.',
+];
+/** Shown when the player walks into the Hell portal (the Hell map is the NEXT build). */
+const HELL_PORTAL_ENTER = 'Hell awaits below… (coming soon)';
+
 /**
  * The overworld scene: renders Washington, stamps the Seattle town onto it,
  * spawns the player in the town, and wires camera, controls, the town NPC +
@@ -230,6 +251,16 @@ export class MainScene extends Phaser.Scene {
   private michaelBar!: HealthBar;
   private michaelBarBg!: Phaser.GameObjects.Rectangle;
   private michaelNameText!: Phaser.GameObjects.Text;
+
+  // God's Judgment beat: the throne set piece, the Michael-gated scripted
+  // sequence, and the Hell portal it spawns. State is centralized + serializable.
+  private michaelDefeated = false; // the gate: judgment is locked until this is true
+  private judgmentFired = false; // the sequence has played (plays once)
+  private judgmentActive = false; // mid-sequence guard
+  private thronePos = { x: 0, y: 0 };
+  private hellPortal?: HellPortal;
+  private hellPortalEnterShownUntil = 0;
+
   private heavenMap!: GameMap;
   private heavenReturnPortal!: HeavenPortal;
   private heavenArrivalPos = { x: 0, y: 0 };
@@ -554,6 +585,7 @@ export class MainScene extends Phaser.Scene {
     // pickup/projectile systems carry drops/bolts in whichever world they exist.
     this.updateCherubs();
     this.updateMichael();
+    this.updateGodJudgment();
     this.projectiles.update(delta, this.player.x, this.player.y, PROJECTILE_PLAYER_HIT_RADIUS);
     this.pickups.update(this.player.x, this.player.y);
     this.regenTick(delta);
@@ -1474,6 +1506,7 @@ export class MainScene extends Phaser.Scene {
 
   /** Defeat: clear adds, climactic burst, big XP + Holy Power, victory + God hook. */
   private onMichaelDefeated(): void {
+    this.michaelDefeated = true; // GATE: unlocks the God's-judgment beat at the throne
     this.clearMichaelAdds();
     this.spawnLevelUpBurst(); // a quick radiant burst (reuse)
     const burst = this.add.circle(this.michael.x, this.michael.y, 40, 0xfff1b8, 0.5).setDepth(13);
@@ -1838,6 +1871,187 @@ export class MainScene extends Phaser.Scene {
     this.seedHeavenCherubs();
     // The climactic boss at his sanctum (dormant until approached).
     this.setupMichael();
+    // God's throne set piece (the judgment beat is gated on Michael's defeat).
+    this.buildThrone();
+  }
+
+  /**
+   * The THRONE set piece (placement, not an enemy): a towering golden throne
+   * crowned with a cloud bank — God is NEVER shown. A landmark with collision
+   * (walk up to it, not through it). The God's-judgment beat is gated on Michael's
+   * defeat (see updateGodJudgment). Edit THRONE_POSITION in heavenWorld.ts to move it.
+   */
+  private buildThrone(): void {
+    const o = this.heavenMap.bounds;
+    this.thronePos = { x: o.x + THRONE_POSITION.x, y: o.y + THRONE_POSITION.y };
+    const { x, y } = this.thronePos;
+    MainScene.ensureThroneTexture(this);
+    // Radiant glow behind the throne.
+    const glow = this.add.circle(x, y - 10, 70, 0xfff3c4, 0.12).setDepth(5);
+    this.tweens.add({ targets: glow, scale: 1.3, alpha: 0.04, duration: 2200, yoyo: true, repeat: -1, ease: 'Sine.inOut' });
+    const throne = this.add.image(x, y, 'heaven-throne').setDepth(7);
+    // Collision: a static body so the player walks UP to the throne, not through it.
+    this.physics.add.existing(throne, true);
+    this.physics.add.collider(this.player.sprite, throne);
+    this.addHeavenLabel(x, y - throne.height / 2 - 6, '☁ The Throne ☁', '#fff3c4');
+  }
+
+  /** TRIGGER: force the God's-judgment sequence (proximity, after Michael, or dev). */
+  private startGodJudgment(): void {
+    if (this.judgmentFired || this.judgmentActive) return;
+    this.judgmentActive = true;
+    this.controls.setEnabled(false);
+    this.player.setDirection(0, 0);
+    // 1) God speaks from the clouds (never shown). Tap-advance like normal dialogue.
+    this.dialogue.open([...GOD_JUDGMENT_LINES], () => this.godJudgmentPowerStrip());
+  }
+
+  /** 2) Power-strip beat — NARRATIVE ONLY for now (a draining effect + lines). */
+  private godJudgmentPowerStrip(): void {
+    this.spawnPowerStripEffect();
+    // === FUTURE POWER-STRIP HOOK ============================================
+    // The REAL mechanical power-strip (e.g. reset level/XP, zero Holy Power,
+    // shrink the HP pool, revoke abilities) will be applied HERE in a later
+    // build. It is NARRATIVE ONLY now — DO NOT change the player's stats yet.
+    //   e.g. this.progression.reset(); this.holyPower.reset();
+    //        this.playerHealth.setMax(this.progression.effectiveMaxHP); ...
+    // ========================================================================
+    this.dialogue.open([...POWER_STRIP_LINES], () => this.godJudgmentBanish());
+  }
+
+  /** 3) Banishment — God casts the player down; the Hell portal opens. */
+  private godJudgmentBanish(): void {
+    this.dialogue.open([...BANISHMENT_LINES], () => this.godJudgmentComplete());
+  }
+
+  private godJudgmentComplete(): void {
+    this.spawnHellPortal();
+    this.judgmentFired = true;
+    this.judgmentActive = false;
+    this.reenableControls = true; // resume play; the Hell portal now stands at the throne
+  }
+
+  /** A draining-light effect rising off the player (narrative power-strip visual). */
+  private spawnPowerStripEffect(): void {
+    for (let i = 0; i < 10; i++) {
+      this.time.delayedCall(i * 70, () => {
+        const a = Math.random() * Math.PI * 2;
+        const r = 22;
+        const mote = this.add
+          .circle(this.player.x + Math.cos(a) * r, this.player.y + Math.sin(a) * r, 4, 0xffe9a8, 0.95)
+          .setDepth(13);
+        this.worldFx.add(mote);
+        this.tweens.add({
+          targets: mote,
+          x: this.thronePos.x,
+          y: this.thronePos.y - 30,
+          alpha: 0,
+          scale: 0.2,
+          duration: 700,
+          ease: 'Quad.in',
+          onComplete: () => mote.destroy(),
+        });
+      });
+    }
+    this.player.flash();
+  }
+
+  /** Spawn the Hell portal just south of the throne (where the player approached). */
+  private spawnHellPortal(): void {
+    if (this.hellPortal) return;
+    this.hellPortal = new HellPortal(this, this.thronePos.x, this.thronePos.y + 160);
+    this.uiCamera?.ignore(this.hellPortal.objects());
+  }
+
+  /** Gate + drive the God's-judgment beat each frame (Heaven only). */
+  private updateGodJudgment(): void {
+    if (this.activeWorld !== WORLD_HEAVEN) return;
+    // Proximity trigger: after Michael falls, approaching the throne fires it once.
+    if (this.michaelDefeated && !this.judgmentFired && !this.judgmentActive) {
+      if (Phaser.Math.Distance.Between(this.player.x, this.player.y, this.thronePos.x, this.thronePos.y) <= 220) {
+        this.startGodJudgment();
+      }
+    }
+    // Entering the Hell portal → placeholder beat (the Hell map is the NEXT build).
+    if (this.hellPortal && this.time.now >= this.hellPortalEnterShownUntil) {
+      if (Phaser.Math.Distance.Between(this.player.x, this.player.y, this.hellPortal.x, this.hellPortal.y) <= PORTAL_ENTER_RANGE) {
+        this.hellPortalEnterShownUntil = this.time.now + 3600;
+        this.showBanner(HELL_PORTAL_ENTER, 2600);
+      }
+    }
+  }
+
+  /** RESET: judgment un-fired, Hell portal removed, gate re-locked (replay the beat). */
+  private resetGodJudgment(): void {
+    this.michaelDefeated = false;
+    this.judgmentFired = false;
+    this.judgmentActive = false;
+    this.hellPortalEnterShownUntil = 0;
+    this.hellPortal?.destroy();
+    this.hellPortal = undefined;
+  }
+
+  /** DEV: jump to the throne (travelling to Heaven if needed). */
+  private devTeleportToThrone(): void {
+    this.cancelDash();
+    const arrival = { x: this.thronePos.x, y: this.thronePos.y + 260 };
+    if (this.activeWorld !== WORLD_HEAVEN) {
+      this.travelToWorld(WORLD_HEAVEN, arrival);
+    } else {
+      this.player.sprite.setPosition(arrival.x, arrival.y);
+      this.player.setDirection(0, 0);
+      this.cameras.main.centerOn(this.thronePos.x, this.thronePos.y);
+    }
+  }
+
+  /** DEV: force the judgment sequence regardless of whether Michael is dead. */
+  private devTriggerGodJudgment(): void {
+    this.cancelDash();
+    this.michaelDefeated = true; // satisfy the gate for testing
+    this.judgmentFired = false;
+    this.judgmentActive = false;
+    const near = { x: this.thronePos.x, y: this.thronePos.y + 180 }; // within the 220px trigger
+    if (this.activeWorld !== WORLD_HEAVEN) {
+      // Travel to Heaven; arriving within range, the proximity trigger fires it.
+      this.travelToWorld(WORLD_HEAVEN, near);
+    } else {
+      this.player.sprite.setPosition(near.x, near.y);
+      this.player.setDirection(0, 0);
+      this.startGodJudgment();
+    }
+  }
+
+  private static ensureThroneTexture(scene: Phaser.Scene): void {
+    if (scene.textures.exists('heaven-throne')) return;
+    const w = 104;
+    const h = 184;
+    const g = scene.make.graphics({ x: 0, y: 0 }, false);
+    const cx = w / 2;
+    // Stepped base.
+    g.fillStyle(0xc9a23a, 1);
+    g.fillRect(8, h - 18, w - 16, 18);
+    g.fillRect(18, h - 34, w - 36, 16);
+    // Throne body: seat + tall back + armrests, gold with a darker outline.
+    g.fillStyle(0x6e561c, 1);
+    g.fillRoundedRect(24, 52, w - 48, h - 78, 6); // back outline
+    g.fillStyle(0xe7c558, 1);
+    g.fillRoundedRect(28, 56, w - 56, h - 86, 5); // back
+    g.fillStyle(0xc9a23a, 1);
+    g.fillRect(20, h - 70, w - 40, 22); // seat
+    g.fillRect(16, h - 86, 12, 38); // left armrest
+    g.fillRect(w - 28, h - 86, 12, 38); // right armrest
+    // Jewel.
+    g.fillStyle(0xfff3c4, 1);
+    g.fillCircle(cx, h - 96, 5);
+    // CLOUD BANK crowning the top (God is implied, never shown).
+    g.fillStyle(0xffffff, 0.5);
+    for (let i = 0; i < 7; i++) g.fillCircle(14 + i * 13, 34, 18);
+    g.fillStyle(0xffffff, 0.85);
+    for (let i = 0; i < 6; i++) g.fillCircle(20 + i * 13, 26, 15);
+    g.fillStyle(0xffffff, 1);
+    for (let i = 0; i < 5; i++) g.fillCircle(26 + i * 13, 20, 12);
+    g.generateTexture('heaven-throne', w, h);
+    g.destroy();
   }
 
   /** A small Heaven world-space label. */
@@ -2547,6 +2761,9 @@ export class MainScene extends Phaser.Scene {
     // Reset the Michael encounter: dormant, full HP, Phase 1, adds cleared.
     this.resetMichael();
 
+    // Reset God's-judgment beat: gate re-locked, judgment un-fired, Hell portal gone.
+    this.resetGodJudgment();
+
     // Return to Earth if currently in Heaven (instant — no fade), and forget the
     // remembered Heaven position so a fresh visit starts at the arrival point.
     this.tweens.killTweensOf(this.fadeOverlay);
@@ -2598,6 +2815,9 @@ export class MainScene extends Phaser.Scene {
       { label: 'Teleport to Michael', onPress: () => this.devTeleportToMichael() },
       { label: 'Start Michael Fight', onPress: () => this.startMichaelFight() },
       { label: 'Reset Michael', onPress: () => this.resetMichael() },
+      { label: 'Teleport to Throne', onPress: () => this.devTeleportToThrone() },
+      { label: "Trigger God's Judgment", onPress: () => this.devTriggerGodJudgment() },
+      { label: 'Reset Judgment', onPress: () => this.resetGodJudgment() },
       { label: 'Go to Heaven', onPress: () => this.devGoToHeaven() },
       { label: 'Return to Earth', onPress: () => this.devReturnToEarth() },
       { label: 'Toggle World', onPress: () => this.devToggleWorld() },
