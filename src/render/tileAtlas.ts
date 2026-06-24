@@ -104,6 +104,37 @@ export function atlasFrameForKey(key: string): number {
   return f;
 }
 
+// --- REAL terrain art (drop-in overrides over the placeholder atlas) ----------
+//
+// Each entry below replaces ONE terrain's placeholder color with a real 32px-grid
+// PNG (loaded, then drawn into that terrain's atlas cell; bigger source art is
+// downscaled into the 32px cell and the tilemap renders it pixel-crisp). Terrains
+// WITHOUT an entry keep their procedural placeholder — this is a partial pass.
+//
+// ─── TO ADD ANOTHER REAL TILE LATER (the whole drop-in step) ──────────────────
+//  1. Drop the PNG in  public/tiles/terrain/<Name>.png  (served at /tiles/...).
+//  2. Add ONE line here: { key: '<terrainKey>', file: 'tiles/terrain/<Name>.png' }
+//     — `key` must be a terrain key from ATLAS_TILES above. Nothing else changes.
+// ──────────────────────────────────────────────────────────────────────────────
+export const TERRAIN_TILE_IMAGES: { key: string; file: string }[] = [
+  { key: 'beach', file: 'tiles/terrain/Beachcoast.png' }, // Beachcoast.png  → "Beach / Coast"
+  { key: 'rainforest', file: 'tiles/terrain/Coastal_rainforest.png' }, // Coastal_rainforest.png → "Coastal Rainforest"
+  { key: 'sound', file: 'tiles/terrain/Soundinlet.png' }, // Soundinlet.png → "Puget Sound"
+];
+
+/** Texture cache key under which a terrain's real tile PNG is loaded. */
+export function terrainTileTextureKey(key: string): string {
+  return `tile-${key}`;
+}
+
+/** Queue the real terrain tile PNGs for loading. Call from a scene's preload(). */
+export function preloadTerrainTiles(scene: Phaser.Scene): void {
+  for (const { key, file } of TERRAIN_TILE_IMAGES) {
+    const texKey = terrainTileTextureKey(key);
+    if (!scene.textures.exists(texKey)) scene.load.image(texKey, file);
+  }
+}
+
 // --- Placeholder atlas drawing (temporary; replaced by real art) -------------
 
 function hash(x: number, y: number): number {
@@ -186,6 +217,24 @@ export function generatePlaceholderAtlas(scene: Phaser.Scene, key: string): void
     const oy = Math.floor(frame / cols) * ts;
     drawTile(ctx, ox, oy, ts, def, frame * 1337 + 7);
   });
+
+  // Overlay REAL art onto the frames that have a loaded PNG (the rest keep the
+  // placeholder). The source is downscaled into the 32px cell; the tilemap then
+  // samples it nearest-neighbor (pixelArt mode) so the pixel art stays crisp.
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  for (const { key } of TERRAIN_TILE_IMAGES) {
+    const frame = frameByKey.get(key);
+    const texKey = terrainTileTextureKey(key);
+    if (frame === undefined || !scene.textures.exists(texKey)) continue; // not loaded → keep placeholder
+    const src = scene.textures.get(texKey).getSourceImage();
+    if (!(src instanceof HTMLImageElement || src instanceof HTMLCanvasElement)) continue;
+    const ox = (frame % cols) * ts;
+    const oy = Math.floor(frame / cols) * ts;
+    ctx.clearRect(ox, oy, ts, ts);
+    ctx.drawImage(src, ox, oy, ts, ts); // whole source → the 32px cell
+  }
+  ctx.imageSmoothingEnabled = false;
 
   canvasTexture.refresh();
 }
