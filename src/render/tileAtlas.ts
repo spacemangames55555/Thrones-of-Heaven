@@ -72,6 +72,13 @@ export const ATLAS_TILES: AtlasTileDef[] = [
   { key: 'town_tree', color: '#1e5233', pattern: 'speckle' },
   { key: 'corrupted_ground', color: '#2b1640', pattern: 'rift' },
   { key: 'corruption_rift', color: '#8a2be2', pattern: 'rift' },
+  // --- heaven tiles (the second world — ethereal/divine; appended so every
+  //     existing terrain keeps its atlas frame and Earth is unaffected) ---
+  { key: 'holy_ground', color: '#f4eed6', pattern: 'noise' }, // soft white-gold ground
+  { key: 'heaven_cloud', color: '#e9f0fb', pattern: 'noise' }, // pale cloud
+  { key: 'gold_field', color: '#ecd9a3', pattern: 'noise' }, // soft gold expanse
+  { key: 'heaven_path', color: '#ded0a4', pattern: 'rows' }, // radiant path
+  { key: 'heaven_void', color: '#0a1124', pattern: 'flat' }, // edge void (blocks)
 ];
 
 /** Total atlas cells, including the reserved empty frame 0. */

@@ -460,3 +460,24 @@ export const FLAMING_SWORD_VARIANTS: Record<GuardianRole, GuardianConfig> = {
 
 /** Fire-bolt collision radius for the ranged guardian (reuses the projectile system). */
 export const GUARDIAN_BOLT_RADIUS = 8;
+
+
+// --- Multi-world + portal transition (Earth <-> Heaven) --------------------
+//
+// Heaven is a SECOND, separate map built at a large coordinate offset so the two
+// worlds never overlap (only one is in the camera's bounds at a time). The same
+// player carries across; the transition swaps camera/physics bounds, the player's
+// terrain collider, and the zoom's map size. Heaven's terrain/region data lives in
+// src/map/heavenWorld.ts; its arrival/return points are derived in
+// MainScene.setupHeaven from these offsets.
+
+/** Empty gap (px) between the Earth region and the Heaven region (so neither bleeds). */
+export const HEAVEN_WORLD_GAP = 4096;
+/** Heaven arrival drops the player this far SOUTH of the return portal (so they don't instantly re-enter). */
+export const HEAVEN_ARRIVAL_OFFSET = { dx: 0, dy: 140 };
+/** Returning to Earth drops the player this far SOUTH of the Earth Heaven-Portal. */
+export const EARTH_RETURN_OFFSET = { dx: 0, dy: 140 };
+/** Total portal-transition fade time (ms): half fades out, half fades back in. */
+export const WORLD_TRANSITION_MS = 540;
+/** Grace period (ms) after a transition during which portal triggers are ignored (prevents bounce-back). */
+export const WORLD_TRANSITION_COOLDOWN_MS = 1200;

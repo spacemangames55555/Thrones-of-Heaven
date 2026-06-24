@@ -9,11 +9,16 @@ export interface DevAction {
 
 const TAB_W = 46;
 const TAB_H = 66;
-const BTN_W = 170;
+const BTN_W = 170; // single-column button width
+const BTN_W2 = 138; // two-column button width (narrower so two fit left of the zoom buttons)
+const COL_GAP = 8; // gap between the two columns
 const BTN_GAP = 6;
 const BTN_H_MAX = 40;
 const BTN_H_MIN = 20;
 const TAB_GAP = 8; // space between the tab and the button column
+// Above this many buttons, lay them out in TWO columns so they stay tappable on a
+// phone (and clear of the right-edge zoom buttons) instead of shrinking to slivers.
+const TWO_COL_THRESHOLD = 14;
 // The vertical band the expanded column lives in: below the quest tracker, above
 // the bottom controls. Button height shrinks to fit however many buttons there are
 // (the expanded buttons capture their own taps, so the joystick never spawns under
@@ -117,22 +122,33 @@ export class DevPanel {
     this.tabBg.setPosition(tabCx, tabCy);
     this.tabLabel.setPosition(tabCx, tabCy);
 
-    // Button column: fit N buttons into the safe band (below the tracker, above
-    // the bottom controls), shrinking the button height as needed so the column
-    // never overlaps gameplay UI however many buttons there are.
+    // Fit the buttons into the safe band (below the tracker, above the bottom
+    // controls). Many buttons → TWO columns (kept left of the right-edge zoom
+    // buttons) so each stays a comfortable height instead of a sliver.
     const n = this.buttons.length;
+    const cols = n > TWO_COL_THRESHOLD ? 2 : 1;
+    const btnW = cols === 2 ? BTN_W2 : BTN_W;
+    const rows = Math.ceil(n / cols);
+    const fontSize = cols === 2 ? '13px' : '15px';
+
     const bandTop = insets.top + BAND_TOP;
     const bandBottom = h - insets.bottom - BAND_BOTTOM_GAP;
     const band = Math.max(60, bandBottom - bandTop);
-    const btnH = Phaser.Math.Clamp((band - (n - 1) * BTN_GAP) / n, BTN_H_MIN, BTN_H_MAX);
-    const colH = n * btnH + (n - 1) * BTN_GAP;
-    const colX = leftX + TAB_W + TAB_GAP + BTN_W / 2;
-    let y = bandTop + (band - colH) / 2 + btnH / 2;
-    for (const b of this.buttons) {
-      b.bg.setSize(BTN_W, btnH);
-      b.bg.setPosition(colX, y);
-      b.label.setPosition(colX, y);
-      y += btnH + BTN_GAP;
-    }
+    const btnH = Phaser.Math.Clamp((band - (rows - 1) * BTN_GAP) / rows, BTN_H_MIN, BTN_H_MAX);
+    const colH = rows * btnH + (rows - 1) * BTN_GAP;
+
+    const startX = leftX + TAB_W + TAB_GAP;
+    const colX = (c: number): number => startX + c * (btnW + COL_GAP) + btnW / 2;
+    const top = bandTop + (band - colH) / 2 + btnH / 2;
+
+    this.buttons.forEach((b, i) => {
+      const c = i % cols; // row-major: 0,1 / 2,3 / ...
+      const r = Math.floor(i / cols);
+      const x = colX(c);
+      const y = top + r * (btnH + BTN_GAP);
+      b.bg.setSize(btnW, btnH);
+      b.bg.setPosition(x, y);
+      b.label.setPosition(x, y).setFontSize(fontSize);
+    });
   }
 }

@@ -19,6 +19,8 @@ import { DarkPortal } from '../entities/DarkPortal';
 import { HeavenPortal } from '../entities/HeavenPortal';
 import { FlamingSword } from '../entities/FlamingSword';
 import { PortalDefense } from '../encounter/PortalDefense';
+import { buildHeavenMapData, HEAVEN_WIDTH, HEAVEN_HEIGHT } from '../map/heavenWorld';
+import { WORLD_EARTH, WORLD_HEAVEN, type WorldId, type WorldRuntime } from '../world/worlds';
 import { ProjectileSystem } from '../combat/ProjectileSystem';
 import { PickupSystem, type PickupCollected } from '../world/PickupSystem';
 import { HolyPower } from '../progression/HolyPower';
@@ -94,6 +96,11 @@ import {
   PORTAL_ENTER_RANGE,
   PORTAL_CORRUPT_DURATION_MS,
   GUARDIAN_BOLT_RADIUS,
+  HEAVEN_WORLD_GAP,
+  HEAVEN_ARRIVAL_OFFSET,
+  EARTH_RETURN_OFFSET,
+  WORLD_TRANSITION_MS,
+  WORLD_TRANSITION_COOLDOWN_MS,
 } from './settings';
 import { TOWN_TILES } from '../town/townTiles';
 import { buildTown, type TownFeatures, type DoorFeature } from '../town/TownBuilder';
@@ -114,11 +121,10 @@ const SASQUATCH_SPAWN = { x: 9872, y: 4464 };
 // Spirit Vision on — see the Oregon spirit entity in src/spirit/spiritData.ts.
 const OREGON_SWARM_SPAWN = { x: 12240, y: 13616 };
 
-// >>> PLACEHOLDER TEXT — edit these two strings to change the descent-climax beats.
-// Shown when the player corrupts the Heaven Portal (gold→purple), and when the
-// player later walks into the now-corrupted portal (the Heaven map is a LATER build).
+// >>> PLACEHOLDER TEXT — edit to change the descent-climax beat shown when the
+// player corrupts the Heaven Portal (gold→purple). Walking into the corrupted
+// portal now transports the player to Heaven (see enterHeavenPortal).
 const CORRUPT_PORTAL_LINE = 'The gate is defiled. The way to Heaven opens…';
-const ENTER_PORTAL_PLACEHOLDER = 'Heaven awaits beyond… (coming soon)';
 
 /**
  * The overworld scene: renders Washington, stamps the Seattle town onto it,
@@ -197,7 +203,22 @@ export class MainScene extends Phaser.Scene {
   private guardians: FlamingSword[] = [];
   private guardianPhase: 'dormant' | 'fighting' | 'defeated' | 'corrupting' | 'corrupted' = 'dormant';
   private corruptButton!: TouchButton;
-  private enterPortalShownUntil = 0;
+
+  // Multi-world (Earth <-> Heaven). The active world is centralized, serializable
+  // state; each world's map lives in its own coordinate region (one rendered at a
+  // time). The same player carries across. See setupHeaven + travelToWorld.
+  private activeWorld: WorldId = WORLD_EARTH;
+  private worlds: Record<WorldId, WorldRuntime> = {};
+  private worldPos: Record<WorldId, { x: number; y: number }> = {}; // remembered per-world player position
+  private heavenMap!: GameMap;
+  private heavenReturnPortal!: HeavenPortal;
+  private heavenArrivalPos = { x: 0, y: 0 };
+  private heavenReturnPortalPos = { x: 0, y: 0 };
+  private earthReturnPos = { x: 0, y: 0 }; // Earth Heaven-Portal arrival when coming back
+  private transitioning = false;
+  private worldCooldownUntil = 0;
+  private pausedBodies: Phaser.Physics.Arcade.Body[] = [];
+  private fadeOverlay!: Phaser.GameObjects.Rectangle;
 
   // Story / alignment state.
   private playerPath: PlayerPath = 'neutral';
@@ -238,6 +259,7 @@ export class MainScene extends Phaser.Scene {
   private guardTarget: Interactable | null = null; // already auto-talked; wait to leave range
   private reenableControls = false;
   private portalCooldownUntil = 0;
+  private earthCollider!: Phaser.Physics.Arcade.Collider; // player vs Earth terrain
 
   constructor() {
     super('MainScene');
@@ -267,7 +289,7 @@ export class MainScene extends Phaser.Scene {
 
     // Spawn the player in the town square.
     this.player = new Player(this, this.town.spawn.x, this.town.spawn.y);
-    this.physics.add.collider(this.player.sprite, this.map.layer);
+    this.earthCollider = this.physics.add.collider(this.player.sprite, this.map.layer);
 
     // Quest-giver NPC in the plaza. Its dialogue is chosen per quest-state at
     // talk time (see openDialogueWith); the lines passed here are the inactive
@@ -372,6 +394,10 @@ export class MainScene extends Phaser.Scene {
     // dormant flaming-sword guardians (all world objects, in the snapshot below).
     this.setupGuardianEncounter();
 
+    // The SECOND world — Heaven — built at a coordinate offset (its objects fall in
+    // the world snapshot below → main camera only). Earth stays active.
+    this.setupHeaven();
+
     const cam = this.cameras.main;
     cam.startFollow(this.player.sprite, true, 0.12, 0.12);
     cam.setZoom(CAMERA_ZOOM); // tune in src/game/settings.ts
@@ -399,6 +425,7 @@ export class MainScene extends Phaser.Scene {
     this.tracker = new QuestTracker(this);
     this.createQuestHud();
     this.createDevTools(); // dev panel + dev keys (gated by DEV_MODE)
+    this.createFadeOverlay(); // full-screen fade for portal transitions (UI partition)
 
     // Dedicated UI camera, fixed at zoom 1 and never scrolling, so the on-screen
     // UI is NOT scaled or moved by the main camera's zoom/follow (the bug:
@@ -475,21 +502,30 @@ export class MainScene extends Phaser.Scene {
       this.player.setDirection(dir.x, dir.y);
     }
 
-    this.checkDoors();
-    this.checkQuestProximity();
-    this.checkAngelEncounter();
-    this.updateArc(); // descent-arc completion watcher (before interactions so a
-    // "return to the outpost" completes before the patron auto-offers the next quest)
-    if (this.isDashing()) this.talkButton.setVisible(false);
-    else this.checkInteractions();
-    this.sasquatch.update(this.player.x, this.player.y, this.time.now);
-    this.updateSwarmers();
-    this.updateAngels();
-    this.updateTownsfolk(); // prune dead first so the wave manager sees the live count
-    this.portalDefense.update(this.time.now);
-    this.updateGuardianEncounter();
+    // World-gated systems: all Earth content (NPCs, enemies, quests, encounters,
+    // pickups) ticks only while Earth is the active world. Heaven is empty — its
+    // only per-frame logic is the return-gate proximity. Movement, dash, zoom, the
+    // HUD, regen and projectiles are world-agnostic and run for both.
+    if (this.activeWorld === WORLD_EARTH) {
+      this.checkDoors();
+      this.checkQuestProximity();
+      this.checkAngelEncounter();
+      this.updateArc(); // descent-arc completion watcher (before interactions so a
+      // "return to the outpost" completes before the patron auto-offers the next quest)
+      if (this.isDashing()) this.talkButton.setVisible(false);
+      else this.checkInteractions();
+      this.sasquatch.update(this.player.x, this.player.y, this.time.now);
+      this.updateSwarmers();
+      this.updateAngels();
+      this.updateTownsfolk(); // prune dead first so the wave manager sees the live count
+      this.portalDefense.update(this.time.now);
+      this.updateGuardianEncounter();
+      this.pickups.update(this.player.x, this.player.y);
+    } else {
+      this.talkButton.setVisible(false);
+      this.updateHeaven();
+    }
     this.projectiles.update(delta, this.player.x, this.player.y, PROJECTILE_PLAYER_HIT_RADIUS);
-    this.pickups.update(this.player.x, this.player.y);
     this.regenTick(delta);
     this.readout.update();
   }
@@ -1268,7 +1304,6 @@ export class MainScene extends Phaser.Scene {
     for (const g of this.guardians) g.reset();
     this.heavenPortal.reset();
     this.guardianPhase = 'dormant';
-    this.enterPortalShownUntil = 0;
     this.corruptButton.setVisible(false);
   }
 
@@ -1296,13 +1331,11 @@ export class MainScene extends Phaser.Scene {
     const nearPortal = Phaser.Math.Distance.Between(this.player.x, this.player.y, this.heavenPortal.x, this.heavenPortal.y) <= PORTAL_CORRUPT_RANGE;
     this.corruptButton.setVisible(this.guardianPhase === 'defeated' && nearPortal);
 
-    // Entering the now-corrupted portal is a placeholder beat (no map change).
+    // Entering the now-corrupted portal transports the player to Heaven (the real
+    // transition, replacing the old "coming soon" beat). Gated on CORRUPTED.
     if (this.guardianPhase === 'corrupted') {
       const d = Phaser.Math.Distance.Between(this.player.x, this.player.y, this.heavenPortal.x, this.heavenPortal.y);
-      if (d <= PORTAL_ENTER_RANGE && this.time.now >= this.enterPortalShownUntil) {
-        this.enterPortalShownUntil = this.time.now + 3600;
-        this.showBanner(ENTER_PORTAL_PLACEHOLDER, 2600);
-      }
+      if (d <= PORTAL_ENTER_RANGE) this.enterHeavenPortal();
     }
   }
 
@@ -1350,6 +1383,268 @@ export class MainScene extends Phaser.Scene {
     this.player.sprite.setPosition(HOLY_OUTPOST_POSITION.x, HOLY_OUTPOST_POSITION.y + GUARDIAN_ACTIVATION_RANGE + 60);
     this.player.setDirection(0, 0);
     this.cameras.main.centerOn(HOLY_OUTPOST_POSITION.x, HOLY_OUTPOST_POSITION.y);
+  }
+
+  // --- Multi-world: Heaven + the two-way portal transition ------------------
+  //
+  // Heaven is a SECOND GameMap built at a large coordinate offset so it never
+  // overlaps Earth (only one world is in the camera's bounds at a time). The same
+  // player carries across — nothing is reset. travelToWorld(worldId, arrival) is
+  // the reusable, event-expressible transition future portals/maps reuse.
+
+  /** Build the Heaven world (map + props + return portal) and register both worlds. */
+  private setupHeaven(): void {
+    const ts = this.map.tileSize;
+    const origin = { x: this.map.pixelWidth + HEAVEN_WORLD_GAP, y: 0 };
+    this.heavenMap = new GameMap(this, buildHeavenMapData(), [], origin);
+
+    // Heaven's walkable centre — where the (corrupted) return portal + arrival sit.
+    const cx = origin.x + (HEAVEN_WIDTH * ts) / 2;
+    const cy = origin.y + (HEAVEN_HEIGHT * ts) / 2;
+    this.heavenReturnPortalPos = { x: cx, y: cy };
+    this.heavenArrivalPos = { x: cx + HEAVEN_ARRIVAL_OFFSET.dx, y: cy + HEAVEN_ARRIVAL_OFFSET.dy };
+    this.earthReturnPos = { x: HEAVEN_PORTAL_POSITION.x + EARTH_RETURN_OFFSET.dx, y: HEAVEN_PORTAL_POSITION.y + EARTH_RETURN_OFFSET.dy };
+
+    // The return portal: a corrupted/purple gate (reuses HeavenPortal in its
+    // corrupted state). Entering it transitions back to Earth.
+    this.heavenReturnPortal = new HeavenPortal(this, cx, cy);
+    this.heavenReturnPortal.load({ state: 'corrupted' });
+    this.addHeavenLabel(cx, cy - 84, 'Return Gate (to Earth)', '#d6a8ff');
+    this.addHeavenLabel(cx, cy - 230, '✦ Heaven ✦', '#fff3c4');
+
+    // Prop landmarks (Roman-style pillars + a small shrine) — purely visual +
+    // collision; the player walks around them.
+    this.buildHeavenProps(cx, cy);
+
+    // Player-vs-Heaven-terrain collider (inactive until Heaven is the active world).
+    const heavenCollider = this.physics.add.collider(this.player.sprite, this.heavenMap.layer);
+    heavenCollider.active = false;
+
+    // The world REGISTRY — adding another map later = build a GameMap at a fresh
+    // origin and register a WorldRuntime here (not hardcoded to two).
+    this.worlds = {
+      [WORLD_EARTH]: {
+        id: WORLD_EARTH,
+        map: this.map,
+        collider: this.earthCollider,
+        defaultArrival: { x: this.town.spawn.x, y: this.town.spawn.y },
+      },
+      [WORLD_HEAVEN]: {
+        id: WORLD_HEAVEN,
+        map: this.heavenMap,
+        collider: heavenCollider,
+        defaultArrival: this.heavenArrivalPos,
+      },
+    };
+    this.worldPos[WORLD_EARTH] = { x: this.town.spawn.x, y: this.town.spawn.y };
+    this.worldPos[WORLD_HEAVEN] = { ...this.heavenArrivalPos };
+  }
+
+  /** A small Heaven world-space label. */
+  private addHeavenLabel(x: number, y: number, text: string, color: string): void {
+    this.add
+      .text(x, y, text, { fontFamily: 'system-ui, sans-serif', fontSize: '12px', color, fontStyle: 'bold' })
+      .setOrigin(0.5, 1)
+      .setStroke('#101830', 4)
+      .setDepth(8);
+  }
+
+  /** Pillars + a shrine around the Heaven arrival, with static collision. */
+  private buildHeavenProps(cx: number, cy: number): void {
+    MainScene.ensureHeavenPropTextures(this);
+    const props: { dx: number; dy: number; key: string }[] = [
+      { dx: -170, dy: -60, key: 'heaven-pillar' },
+      { dx: 170, dy: -60, key: 'heaven-pillar' },
+      { dx: -210, dy: 130, key: 'heaven-pillar' },
+      { dx: 210, dy: 130, key: 'heaven-pillar' },
+      { dx: -90, dy: -150, key: 'heaven-pillar' },
+      { dx: 90, dy: -150, key: 'heaven-pillar' },
+      { dx: 0, dy: -210, key: 'heaven-shrine' }, // a small structure to walk around
+    ];
+    for (const p of props) {
+      const img = this.add.image(cx + p.dx, cy + p.dy, p.key).setDepth(7);
+      this.physics.add.existing(img, true); // static body matching the sprite
+      this.physics.add.collider(this.player.sprite, img);
+    }
+  }
+
+  /** Fired when the player enters the CORRUPTED Earth Heaven-Portal → travel to Heaven. */
+  private enterHeavenPortal(): void {
+    if (this.transitioning || this.time.now < this.worldCooldownUntil) return;
+    if (this.guardianPhase !== 'corrupted') return; // only the corrupted portal transports
+    this.travelToWorld(WORLD_HEAVEN, this.heavenArrivalPos);
+  }
+
+  /** Heaven-side per-frame logic: entering the return gate transitions back to Earth. */
+  private updateHeaven(): void {
+    if (this.transitioning || this.time.now < this.worldCooldownUntil) return;
+    const d = Phaser.Math.Distance.Between(
+      this.player.x,
+      this.player.y,
+      this.heavenReturnPortalPos.x,
+      this.heavenReturnPortalPos.y,
+    );
+    if (d <= PORTAL_ENTER_RANGE) this.travelToWorld(WORLD_EARTH, this.earthReturnPos);
+  }
+
+  /**
+   * THE reusable world-travel function: fade out, swap the active world (bounds,
+   * collider, zoom, player placement), then fade back in. `arrival` overrides the
+   * world's remembered position (the portals pass explicit arrival points).
+   */
+  private travelToWorld(worldId: WorldId, arrival?: { x: number; y: number }): void {
+    if (this.transitioning) return;
+    const target = this.worlds[worldId];
+    if (!target) return;
+    const dest = arrival ?? this.worldPos[worldId] ?? target.defaultArrival;
+
+    this.transitioning = true;
+    this.cancelDash();
+    this.controls.setEnabled(false);
+    this.player.setDirection(0, 0);
+
+    const half = WORLD_TRANSITION_MS / 2;
+    this.fadeOverlay.setVisible(true).setAlpha(0);
+    this.tweens.add({
+      targets: this.fadeOverlay,
+      alpha: 1,
+      duration: half,
+      ease: 'Quad.in',
+      onComplete: () => {
+        this.applyWorldSwap(worldId, dest);
+        this.tweens.add({
+          targets: this.fadeOverlay,
+          alpha: 0,
+          duration: half,
+          ease: 'Quad.out',
+          onComplete: () => {
+            this.fadeOverlay.setVisible(false);
+            this.transitioning = false;
+            this.worldCooldownUntil = this.time.now + WORLD_TRANSITION_COOLDOWN_MS;
+            if (!this.playerDead) this.controls.setEnabled(true);
+          },
+        });
+      },
+    });
+  }
+
+  /** Core, instant world swap (used by travelToWorld at the fade midpoint + dev reset). */
+  private applyWorldSwap(worldId: WorldId, dest: { x: number; y: number }): void {
+    // Remember where we're leaving so a later return lands there by default.
+    this.worldPos[this.activeWorld] = { x: this.player.x, y: this.player.y };
+
+    // Pause Earth's live enemy bodies while away (so collideWorldBounds can't yank
+    // them into the other region); resume them on return.
+    if (worldId === WORLD_EARTH) this.resumeEarthBodies();
+    else this.pauseEarthBodies();
+
+    this.activeWorld = worldId;
+    const w = this.worlds[worldId];
+
+    // Only the active world's terrain collider is live.
+    for (const id of Object.keys(this.worlds)) this.worlds[id].collider.active = id === worldId;
+
+    // Bounds, camera, zoom all re-pointed at the active world.
+    const b = w.map.bounds;
+    this.physics.world.setBounds(b.x, b.y, b.width, b.height);
+    this.cameras.main.setBounds(b.x, b.y, b.width, b.height);
+    this.player.sprite.setPosition(dest.x, dest.y);
+    this.player.setDirection(0, 0);
+    this.cameras.main.centerOn(dest.x, dest.y);
+    this.zoomControls.setMapSize(b.width, b.height); // re-derive zoom-out from THIS map
+
+    // Drop any in-flight Earth bolts; clear Earth-only UI prompts.
+    this.projectiles.clear();
+    this.talkButton.setVisible(false);
+    this.corruptButton.setVisible(false);
+  }
+
+  /** Disable every currently-live Earth enemy body; remember them for resume. */
+  private pauseEarthBodies(): void {
+    this.pausedBodies = [];
+    const sprites: (Phaser.Physics.Arcade.Sprite | undefined)[] = [
+      this.sasquatch.isAlive ? this.sasquatch.sprite : undefined,
+      ...this.swarmers.filter((s) => s.isAlive).map((s) => s.sprite),
+      ...this.angels.filter((a) => a.isAlive).map((a) => a.sprite),
+      ...this.townsfolk.filter((t) => t.isAlive).map((t) => t.sprite),
+      ...this.guardians.filter((g) => g.isAlive).map((g) => g.sprite),
+    ];
+    for (const s of sprites) {
+      const body = s?.body as Phaser.Physics.Arcade.Body | undefined;
+      if (body && body.enable) {
+        body.enable = false;
+        this.pausedBodies.push(body);
+      }
+    }
+  }
+
+  /** Re-enable the Earth enemy bodies paused on departure (skipping any destroyed since). */
+  private resumeEarthBodies(): void {
+    for (const b of this.pausedBodies) {
+      const go = b.gameObject as Phaser.GameObjects.GameObject | undefined;
+      if (go && go.active) b.enable = true;
+    }
+    this.pausedBodies = [];
+  }
+
+  /** Full-screen fade rectangle for transitions (UI partition → covers HUD too). */
+  private createFadeOverlay(): void {
+    this.fadeOverlay = this.add
+      .rectangle(this.scale.width / 2, this.scale.height / 2, this.scale.width, this.scale.height, 0x05070d, 1)
+      .setScrollFactor(0)
+      .setDepth(6000)
+      .setAlpha(0)
+      .setVisible(false);
+    const layout = (): void => {
+      this.fadeOverlay.setPosition(this.scale.width / 2, this.scale.height / 2).setSize(this.scale.width, this.scale.height);
+    };
+    this.scale.on(Phaser.Scale.Events.RESIZE, layout);
+  }
+
+  // --- DEV: world travel ---
+  private devGoToHeaven(): void {
+    this.travelToWorld(WORLD_HEAVEN, this.heavenArrivalPos);
+  }
+  private devReturnToEarth(): void {
+    this.travelToWorld(WORLD_EARTH, this.earthReturnPos);
+  }
+  private devToggleWorld(): void {
+    this.travelToWorld(this.activeWorld === WORLD_EARTH ? WORLD_HEAVEN : WORLD_EARTH);
+  }
+
+  private static ensureHeavenPropTextures(scene: Phaser.Scene): void {
+    if (!scene.textures.exists('heaven-pillar')) {
+      const g = scene.make.graphics({ x: 0, y: 0 }, false);
+      const w = 26;
+      const h = 72;
+      g.fillStyle(0xd9cfa8, 1); // base
+      g.fillRect(2, h - 10, w - 4, 10);
+      g.fillStyle(0xefe8cf, 1); // shaft
+      g.fillRect(6, 8, w - 12, h - 18);
+      g.fillStyle(0xffffff, 0.5); // flutes
+      for (let fx = 8; fx < w - 8; fx += 4) g.fillRect(fx, 10, 1, h - 22);
+      g.fillStyle(0xe6dcbe, 1); // capital
+      g.fillRect(2, 2, w - 4, 10);
+      g.generateTexture('heaven-pillar', w, h);
+      g.destroy();
+    }
+    if (!scene.textures.exists('heaven-shrine')) {
+      const g = scene.make.graphics({ x: 0, y: 0 }, false);
+      const w = 110;
+      const h = 70;
+      g.fillStyle(0xe9e1c6, 1); // stepped platform
+      g.fillRect(0, h - 16, w, 16);
+      g.fillRect(8, h - 28, w - 16, 12);
+      g.fillStyle(0xf3eed8, 1); // back wall
+      g.fillRect(16, 8, w - 32, h - 30);
+      g.fillStyle(0xd9cfa8, 1); // corner pillars
+      g.fillRect(14, 6, 10, h - 22);
+      g.fillRect(w - 24, 6, 10, h - 22);
+      g.fillStyle(0xc9bd95, 1); // pediment
+      g.fillTriangle(8, 10, w - 8, 10, w / 2, -8);
+      g.generateTexture('heaven-shrine', w, h);
+      g.destroy();
+    }
   }
 
   // --- The Descent arc (quests 1–4) -----------------------------------------
@@ -1844,6 +2139,18 @@ export class MainScene extends Phaser.Scene {
 
     // Reset the descent climax: guardians dormant + full HP, Heaven Portal holy.
     this.resetGuardianEncounter();
+
+    // Return to Earth if currently in Heaven (instant — no fade), and forget the
+    // remembered Heaven position so a fresh visit starts at the arrival point.
+    this.tweens.killTweensOf(this.fadeOverlay);
+    this.fadeOverlay.setVisible(false).setAlpha(0);
+    this.transitioning = false;
+    this.worldCooldownUntil = 0;
+    // Each enemy's own reset/respawn above already restored its body; discard the
+    // stale paused-body list so the world swap doesn't touch destroyed bodies.
+    this.pausedBodies = [];
+    if (this.activeWorld !== WORLD_EARTH) this.applyWorldSwap(WORLD_EARTH, this.earthReturnPos);
+    this.worldPos[WORLD_HEAVEN] = { ...this.heavenArrivalPos };
   }
 
   /**
@@ -1877,6 +2184,9 @@ export class MainScene extends Phaser.Scene {
       { label: 'Teleport to Holy Outpost', onPress: () => this.devTeleportToHolyOutpost() },
       { label: 'Start Guardian Fight', onPress: () => this.startGuardianFight() },
       { label: 'Reset Portal', onPress: () => this.resetGuardianEncounter() },
+      { label: 'Go to Heaven', onPress: () => this.devGoToHeaven() },
+      { label: 'Return to Earth', onPress: () => this.devReturnToEarth() },
+      { label: 'Toggle World', onPress: () => this.devToggleWorld() },
       { label: 'Complete Active Quest', onPress: () => this.chain.completeActive() },
       { label: 'Reset All Quests', onPress: () => this.devResetQuests() },
       { label: 'Dev Reset', key: KC.R, onPress: () => this.devReset() },
@@ -1957,6 +2267,8 @@ export class MainScene extends Phaser.Scene {
 
   /** Where the objective marker should point right now, or null for none. */
   private currentMarkerTarget(): { x: number; y: number; label: string } | null {
+    // Quests live on Earth; no marker while in Heaven.
+    if (this.activeWorld !== WORLD_EARTH) return null;
     // Active quest → its current objective's world target.
     const active = this.chain.activeQuest;
     if (active) {
