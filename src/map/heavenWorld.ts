@@ -1,5 +1,6 @@
 import type { WashingtonMap, TerrainType } from './mapTypes';
 import { TILE_SIZE } from '../render/tileAtlas';
+import type { CherubVariantKey } from '../game/settings';
 
 /**
  * HEAVEN — the second, separate world's REGION MODEL + map generator.
@@ -36,6 +37,28 @@ export const HEAVEN_WIDTH = 720;
 export const HEAVEN_HEIGHT = 720;
 /** Blocking void border thickness (tiles) so the player can't leave the map. */
 const BORDER = 8;
+
+/**
+ * Where Heaven's defenders stand — EDITABLE placement data. Positions are LOCAL
+ * Heaven pixels (origin 0,0 = the map's top-left); MainScene.setupHeaven adds the
+ * Heaven world offset and spawns them. The map centre / return gate is at
+ * (HEAVEN_WIDTH*16, HEAVEN_HEIGHT*16) ≈ (11520, 11520); the player arrives just
+ * south of it. Several Cherubs ring the temple + expanses; ONE Cherubim boss
+ * stands deeper north. (These exist only in the Heaven world.)
+ */
+export interface CherubSpawn {
+  x: number;
+  y: number;
+  variant: CherubVariantKey;
+}
+export const HEAVEN_CHERUB_SPAWNS: CherubSpawn[] = [
+  { x: 11520, y: 11020, variant: 'cherub' }, // north of the temple (first encounter)
+  { x: 10760, y: 11380, variant: 'cherub' }, // west of the gate
+  { x: 12280, y: 11380, variant: 'cherub' }, // east of the gate
+  { x: 10500, y: 12120, variant: 'cherub' }, // south-west expanse
+  { x: 12500, y: 12120, variant: 'cherub' }, // south-east expanse
+  { x: 11520, y: 10200, variant: 'cherubim' }, // BOSS — deep north, a standout threat
+];
 
 /** Cheap deterministic hash in [0,1) so the layout is stable across reloads. */
 function hash(x: number, y: number): number {

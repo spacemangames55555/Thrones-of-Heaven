@@ -276,6 +276,97 @@ export const ANGEL_VARIANTS: Record<AngelVariantKey, AngelVariantConfig> = {
 export const DEV_GRANT_HOLY_POWER = 5;
 
 
+// --- Heaven's Defenders: the Cherub (elite) + Cherubim (boss) ----------------
+//
+// The first HYBRID enemy: dangerous at ALL ranges — fires holy bolts (reusing the
+// angel projectile system) AND strikes hard in melee, holding ground instead of
+// fleeing like the Earth angel. Two variants from ONE definition (see Cherub.ts):
+// CHERUB (elite, tougher than the Earth Archangel) and CHERUBIM (boss tuning,
+// multi-bolt volleys). Edit a field to retune that variant.
+
+export type CherubVariantKey = 'cherub' | 'cherubim';
+
+export interface CherubVariantConfig {
+  /** Health pool — far tougher than any Earth enemy (Archangel is 520). */
+  readonly maxHP: number;
+  /** Move speed in tiles/sec (advances to engage; never flees). */
+  readonly moveTilesPerSec: number;
+  /** XP awarded on death (large). */
+  readonly xpReward: number;
+  /** Holy Power motes dropped on death (more than Earth angels: Angel 1 / Archangel 3). */
+  readonly holyPowerDrop: number;
+  /** Sprite scale (larger than the player; the Cherubim is largest). */
+  readonly scale: number;
+  /** Sprite tint (radiant gold-white). */
+  readonly color: number;
+  // --- melee ---
+  /** Damage one melee strike deals to the player. */
+  readonly meleeDamage: number;
+  /** Distance (px) within which it strikes in melee instead of firing. */
+  readonly meleeRange: number;
+  /** Cooldown between melee strikes (ms). */
+  readonly meleeCooldownMs: number;
+  // --- ranged (reuses the projectile system) ---
+  /** Damage one holy bolt deals to the player. */
+  readonly projectileDamage: number;
+  /** Bolt speed (px/sec). */
+  readonly projectileSpeed: number;
+  /** Bolt range before it despawns (px). */
+  readonly projectileRange: number;
+  /** Cooldown between volleys (ms). */
+  readonly fireCooldownMs: number;
+  /** Bolts per volley (the Cherubim fans multiple). */
+  readonly boltsPerVolley: number;
+  // --- engagement ---
+  /** Distance (px) at which it wakes and engages. */
+  readonly aggroRange: number;
+  /** Preferred standoff (px): it advances to here but does NOT back off when rushed. */
+  readonly preferredRange: number;
+}
+
+export const CHERUB_VARIANTS: Record<CherubVariantKey, CherubVariantConfig> = {
+  cherub: {
+    maxHP: 720,
+    moveTilesPerSec: 4.6,
+    xpReward: 300,
+    holyPowerDrop: 6,
+    scale: 1.7,
+    color: 0xfff3cf,
+    meleeDamage: 26,
+    meleeRange: 48,
+    meleeCooldownMs: 850,
+    projectileDamage: 18,
+    projectileSpeed: 300,
+    projectileRange: 560,
+    fireCooldownMs: 1400,
+    boltsPerVolley: 1,
+    aggroRange: 520,
+    preferredRange: 250,
+  },
+  cherubim: {
+    maxHP: 1700,
+    moveTilesPerSec: 4.9,
+    xpReward: 750,
+    holyPowerDrop: 16,
+    scale: 2.4,
+    color: 0xffffff,
+    meleeDamage: 40,
+    meleeRange: 56,
+    meleeCooldownMs: 700,
+    projectileDamage: 24,
+    projectileSpeed: 340,
+    projectileRange: 640,
+    fireCooldownMs: 950,
+    boltsPerVolley: 3,
+    aggroRange: 620,
+    preferredRange: 300,
+  },
+};
+
+/** Holy-bolt collision radius for cherub fire (reuses the projectile system). */
+export const CHERUB_BOLT_RADIUS = 8;
+
+
 // --- The Descent arc (quests 1–4) ------------------------------------------
 //
 // Authored, corruption-gated quest chain in Oregon. Locations are placeholder
