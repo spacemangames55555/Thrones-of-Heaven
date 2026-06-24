@@ -21,6 +21,10 @@ export class GameMap {
   readonly tileSize: number;
   readonly pixelWidth: number;
   readonly pixelHeight: number;
+  /** World-space origin of this map's top-left corner (lets separate worlds live
+   *  in disjoint coordinate regions; defaults to 0,0 — the Earth map). */
+  readonly originX: number;
+  readonly originY: number;
   readonly layer: Phaser.Tilemaps.TilemapLayerBase;
   /** Atlas frames that block movement, for re-marking collision after edits. */
   readonly blockingFrames: number[];
@@ -37,8 +41,15 @@ export class GameMap {
    * @param extraTiles Additional tile types (e.g. town tiles) whose terrain
    *   keys also have atlas tiles, so features can be stamped onto the same GPU
    *   layer later via {@link setTileId}.
+   * @param origin World-space offset for this map (default 0,0). A second world
+   *   (Heaven) is built at a large offset so the two never overlap.
    */
-  constructor(scene: Phaser.Scene, data: WashingtonMap, extraTiles: TerrainType[] = []) {
+  constructor(
+    scene: Phaser.Scene,
+    data: WashingtonMap,
+    extraTiles: TerrainType[] = [],
+    origin: { x: number; y: number } = { x: 0, y: 0 },
+  ) {
     if (data.tileSize !== TILE_SIZE) {
       throw new Error(`Map tileSize ${data.tileSize} != atlas TILE_SIZE ${TILE_SIZE}`);
     }
@@ -46,14 +57,24 @@ export class GameMap {
     this.tileSize = data.tileSize;
     this.pixelWidth = data.width * data.tileSize;
     this.pixelHeight = data.height * data.tileSize;
+    this.originX = origin.x;
+    this.originY = origin.y;
     this.allTiles = [...data.terrain, ...extraTiles];
     this.terrainById = new Map(this.allTiles.map((t) => [t.id, t]));
     this.idToFrame = new Map(this.allTiles.map((t) => [t.id, atlasFrameForKey(t.key)]));
     this.blockingFrames = this.allTiles.filter((t) => t.blocks).map((t) => this.idToFrame.get(t.id)!);
 
     this.grid = GameMap.stitchZones(data);
-    generatePlaceholderAtlas(scene, ATLAS_KEY); // swap for a real PNG load to ship art
+    // Generate the shared atlas ONCE: a second world (Heaven) reuses the same
+    // atlas (it holds every terrain key), and regenerating would remove the
+    // texture the first map's layer already references. (Swap for a real PNG to ship art.)
+    if (!scene.textures.exists(ATLAS_KEY)) generatePlaceholderAtlas(scene, ATLAS_KEY);
     this.layer = this.buildLayer(scene, data);
+  }
+
+  /** This map's world-space bounds rectangle (origin + pixel size). */
+  get bounds(): { x: number; y: number; width: number; height: number } {
+    return { x: this.originX, y: this.originY, width: this.pixelWidth, height: this.pixelHeight };
   }
 
   /** Reassemble the zone chunks into a single [y][x] grid of terrain ids. */
@@ -88,7 +109,7 @@ export class GameMap {
     // Use the GPU layer when WebGL is available (the whole state in one quad);
     // fall back to the CPU layer on the rare Canvas-only device.
     const useGpu = scene.game.renderer.type === Phaser.WEBGL;
-    const layer = map.createLayer(0, tileset, 0, 0, useGpu);
+    const layer = map.createLayer(0, tileset, this.originX, this.originY, useGpu);
     if (!layer) throw new Error('Failed to create tilemap layer');
 
     // Mark blocking terrain (their atlas frames) as collidable.
@@ -123,15 +144,15 @@ export class GameMap {
 
   worldToTile(worldX: number, worldY: number): TileCoord {
     return {
-      x: Math.floor(worldX / this.tileSize),
-      y: Math.floor(worldY / this.tileSize),
+      x: Math.floor((worldX - this.originX) / this.tileSize),
+      y: Math.floor((worldY - this.originY) / this.tileSize),
     };
   }
 
   tileToWorldCenter(tx: number, ty: number): { x: number; y: number } {
     return {
-      x: tx * this.tileSize + this.tileSize / 2,
-      y: ty * this.tileSize + this.tileSize / 2,
+      x: tx * this.tileSize + this.tileSize / 2 + this.originX,
+      y: ty * this.tileSize + this.tileSize / 2 + this.originY,
     };
   }
 

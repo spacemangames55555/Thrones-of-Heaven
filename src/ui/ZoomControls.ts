@@ -29,8 +29,8 @@ type Dir = 'in' | 'out';
 export class ZoomControls {
   private readonly scene: Phaser.Scene;
   private readonly cam: Phaser.Cameras.Scene2D.Camera;
-  private readonly mapW: number;
-  private readonly mapH: number;
+  private mapW: number;
+  private mapH: number;
 
   private readonly inBtn: { bg: Phaser.GameObjects.Rectangle; label: Phaser.GameObjects.Text };
   private readonly outBtn: { bg: Phaser.GameObjects.Rectangle; label: Phaser.GameObjects.Text };
@@ -83,6 +83,17 @@ export class ZoomControls {
     });
 
     this.layout();
+  }
+
+  /**
+   * Re-point the zoom at a DIFFERENT map's dimensions (e.g. switching worlds) so
+   * the zoom-out limit is re-derived from the now-active map, never hardcoded.
+   */
+  setMapSize(mapPixelWidth: number, mapPixelHeight: number): void {
+    this.mapW = mapPixelWidth;
+    this.mapH = mapPixelHeight;
+    this.outLimit = this.computeOutLimit();
+    this.target = Phaser.Math.Clamp(this.target, this.outLimit, ZOOM_IN_LIMIT);
   }
 
   /** Smoothly drive the camera zoom toward the target each frame. */
