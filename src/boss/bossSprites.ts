@@ -184,6 +184,56 @@ const DRAWERS: Record<string, (g: Phaser.GameObjects.Graphics) => { w: number; h
     return { w, h };
   },
 
+  // THE DRAGON — a winged, horned serpent silhouette: broad swept wings + a long
+  // maw. Large + imposing; reads as "aerial devastator".
+  dragon: (g) => {
+    const w = 92;
+    const h = 72;
+    const cx = w / 2;
+    g.fillStyle(0xffffff, 0.45); // vast swept wings
+    g.fillTriangle(cx - 10, 30, 2, 4, 6, 50);
+    g.fillTriangle(cx + 10, 30, w - 2, 4, w - 6, 50);
+    g.fillStyle(0xffffff, 0.7); // wing membranes (inner)
+    g.fillTriangle(cx - 8, 30, 16, 16, 18, 46);
+    g.fillTriangle(cx + 8, 30, w - 16, 16, w - 18, 46);
+    g.fillStyle(0xffffff, 1); // serpentine body
+    g.fillRoundedRect(cx - 9, 24, 18, h - 30, 7);
+    g.fillStyle(0xffffff, 1); // long horned head thrust forward/down
+    g.fillTriangle(cx - 8, 16, cx + 8, 16, cx, 36);
+    g.fillTriangle(cx - 7, 12, cx - 12, 2, cx - 2, 12); // horns
+    g.fillTriangle(cx + 7, 12, cx + 12, 2, cx + 2, 12);
+    g.fillStyle(0x000000, 0.55); // slit eyes
+    g.fillRect(cx - 6, 20, 4, 3);
+    g.fillRect(cx + 2, 20, 4, 3);
+    g.fillStyle(0xffffff, 0.8); // barbed tail
+    g.fillTriangle(cx - 4, h - 6, cx + 4, h - 6, cx, h + 6);
+    return { w, h };
+  },
+
+  // THE BEAST — a hulking, armored, multi-horned brute: a massive blocky torso with
+  // a crown of horns. The biggest, most imposing silhouette.
+  beast: (g) => {
+    const w = 86;
+    const h = 84;
+    const cx = w / 2;
+    g.fillStyle(0xffffff, 1); // massive armored torso
+    g.fillRoundedRect(cx - 24, 22, 48, h - 26, 10);
+    g.fillStyle(0xffffff, 1); // heavy head/skull
+    g.fillRoundedRect(cx - 14, 10, 28, 26, 8);
+    g.fillStyle(0xffffff, 0.95); // a crown of many horns rising off the skull
+    g.fillTriangle(cx - 14, 12, cx - 8, 12, cx - 22, 0);
+    g.fillTriangle(cx - 5, 11, cx - 1, 11, cx - 6, 0);
+    g.fillTriangle(cx + 5, 11, cx + 1, 11, cx + 6, 0);
+    g.fillTriangle(cx + 14, 12, cx + 8, 12, cx + 22, 0);
+    g.fillStyle(0x000000, 0.6); // burning eyes
+    g.fillCircle(cx - 6, 20, 3);
+    g.fillCircle(cx + 6, 20, 3);
+    g.fillStyle(0xffffff, 0.85); // huge fists/shoulders
+    g.fillCircle(cx - 26, 40, 13);
+    g.fillCircle(cx + 26, 40, 13);
+    return { w, h };
+  },
+
   // A generic placeholder boss — a faceted crystalline core with an aura ring +
   // a "?" so it clearly reads as a DEV/test stand-in.
   'test-boss': (g) => {

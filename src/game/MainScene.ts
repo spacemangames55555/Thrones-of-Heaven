@@ -26,6 +26,8 @@ import type { BossDef, BossHooks } from '../boss/bossTypes';
 import { MICHAEL_DEF, TEST_BOSS_DEF } from '../boss/bossData';
 import { SIN_DEFS } from '../boss/sinsData';
 import { SinGauntlet } from '../boss/SinGauntlet';
+import { DRAGON_DEF, BEAST_DEF } from '../boss/trinityData';
+import { TrinitySequence } from '../boss/TrinitySequence';
 import { PortalDefense } from '../encounter/PortalDefense';
 import { buildHeavenMapData, HEAVEN_WIDTH, HEAVEN_HEIGHT, HEAVEN_CHERUB_SPAWNS, THRONE_POSITION } from '../map/heavenWorld';
 import { buildHellMapData, HELL_WIDTH, HELL_HEIGHT, HELL_DEMON_SPAWNS, SATAN_LAIR } from '../map/hellWorld';
@@ -125,6 +127,9 @@ import {
   PLAYER_HOLY_BOLT_SPEED,
   PLAYER_HOLY_BOLT_RANGE,
   PLAYER_HOLY_BOLT_RADIUS,
+  TRINITY_ARENA,
+  TRINITY_ENTER_RANGE,
+  TRINITY_BREATHER_MS,
 } from './settings';
 import { TOWN_TILES } from '../town/townTiles';
 import { buildTown, type TownFeatures, type DoorFeature } from '../town/TownBuilder';
@@ -283,6 +288,13 @@ export class MainScene extends Phaser.Scene {
   private readonly sins = new SinGauntlet();
   private sinBosses: (Boss | undefined)[] = SIN_DEFS.map(() => undefined);
   private sinMarker!: ObjectiveMarker;
+  // The Unholy Trinity (Part 1): a staged finale gauntlet at Satan's Lair (enterable
+  // once all 7 Sins are beaten). Central serializable stage + the live Dragon/Beast.
+  private readonly trinity = new TrinitySequence();
+  private dragonBoss?: Boss;
+  private beastBoss?: Boss;
+  /** Bumped on every reset so a pending breather callback from an old run is voided. */
+  private trinityRun = 0;
   private bossBar!: HealthBar;
   private bossBarBg!: Phaser.GameObjects.Rectangle;
   private bossNameText!: Phaser.GameObjects.Text;
@@ -576,6 +588,7 @@ export class MainScene extends Phaser.Scene {
     this.updateCombatHud();
     this.updateObjectiveMarker();
     this.updateSinMarker();
+    this.updateLairEntry();
 
     if (this.playerDead) {
       this.cancelDash();
@@ -922,6 +935,7 @@ export class MainScene extends Phaser.Scene {
     this.controls.setEnabled(false);
     this.player.setDirection(0, 0);
     this.talkButton.setVisible(false);
+    if (this.trinity.inFight) this.onTrinityPlayerDeath(); // restart the current Trinity stage
     this.showBanner('You have fallen', 1500);
     this.time.delayedCall(1500, () => this.respawnPlayer());
   }
@@ -1634,6 +1648,8 @@ export class MainScene extends Phaser.Scene {
       this.time.delayedCall(3200, () => this.showBanner(GOD_JUDGMENT_HOOK, 4200));
     } else if (sinIndex >= 0) {
       this.onSinDefeated(sinIndex); // advance the gauntlet + unlock/mark the next Sin
+    } else if (boss === this.dragonBoss || boss === this.beastBoss) {
+      this.onTrinityBossDefeated(boss); // advance the staged Trinity (Dragon → Beast → Satan)
     } else {
       this.showBanner(`${boss.name} defeated!`, 2400);
     }
@@ -1793,9 +1809,10 @@ export class MainScene extends Phaser.Scene {
       this.spawnAvailableSin(); // place the next Sin deeper in Hell
       this.time.delayedCall(2700, () => this.showBanner('Another Sin stirs deeper in Hell…', 2400));
     } else {
-      // ALL SEVEN fallen — PLACEHOLDER beat. The Trinity is NOT built yet: just tease
-      // it and point the beacon at Satan's Lair (see updateSinMarker). Do NOT open it.
-      this.time.delayedCall(2700, () => this.showBanner('The seven are fallen. The Unholy Trinity stirs…\n(coming soon)', 5000));
+      // ALL SEVEN fallen — Satan's Lair is now OPEN. Direct the player there; the
+      // beacon (updateSinMarker) points at the lair, and approaching it starts the
+      // Trinity (see updateLairEntry).
+      this.time.delayedCall(2700, () => this.showBanner('The seven are fallen. Satan’s Lair stands open — face the Unholy Trinity.', 5000));
     }
   }
 
@@ -1813,10 +1830,16 @@ export class MainScene extends Phaser.Scene {
       else this.sinMarker.hide();
       return;
     }
-    // All seven beaten → mark the lair as the next destination (NOT opened yet).
+    // All seven beaten → the lair is OPEN. Mark it (text reflects Trinity progress);
+    // hide the beacon while actually fighting in the lair.
     if (this.sins.count >= this.sins.builtCount) {
+      if (this.trinity.inFight) {
+        this.sinMarker.hide();
+        return;
+      }
       const o = this.hellMap.bounds;
-      this.sinMarker.show(o.x + SATAN_LAIR.x, o.y + SATAN_LAIR.y, 'The Unholy Trinity — coming soon');
+      const label = this.trinity.awaitingSatan ? 'Satan awaits — (coming soon)' : "Satan's Lair — face the Unholy Trinity";
+      this.sinMarker.show(o.x + SATAN_LAIR.x, o.y + SATAN_LAIR.y, label);
     } else {
       this.sinMarker.hide();
     }
@@ -1868,6 +1891,139 @@ export class MainScene extends Phaser.Scene {
       return;
     }
     this.teleportToBoss(this.ensureSinSpawned(i), false);
+  }
+
+  // --- The Unholy Trinity (Part 1): the staged Dragon → Beast finale gauntlet ---
+  //
+  // Enterable once all 7 Sins are beaten. Approaching Satan's Lair STARTS a staged
+  // sequence with recovery breathers: Dragon → (HP/energy restore) → Beast →
+  // (restore) → "Satan awaits" placeholder. The Dragon/Beast are DATA bosses on the
+  // framework (DRAGON_DEF/BEAST_DEF). If the player dies mid-stage, that stage
+  // RESTARTS (its boss resets to full HP + dormant and re-activates on re-approach);
+  // the completed stage is kept. State (this.trinity) is serializable.
+
+  /** Spawn a Trinity boss at the lair arena (on walkable ground). */
+  private spawnTrinityBoss(def: BossDef): Boss {
+    const o = this.hellMap.bounds;
+    const spot = this.hellMap.nearestWalkableWorld(o.x + TRINITY_ARENA.x, o.y + TRINITY_ARENA.y);
+    return this.spawnBoss(def, spot.x, spot.y, this.hellMap.layer);
+  }
+
+  /** Lair entry: in Hell, with all 7 Sins beaten, approaching the lair starts Stage 1. */
+  private updateLairEntry(): void {
+    if (this.activeWorld !== WORLD_HELL) return;
+    if (this.trinity.started) return; // already running (or at the placeholder)
+    if (this.sins.count < this.sins.builtCount) return; // lair stays CLOSED until the 7 Sins fall
+    const o = this.hellMap.bounds;
+    const d = Phaser.Math.Distance.Between(this.player.x, this.player.y, o.x + SATAN_LAIR.x, o.y + SATAN_LAIR.y);
+    if (d <= TRINITY_ENTER_RANGE) this.startTrinity();
+  }
+
+  /** STAGE 1: open the lair + summon the Dragon. */
+  private startTrinity(): void {
+    if (this.trinity.started) return;
+    this.trinity.toDragon();
+    this.dragonBoss = this.spawnTrinityBoss(DRAGON_DEF);
+    this.dragonBoss.activate();
+    this.showBanner('The lair yawns open — THE DRAGON descends!', 2800);
+  }
+
+  /** A Trinity boss died → run the breather, then advance to the next stage. */
+  private onTrinityBossDefeated(boss: Boss): void {
+    if (boss === this.dragonBoss) {
+      this.dragonBoss = undefined;
+      this.trinityBreather('The Dragon falls… something worse stirs.', () => this.startBeastStage());
+    } else if (boss === this.beastBoss) {
+      this.beastBoss = undefined;
+      this.trinityBreather('The Beast is slain.', () => this.reachAwaitingSatan());
+    }
+  }
+
+  /** BREATHER: restore the player to full, a beat, then continue the sequence
+   *  (unless a reset voided this run in the meantime). */
+  private trinityBreather(message: string, next: () => void): void {
+    this.playerHealth.full();
+    this.energy.full();
+    this.showBanner(message, TRINITY_BREATHER_MS - 300);
+    const run = this.trinityRun;
+    this.time.delayedCall(TRINITY_BREATHER_MS, () => {
+      if (this.trinityRun === run) next();
+    });
+  }
+
+  /** STAGE 2: the Beast emerges. */
+  private startBeastStage(): void {
+    if (this.trinity.current !== 'dragon') return; // a reset interrupted the breather
+    this.trinity.toBeast();
+    this.beastBoss = this.spawnTrinityBoss(BEAST_DEF);
+    this.beastBoss.activate();
+    this.showBanner('THE BEAST rises — the lair shakes!', 2400);
+  }
+
+  /** PLACEHOLDER: both down → "Satan awaits" (Satan + the ending are the NEXT build). */
+  private reachAwaitingSatan(): void {
+    if (this.trinity.current !== 'beast') return;
+    this.trinity.toAwaitingSatan();
+    this.showBanner('The Trinity is broken… but Satan awaits.\n(coming soon)', 5200);
+  }
+
+  /** Death during a stage RESTARTS that stage (reset its boss; keep the sequence). */
+  private onTrinityPlayerDeath(): void {
+    const b = this.trinity.current === 'dragon' ? this.dragonBoss : this.trinity.current === 'beast' ? this.beastBoss : undefined;
+    if (!b) return;
+    this.clearBossAdds(b.id);
+    this.hazards.clearBoss(b.id);
+    this.projectiles.clear();
+    b.reset(); // dormant + full HP at the arena; updateBosses re-activates on approach
+  }
+
+  /** RESET: Trinity back to un-entered — both bosses gone, adds/hazards/bolts cleared. */
+  private resetTrinity(): void {
+    this.trinityRun++; // void any pending breather callback from the previous run
+    for (const b of [this.dragonBoss, this.beastBoss]) {
+      if (b) {
+        this.clearBossAdds(b.id);
+        this.hazards.clearBoss(b.id);
+        b.destroy();
+      }
+    }
+    this.dragonBoss = undefined;
+    this.beastBoss = undefined;
+    this.bosses = this.bosses.filter((b) => b.isAlive);
+    this.projectiles.clear();
+    this.hazards.clearAll();
+    this.trinity.reset();
+  }
+
+  /** DEV: force-start the Trinity (ignoring the 7-Sin gate) + teleport into the arena. */
+  private devEnterLair(): void {
+    this.resetTrinity();
+    this.cancelDash();
+    const o = this.hellMap.bounds;
+    const ax = o.x + TRINITY_ARENA.x;
+    const ay = o.y + TRINITY_ARENA.y;
+    const dest = { x: ax, y: ay + 240 };
+    if (this.activeWorld !== WORLD_HELL) this.travelToWorld(WORLD_HELL, dest);
+    else {
+      this.player.sprite.setPosition(dest.x, dest.y);
+      this.player.setDirection(0, 0);
+      this.cameras.main.centerOn(ax, ay);
+    }
+    this.startTrinity();
+  }
+
+  /** DEV: jump straight to a specific Trinity stage's boss (for testing either fight). */
+  private devStartTrinityBoss(which: 'dragon' | 'beast'): void {
+    this.resetTrinity();
+    if (which === 'dragon') {
+      this.trinity.toDragon();
+      this.dragonBoss = this.spawnTrinityBoss(DRAGON_DEF);
+      this.teleportToBoss(this.dragonBoss, true);
+    } else {
+      this.trinity.toBeast();
+      this.beastBoss = this.spawnTrinityBoss(BEAST_DEF);
+      this.teleportToBoss(this.beastBoss, true);
+    }
   }
 
   // --- Portal Defense: townsfolk + the wave encounter -----------------------
@@ -3419,6 +3575,7 @@ export class MainScene extends Phaser.Scene {
     // remove any dev-spawned framework bosses (e.g. the test boss) + their adds.
     this.resetMichael();
     this.resetSins(); // gauntlet → 0, all Sin bosses dormant/full HP, adds cleared, Sin 1 re-placed
+    this.resetTrinity(); // Trinity → un-entered (Dragon/Beast gone, adds/hazards/bolts cleared)
     this.removeDevBosses();
 
     // Reset God's-judgment beat: gate re-locked, judgment un-fired, Hell portal gone.
@@ -3499,6 +3656,10 @@ export class MainScene extends Phaser.Scene {
       { label: 'Start Greed', onPress: () => this.devStartSin(5) },
       { label: 'Start Lust', onPress: () => this.devStartSin(6) },
       { label: 'Reset Sins', onPress: () => this.resetSins() },
+      { label: 'Enter Lair / Start Trinity', onPress: () => this.devEnterLair() },
+      { label: 'Start Dragon', onPress: () => this.devStartTrinityBoss('dragon') },
+      { label: 'Start Beast', onPress: () => this.devStartTrinityBoss('beast') },
+      { label: 'Reset Trinity', onPress: () => this.resetTrinity() },
       { label: 'Go to Heaven', onPress: () => this.devGoToHeaven() },
       { label: 'Return to Earth', onPress: () => this.devReturnToEarth() },
       { label: 'Toggle World', onPress: () => this.devToggleWorld() },
