@@ -20,9 +20,9 @@ const BLOCK_FX_GAP_MS = 220;
  * hold-ground movement (advance to preferred range, never flee, leash when far),
  * and the attack loadout — each attack a parameterized pattern from the library
  * ('melee' / 'volley' / special 'barrage' / 'slam' / 'charge', reactive 'mirror',
- * defensive 'shield'). Effects run through scene-provided {@link BossHooks}
- * (reusing the existing projectile/melee/summon systems). Adding a boss = a new
- * BossDef, not new code.
+ * defensive 'shield', zone-control 'hazard'). Effects run through scene-provided
+ * {@link BossHooks} (reusing the existing projectile/melee/summon systems).
+ * Adding a boss = a new BossDef, not new code.
  *
  * Behavior matches the bespoke Archangel Michael it replaces: IDLE → ENGAGE on
  * activate; per phase, melee up close XOR ranged volley at distance; summon wave
@@ -313,6 +313,8 @@ export class Boss {
       }
       case 'shield':
         return !this.isShielded; // cadence-gated by the slot cooldown; never stack
+      case 'hazard':
+        return dist <= atk.range; // drop a lingering zone at the player when in reach
     }
   }
 
@@ -350,6 +352,11 @@ export class Boss {
         this.pop(1.12);
         break;
       }
+      case 'hazard':
+        // ZONE-CONTROL: drop a lingering hazard at the player (non-rooting, fire-and-forget).
+        this.hooks.hazard(this, px, py, atk.radius ?? 70, atk.damage, atk.durationMs ?? 0, atk.telegraphMs ?? 600, atk.cap ?? 6);
+        this.pop(1.05);
+        break;
       case 'barrage':
       case 'slam':
       case 'charge': {

@@ -679,7 +679,123 @@ export const PRIDE = {
   holyPowerDrop: 20,
 } as const;
 
-/** The full Deadly-Sin gauntlet size (batches 1–2 author the first five). */
+// --- The 7 Deadly Sins — Batch 3 (FINAL): Greed + Lust (Sins 6 & 7) ----------
+//
+// The last two Sins complete the gauntlet (order-gated AFTER Sin 5). Greed adds
+// the new PERSISTENT GROUND HAZARD pattern; Lust is the CAPSTONE — composed
+// ENTIRELY from EXISTING library patterns (charge/slam/summon/shield/nova/hazard)
+// cycled across phases, and tuned as the HARDEST of the seven. `placement` is
+// LOCAL Hell pixels — edit to move. Every value below is a free tuning knob.
+
+/** SIN 6 — GREED (the Hoarder / zone-control): accumulating ground hazards + ranged. */
+export const GREED = {
+  name: 'Greed, the Insatiable',
+  placement: { x: 6200, y: 6400 }, // far north-west Hell
+  scale: 2.6,
+  color: 0xf2c233, // hoarder gold
+  maxHP: 9000, // moderate-high (upper-batch tier)
+  moveTilesPerSec: 3.4, // low-moderate: prefers to hold back and zone
+  meleeRange: 78,
+  preferredRange: 340, // stays at range, denying the floor
+  leashRange: 900,
+  activationRange: 320,
+  // PERSISTENT GROUND HAZARD — the core mechanic (accumulating gold-fire zones)
+  hazardDamage: 22, // damage per tick to a player standing in a zone
+  hazardRadiusP1: 66,
+  hazardRadiusP2: 74,
+  hazardRadiusP3: 82,
+  hazardCadenceMsP1: 3400, // time between drops (quickens by phase)
+  hazardCadenceMsP2: 2600,
+  hazardCadenceMsP3: 2000,
+  hazardCapP1: 4, // max concurrent zones (grows by phase → more denial)
+  hazardCapP2: 6,
+  hazardCapP3: 8,
+  hazardLifetimeMs: 9000, // each zone lingers this long (0 would be whole-fight)
+  hazardTelegraphMs: 650,
+  hazardRange: 620, // max distance it will drop a zone at the player
+  // ranged volleys from range + modest melee if cornered
+  volleyDamage: 44,
+  volleyCount: 3,
+  volleyCooldownMs: 2000,
+  volleySpeed: 320,
+  volleyRange: 600,
+  meleeDamage: 78,
+  meleeCooldownMs: 1000,
+  phase2Threshold: 0.66,
+  phase3Threshold: 0.33,
+  xpReward: 3000,
+  holyPowerDrop: 24,
+} as const;
+
+/** SIN 7 — LUST (the Chaos Finale / capstone): the HARDEST Sin — cycles EXISTING
+ *  patterns by phase (Wrath→Sloth→Pride→all). Composed purely from library kinds. */
+export const LUST = {
+  name: 'Lust, the Devouring',
+  placement: { x: 12000, y: 20800 }, // deep south Hell — the finale site
+  scale: 3.0,
+  color: 0xd6336c, // feverish crimson-magenta
+  maxHP: 15000, // HIGH — the hardest, a final wall before the Trinity
+  moveTilesPerSec: 5.6,
+  moveTilesPerSecP1: 8.6, // Phase 1 is Wrath-like: faster than the player
+  meleeRange: 84,
+  preferredRange: 300,
+  leashRange: 1000,
+  activationRange: 340,
+  meleeDamage: 96,
+  meleeCooldownMs: 850,
+  // P1 — Wrath-like: charge
+  chargeDamage: 150,
+  chargeSpeed: 900,
+  chargeRange: 560,
+  chargeTelegraphMs: 560,
+  chargeCooldownMs: 4200,
+  // P2 — Sloth-like: slam AoE + ranged + Gluttony-like summons
+  slamDamage: 130,
+  slamRadius: 220,
+  slamTelegraphMs: 800,
+  slamCooldownMs: 4000,
+  slamRange: 360,
+  volleyDamage: 48,
+  volleyCount: 3,
+  volleyCooldownMs: 1600,
+  volleySpeed: 330,
+  volleyRange: 600,
+  summonEnemy: 'demon',
+  summonCount: 3,
+  summonCap: 5,
+  summonCadenceMs: 7000,
+  // P3 — Pride-like: shield windows + Gluttony-like nova barrage
+  shieldDurationMs: 2200,
+  shieldCadenceMs: 6000,
+  novaDamage: 50,
+  novaCount: 16,
+  novaSpeed: 280,
+  novaTelegraphMs: 800,
+  novaCooldownMs: 5000,
+  // P4 — chaos: mirror + a denser nova + a ground hazard
+  mirrorDamage: 56,
+  mirrorBolts: 3,
+  mirrorSpeed: 360,
+  mirrorRange: 620,
+  mirrorDashSpeed: 760,
+  mirrorCooldownMs: 1800,
+  hazardDamage: 24,
+  hazardRadius: 80,
+  hazardCadenceMs: 3000,
+  hazardCap: 5,
+  hazardLifetimeMs: 8000,
+  hazardTelegraphMs: 600,
+  hazardRange: 640,
+  novaCountP4: 20,
+  // phase thresholds (4 phases)
+  phase2Threshold: 0.75,
+  phase3Threshold: 0.5,
+  phase4Threshold: 0.25,
+  xpReward: 4200,
+  holyPowerDrop: 32,
+} as const;
+
+/** The full Deadly-Sin gauntlet size — now COMPLETE (all seven authored). */
 export const SINS_TOTAL = 7;
 
 

@@ -31,6 +31,7 @@ import { buildHeavenMapData, HEAVEN_WIDTH, HEAVEN_HEIGHT, HEAVEN_CHERUB_SPAWNS, 
 import { buildHellMapData, HELL_WIDTH, HELL_HEIGHT, HELL_DEMON_SPAWNS, SATAN_LAIR } from '../map/hellWorld';
 import { WORLD_EARTH, WORLD_HEAVEN, WORLD_HELL, type WorldId, type WorldRuntime } from '../world/worlds';
 import { ProjectileSystem } from '../combat/ProjectileSystem';
+import { HazardField } from '../combat/HazardField';
 import { PickupSystem, type PickupCollected } from '../world/PickupSystem';
 import { HolyPower } from '../progression/HolyPower';
 import { Health } from '../combat/Health';
@@ -237,6 +238,8 @@ export class MainScene extends Phaser.Scene {
   // Ranged combat: the angel enemies (normal-layer) + the reusable projectiles.
   private angels: AngelEnemy[] = [];
   private projectiles!: ProjectileSystem;
+  /** Persistent ground-hazard zones (Greed's zone-control pattern; reusable). */
+  private hazards!: HazardField;
 
   // Collectibles: the reusable world-pickup system + the Holy Power count + HUD.
   private pickups!: PickupSystem;
@@ -297,6 +300,7 @@ export class MainScene extends Phaser.Scene {
     lineOfSight: (ax, ay, bx, by) => this.hasLineOfSight(ax, ay, bx, by),
     shield: (boss, active) => this.setBossShield(boss.id, boss.x, boss.y, active),
     blocked: (x, y) => this.spawnBlockedFx(x, y),
+    hazard: (boss, x, y, radius, damage, lifetimeMs, telegraphMs, cap) => this.hazards.spawn(boss.id, x, y, radius, damage, lifetimeMs, telegraphMs, cap),
   };
   /** Live SHIELD bubbles, keyed by boss id (Pride's invuln-window visual). */
   private readonly bossShields = new Map<string, Phaser.GameObjects.Arc>();
@@ -427,6 +431,10 @@ export class MainScene extends Phaser.Scene {
     this.projectiles.onPlayerHit = (dmg) => this.onProjectileHitPlayer(dmg);
     this.projectiles.onEnemyHit = (x, y, radius, dmg) => this.resolveHolyBoltHit(x, y, radius, dmg);
     this.projectiles.onImpact = (x, y, color) => this.spawnBoltImpact(x, y, color);
+    // Persistent ground hazards (Greed): zones draw into the world-FX layer; a tick
+    // applies player damage through the existing contact-damage path.
+    this.hazards = new HazardField(this, this.worldFx);
+    this.hazards.onTick = (dmg) => this.onCherubMelee(dmg);
     // Collectibles: motes draw into the world-FX layer (main camera only).
     this.pickups = new PickupSystem(this, this.worldFx);
     this.pickups.onCollect = (e) => this.onPickupCollected(e);
@@ -653,6 +661,7 @@ export class MainScene extends Phaser.Scene {
     this.updateDemons();
     this.updateGodJudgment();
     this.projectiles.update(delta, this.player.x, this.player.y, PROJECTILE_PLAYER_HIT_RADIUS);
+    this.hazards.update(this.time.now, this.player.x, this.player.y, this.playerDead);
     this.pickups.update(this.player.x, this.player.y);
     this.regenTick(delta);
     this.readout.update();
@@ -1610,6 +1619,7 @@ export class MainScene extends Phaser.Scene {
   /** Defeat (generic): clear adds, climactic burst, XP + Holy Power, then the boss's hook. */
   private onBossDefeated(boss: Boss): void {
     this.clearBossAdds(boss.id);
+    this.hazards.clearBoss(boss.id); // sweep away any lingering ground hazards it left
     this.spawnLevelUpBurst(); // a quick radiant burst (reuse)
     const burst = this.add.circle(boss.x, boss.y, 40, 0xfff1b8, 0.5).setDepth(13);
     this.worldFx.add(burst);
@@ -1783,16 +1793,30 @@ export class MainScene extends Phaser.Scene {
       this.spawnAvailableSin(); // place the next Sin deeper in Hell
       this.time.delayedCall(2700, () => this.showBanner('Another Sin stirs deeper in Hell…', 2400));
     } else {
-      this.time.delayedCall(2700, () => this.showBanner('The first Sins are vanquished.', 2400));
+      // ALL SEVEN fallen — PLACEHOLDER beat. The Trinity is NOT built yet: just tease
+      // it and point the beacon at Satan's Lair (see updateSinMarker). Do NOT open it.
+      this.time.delayedCall(2700, () => this.showBanner('The seven are fallen. The Unholy Trinity stirs…\n(coming soon)', 5000));
     }
   }
 
-  /** The reused world beacon: mark the available, not-yet-engaged Sin while in Hell. */
+  /** The reused world beacon: mark the available, not-yet-engaged Sin while in Hell;
+   *  once all seven are fallen, point it at Satan's Lair (the Trinity's future site). */
   private updateSinMarker(): void {
+    if (this.activeWorld !== WORLD_HELL) {
+      this.sinMarker.hide();
+      return;
+    }
     const i = this.sins.nextIndex;
-    const boss = i >= 0 ? this.sinBosses[i] : undefined;
-    if (this.activeWorld === WORLD_HELL && boss && boss.isAlive && !boss.isActive) {
-      this.sinMarker.show(boss.x, boss.y, `Sin ${i + 1}: ${SIN_DEFS[i].name}`);
+    if (i >= 0) {
+      const boss = this.sinBosses[i];
+      if (boss && boss.isAlive && !boss.isActive) this.sinMarker.show(boss.x, boss.y, `Sin ${i + 1}: ${SIN_DEFS[i].name}`);
+      else this.sinMarker.hide();
+      return;
+    }
+    // All seven beaten → mark the lair as the next destination (NOT opened yet).
+    if (this.sins.count >= this.sins.builtCount) {
+      const o = this.hellMap.bounds;
+      this.sinMarker.show(o.x + SATAN_LAIR.x, o.y + SATAN_LAIR.y, 'The Unholy Trinity — coming soon');
     } else {
       this.sinMarker.hide();
     }
@@ -1811,7 +1835,8 @@ export class MainScene extends Phaser.Scene {
     }
     this.bosses = this.bosses.filter((b) => b.isAlive); // drop the destroyed Sin instances
     this.projectiles.clear(); // drop any Sin bolts still in flight
-    this.sins.reset();
+    this.hazards.clearAll(); // sweep every ground hazard (Greed's zones)
+    this.sins.reset(); // also clears the Sin-7 "Trinity coming soon" beat (it's derived from this count)
     this.spawnAvailableSin();
     this.sinMarker.hide();
   }
@@ -3471,6 +3496,8 @@ export class MainScene extends Phaser.Scene {
       { label: 'Start Gluttony', onPress: () => this.devStartSin(2) },
       { label: 'Start Envy', onPress: () => this.devStartSin(3) },
       { label: 'Start Pride', onPress: () => this.devStartSin(4) },
+      { label: 'Start Greed', onPress: () => this.devStartSin(5) },
+      { label: 'Start Lust', onPress: () => this.devStartSin(6) },
       { label: 'Reset Sins', onPress: () => this.resetSins() },
       { label: 'Go to Heaven', onPress: () => this.devGoToHeaven() },
       { label: 'Return to Earth', onPress: () => this.devReturnToEarth() },

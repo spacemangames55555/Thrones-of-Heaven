@@ -17,7 +17,8 @@ export type BossAttackKind =
   | 'slam' // SPECIAL: a telegraphed AoE around the boss the player can dodge
   | 'charge' // SPECIAL: a telegraphed dash at the player dealing contact damage
   | 'mirror' // REACTIVE: "answers" the player — return volley to ranged, mimic-dash to a dash
-  | 'shield'; // DEFENSIVE: a telegraphed invulnerability window (damage blocked), then vulnerable
+  | 'shield' // DEFENSIVE: a telegraphed invulnerability window (damage blocked), then vulnerable
+  | 'hazard'; // ZONE-CONTROL: drops a lingering ground hazard at the player that accumulates
 
 export interface BossAttack {
   readonly kind: BossAttackKind;
@@ -40,8 +41,10 @@ export interface BossAttack {
   readonly telegraphMs?: number;
   /** 'mirror' dash-mimic velocity (px/sec) when it answers a player dash. */
   readonly dashSpeed?: number;
-  /** 'shield' invulnerability-window length (ms) the boss blocks all damage for. */
+  /** 'shield' invuln-window length, or 'hazard' zone lifetime (ms; 0 = whole fight). */
   readonly durationMs?: number;
+  /** 'hazard' max concurrent zones for this boss (oldest recycled past the cap). */
+  readonly cap?: number;
 }
 
 /** Reinforcements a phase summons (reuses existing enemies as adds). */
@@ -118,4 +121,7 @@ export interface BossHooks {
   shield(boss: { id: string; x: number; y: number }, active: boolean): void;
   /** Feedback that a hit was BLOCKED by an active shield (a spark at the boss). */
   blocked(x: number, y: number): void;
+  /** Drop a persistent GROUND HAZARD zone at (x,y): telegraphs, then damages the
+   *  player who stands in it for `lifetimeMs` (0 = whole fight). Capped per boss. */
+  hazard(boss: { id: string }, x: number, y: number, radius: number, damage: number, lifetimeMs: number, telegraphMs: number, cap: number): void;
 }
