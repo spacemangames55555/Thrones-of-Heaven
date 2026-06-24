@@ -19,8 +19,9 @@ import { DarkPortal } from '../entities/DarkPortal';
 import { HeavenPortal } from '../entities/HeavenPortal';
 import { FlamingSword } from '../entities/FlamingSword';
 import { Cherub } from '../entities/Cherub';
+import { ArchangelMichael } from '../entities/ArchangelMichael';
 import { PortalDefense } from '../encounter/PortalDefense';
-import { buildHeavenMapData, HEAVEN_WIDTH, HEAVEN_HEIGHT, HEAVEN_CHERUB_SPAWNS } from '../map/heavenWorld';
+import { buildHeavenMapData, HEAVEN_WIDTH, HEAVEN_HEIGHT, HEAVEN_CHERUB_SPAWNS, MICHAEL_SANCTUM } from '../map/heavenWorld';
 import { WORLD_EARTH, WORLD_HEAVEN, type WorldId, type WorldRuntime } from '../world/worlds';
 import { ProjectileSystem } from '../combat/ProjectileSystem';
 import { PickupSystem, type PickupCollected } from '../world/PickupSystem';
@@ -99,6 +100,7 @@ import {
   GUARDIAN_BOLT_RADIUS,
   CHERUB_BOLT_RADIUS,
   type CherubVariantKey,
+  MICHAEL,
   HEAVEN_WORLD_GAP,
   HEAVEN_ARRIVAL_OFFSET,
   EARTH_RETURN_OFFSET,
@@ -128,6 +130,10 @@ const OREGON_SWARM_SPAWN = { x: 12240, y: 13616 };
 // player corrupts the Heaven Portal (gold→purple). Walking into the corrupted
 // portal now transports the player to Heaven (see enterHeavenPortal).
 const CORRUPT_PORTAL_LINE = 'The gate is defiled. The way to Heaven opens…';
+// >>> PLACEHOLDER TEXT — shown after defeating Archangel Michael (the God beat is a
+// LATER build; this is just the climactic win + a hook). Edit here.
+const MICHAEL_VICTORY_LINE = 'Archangel Michael is vanquished!';
+const GOD_JUDGMENT_HOOK = 'The heavens themselves answer your defiance… (to be continued)';
 
 /**
  * The overworld scene: renders Washington, stamps the Seattle town onto it,
@@ -216,6 +222,14 @@ export class MainScene extends Phaser.Scene {
   // Heaven's Defenders: the hybrid Cherub / Cherubim enemies (placed in Heaven +
   // dev-spawnable). They live in whichever world they were spawned in.
   private cherubs: Cherub[] = [];
+
+  // Archangel Michael: the unique multi-phase Heaven boss + his summoned adds + a
+  // dedicated boss HP bar (UI camera). A triggerable encounter unit.
+  private michael!: ArchangelMichael;
+  private michaelAdds: Cherub[] = [];
+  private michaelBar!: HealthBar;
+  private michaelBarBg!: Phaser.GameObjects.Rectangle;
+  private michaelNameText!: Phaser.GameObjects.Text;
   private heavenMap!: GameMap;
   private heavenReturnPortal!: HeavenPortal;
   private heavenArrivalPos = { x: 0, y: 0 };
@@ -430,6 +444,7 @@ export class MainScene extends Phaser.Scene {
     this.createHolyPowerHud();
     this.tracker = new QuestTracker(this);
     this.createQuestHud();
+    this.createMichaelHud(); // the boss HP bar (UI partition)
     this.createDevTools(); // dev panel + dev keys (gated by DEV_MODE)
     this.createFadeOverlay(); // full-screen fade for portal transitions (UI partition)
 
@@ -472,6 +487,7 @@ export class MainScene extends Phaser.Scene {
       this.haltTownsfolk();
       this.haltGuardians();
       this.haltCherubs();
+      this.haltMichael();
       this.corruptButton.setVisible(false);
       this.readout.update();
       return;
@@ -494,6 +510,7 @@ export class MainScene extends Phaser.Scene {
       this.haltTownsfolk();
       this.haltGuardians();
       this.haltCherubs();
+      this.haltMichael();
       this.readout.update();
       return;
     }
@@ -536,6 +553,7 @@ export class MainScene extends Phaser.Scene {
     // pickups run for both worlds — Cherubs idle when the player is far, and the
     // pickup/projectile systems carry drops/bolts in whichever world they exist.
     this.updateCherubs();
+    this.updateMichael();
     this.projectiles.update(delta, this.player.x, this.player.y, PROJECTILE_PLAYER_HIT_RADIUS);
     this.pickups.update(this.player.x, this.player.y);
     this.regenTick(delta);
@@ -707,6 +725,19 @@ export class MainScene extends Phaser.Scene {
     this.hitTownsfolkInRange(sx, sy, PLAYER_ATTACK_RANGE, this.progression.effectiveDamage);
     this.hitGuardiansInRange(sx, sy, PLAYER_ATTACK_RANGE, this.progression.effectiveDamage);
     this.hitCherubsInRange(sx, sy, PLAYER_ATTACK_RANGE, this.progression.effectiveDamage);
+    this.hitMichael(sx, sy, PLAYER_ATTACK_RANGE, this.progression.effectiveDamage);
+  }
+
+  /** Apply a player hit to Michael if in range (the boss is a single entity). */
+  private hitMichael(x: number, y: number, range: number, damage: number): void {
+    if (!this.michael || !this.michael.isAlive) return;
+    if (this.michael.distanceTo(x, y) <= range + 24) {
+      const dealt = this.michael.takeHit(damage);
+      if (dealt > 0) {
+        this.spawnDamageNumber(this.michael.x, this.michael.y - 40, dealt, '#ffffff');
+        this.lastCombatTime = this.time.now;
+      }
+    }
   }
 
   /** Apply damage to every flaming-sword guardian within `range` of (x,y); award XP on kills. */
@@ -812,7 +843,8 @@ export class MainScene extends Phaser.Scene {
       this.angels.some((a) => a.isAggro) ||
       this.townsfolk.length > 0 ||
       this.guardians.some((g) => g.isAggro) ||
-      this.cherubs.some((c) => c.isAggro);
+      this.cherubs.some((c) => c.isAggro) ||
+      (this.michael?.isAggro ?? false);
     if (enemiesEngaged) this.lastCombatTime = this.time.now;
     const outOfCombat = !enemiesEngaged && this.time.now - this.lastCombatTime > PLAYER_HP_REGEN_DELAY_MS;
     if (outOfCombat && this.playerHealth.current < this.playerHealth.max) {
@@ -948,6 +980,17 @@ export class MainScene extends Phaser.Scene {
           this.spawnDamageNumber(c.x, c.y - 30 * c.variant.scale, dealt, '#ffe9a8');
           this.lastCombatTime = this.time.now;
           if (!c.isAlive) this.onCherubKilled(c);
+        }
+      }
+    }
+
+    if (this.michael && this.michael.isAlive && !this.dashHits.has(this.michael)) {
+      if (this.michael.distanceTo(px, py) <= DASH_HIT_RADIUS + 24) {
+        this.dashHits.add(this.michael);
+        const dealt = this.michael.takeHit(dmg);
+        if (dealt > 0) {
+          this.spawnDamageNumber(this.michael.x, this.michael.y - 40, dealt, '#ffe9a8');
+          this.lastCombatTime = this.time.now;
         }
       }
     }
@@ -1291,6 +1334,187 @@ export class MainScene extends Phaser.Scene {
     );
   }
 
+  // --- Archangel Michael: the multi-phase, summoning boss -------------------
+  //
+  // A TRIGGERABLE unit (approach → activate → phased fight w/ capped summons →
+  // defeat). The phase machine lives on the entity (ArchangelMichael); the scene
+  // wires its hooks to the existing projectile / Cherub / pickup / XP systems and
+  // owns the boss HP bar. NOT wired to the quest chain.
+
+  /** Build Michael at his sanctum (Heaven) + a marker; wire his hooks. World object. */
+  private setupMichael(): void {
+    const o = this.heavenMap.bounds;
+    const sx = o.x + MICHAEL_SANCTUM.x;
+    const sy = o.y + MICHAEL_SANCTUM.y;
+    this.addHeavenLabel(sx, sy - 60, '⚔ Michael’s Sanctum ⚔', '#fff3c4');
+    const ring = this.add.circle(sx, sy, 30, 0xfff1b8, 0.22).setDepth(6);
+    this.tweens.add({ targets: ring, scale: 2, alpha: 0.05, duration: 1400, yoyo: true, repeat: -1, ease: 'Sine.inOut' });
+
+    this.michael = new ArchangelMichael(this, sx, sy);
+    this.michael.onFire = (origin, dirs) => {
+      const cfg = MICHAEL.phases[this.michael.currentPhase - 1];
+      for (const d of dirs) {
+        this.projectiles.spawn({
+          x: origin.x,
+          y: origin.y,
+          dirX: d.x,
+          dirY: d.y,
+          speed: MICHAEL.projectileSpeed,
+          damage: cfg.projectileDamage,
+          maxRange: MICHAEL.projectileRange,
+          faction: 'enemy',
+          color: 0xfff1b8,
+          radius: MICHAEL.boltRadius,
+        });
+      }
+    };
+    this.michael.onMelee = (dmg) => this.onCherubMelee(dmg); // reuse: damage the player
+    this.michael.onSummon = (count) => this.summonMichaelWave(count);
+    this.michael.onPhaseChange = (phase) => this.onMichaelPhaseChange(phase);
+    this.michael.onDefeat = () => this.onMichaelDefeated();
+    this.physics.add.collider(this.michael.sprite, this.heavenMap.layer);
+    this.uiCamera?.ignore(this.michael.objects());
+  }
+
+  /** TRIGGER: begin the Michael fight (proximity or dev button). */
+  private startMichaelFight(): void {
+    this.michael.activate();
+  }
+
+  /** RESET: Michael dormant, full HP, Phase 1, adds cleared, bar hidden. */
+  private resetMichael(): void {
+    this.clearMichaelAdds();
+    this.michael.reset();
+    this.michaelBar?.setVisible(false);
+    this.michaelBarBg?.setVisible(false);
+    this.michaelNameText?.setVisible(false);
+  }
+
+  /** Drive Michael each frame: proximity activation, behavior, the boss bar. */
+  private updateMichael(): void {
+    if (!this.michael) return;
+    // Proximity activation: nearing the sanctum wakes the boss.
+    if (!this.michael.isActive && this.michael.isAlive) {
+      if (this.michael.distanceTo(this.player.x, this.player.y) <= MICHAEL.activationRange) this.startMichaelFight();
+    }
+    const los = this.hasLineOfSight(this.michael.x, this.michael.y, this.player.x, this.player.y);
+    this.michael.update(this.player.x, this.player.y, this.time.now, los);
+    this.refreshMichaelBar();
+  }
+
+  private haltMichael(): void {
+    this.michael?.halt();
+  }
+
+  /** Summon up to the cap: reinforcement Cherubs ring Michael (on walkable tiles). */
+  private summonMichaelWave(count: number): void {
+    this.michaelAdds = this.michaelAdds.filter((a) => a.isAlive);
+    const room = MICHAEL.summonCap - this.michaelAdds.length;
+    const n = Math.min(count, room);
+    if (n <= 0) return;
+    for (let i = 0; i < n; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const r = 90 + Math.random() * 50;
+      const spot = this.heavenMap.nearestWalkableWorld(this.michael.x + Math.cos(a) * r, this.michael.y + Math.sin(a) * r);
+      const c = this.spawnCherub(MICHAEL.summonType, spot.x, spot.y, this.heavenMap.layer);
+      this.michaelAdds.push(c);
+    }
+    this.showBanner('Michael summons reinforcements!', 1400);
+  }
+
+  /** Remove Michael's summoned adds (defeat / reset) — also from the live cherub list. */
+  private clearMichaelAdds(): void {
+    const set = new Set<Cherub>(this.michaelAdds);
+    for (const a of this.michaelAdds) if (a.isAlive) a.destroy();
+    this.cherubs = this.cherubs.filter((c) => !set.has(c));
+    this.michaelAdds = [];
+  }
+
+  /** Phase transition telegraph: flash + burst + banner so escalation is felt. */
+  private onMichaelPhaseChange(phase: number): void {
+    if (phase <= 1) return; // Phase 1 is activation, not an escalation beat
+    this.showBanner(`Archangel Michael — Phase ${phase}!`, 1800);
+    const ring = this.add.circle(this.michael.x, this.michael.y, 30, 0xffffff, 0).setStrokeStyle(5, 0xfff1b8, 0.9).setDepth(13);
+    this.worldFx.add(ring);
+    this.tweens.add({ targets: ring, scale: 4, alpha: 0, duration: 520, ease: 'Quad.out', onComplete: () => ring.destroy() });
+    this.michael.sprite.setTint(0xffffff).setTintMode(Phaser.TintModes.FILL);
+    this.time.delayedCall(140, () => { if (this.michael.isAlive) this.michael.sprite.setTint(MICHAEL.color).setTintMode(Phaser.TintModes.MULTIPLY); });
+  }
+
+  /** Defeat: clear adds, climactic burst, big XP + Holy Power, victory + God hook. */
+  private onMichaelDefeated(): void {
+    this.clearMichaelAdds();
+    this.spawnLevelUpBurst(); // a quick radiant burst (reuse)
+    const burst = this.add.circle(this.michael.x, this.michael.y, 40, 0xfff1b8, 0.5).setDepth(13);
+    this.worldFx.add(burst);
+    this.tweens.add({ targets: burst, scale: 6, alpha: 0, duration: 900, ease: 'Quad.out', onComplete: () => burst.destroy() });
+    this.gainXP(MICHAEL.xpReward);
+    this.dropHolyPower(this.michael.x, this.michael.y, MICHAEL.holyPowerDrop);
+    this.showBanner(MICHAEL_VICTORY_LINE, 3000);
+    this.time.delayedCall(3200, () => this.showBanner(GOD_JUDGMENT_HOOK, 4200));
+    this.michaelBar?.setVisible(false);
+    this.michaelBarBg?.setVisible(false);
+    this.michaelNameText?.setVisible(false);
+  }
+
+  /** The dedicated boss HP bar (UI camera, fixed): name + phase + HP, top-centre. */
+  private createMichaelHud(): void {
+    const depth = 2050;
+    this.michaelBarBg = this.add
+      .rectangle(0, 0, 320, 22, 0x10060a, 0.85)
+      .setStrokeStyle(2, 0xfff1b8, 0.95)
+      .setScrollFactor(0)
+      .setDepth(depth)
+      .setVisible(false);
+    this.michaelBar = new HealthBar(this, 312, 16, depth + 1, 0xffe06a);
+    this.michaelBar.setScrollFactor(0);
+    this.michaelBar.setVisible(false);
+    this.michaelNameText = this.add
+      .text(0, 0, '', { fontFamily: 'system-ui, sans-serif', fontSize: '13px', color: '#fff3c4', fontStyle: 'bold' })
+      .setOrigin(0.5, 1)
+      .setScrollFactor(0)
+      .setStroke('#1a0d04', 4)
+      .setDepth(depth + 2)
+      .setVisible(false);
+
+    const layout = (): void => {
+      const insets = getInsets(this);
+      const cx = this.scale.width / 2;
+      const top = insets.top + UI_MARGIN + 40; // below the top-centre quest tracker
+      this.michaelBarBg.setPosition(cx, top + 11);
+      this.michaelBar.setPosition(cx - 156, top + 11);
+      this.michaelNameText.setPosition(cx, top - 2);
+    };
+    layout();
+    this.scale.on(Phaser.Scale.Events.RESIZE, layout);
+  }
+
+  /** Sync the boss bar to Michael's live HP + phase; show only while he fights (in Heaven). */
+  private refreshMichaelBar(): void {
+    const show = (this.michael?.isActive ?? false) && this.activeWorld === WORLD_HEAVEN;
+    this.michaelBarBg.setVisible(show);
+    this.michaelBar.setVisible(show);
+    this.michaelNameText.setVisible(show);
+    if (show) {
+      this.michaelBar.setRatio(this.michael.hpRatio);
+      this.michaelNameText.setText(`Archangel Michael — Phase ${this.michael.currentPhase}`);
+    }
+  }
+
+  /** DEV: jump just south of Michael's sanctum (Heaven), travelling there if needed. */
+  private devTeleportToMichael(): void {
+    this.cancelDash();
+    const sx = this.michael.x;
+    const sy = this.michael.y;
+    const place = (): void => {
+      this.player.sprite.setPosition(sx, sy + MICHAEL.activationRange + 80);
+      this.player.setDirection(0, 0);
+      this.cameras.main.centerOn(sx, sy);
+    };
+    if (this.activeWorld !== WORLD_HEAVEN) this.travelToWorld(WORLD_HEAVEN, { x: sx, y: sy + MICHAEL.activationRange + 80 });
+    else place();
+  }
+
   // --- Portal Defense: townsfolk + the wave encounter -----------------------
 
   /**
@@ -1581,6 +1805,8 @@ export class MainScene extends Phaser.Scene {
 
     // Populate Heaven with its defenders (positions in heavenWorld.ts).
     this.seedHeavenCherubs();
+    // The climactic boss at his sanctum (dormant until approached).
+    this.setupMichael();
   }
 
   /** A small Heaven world-space label. */
@@ -2287,6 +2513,9 @@ export class MainScene extends Phaser.Scene {
     this.clearCherubs();
     this.seedHeavenCherubs();
 
+    // Reset the Michael encounter: dormant, full HP, Phase 1, adds cleared.
+    this.resetMichael();
+
     // Return to Earth if currently in Heaven (instant — no fade), and forget the
     // remembered Heaven position so a fresh visit starts at the arrival point.
     this.tweens.killTweensOf(this.fadeOverlay);
@@ -2333,6 +2562,9 @@ export class MainScene extends Phaser.Scene {
       { label: 'Reset Portal', onPress: () => this.resetGuardianEncounter() },
       { label: 'Spawn Cherub', onPress: () => this.devSpawnCherub('cherub') },
       { label: 'Spawn Cherubim', onPress: () => this.devSpawnCherub('cherubim') },
+      { label: 'Teleport to Michael', onPress: () => this.devTeleportToMichael() },
+      { label: 'Start Michael Fight', onPress: () => this.startMichaelFight() },
+      { label: 'Reset Michael', onPress: () => this.resetMichael() },
       { label: 'Go to Heaven', onPress: () => this.devGoToHeaven() },
       { label: 'Return to Earth', onPress: () => this.devReturnToEarth() },
       { label: 'Toggle World', onPress: () => this.devToggleWorld() },

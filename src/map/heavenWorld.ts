@@ -57,8 +57,15 @@ export const HEAVEN_CHERUB_SPAWNS: CherubSpawn[] = [
   { x: 12280, y: 11380, variant: 'cherub' }, // east of the gate
   { x: 10500, y: 12120, variant: 'cherub' }, // south-west expanse
   { x: 12500, y: 12120, variant: 'cherub' }, // south-east expanse
-  { x: 11520, y: 10200, variant: 'cherubim' }, // BOSS — deep north, a standout threat
+  { x: 11520, y: 10200, variant: 'cherubim' }, // mini-boss — deep north, a standout threat
 ];
+
+/**
+ * Archangel Michael's SANCTUM — the climactic boss's throne, deep in Heaven's
+ * north (past the Cherubim). LOCAL Heaven pixels; MainScene.setupHeaven adds the
+ * world offset. Edit to move the boss. (Michael exists only in the Heaven world.)
+ */
+export const MICHAEL_SANCTUM = { x: 11520, y: 9200 };
 
 /** Cheap deterministic hash in [0,1) so the layout is stable across reloads. */
 function hash(x: number, y: number): number {

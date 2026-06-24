@@ -128,6 +128,16 @@ export class Cherub {
       }
     }
 
+    // Leash: if the player flees beyond aggro range (or is in another world, far
+    // away in the offset coordinate space), de-aggro — stop chasing/firing so we
+    // don't pursue across worlds or keep the player out of HP regen.
+    if (dist > v.aggroRange) {
+      this.state = 'idle';
+      body.velocity.set(0, 0);
+      this.floatBar();
+      return;
+    }
+
     this.revealBar();
     this.sprite.setFlipX(playerX < this.sprite.x);
 
