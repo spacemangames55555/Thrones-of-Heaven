@@ -278,7 +278,7 @@ export class MainScene extends Phaser.Scene {
   // so a LOCKED Sin simply doesn't exist yet (can't be woken/hit). A reused world
   // beacon marks the currently-available Sin.
   private readonly sins = new SinGauntlet();
-  private sinBosses: (Boss | undefined)[] = [undefined, undefined, undefined];
+  private sinBosses: (Boss | undefined)[] = SIN_DEFS.map(() => undefined);
   private sinMarker!: ObjectiveMarker;
   private bossBar!: HealthBar;
   private bossBarBg!: Phaser.GameObjects.Rectangle;
@@ -295,7 +295,11 @@ export class MainScene extends Phaser.Scene {
     telegraph: (x, y, radius, durationMs) => this.bossTelegraph(x, y, radius, durationMs),
     summon: (boss, enemy, count, cap) => this.summonForBoss(boss.id, boss.x, boss.y, boss.name, enemy, count, cap),
     lineOfSight: (ax, ay, bx, by) => this.hasLineOfSight(ax, ay, bx, by),
+    shield: (boss, active) => this.setBossShield(boss.id, boss.x, boss.y, active),
+    blocked: (x, y) => this.spawnBlockedFx(x, y),
   };
+  /** Live SHIELD bubbles, keyed by boss id (Pride's invuln-window visual). */
+  private readonly bossShields = new Map<string, Phaser.GameObjects.Arc>();
 
   // God's Judgment beat: the throne set piece, the Michael-gated scripted
   // sequence, and the Hell portal it spawns. State is centralized + serializable.
@@ -973,6 +977,7 @@ export class MainScene extends Phaser.Scene {
     this.dashDir = { x: this.player.facingX / len, y: this.player.facingY / len };
     this.dashEndsAt = this.time.now + (DASH_DISTANCE / DASH_SPEED) * 1000;
     this.dashHits.clear();
+    this.notifyBossesPlayerAction('dash'); // Envy's MIRROR may answer with a mimic-dash
   }
 
   private endDash(): void {
@@ -1686,6 +1691,36 @@ export class MainScene extends Phaser.Scene {
     this.tweens.add({ targets: ring, alpha: { from: 0.08, to: 0.42 }, scale: { from: 0.5, to: 1 }, duration: durationMs, onComplete: () => ring.destroy() });
   }
 
+  /** SHIELD pattern visual: raise/drop a glowing bubble around a boss (clear invuln tell). */
+  private setBossShield(bossId: string, x: number, y: number, active: boolean): void {
+    const existing = this.bossShields.get(bossId);
+    if (active) {
+      if (existing) return;
+      const bubble = this.add.circle(x, y, 46, 0x8fdfff, 0.18).setStrokeStyle(3, 0xbff0ff, 0.95).setDepth(12);
+      this.worldFx.add(bubble);
+      this.uiCamera?.ignore(bubble); // world object: keep it off the UI camera
+      this.tweens.add({ targets: bubble, scale: 1.12, alpha: 0.32, duration: 520, yoyo: true, repeat: -1, ease: 'Sine.inOut' });
+      this.bossShields.set(bossId, bubble);
+    } else if (existing) {
+      this.tweens.killTweensOf(existing);
+      existing.destroy();
+      this.bossShields.delete(bossId);
+    }
+  }
+
+  /** Clear-feedback spark when a hit is BLOCKED by an active shield. */
+  private spawnBlockedFx(x: number, y: number): void {
+    const spark = this.add.text(x, y - 46, 'BLOCKED', { fontFamily: 'system-ui, sans-serif', fontSize: '13px', color: '#bff0ff', fontStyle: 'bold' }).setOrigin(0.5).setStroke('#0a2030', 4).setDepth(14);
+    this.worldFx.add(spark);
+    this.uiCamera?.ignore(spark);
+    this.tweens.add({ targets: spark, y: y - 70, alpha: 0, duration: 480, ease: 'Quad.out', onComplete: () => spark.destroy() });
+  }
+
+  /** Tell every active boss the player just acted (drives the 'mirror' reactive pattern). */
+  private notifyBossesPlayerAction(type: 'ranged' | 'dash'): void {
+    for (const b of this.bosses) if (b.isActive) b.notePlayerAction(type);
+  }
+
   /** DEV: jump just south of Michael's sanctum (Heaven), travelling there if needed. */
   private devTeleportToMichael(): void {
     this.cancelDash();
@@ -1763,17 +1798,19 @@ export class MainScene extends Phaser.Scene {
     }
   }
 
-  /** RESET: gauntlet back to 0, all Sin bosses gone + adds cleared, Sin 1 re-placed. */
+  /** RESET: gauntlet back to 0, all Sin bosses gone (+ adds/projectiles/shields
+   *  cleared via destroy), Sin 1 re-placed. */
   private resetSins(): void {
     for (let i = 0; i < this.sinBosses.length; i++) {
       const b = this.sinBosses[i];
       if (b) {
         this.clearBossAdds(b.id);
-        b.destroy();
+        b.destroy(); // also drops any active SHIELD bubble (via the shield hook)
       }
       this.sinBosses[i] = undefined;
     }
     this.bosses = this.bosses.filter((b) => b.isAlive); // drop the destroyed Sin instances
+    this.projectiles.clear(); // drop any Sin bolts still in flight
     this.sins.reset();
     this.spawnAvailableSin();
     this.sinMarker.hide();
@@ -2447,6 +2484,7 @@ export class MainScene extends Phaser.Scene {
       radius: PLAYER_HOLY_BOLT_RADIUS,
     });
     this.lastCombatTime = this.time.now;
+    this.notifyBossesPlayerAction('ranged'); // Envy's MIRROR may answer with a return volley
   }
 
   /**
@@ -3431,6 +3469,8 @@ export class MainScene extends Phaser.Scene {
       { label: 'Start Wrath', onPress: () => this.devStartSin(0) },
       { label: 'Start Sloth', onPress: () => this.devStartSin(1) },
       { label: 'Start Gluttony', onPress: () => this.devStartSin(2) },
+      { label: 'Start Envy', onPress: () => this.devStartSin(3) },
+      { label: 'Start Pride', onPress: () => this.devStartSin(4) },
       { label: 'Reset Sins', onPress: () => this.resetSins() },
       { label: 'Go to Heaven', onPress: () => this.devGoToHeaven() },
       { label: 'Return to Earth', onPress: () => this.devReturnToEarth() },

@@ -597,7 +597,89 @@ export const GLUTTONY = {
   holyPowerDrop: 22,
 } as const;
 
-/** The full Deadly-Sin gauntlet size (this batch authors the first three). */
+// --- The 7 Deadly Sins — Batch 2: Envy + Pride (Sins 4 & 5) ------------------
+//
+// Two more DISTINCT Hell bosses on the framework (src/boss/sinsData.ts maps these
+// onto BossDefs — no bespoke classes), order-gated AFTER Sin 3. They showcase the
+// TWO new reusable attack patterns:
+//   ENVY  = the MIRROR / reactive duelist — "answers" the player (return volley to
+//           ranged, mimic-dash to a dash) on top of modest baseline melee + ranged.
+//   PRIDE = the SHIELD / invuln-window timing fight — periodically invulnerable for
+//           a telegraphed window between melee+ranged combos; commit during the
+//           vulnerable window. Phases shrink that window.
+// Same difficulty TIER as batch 1. `placement` is LOCAL Hell pixels — edit to move.
+
+/** SIN 4 — ENVY (the Mirror / reactive duelist). */
+export const ENVY = {
+  name: 'Envy, the Covetous',
+  placement: { x: 6800, y: 9800 }, // west-central Hell
+  scale: 2.4,
+  color: 0x2fbf7a, // envious emerald (distinct from Sloth's olive)
+  maxHP: 5600, // moderate
+  moveTilesPerSec: 5.6, // moderate
+  moveTilesPerSecP2: 6.4, // Phase 2: a touch quicker
+  meleeRange: 74,
+  preferredRange: 260,
+  leashRange: 820,
+  activationRange: 300,
+  // modest baseline melee + ranged
+  meleeDamage: 80,
+  meleeCooldownMs: 1000,
+  volleyDamage: 40,
+  volleyCount: 2,
+  volleyCooldownMsP1: 2200,
+  volleyCooldownMsP2: 1600, // Phase 2: pokes more
+  volleySpeed: 320,
+  volleyRange: 560,
+  // MIRROR / reactive — the core mechanic (answers the player's last action)
+  mirrorDamage: 52, // return-volley bolt damage AND mimic-dash contact damage
+  mirrorBolts: 3, // return-volley count
+  mirrorSpread: 0.18,
+  mirrorSpeed: 360,
+  mirrorRange: 600, // max distance it will react within
+  mirrorDashSpeed: 720, // mimic-dash velocity (px/sec)
+  mirrorCooldownMsP1: 2600, // min gap between reactions (answers, doesn't clone)
+  mirrorCooldownMsP2: 1800, // Phase 2: reacts more often
+  phase2Threshold: 0.5,
+  xpReward: 2000,
+  holyPowerDrop: 16,
+} as const;
+
+/** SIN 5 — PRIDE (the Shielded duelist / read-the-window timing fight). */
+export const PRIDE = {
+  name: 'Pride, the Exalted',
+  placement: { x: 18800, y: 19500 }, // deep south-east Hell
+  scale: 2.8,
+  color: 0xe8c24a, // regal gold
+  maxHP: 7800, // moderate-high
+  moveTilesPerSec: 5.0, // disciplined, measured
+  meleeRange: 80,
+  preferredRange: 280,
+  leashRange: 820,
+  activationRange: 300,
+  // hybrid melee + ranged combos
+  meleeDamage: 92,
+  meleeCooldownMs: 900,
+  volleyDamage: 44,
+  volleyCount: 3,
+  volleyCooldownMs: 1700,
+  volleySpeed: 330,
+  volleyRange: 580,
+  // SHIELD / invulnerability window — the vulnerable window SHRINKS by phase
+  // (longer shield + shorter cadence). Damage is fully blocked while up.
+  shieldDurationMsP1: 1800,
+  shieldDurationMsP2: 2200,
+  shieldDurationMsP3: 2600,
+  shieldCadenceMsP1: 7000, // time between shield windows
+  shieldCadenceMsP2: 6000,
+  shieldCadenceMsP3: 5000,
+  phase2Threshold: 0.66,
+  phase3Threshold: 0.33,
+  xpReward: 2400,
+  holyPowerDrop: 20,
+} as const;
+
+/** The full Deadly-Sin gauntlet size (batches 1–2 author the first five). */
 export const SINS_TOTAL = 7;
 
 

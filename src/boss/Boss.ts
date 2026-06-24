@@ -7,14 +7,22 @@ import type { BossAttack, BossDef, BossHooks } from './bossTypes';
 let NEXT = 1;
 type State = 'dormant' | 'active' | 'dead';
 
+/** How recent a player action must be for the 'mirror' pattern to "answer" it (ms). */
+const MIRROR_WINDOW_MS = 1400;
+/** Mimic-dash travel time for the 'mirror' reaction (ms). */
+const MIRROR_DASH_MS = 260;
+/** Minimum gap between "blocked" feedback sparks while shielded (ms). */
+const BLOCK_FX_GAP_MS = 220;
+
 /**
  * The GENERIC, data-driven boss controller. ONE class drives EVERY boss from its
  * {@link BossDef}: the phase state machine (HP-gated, 1..N phases), the
  * hold-ground movement (advance to preferred range, never flee, leash when far),
  * and the attack loadout — each attack a parameterized pattern from the library
- * ('melee' / 'volley' / special 'barrage' / 'slam' / 'charge'). Effects run through
- * scene-provided {@link BossHooks} (reusing the existing projectile/melee/summon
- * systems). Adding a boss = a new BossDef, not new code.
+ * ('melee' / 'volley' / special 'barrage' / 'slam' / 'charge', reactive 'mirror',
+ * defensive 'shield'). Effects run through scene-provided {@link BossHooks}
+ * (reusing the existing projectile/melee/summon systems). Adding a boss = a new
+ * BossDef, not new code.
  *
  * Behavior matches the bespoke Archangel Michael it replaces: IDLE → ENGAGE on
  * activate; per phase, melee up close XOR ranged volley at distance; summon wave
@@ -45,6 +53,14 @@ export class Boss {
   private pending?: { attack: BossAttack; at: number; tx: number; ty: number };
   /** An in-progress charge dash. `speed` is the dash velocity (px/sec). */
   private charge?: { dx: number; dy: number; speed: number; until: number; damage: number; hit: boolean };
+  /** SHIELD pattern: invulnerable + rooted until this time (0 = not shielded). */
+  private shieldedUntil = 0;
+  /** Whether the scene's shield bubble is currently shown (so we drop it once). */
+  private shieldVisualOn = false;
+  /** MIRROR pattern: the player's most recent reactable action, awaiting an answer. */
+  private lastAction?: { type: 'ranged' | 'dash'; at: number; used: boolean };
+  /** Throttle for repeated "blocked" sparks while shielded. */
+  private nextBlockFxAt = 0;
 
   constructor(scene: Phaser.Scene, def: BossDef, worldX: number, worldY: number, hooks: BossHooks) {
     this.id = `${def.id}-${NEXT++}`;
@@ -89,6 +105,19 @@ export class Boss {
   get hpRatio(): number {
     return this.health.ratio;
   }
+  /** True while a SHIELD window is up (damage blocked, boss rooted). */
+  get isShielded(): boolean {
+    return this.scene.time.now < this.shieldedUntil;
+  }
+
+  /**
+   * Tell this boss the player just acted (so a 'mirror' attack can "answer" it).
+   * Recorded only while active; the controller consumes at most one per cooldown.
+   */
+  notePlayerAction(type: 'ranged' | 'dash'): void {
+    if (this.state !== 'active') return;
+    this.lastAction = { type, at: this.scene.time.now, used: false };
+  }
 
   distanceTo(x: number, y: number): number {
     return Phaser.Math.Distance.Between(this.sprite.x, this.sprite.y, x, y);
@@ -106,6 +135,15 @@ export class Boss {
 
   takeHit(amount: number): number {
     if (this.state === 'dead') return 0;
+    // SHIELD: nullify all damage during the invuln window, with clear "blocked" FX.
+    if (this.isShielded) {
+      const now = this.scene.time.now;
+      if (now >= this.nextBlockFxAt) {
+        this.nextBlockFxAt = now + BLOCK_FX_GAP_MS;
+        this.hooks.blocked(this.x, this.y);
+      }
+      return 0;
+    }
     if (this.state === 'dormant') this.activate();
     const dealt = this.health.damage(amount);
     this.sprite.setTint(0xffffff).setTintMode(Phaser.TintModes.FILL);
@@ -143,6 +181,17 @@ export class Boss {
       return;
     }
 
+    // SHIELD window just ended → drop the bubble (vulnerable again).
+    if (this.shieldVisualOn && !this.isShielded) {
+      this.shieldVisualOn = false;
+      this.hooks.shield(this, false);
+    }
+    // SHIELD up → rooted + invulnerable (handled in takeHit); do nothing else.
+    if (this.isShielded) {
+      body.velocity.set(0, 0);
+      return;
+    }
+
     // Resolve a special whose telegraph has finished (rooted during wind-up).
     if (this.pending) {
       body.velocity.set(0, 0);
@@ -169,7 +218,7 @@ export class Boss {
       if (!this.canUse(atk, dist, playerX, playerY)) continue;
       this.nextReadyAt[i] = time + atk.cooldownMs;
       this.trigger(atk, playerX, playerY, time);
-      if (this.pending || this.charge) break; // a special takes over this frame
+      if (this.pending || this.charge || this.isShielded) break; // a special/shield takes over this frame
     }
 
     // Summon cadence (the wave on phase entry happens in enterPhase).
@@ -193,6 +242,12 @@ export class Boss {
     this.nextSummonAt = Number.POSITIVE_INFINITY;
     this.pending = undefined;
     this.charge = undefined;
+    this.shieldedUntil = 0;
+    this.lastAction = undefined;
+    if (this.shieldVisualOn) {
+      this.shieldVisualOn = false;
+      this.hooks.shield(this, false);
+    }
     this.playerNear = false;
     this.sprite.clearTint().setTint(this.def.sprite.tint);
     this.sprite.setActive(true).setVisible(true).setAlpha(1).setScale(this.def.sprite.scale).setAngle(0).setFlipX(false);
@@ -204,6 +259,10 @@ export class Boss {
 
   destroy(): void {
     this.state = 'dead';
+    if (this.shieldVisualOn) {
+      this.shieldVisualOn = false;
+      this.hooks.shield(this, false);
+    }
     this.sprite.destroy();
   }
 
@@ -245,6 +304,15 @@ export class Boss {
         return dist <= atk.range;
       case 'charge':
         return dist > this.def.meleeRange && dist <= atk.range;
+      case 'mirror': {
+        // REACTIVE: only when the player recently acted, within reach. A ranged
+        // answer needs line of sight; a dash-mimic just needs the player nearby.
+        const a = this.lastAction;
+        if (!a || a.used || this.scene.time.now - a.at > MIRROR_WINDOW_MS || dist > atk.range) return false;
+        return a.type === 'ranged' ? this.hooks.lineOfSight(this.x, this.y, px, py) : true;
+      }
+      case 'shield':
+        return !this.isShielded; // cadence-gated by the slot cooldown; never stack
     }
   }
 
@@ -258,6 +326,30 @@ export class Boss {
         this.fireVolley(atk, px, py);
         this.pop(1.08);
         break;
+      case 'mirror': {
+        // ANSWER the player's last action, then consume it.
+        const a = this.lastAction;
+        if (a) a.used = true;
+        if (a?.type === 'dash') {
+          // Mimic the dash: a quick reposition toward the player (modest contact dmg).
+          const ang = Phaser.Math.Angle.Between(this.x, this.y, px, py);
+          const speed = atk.dashSpeed ?? 700;
+          this.charge = { dx: Math.cos(ang), dy: Math.sin(ang), speed, until: time + MIRROR_DASH_MS, damage: atk.damage, hit: false };
+        } else {
+          // Answer ranged with a return volley of bolts.
+          this.fireVolley(atk, px, py);
+          this.pop(1.08);
+        }
+        break;
+      }
+      case 'shield': {
+        // Raise a telegraphed invulnerability window: rooted + damage blocked.
+        this.shieldedUntil = time + (atk.durationMs ?? 1800);
+        this.shieldVisualOn = true;
+        this.hooks.shield(this, true);
+        this.pop(1.12);
+        break;
+      }
       case 'barrage':
       case 'slam':
       case 'charge': {
@@ -320,6 +412,11 @@ export class Boss {
 
   private die(): void {
     this.state = 'dead';
+    this.shieldedUntil = 0;
+    if (this.shieldVisualOn) {
+      this.shieldVisualOn = false;
+      this.hooks.shield(this, false);
+    }
     const body = this.sprite.body as Phaser.Physics.Arcade.Body;
     body.velocity.set(0, 0);
     body.enable = false;

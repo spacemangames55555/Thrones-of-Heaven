@@ -1,4 +1,4 @@
-import { WRATH, SLOTH, GLUTTONY } from '../game/settings';
+import { WRATH, SLOTH, GLUTTONY, ENVY, PRIDE } from '../game/settings';
 import type { BossDef } from './bossTypes';
 
 /**
@@ -13,6 +13,10 @@ import type { BossDef } from './bossTypes';
  *   WRATH    — relentless rusher: fast (accelerates in P2), hard melee + CHARGE.
  *   SLOTH    — slow huge-HP wall: telegraphed SLAM AoEs + lazy ranged volleys.
  *   GLUTTONY — summoner: Demon add-waves + a telegraphed projectile NOVA.
+ *   ENVY     — reactive MIRROR duel: answers ranged with a return volley, answers a
+ *              dash with a mimic-dash; modest baseline melee + ranged. (Batch 2)
+ *   PRIDE    — SHIELD timing fight: telegraphed invuln windows between melee+ranged
+ *              combos; commit damage in the shrinking vulnerable window. (Batch 2)
  *
  * To MOVE a Sin: edit its `placement` (LOCAL Hell pixels) in settings.ts.
  */
@@ -134,5 +138,84 @@ export const GLUTTONY_DEF: BossDef = {
   holyPowerDrop: GLUTTONY.holyPowerDrop,
 };
 
+/** SIN 4 — ENVY: 2 phases; the MIRROR pattern answers the player, escalating in P2. */
+export const ENVY_DEF: BossDef = {
+  id: 'sin-envy',
+  name: ENVY.name,
+  world: 'hell',
+  placement: ENVY.placement,
+  sprite: { key: 'envy', scale: ENVY.scale, tint: ENVY.color },
+  maxHP: ENVY.maxHP,
+  moveTilesPerSec: ENVY.moveTilesPerSec,
+  meleeRange: ENVY.meleeRange,
+  preferredRange: ENVY.preferredRange,
+  leashRange: ENVY.leashRange,
+  activationRange: ENVY.activationRange,
+  phases: [
+    {
+      fromRatio: 1,
+      attacks: [
+        { kind: 'melee', damage: ENVY.meleeDamage, cooldownMs: ENVY.meleeCooldownMs, range: ENVY.meleeRange },
+        { kind: 'volley', damage: ENVY.volleyDamage, cooldownMs: ENVY.volleyCooldownMsP1, range: ENVY.volleyRange, bolts: ENVY.volleyCount, spread: 0.18, speed: ENVY.volleySpeed },
+        { kind: 'mirror', damage: ENVY.mirrorDamage, cooldownMs: ENVY.mirrorCooldownMsP1, range: ENVY.mirrorRange, bolts: ENVY.mirrorBolts, spread: ENVY.mirrorSpread, speed: ENVY.mirrorSpeed, dashSpeed: ENVY.mirrorDashSpeed },
+      ],
+    },
+    {
+      fromRatio: ENVY.phase2Threshold,
+      moveTilesPerSec: ENVY.moveTilesPerSecP2,
+      attacks: [
+        { kind: 'melee', damage: ENVY.meleeDamage, cooldownMs: ENVY.meleeCooldownMs, range: ENVY.meleeRange },
+        { kind: 'volley', damage: ENVY.volleyDamage, cooldownMs: ENVY.volleyCooldownMsP2, range: ENVY.volleyRange, bolts: ENVY.volleyCount, spread: 0.18, speed: ENVY.volleySpeed },
+        { kind: 'mirror', damage: ENVY.mirrorDamage, cooldownMs: ENVY.mirrorCooldownMsP2, range: ENVY.mirrorRange, bolts: ENVY.mirrorBolts, spread: ENVY.mirrorSpread, speed: ENVY.mirrorSpeed, dashSpeed: ENVY.mirrorDashSpeed },
+      ],
+    },
+  ],
+  xpReward: ENVY.xpReward,
+  holyPowerDrop: ENVY.holyPowerDrop,
+};
+
+/** SIN 5 — PRIDE: 3 phases; the SHIELD window lengthens + recurs faster each phase. */
+export const PRIDE_DEF: BossDef = {
+  id: 'sin-pride',
+  name: PRIDE.name,
+  world: 'hell',
+  placement: PRIDE.placement,
+  sprite: { key: 'pride', scale: PRIDE.scale, tint: PRIDE.color },
+  maxHP: PRIDE.maxHP,
+  moveTilesPerSec: PRIDE.moveTilesPerSec,
+  meleeRange: PRIDE.meleeRange,
+  preferredRange: PRIDE.preferredRange,
+  leashRange: PRIDE.leashRange,
+  activationRange: PRIDE.activationRange,
+  phases: [
+    {
+      fromRatio: 1,
+      attacks: [
+        { kind: 'melee', damage: PRIDE.meleeDamage, cooldownMs: PRIDE.meleeCooldownMs, range: PRIDE.meleeRange },
+        { kind: 'volley', damage: PRIDE.volleyDamage, cooldownMs: PRIDE.volleyCooldownMs, range: PRIDE.volleyRange, bolts: PRIDE.volleyCount, spread: 0.16, speed: PRIDE.volleySpeed },
+        { kind: 'shield', damage: 0, cooldownMs: PRIDE.shieldCadenceMsP1, range: 0, durationMs: PRIDE.shieldDurationMsP1 },
+      ],
+    },
+    {
+      fromRatio: PRIDE.phase2Threshold,
+      attacks: [
+        { kind: 'melee', damage: PRIDE.meleeDamage, cooldownMs: PRIDE.meleeCooldownMs, range: PRIDE.meleeRange },
+        { kind: 'volley', damage: PRIDE.volleyDamage, cooldownMs: PRIDE.volleyCooldownMs, range: PRIDE.volleyRange, bolts: PRIDE.volleyCount, spread: 0.16, speed: PRIDE.volleySpeed },
+        { kind: 'shield', damage: 0, cooldownMs: PRIDE.shieldCadenceMsP2, range: 0, durationMs: PRIDE.shieldDurationMsP2 },
+      ],
+    },
+    {
+      fromRatio: PRIDE.phase3Threshold,
+      attacks: [
+        { kind: 'melee', damage: PRIDE.meleeDamage, cooldownMs: PRIDE.meleeCooldownMs, range: PRIDE.meleeRange },
+        { kind: 'volley', damage: PRIDE.volleyDamage, cooldownMs: PRIDE.volleyCooldownMs, range: PRIDE.volleyRange, bolts: PRIDE.volleyCount, spread: 0.16, speed: PRIDE.volleySpeed },
+        { kind: 'shield', damage: 0, cooldownMs: PRIDE.shieldCadenceMsP3, range: 0, durationMs: PRIDE.shieldDurationMsP3 },
+      ],
+    },
+  ],
+  xpReward: PRIDE.xpReward,
+  holyPowerDrop: PRIDE.holyPowerDrop,
+};
+
 /** The Sin bosses in GAUNTLET ORDER (index 0 = Sin 1 = Wrath, fought first). */
-export const SIN_DEFS: readonly BossDef[] = [WRATH_DEF, SLOTH_DEF, GLUTTONY_DEF];
+export const SIN_DEFS: readonly BossDef[] = [WRATH_DEF, SLOTH_DEF, GLUTTONY_DEF, ENVY_DEF, PRIDE_DEF];
