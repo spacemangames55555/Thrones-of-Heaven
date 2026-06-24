@@ -19,11 +19,13 @@ import { DarkPortal } from '../entities/DarkPortal';
 import { HeavenPortal } from '../entities/HeavenPortal';
 import { FlamingSword } from '../entities/FlamingSword';
 import { Cherub } from '../entities/Cherub';
-import { ArchangelMichael } from '../entities/ArchangelMichael';
 import { HellPortal } from '../entities/HellPortal';
 import { Demon } from '../entities/Demon';
+import { Boss } from '../boss/Boss';
+import type { BossDef, BossHooks } from '../boss/bossTypes';
+import { MICHAEL_DEF, TEST_BOSS_DEF } from '../boss/bossData';
 import { PortalDefense } from '../encounter/PortalDefense';
-import { buildHeavenMapData, HEAVEN_WIDTH, HEAVEN_HEIGHT, HEAVEN_CHERUB_SPAWNS, MICHAEL_SANCTUM, THRONE_POSITION } from '../map/heavenWorld';
+import { buildHeavenMapData, HEAVEN_WIDTH, HEAVEN_HEIGHT, HEAVEN_CHERUB_SPAWNS, THRONE_POSITION } from '../map/heavenWorld';
 import { buildHellMapData, HELL_WIDTH, HELL_HEIGHT, HELL_DEMON_SPAWNS, SATAN_LAIR } from '../map/hellWorld';
 import { WORLD_EARTH, WORLD_HEAVEN, WORLD_HELL, type WorldId, type WorldRuntime } from '../world/worlds';
 import { ProjectileSystem } from '../combat/ProjectileSystem';
@@ -103,7 +105,6 @@ import {
   GUARDIAN_BOLT_RADIUS,
   CHERUB_BOLT_RADIUS,
   type CherubVariantKey,
-  MICHAEL,
   HEAVEN_WORLD_GAP,
   HEAVEN_ARRIVAL_OFFSET,
   EARTH_RETURN_OFFSET,
@@ -244,13 +245,29 @@ export class MainScene extends Phaser.Scene {
   // dev-spawnable). They live in whichever world they were spawned in.
   private cherubs: Cherub[] = [];
 
-  // Archangel Michael: the unique multi-phase Heaven boss + his summoned adds + a
-  // dedicated boss HP bar (UI camera). A triggerable encounter unit.
-  private michael!: ArchangelMichael;
-  private michaelAdds: Cherub[] = [];
-  private michaelBar!: HealthBar;
-  private michaelBarBg!: Phaser.GameObjects.Rectangle;
-  private michaelNameText!: Phaser.GameObjects.Text;
+  // BOSS FRAMEWORK: every boss is a generic data-driven Boss controller (see
+  // src/boss). `michael` is the ported Archangel Michael (a Boss); `bosses` holds
+  // all live framework bosses; `bossAdds` tracks each boss's summoned reinforcements
+  // (keyed by boss id) for the cap + clearing. One shared boss HP bar (UI camera).
+  private michael!: Boss;
+  private bosses: Boss[] = [];
+  private bossAdds = new Map<string, (Cherub | Demon)[]>();
+  private bossBar!: HealthBar;
+  private bossBarBg!: Phaser.GameObjects.Rectangle;
+  private bossNameText!: Phaser.GameObjects.Text;
+  /** The scene-side effect hooks every Boss uses — reusing existing systems. */
+  private readonly bossHooks: BossHooks = {
+    fireBolts: (origin, dirs, damage, speed, range) => {
+      for (const d of dirs) {
+        this.projectiles.spawn({ x: origin.x, y: origin.y, dirX: d.x, dirY: d.y, speed, damage, maxRange: range, faction: 'enemy', color: 0xfff1b8, radius: 9 });
+      }
+    },
+    meleeHit: (damage) => this.onCherubMelee(damage), // reuse: damage the player
+    slam: (x, y, radius, damage) => this.bossSlam(x, y, radius, damage),
+    telegraph: (x, y, radius, durationMs) => this.bossTelegraph(x, y, radius, durationMs),
+    summon: (boss, enemy, count, cap) => this.summonForBoss(boss.id, boss.x, boss.y, boss.name, enemy, count, cap),
+    lineOfSight: (ax, ay, bx, by) => this.hasLineOfSight(ax, ay, bx, by),
+  };
 
   // God's Judgment beat: the throne set piece, the Michael-gated scripted
   // sequence, and the Hell portal it spawns. State is centralized + serializable.
@@ -483,7 +500,7 @@ export class MainScene extends Phaser.Scene {
     this.createHolyPowerHud();
     this.tracker = new QuestTracker(this);
     this.createQuestHud();
-    this.createMichaelHud(); // the boss HP bar (UI partition)
+    this.createBossHud(); // the boss HP bar (UI partition)
     this.createDevTools(); // dev panel + dev keys (gated by DEV_MODE)
     this.createFadeOverlay(); // full-screen fade for portal transitions (UI partition)
 
@@ -526,7 +543,7 @@ export class MainScene extends Phaser.Scene {
       this.haltTownsfolk();
       this.haltGuardians();
       this.haltCherubs();
-      this.haltMichael();
+      this.haltBosses();
       this.haltDemons();
       this.corruptButton.setVisible(false);
       this.readout.update();
@@ -550,7 +567,7 @@ export class MainScene extends Phaser.Scene {
       this.haltTownsfolk();
       this.haltGuardians();
       this.haltCherubs();
-      this.haltMichael();
+      this.haltBosses();
       this.haltDemons();
       this.readout.update();
       return;
@@ -597,7 +614,7 @@ export class MainScene extends Phaser.Scene {
     // gate, projectiles + pickups all run for every world — distant enemies idle
     // (leashed), and the pickup/projectile systems carry items in any world.
     this.updateCherubs();
-    this.updateMichael();
+    this.updateBosses();
     this.updateDemons();
     this.updateGodJudgment();
     this.projectiles.update(delta, this.player.x, this.player.y, PROJECTILE_PLAYER_HIT_RADIUS);
@@ -772,19 +789,7 @@ export class MainScene extends Phaser.Scene {
     this.hitGuardiansInRange(sx, sy, PLAYER_ATTACK_RANGE, this.progression.effectiveDamage);
     this.hitCherubsInRange(sx, sy, PLAYER_ATTACK_RANGE, this.progression.effectiveDamage);
     this.hitDemonsInRange(sx, sy, PLAYER_ATTACK_RANGE, this.progression.effectiveDamage);
-    this.hitMichael(sx, sy, PLAYER_ATTACK_RANGE, this.progression.effectiveDamage);
-  }
-
-  /** Apply a player hit to Michael if in range (the boss is a single entity). */
-  private hitMichael(x: number, y: number, range: number, damage: number): void {
-    if (!this.michael || !this.michael.isAlive) return;
-    if (this.michael.distanceTo(x, y) <= range + 24) {
-      const dealt = this.michael.takeHit(damage);
-      if (dealt > 0) {
-        this.spawnDamageNumber(this.michael.x, this.michael.y - 40, dealt, '#ffffff');
-        this.lastCombatTime = this.time.now;
-      }
-    }
+    this.hitBossesInRange(sx, sy, PLAYER_ATTACK_RANGE, this.progression.effectiveDamage);
   }
 
   /** Apply damage to every flaming-sword guardian within `range` of (x,y); award XP on kills. */
@@ -892,7 +897,7 @@ export class MainScene extends Phaser.Scene {
       this.guardians.some((g) => g.isAggro) ||
       this.cherubs.some((c) => c.isAggro) ||
       this.demons.some((d) => d.isAggro) ||
-      (this.michael?.isAggro ?? false);
+      this.bosses.some((b) => b.isAggro);
     if (enemiesEngaged) this.lastCombatTime = this.time.now;
     const outOfCombat = !enemiesEngaged && this.time.now - this.lastCombatTime > PLAYER_HP_REGEN_DELAY_MS;
     if (outOfCombat && this.playerHealth.current < this.playerHealth.max) {
@@ -1045,12 +1050,13 @@ export class MainScene extends Phaser.Scene {
       }
     }
 
-    if (this.michael && this.michael.isAlive && !this.dashHits.has(this.michael)) {
-      if (this.michael.distanceTo(px, py) <= DASH_HIT_RADIUS + 24) {
-        this.dashHits.add(this.michael);
-        const dealt = this.michael.takeHit(dmg);
+    for (const b of this.bosses) {
+      if (!b.isAlive || this.dashHits.has(b)) continue;
+      if (b.distanceTo(px, py) <= DASH_HIT_RADIUS + 24) {
+        this.dashHits.add(b);
+        const dealt = b.takeHit(dmg);
         if (dealt > 0) {
-          this.spawnDamageNumber(this.michael.x, this.michael.y - 40, dealt, '#ffe9a8');
+          this.spawnDamageNumber(b.x, b.y - 40, dealt, '#ffe9a8');
           this.lastCombatTime = this.time.now;
         }
       }
@@ -1424,49 +1430,37 @@ export class MainScene extends Phaser.Scene {
     this.hitGuardiansInRange(px, py, R, HUGE);
     this.hitCherubsInRange(px, py, R, HUGE); // includes Michael's summoned adds
     this.hitDemonsInRange(px, py, R, HUGE); // Hell's demons
-    if (includeBoss) this.hitMichael(px, py, R, HUGE); // → die → onDefeat (rewards + hook)
+    if (includeBoss) this.hitBossesInRange(px, py, R, HUGE); // → die → onDefeat (rewards + hook)
   }
 
-  // --- Archangel Michael: the multi-phase, summoning boss -------------------
+  // --- BOSS FRAMEWORK: generic, data-driven bosses --------------------------
   //
-  // A TRIGGERABLE unit (approach → activate → phased fight w/ capped summons →
-  // defeat). The phase machine lives on the entity (ArchangelMichael); the scene
-  // wires its hooks to the existing projectile / Cherub / pickup / XP systems and
-  // owns the boss HP bar. NOT wired to the quest chain.
+  // Every boss is a generic Boss controller (src/boss/Boss.ts) read from a BossDef
+  // (src/boss/bossData.ts). The scene owns the shared boss HP bar, summon/cap
+  // tracking, and the effect hooks (this.bossHooks → existing projectile/melee/
+  // pickup/XP systems). Archangel Michael is just MICHAEL_DEF on this framework
+  // (identical play). A future quest can drive a boss via activate()/reset().
 
-  /** Build Michael at his sanctum (Heaven) + a marker; wire his hooks. World object. */
+  /** Create a boss from its definition at a world position; wire it. Returns it. */
+  private spawnBoss(def: BossDef, worldX: number, worldY: number, mapLayer: Phaser.Tilemaps.TilemapLayerBase): Boss {
+    const boss = new Boss(this, def, worldX, worldY, this.bossHooks);
+    boss.onPhaseChange = (phase) => this.onBossPhaseChange(boss, phase);
+    boss.onDefeat = () => this.onBossDefeated(boss);
+    this.physics.add.collider(boss.sprite, mapLayer);
+    this.uiCamera?.ignore(boss.objects());
+    this.bosses.push(boss);
+    return boss;
+  }
+
+  /** Build Archangel Michael (MICHAEL_DEF) at his sanctum + the sanctum marker. */
   private setupMichael(): void {
     const o = this.heavenMap.bounds;
-    const sx = o.x + MICHAEL_SANCTUM.x;
-    const sy = o.y + MICHAEL_SANCTUM.y;
+    const sx = o.x + MICHAEL_DEF.placement.x;
+    const sy = o.y + MICHAEL_DEF.placement.y;
     this.addHeavenLabel(sx, sy - 60, '⚔ Michael’s Sanctum ⚔', '#fff3c4');
     const ring = this.add.circle(sx, sy, 30, 0xfff1b8, 0.22).setDepth(6);
     this.tweens.add({ targets: ring, scale: 2, alpha: 0.05, duration: 1400, yoyo: true, repeat: -1, ease: 'Sine.inOut' });
-
-    this.michael = new ArchangelMichael(this, sx, sy);
-    this.michael.onFire = (origin, dirs) => {
-      const cfg = MICHAEL.phases[this.michael.currentPhase - 1];
-      for (const d of dirs) {
-        this.projectiles.spawn({
-          x: origin.x,
-          y: origin.y,
-          dirX: d.x,
-          dirY: d.y,
-          speed: MICHAEL.projectileSpeed,
-          damage: cfg.projectileDamage,
-          maxRange: MICHAEL.projectileRange,
-          faction: 'enemy',
-          color: 0xfff1b8,
-          radius: MICHAEL.boltRadius,
-        });
-      }
-    };
-    this.michael.onMelee = (dmg) => this.onCherubMelee(dmg); // reuse: damage the player
-    this.michael.onSummon = (count) => this.summonMichaelWave(count);
-    this.michael.onPhaseChange = (phase) => this.onMichaelPhaseChange(phase);
-    this.michael.onDefeat = () => this.onMichaelDefeated();
-    this.physics.add.collider(this.michael.sprite, this.heavenMap.layer);
-    this.uiCamera?.ignore(this.michael.objects());
+    this.michael = this.spawnBoss(MICHAEL_DEF, sx, sy, this.heavenMap.layer);
   }
 
   /** TRIGGER: begin the Michael fight (proximity or dev button). */
@@ -1474,96 +1468,127 @@ export class MainScene extends Phaser.Scene {
     this.michael.activate();
   }
 
-  /** RESET: Michael dormant, full HP, Phase 1, adds cleared, bar hidden. */
+  /** RESET: Michael dormant, full HP, Phase 1, adds cleared. */
   private resetMichael(): void {
-    this.clearMichaelAdds();
+    this.clearBossAdds(this.michael.id);
     this.michael.reset();
-    this.michaelBar?.setVisible(false);
-    this.michaelBarBg?.setVisible(false);
-    this.michaelNameText?.setVisible(false);
   }
 
-  /** Drive Michael each frame: proximity activation, behavior, the boss bar. */
-  private updateMichael(): void {
-    if (!this.michael) return;
-    // Proximity activation: nearing the sanctum wakes the boss.
-    if (!this.michael.isActive && this.michael.isAlive) {
-      if (this.michael.distanceTo(this.player.x, this.player.y) <= MICHAEL.activationRange) this.startMichaelFight();
+  /** Remove every dev-spawned framework boss (all but Michael) + their adds. */
+  private removeDevBosses(): void {
+    for (const b of this.bosses) {
+      if (b === this.michael) continue;
+      this.clearBossAdds(b.id);
+      b.destroy();
     }
-    const los = this.hasLineOfSight(this.michael.x, this.michael.y, this.player.x, this.player.y);
-    this.michael.update(this.player.x, this.player.y, this.time.now, los);
-    this.refreshMichaelBar();
+    this.bosses = this.bosses.filter((b) => b === this.michael);
   }
 
-  private haltMichael(): void {
-    this.michael?.halt();
-  }
-
-  /** Summon up to the cap: reinforcement Cherubs ring Michael (on walkable tiles). */
-  private summonMichaelWave(count: number): void {
-    this.michaelAdds = this.michaelAdds.filter((a) => a.isAlive);
-    const room = MICHAEL.summonCap - this.michaelAdds.length;
-    const n = Math.min(count, room);
-    if (n <= 0) return;
-    for (let i = 0; i < n; i++) {
-      const a = Math.random() * Math.PI * 2;
-      const r = 90 + Math.random() * 50;
-      const spot = this.heavenMap.nearestWalkableWorld(this.michael.x + Math.cos(a) * r, this.michael.y + Math.sin(a) * r);
-      const c = this.spawnCherub(MICHAEL.summonType, spot.x, spot.y, this.heavenMap.layer);
-      this.michaelAdds.push(c);
+  /** Drive every framework boss: proximity activation, behavior, then the boss bar. */
+  private updateBosses(): void {
+    for (const b of this.bosses) {
+      if (!b.isActive && b.isAlive && b.distanceTo(this.player.x, this.player.y) <= b.def.activationRange) b.activate();
+      b.update(this.player.x, this.player.y, this.time.now);
     }
-    this.showBanner('Michael summons reinforcements!', 1400);
+    // Prune defeated bosses (keep Michael — he resets rather than vanishes).
+    if (this.bosses.some((b) => !b.isAlive && b !== this.michael)) {
+      for (const b of this.bosses) if (!b.isAlive && b !== this.michael) this.clearBossAdds(b.id);
+      this.bosses = this.bosses.filter((b) => b.isAlive || b === this.michael);
+    }
+    this.refreshBossBar();
   }
 
-  /** Remove Michael's summoned adds (defeat / reset) — also from the live cherub list. */
-  private clearMichaelAdds(): void {
-    const set = new Set<Cherub>(this.michaelAdds);
-    for (const a of this.michaelAdds) if (a.isAlive) a.destroy();
+  private haltBosses(): void {
+    for (const b of this.bosses) b.halt();
+  }
+
+  /** Apply a player hit to every framework boss in range. */
+  private hitBossesInRange(x: number, y: number, range: number, damage: number): void {
+    for (const b of this.bosses) {
+      if (!b.isAlive) continue;
+      if (b.distanceTo(x, y) <= range + 24) {
+        const dealt = b.takeHit(damage);
+        if (dealt > 0) {
+          this.spawnDamageNumber(b.x, b.y - 40, dealt, '#ffffff');
+          this.lastCombatTime = this.time.now;
+        }
+      }
+    }
+  }
+
+  /** Boss summon hook: spawn up to the cap, tracked per boss, near the boss (on walkable tiles). */
+  private summonForBoss(bossId: string, bx: number, by: number, bossName: string, enemy: string, count: number, cap: number): void {
+    let adds = (this.bossAdds.get(bossId) ?? []).filter((a) => a.isAlive);
+    const n = Math.min(count, cap - adds.length);
+    if (n > 0) {
+      const map = this.activeMap();
+      const layer = map.layer;
+      for (let i = 0; i < n; i++) {
+        const a = Math.random() * Math.PI * 2;
+        const r = 90 + Math.random() * 50;
+        const spot = map.nearestWalkableWorld(bx + Math.cos(a) * r, by + Math.sin(a) * r);
+        const add = enemy === 'demon' ? this.spawnDemon(spot.x, spot.y, layer) : this.spawnCherub(enemy as CherubVariantKey, spot.x, spot.y, layer);
+        adds.push(add);
+      }
+      this.showBanner(`${bossName} summons reinforcements!`, 1400);
+    }
+    this.bossAdds.set(bossId, adds);
+  }
+
+  /** Remove a boss's summoned adds — also from the live cherub/demon lists. */
+  private clearBossAdds(bossId: string): void {
+    const adds = this.bossAdds.get(bossId);
+    if (!adds) return;
+    const set = new Set(adds);
+    for (const a of adds) if (a.isAlive) a.destroy();
     this.cherubs = this.cherubs.filter((c) => !set.has(c));
-    this.michaelAdds = [];
+    this.demons = this.demons.filter((d) => !set.has(d));
+    this.bossAdds.delete(bossId);
   }
 
-  /** Phase transition telegraph: flash + burst + banner so escalation is felt. */
-  private onMichaelPhaseChange(phase: number): void {
+  /** Phase-transition telegraph: flash + burst + banner so escalation is felt. */
+  private onBossPhaseChange(boss: Boss, phase: number): void {
     if (phase <= 1) return; // Phase 1 is activation, not an escalation beat
-    this.showBanner(`Archangel Michael — Phase ${phase}!`, 1800);
-    const ring = this.add.circle(this.michael.x, this.michael.y, 30, 0xffffff, 0).setStrokeStyle(5, 0xfff1b8, 0.9).setDepth(13);
+    this.showBanner(`${boss.name} — Phase ${phase}!`, 1800);
+    const ring = this.add.circle(boss.x, boss.y, 30, 0xffffff, 0).setStrokeStyle(5, 0xfff1b8, 0.9).setDepth(13);
     this.worldFx.add(ring);
     this.tweens.add({ targets: ring, scale: 4, alpha: 0, duration: 520, ease: 'Quad.out', onComplete: () => ring.destroy() });
-    this.michael.sprite.setTint(0xffffff).setTintMode(Phaser.TintModes.FILL);
-    this.time.delayedCall(140, () => { if (this.michael.isAlive) this.michael.sprite.setTint(MICHAEL.color).setTintMode(Phaser.TintModes.MULTIPLY); });
+    boss.sprite.setTint(0xffffff).setTintMode(Phaser.TintModes.FILL);
+    this.time.delayedCall(140, () => { if (boss.isAlive) boss.sprite.setTint(boss.def.sprite.tint).setTintMode(Phaser.TintModes.MULTIPLY); });
   }
 
-  /** Defeat: clear adds, climactic burst, big XP + Holy Power, victory + God hook. */
-  private onMichaelDefeated(): void {
-    this.michaelDefeated = true; // GATE: unlocks the God's-judgment beat at the throne
-    this.clearMichaelAdds();
+  /** Defeat (generic): clear adds, climactic burst, XP + Holy Power, then the boss's hook. */
+  private onBossDefeated(boss: Boss): void {
+    this.clearBossAdds(boss.id);
     this.spawnLevelUpBurst(); // a quick radiant burst (reuse)
-    const burst = this.add.circle(this.michael.x, this.michael.y, 40, 0xfff1b8, 0.5).setDepth(13);
+    const burst = this.add.circle(boss.x, boss.y, 40, 0xfff1b8, 0.5).setDepth(13);
     this.worldFx.add(burst);
     this.tweens.add({ targets: burst, scale: 6, alpha: 0, duration: 900, ease: 'Quad.out', onComplete: () => burst.destroy() });
-    this.gainXP(MICHAEL.xpReward);
-    this.dropHolyPower(this.michael.x, this.michael.y, MICHAEL.holyPowerDrop);
-    this.showBanner(MICHAEL_VICTORY_LINE, 3000);
-    this.time.delayedCall(3200, () => this.showBanner(GOD_JUDGMENT_HOOK, 4200));
-    this.michaelBar?.setVisible(false);
-    this.michaelBarBg?.setVisible(false);
-    this.michaelNameText?.setVisible(false);
+    if (boss.def.xpReward > 0) this.gainXP(boss.def.xpReward);
+    if (boss.def.holyPowerDrop > 0) this.dropHolyPower(boss.x, boss.y, boss.def.holyPowerDrop);
+
+    if (boss.def.onDefeatHook === 'god-judgment') {
+      this.michaelDefeated = true; // GATE: unlocks the God's-judgment beat at the throne
+      this.showBanner(MICHAEL_VICTORY_LINE, 3000);
+      this.time.delayedCall(3200, () => this.showBanner(GOD_JUDGMENT_HOOK, 4200));
+    } else {
+      this.showBanner(`${boss.name} defeated!`, 2400);
+    }
   }
 
-  /** The dedicated boss HP bar (UI camera, fixed): name + phase + HP, top-centre. */
-  private createMichaelHud(): void {
+  /** The shared boss HP bar (UI camera, fixed): name + phase + HP, top-centre. */
+  private createBossHud(): void {
     const depth = 2050;
-    this.michaelBarBg = this.add
+    this.bossBarBg = this.add
       .rectangle(0, 0, 320, 22, 0x10060a, 0.85)
       .setStrokeStyle(2, 0xfff1b8, 0.95)
       .setScrollFactor(0)
       .setDepth(depth)
       .setVisible(false);
-    this.michaelBar = new HealthBar(this, 312, 16, depth + 1, 0xffe06a);
-    this.michaelBar.setScrollFactor(0);
-    this.michaelBar.setVisible(false);
-    this.michaelNameText = this.add
+    this.bossBar = new HealthBar(this, 312, 16, depth + 1, 0xffe06a);
+    this.bossBar.setScrollFactor(0);
+    this.bossBar.setVisible(false);
+    this.bossNameText = this.add
       .text(0, 0, '', { fontFamily: 'system-ui, sans-serif', fontSize: '13px', color: '#fff3c4', fontStyle: 'bold' })
       .setOrigin(0.5, 1)
       .setScrollFactor(0)
@@ -1575,24 +1600,42 @@ export class MainScene extends Phaser.Scene {
       const insets = getInsets(this);
       const cx = this.scale.width / 2;
       const top = insets.top + UI_MARGIN + 40; // below the top-centre quest tracker
-      this.michaelBarBg.setPosition(cx, top + 11);
-      this.michaelBar.setPosition(cx - 156, top + 11);
-      this.michaelNameText.setPosition(cx, top - 2);
+      this.bossBarBg.setPosition(cx, top + 11);
+      this.bossBar.setPosition(cx - 156, top + 11);
+      this.bossNameText.setPosition(cx, top - 2);
     };
     layout();
     this.scale.on(Phaser.Scale.Events.RESIZE, layout);
   }
 
-  /** Sync the boss bar to Michael's live HP + phase; show only while he fights (in Heaven). */
-  private refreshMichaelBar(): void {
-    const show = (this.michael?.isActive ?? false) && this.activeWorld === WORLD_HEAVEN;
-    this.michaelBarBg.setVisible(show);
-    this.michaelBar.setVisible(show);
-    this.michaelNameText.setVisible(show);
-    if (show) {
-      this.michaelBar.setRatio(this.michael.hpRatio);
-      this.michaelNameText.setText(`Archangel Michael — Phase ${this.michael.currentPhase}`);
+  /** Show the bar for the boss the player is currently engaged with (active + near). */
+  private refreshBossBar(): void {
+    const boss = this.bosses.find((b) => b.isAggro);
+    const show = boss !== undefined;
+    this.bossBarBg.setVisible(show);
+    this.bossBar.setVisible(show);
+    this.bossNameText.setVisible(show);
+    if (boss) {
+      this.bossBar.setRatio(boss.hpRatio);
+      this.bossNameText.setText(`${boss.name} — Phase ${boss.currentPhase}`);
     }
+  }
+
+  /** Slam SPECIAL effect: damage the player if within the AoE + an impact ring. */
+  private bossSlam(x: number, y: number, radius: number, damage: number): void {
+    const ring = this.add.circle(x, y, radius, 0xff5a2a, 0.22).setStrokeStyle(4, 0xffd24a, 0.95).setDepth(13);
+    this.worldFx.add(ring);
+    this.tweens.add({ targets: ring, alpha: 0, scale: 1.1, duration: 300, ease: 'Quad.out', onComplete: () => ring.destroy() });
+    if (!this.playerDead && Phaser.Math.Distance.Between(this.player.x, this.player.y, x, y) <= radius) {
+      this.onCherubMelee(damage); // reuse: damage the player
+    }
+  }
+
+  /** A readable wind-up ring (telegraph) for a special move — the player can dodge. */
+  private bossTelegraph(x: number, y: number, radius: number, durationMs: number): void {
+    const ring = this.add.circle(x, y, radius, 0xff3b1f, 0.1).setStrokeStyle(3, 0xff6a3a, 0.85).setDepth(12);
+    this.worldFx.add(ring);
+    this.tweens.add({ targets: ring, alpha: { from: 0.08, to: 0.42 }, scale: { from: 0.5, to: 1 }, duration: durationMs, onComplete: () => ring.destroy() });
   }
 
   /** DEV: jump just south of Michael's sanctum (Heaven), travelling there if needed. */
@@ -1600,13 +1643,26 @@ export class MainScene extends Phaser.Scene {
     this.cancelDash();
     const sx = this.michael.x;
     const sy = this.michael.y;
-    const place = (): void => {
-      this.player.sprite.setPosition(sx, sy + MICHAEL.activationRange + 80);
+    const off = this.michael.def.activationRange + 80;
+    if (this.activeWorld !== WORLD_HEAVEN) this.travelToWorld(WORLD_HEAVEN, { x: sx, y: sy + off });
+    else {
+      this.player.sprite.setPosition(sx, sy + off);
       this.player.setDirection(0, 0);
       this.cameras.main.centerOn(sx, sy);
-    };
-    if (this.activeWorld !== WORLD_HEAVEN) this.travelToWorld(WORLD_HEAVEN, { x: sx, y: sy + MICHAEL.activationRange + 80 });
-    else place();
+    }
+  }
+
+  /** DEV: spawn the data-only TEST BOSS just ahead of the player, in the active world. */
+  private devSpawnTestBoss(): void {
+    const len = Math.hypot(this.player.facingX, this.player.facingY) || 1;
+    const ahead = 300;
+    const b = this.spawnBoss(
+      TEST_BOSS_DEF,
+      this.player.x + (this.player.facingX / len) * ahead,
+      this.player.y + (this.player.facingY / len) * ahead,
+      this.activeMap().layer,
+    );
+    b.activate();
   }
 
   // --- Portal Defense: townsfolk + the wave encounter -----------------------
@@ -2972,8 +3028,10 @@ export class MainScene extends Phaser.Scene {
     this.clearCherubs();
     this.seedHeavenCherubs();
 
-    // Reset the Michael encounter: dormant, full HP, Phase 1, adds cleared.
+    // Reset the Michael encounter: dormant, full HP, Phase 1, adds cleared, and
+    // remove any dev-spawned framework bosses (e.g. the test boss) + their adds.
     this.resetMichael();
+    this.removeDevBosses();
 
     // Reset God's-judgment beat: gate re-locked, judgment un-fired, Hell portal gone.
     this.resetGodJudgment();
@@ -3033,6 +3091,7 @@ export class MainScene extends Phaser.Scene {
       { label: 'Teleport to Michael', onPress: () => this.devTeleportToMichael() },
       { label: 'Start Michael Fight', onPress: () => this.startMichaelFight() },
       { label: 'Reset Michael', onPress: () => this.resetMichael() },
+      { label: 'Spawn Test Boss', onPress: () => this.devSpawnTestBoss() },
       { label: 'Teleport to Throne', onPress: () => this.devTeleportToThrone() },
       { label: "Trigger God's Judgment", onPress: () => this.devTriggerGodJudgment() },
       { label: 'Reset Judgment', onPress: () => this.resetGodJudgment() },

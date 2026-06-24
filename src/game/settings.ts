@@ -371,9 +371,10 @@ export const CHERUB_BOLT_RADIUS = 8;
 //
 // THE climactic fight. A single unique boss (not a spawnable type) — a hybrid
 // (holy bolts + flaming-sword melee) who ESCALATES across 3 HP-gated PHASES and
-// SUMMONS Cherub reinforcements. The ONE new system is the phase state machine
-// (see ArchangelMichael.ts); attacks/summons/drops all reuse existing systems.
-// Edit any field to retune the hardest fight in the game.
+// SUMMONS Cherub reinforcements. He now runs on the generic boss framework as a
+// data-driven BossDef (MICHAEL_DEF in src/boss/bossData.ts, built from these
+// values); the generic controller (src/boss/Boss.ts) drives the phase state
+// machine. Edit any field here to retune the hardest fight in the game.
 
 /** One phase's escalating attack profile (Phase 3 is the most intense). */
 export interface MichaelPhaseConfig {
