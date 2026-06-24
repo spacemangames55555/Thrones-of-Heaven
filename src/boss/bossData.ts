@@ -14,8 +14,9 @@ import type { BossDef } from './bossTypes';
  *         activationRange.
  *       - phases[]: ordered high→low `fromRatio` (1.0, .66, .33, …; any count). Each:
  *           attacks[]: pick from the library — 'melee' / 'volley' / 'barrage' /
- *             'slam' / 'charge', each with its params (damage, cooldownMs, range,
- *             bolts/spread/speed, radius, telegraphMs).
+ *             'slam' / 'charge' / 'mirror' (reactive) / 'shield' (invuln window),
+ *             each with its params (damage, cooldownMs, range, bolts/spread/speed,
+ *             radius, telegraphMs, dashSpeed, durationMs).
  *           summon?: { enemy, count, cap, cadenceMs } (reuses existing enemies).
  *       - rewards: xpReward, holyPowerDrop, optional onDefeatHook.
  *  3. Spawn/seed it (or add a dev button). NO new code needed.

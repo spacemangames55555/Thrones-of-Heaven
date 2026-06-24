@@ -15,25 +15,33 @@ export type BossAttackKind =
   | 'volley' // single/fan of projectiles (reuses the projectile system)
   | 'barrage' // SPECIAL: a telegraphed ring/nova burst of projectiles
   | 'slam' // SPECIAL: a telegraphed AoE around the boss the player can dodge
-  | 'charge'; // SPECIAL: a telegraphed dash at the player dealing contact damage
+  | 'charge' // SPECIAL: a telegraphed dash at the player dealing contact damage
+  | 'mirror' // REACTIVE: "answers" the player — return volley to ranged, mimic-dash to a dash
+  | 'shield'; // DEFENSIVE: a telegraphed invulnerability window (damage blocked), then vulnerable
 
 export interface BossAttack {
   readonly kind: BossAttackKind;
   readonly damage: number;
-  /** Cooldown between uses (ms). */
+  /** Cooldown between uses (ms). For 'shield' this is the cadence between windows;
+   *  for 'mirror' the minimum gap between reactions (so it answers, not clones). */
   readonly cooldownMs: number;
-  /** Reach: melee/ranged/charge use-distance; for 'slam' this is the trigger distance. */
+  /** Reach: melee/ranged/charge use-distance; for 'slam' the trigger distance;
+   *  for 'mirror' the max distance it will react within; ignored by 'shield'. */
   readonly range: number;
-  /** volley fan count / barrage ring count. */
+  /** volley fan count / barrage ring count / mirror return-volley count. */
   readonly bolts?: number;
   /** radians between bolts in a volley fan. */
   readonly spread?: number;
-  /** projectile speed (volley/barrage) or dash speed (charge). */
+  /** projectile speed (volley/barrage/mirror) or dash speed (charge). */
   readonly speed?: number;
   /** slam AoE radius (px). */
   readonly radius?: number;
   /** SPECIAL wind-up before the effect lands (ms) — the readable telegraph. */
   readonly telegraphMs?: number;
+  /** 'mirror' dash-mimic velocity (px/sec) when it answers a player dash. */
+  readonly dashSpeed?: number;
+  /** 'shield' invulnerability-window length (ms) the boss blocks all damage for. */
+  readonly durationMs?: number;
 }
 
 /** Reinforcements a phase summons (reuses existing enemies as adds). */
@@ -106,4 +114,8 @@ export interface BossHooks {
   summon(boss: { id: string; x: number; y: number; name: string }, enemy: string, count: number, cap: number): void;
   /** Line of sight between two world points (gates ranged fire). */
   lineOfSight(ax: number, ay: number, bx: number, by: number): boolean;
+  /** Raise/drop the boss's SHIELD bubble visual (the invuln-window telegraph). */
+  shield(boss: { id: string; x: number; y: number }, active: boolean): void;
+  /** Feedback that a hit was BLOCKED by an active shield (a spark at the boss). */
+  blocked(x: number, y: number): void;
 }

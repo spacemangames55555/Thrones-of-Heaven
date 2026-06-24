@@ -98,6 +98,46 @@ const DRAWERS: Record<string, (g: Phaser.GameObjects.Graphics) => { w: number; h
     return { w, h };
   },
 
+  // SIN 4 — ENVY (the Mirror): a tall twin-faced figure split down the middle (a
+  // mirrored silhouette) reading as "duality / reflection".
+  envy: (g) => {
+    const w = 58;
+    const h = 70;
+    const cx = w / 2;
+    g.fillStyle(0xffffff, 1); // body
+    g.fillRoundedRect(cx - 13, 16, 26, h - 20, 8);
+    g.fillStyle(0x000000, 0.35); // mirror seam down the centre
+    g.fillRect(cx - 1, 16, 2, h - 20);
+    g.fillStyle(0xffffff, 1); // two heads (the twin / mirror)
+    g.fillCircle(cx - 8, 12, 8);
+    g.fillCircle(cx + 8, 12, 8);
+    g.fillStyle(0x000000, 0.5); // facing-away eyes (envious glance)
+    g.fillCircle(cx - 10, 12, 2);
+    g.fillCircle(cx + 10, 12, 2);
+    return { w, h };
+  },
+
+  // SIN 5 — PRIDE (the Shielded): a regal crowned figure behind a kite shield —
+  // reads as "guarded / haughty".
+  pride: (g) => {
+    const w = 64;
+    const h = 72;
+    const cx = w / 2;
+    g.fillStyle(0xffffff, 1); // tall proud body
+    g.fillRoundedRect(cx - 11, 20, 22, h - 24, 7);
+    g.fillCircle(cx, 16, 8); // head
+    g.fillStyle(0xffffff, 1); // crown
+    g.fillTriangle(cx - 9, 9, cx - 9, 1, cx - 4, 7);
+    g.fillTriangle(cx, 9, cx, -2, cx + 0, 9);
+    g.fillTriangle(cx + 9, 9, cx + 9, 1, cx + 4, 7);
+    g.fillRect(cx - 9, 7, 18, 3);
+    g.fillStyle(0xffffff, 0.55); // raised kite shield (the invuln motif)
+    g.fillTriangle(cx + 6, 24, cx + 26, 30, cx + 12, h - 14);
+    g.lineStyle(2, 0xffffff, 0.9);
+    g.strokeTriangle(cx + 6, 24, cx + 26, 30, cx + 12, h - 14);
+    return { w, h };
+  },
+
   // A generic placeholder boss — a faceted crystalline core with an aura ring +
   // a "?" so it clearly reads as a DEV/test stand-in.
   'test-boss': (g) => {
