@@ -125,6 +125,11 @@ export const TERRAIN_TILE_IMAGES: { key: string; file: string }[] = [
   { key: 'lake', file: 'tiles/terrain/Lake.png' }, // Lake.png → "Lake"
   { key: 'forest', file: 'tiles/terrain/Lowland_forest.png' }, // Lowland_forest.png → "Lowland Forest"
   { key: 'wetland', file: 'tiles/terrain/Wetlandmarsh.png' }, // Wetlandmarsh.png → "Wetland / Marsh"
+  { key: 'grassland', file: 'tiles/terrain/Meadowgrassland.png' }, // Meadowgrassland.png → "Meadow / Grassland"
+  { key: 'steppe', file: 'tiles/terrain/Shrubsteppe.png' }, // Shrubsteppe.png → "Shrub-Steppe"
+  { key: 'scabland', file: 'tiles/terrain/Scabland.png' }, // Scabland.png → "Scabland / Coulee"
+  { key: 'farmland', file: 'tiles/terrain/Farmlandwheat.png' }, // Farmlandwheat.png → "Palouse Farmland"
+  { key: 'montane', file: 'tiles/terrain/Evergreenmontane_forest.png' }, // Evergreenmontane_forest.png → "Montane Forest"
 ];
 
 /** Texture cache key under which a terrain's real tile PNG is loaded. */

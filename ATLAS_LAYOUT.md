@@ -71,6 +71,11 @@ Currently mapped real tiles:
 | `Lake.png` | `lake` | Lake |
 | `Lowland_forest.png` | `forest` | Lowland Forest |
 | `Wetlandmarsh.png` | `wetland` | Wetland / Marsh |
+| `Meadowgrassland.png` | `grassland` | Meadow / Grassland |
+| `Shrubsteppe.png` | `steppe` | Shrub-Steppe |
+| `Scabland.png` | `scabland` | Scabland / Coulee |
+| `Farmlandwheat.png` | `farmland` | Palouse Farmland |
+| `Evergreenmontane_forest.png` | `montane` | Montane Forest |
 
 ## Swapping the WHOLE atlas at once (alternative)
 
