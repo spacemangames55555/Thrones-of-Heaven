@@ -164,6 +164,40 @@ export const DASH_SPEED = 760;
 export const DASH_HIT_RADIUS = 46;
 
 
+// --- The Power Swap: demonic → holy ----------------------------------------
+//
+// At God's judgment the player's power flips from "demonic" (how the game has
+// been played) to "holy". The swap is mechanically a RE-SKIN of the existing
+// kit (same damage/cooldown/energy/distance — power level UNCHANGED) PLUS one
+// new ability, the Holy Bolt. These constants tune ONLY the holy reflavor's
+// look and the new Holy Bolt; nothing here changes the demonic kit's mechanics.
+
+/** Golden tint applied to holy-reflavored ability visuals + the player aura. */
+export const HOLY_TINT = 0xffd24a;
+/** Melee swing arc color while HOLY (demonic stays the original pale gold). */
+export const HOLY_SLASH_COLOR = 0xffe066;
+/** Dash after-image color while HOLY (demonic stays the original cyan). */
+export const HOLY_DASH_COLOR = 0xffe066;
+/** Holy Bolt projectile color (radiant gold). */
+export const HOLY_BOLT_COLOR = 0xffd24a;
+
+// Holy Bolt — the NEW third player ability (a ranged holy projectile gained on
+// becoming holy). Reuses the projectile system with the PLAYER faction so it
+// damages enemies. Tune these five constants to retune the ability.
+/** Holy Bolt base damage (then + DMG_PER_LEVEL per level, like the melee swing). */
+export const PLAYER_HOLY_BOLT_DAMAGE = 30;
+/** Energy spent per Holy Bolt (reuses the dash's energy bar). */
+export const PLAYER_HOLY_BOLT_ENERGY_COST = 25;
+/** Minimum time between Holy Bolts, in ms (prevents spam). */
+export const PLAYER_HOLY_BOLT_COOLDOWN_MS = 650;
+/** Holy Bolt travel speed in px/sec. */
+export const PLAYER_HOLY_BOLT_SPEED = 560;
+/** Holy Bolt max travel distance in px before it despawns. */
+export const PLAYER_HOLY_BOLT_RANGE = 580;
+/** Holy Bolt collision radius (px) for striking enemies. */
+export const PLAYER_HOLY_BOLT_RADIUS = 9;
+
+
 // --- Combat Depth v1: Spirit Swarmer enemy (Spirit-Vision-gated) ------------
 //
 // A fast, weak swarmer that exists on the SPIRITUAL layer — only visible and

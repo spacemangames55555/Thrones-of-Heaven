@@ -35,6 +35,8 @@ import { Health } from '../combat/Health';
 import { HealthBar } from '../combat/HealthBar';
 import { AttackButton } from '../ui/AttackButton';
 import { DashButton } from '../ui/DashButton';
+import { HolyBoltButton } from '../ui/HolyBoltButton';
+import { PlayerPower } from '../player/PlayerPower';
 import { ANGEL_ENCOUNTER } from '../story/angelData';
 import { QuestChain, type QuestEvent } from '../quest/QuestChain';
 import {
@@ -110,6 +112,16 @@ import {
   EARTH_RETURN_OFFSET,
   WORLD_TRANSITION_MS,
   WORLD_TRANSITION_COOLDOWN_MS,
+  HOLY_TINT,
+  HOLY_SLASH_COLOR,
+  HOLY_DASH_COLOR,
+  HOLY_BOLT_COLOR,
+  PLAYER_HOLY_BOLT_DAMAGE,
+  PLAYER_HOLY_BOLT_ENERGY_COST,
+  PLAYER_HOLY_BOLT_COOLDOWN_MS,
+  PLAYER_HOLY_BOLT_SPEED,
+  PLAYER_HOLY_BOLT_RANGE,
+  PLAYER_HOLY_BOLT_RADIUS,
 } from './settings';
 import { TOWN_TILES } from '../town/townTiles';
 import { buildTown, type TownFeatures, type DoorFeature } from '../town/TownBuilder';
@@ -192,6 +204,13 @@ export class MainScene extends Phaser.Scene {
   private attackCooldownUntil = 0;
   private lastCombatTime = -1e9;
   private playerDead = false;
+
+  // The Power Swap: demonic (default) → holy (at God's judgment). Centralized +
+  // serializable; drives the golden ability reflavor + the Holy Bolt's gating.
+  private readonly power = new PlayerPower();
+  private holyBoltButton!: HolyBoltButton;
+  private holyBoltCooldownUntil = 0;
+  private holyAura?: Phaser.GameObjects.Arc; // subtle golden aura while holy
 
   // Progression / leveling. Level-derived maxHP + damage feed the combat above.
   private progression!: PlayerProgression;
@@ -393,6 +412,7 @@ export class MainScene extends Phaser.Scene {
     // UI camera ignores them). Enemy bolts damage the player; impacts spawn a poof.
     this.projectiles = new ProjectileSystem(this, this.map, this.worldFx);
     this.projectiles.onPlayerHit = (dmg) => this.onProjectileHitPlayer(dmg);
+    this.projectiles.onEnemyHit = (x, y, radius, dmg) => this.resolveHolyBoltHit(x, y, radius, dmg);
     this.projectiles.onImpact = (x, y, color) => this.spawnBoltImpact(x, y, color);
     // Collectibles: motes draw into the world-FX layer (main camera only).
     this.pickups = new PickupSystem(this, this.worldFx);
@@ -652,6 +672,9 @@ export class MainScene extends Phaser.Scene {
       .setDepth(depth + 2);
     this.attackButton = new AttackButton(this, () => this.tryAttack());
     this.dashButton = new DashButton(this, () => this.tryDash());
+    // Third ability — hidden until the player becomes holy at the throne swap.
+    this.holyBoltButton = new HolyBoltButton(this, () => this.tryHolyBolt());
+    this.holyBoltButton.setVisible(this.power.isHoly);
     this.banner = this.add
       .text(0, 0, '', {
         fontFamily: 'system-ui, sans-serif',
@@ -701,6 +724,8 @@ export class MainScene extends Phaser.Scene {
     const kb = this.input.keyboard;
     kb?.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE).on('down', () => this.tryAttack());
     kb?.addKey(Phaser.Input.Keyboard.KeyCodes.SHIFT).on('down', () => this.tryDash());
+    // Desktop convenience for the Holy Bolt (self-gates: holy-only + cost/cooldown).
+    kb?.addKey(Phaser.Input.Keyboard.KeyCodes.F).on('down', () => this.tryHolyBolt());
     // Desktop convenience for the on-screen "Corrupt the Portal" button (self-gates).
     kb?.addKey(Phaser.Input.Keyboard.KeyCodes.C).on('down', () => this.tryCorruptPortal());
 
@@ -715,6 +740,12 @@ export class MainScene extends Phaser.Scene {
     this.energyBar.setRatio(this.energy.ratio);
     const dashCdRatio = (this.dashCooldownUntil - this.time.now) / DASH_COOLDOWN_MS;
     this.dashButton.setState(dashCdRatio, this.energy.current < DASH_ENERGY_COST);
+    // Holy Bolt button (only visible/active while holy) + the trailing aura.
+    if (this.power.isHoly) {
+      const hbCdRatio = (this.holyBoltCooldownUntil - this.time.now) / PLAYER_HOLY_BOLT_COOLDOWN_MS;
+      this.holyBoltButton.setState(hbCdRatio, this.energy.current < PLAYER_HOLY_BOLT_ENERGY_COST);
+      this.holyAura?.setPosition(this.player.x, this.player.y);
+    }
   }
 
   /** Refresh the XP bar fill + level badge (called on every XP/level change). */
@@ -1065,8 +1096,10 @@ export class MainScene extends Phaser.Scene {
 
   /** A fading after-image streak so the lunge reads clearly. */
   private spawnDashTrail(): void {
+    // COSMETIC reflavor: golden after-image while holy, the original cyan while demonic.
+    const color = this.power.isHoly ? HOLY_DASH_COLOR : 0x9fe0ff;
     const ghost = this.add
-      .rectangle(this.player.x, this.player.y, 18, 34, 0x9fe0ff, 0.35)
+      .rectangle(this.player.x, this.player.y, 18, 34, color, 0.35)
       .setDepth(11);
     this.worldFx.add(ghost);
     this.tweens.add({
@@ -2178,15 +2211,16 @@ export class MainScene extends Phaser.Scene {
     this.dialogue.open([...GOD_JUDGMENT_LINES], () => this.godJudgmentPowerStrip());
   }
 
-  /** 2) Power-strip beat — NARRATIVE ONLY for now (a draining effect + lines). */
+  /** 2) Power-strip beat — God strips the demonic power and grants the holy. */
   private godJudgmentPowerStrip(): void {
     this.spawnPowerStripEffect();
-    // === FUTURE POWER-STRIP HOOK ============================================
-    // The REAL mechanical power-strip (e.g. reset level/XP, zero Holy Power,
-    // shrink the HP pool, revoke abilities) will be applied HERE in a later
-    // build. It is NARRATIVE ONLY now — DO NOT change the player's stats yet.
-    //   e.g. this.progression.reset(); this.holyPower.reset();
-    //        this.playerHealth.setMax(this.progression.effectiveMaxHP); ...
+    // === THE POWER SWAP (demonic → holy) ====================================
+    // The mechanically-REAL swap: flip the power-state to holy, re-skin the kit
+    // golden, and unlock the Holy Bolt. Power LEVEL is intentionally UNCHANGED —
+    // we do NOT touch level/XP, maxHP, damage, energy, or the Holy-Power count;
+    // only the kit's appearance changes and the Holy Bolt is added. From here the
+    // beat proceeds to banishment + the Hell portal exactly as before.
+    this.swapToHoly();
     // ========================================================================
     this.dialogue.open([...POWER_STRIP_LINES], () => this.godJudgmentBanish());
   }
@@ -2226,6 +2260,183 @@ export class MainScene extends Phaser.Scene {
       });
     }
     this.player.flash();
+  }
+
+  // --- THE POWER SWAP: demonic → holy ---------------------------------------
+
+  /**
+   * Perform the swap to HOLY: flip the (serializable) power-state, re-skin the
+   * kit golden (a player aura + a radiant flash), and unlock the Holy Bolt. This
+   * is the mechanically-real half of God's judgment. POWER LEVEL IS UNCHANGED —
+   * nothing here touches level/XP, maxHP, damage, energy, or the Holy-Power count.
+   * Idempotent: calling it while already holy just re-asserts the holy visuals.
+   */
+  private swapToHoly(): void {
+    this.power.swapToHoly();
+    this.holyBoltButton.setVisible(true); // the new ability appears
+    this.ensureHolyAura();
+    // A radiant burst + golden flash so the transformation reads clearly.
+    this.player.levelUpFlash();
+    const ring = this.add.circle(this.player.x, this.player.y, 24, HOLY_TINT, 0).setStrokeStyle(5, HOLY_TINT, 0.95).setDepth(13);
+    this.worldFx.add(ring);
+    this.tweens.add({ targets: ring, scale: 4, alpha: 0, duration: 700, ease: 'Quad.out', onComplete: () => ring.destroy() });
+  }
+
+  /** Revert to the DEMONIC default (dev tool + dev reset): hide the Holy Bolt,
+   *  drop the aura, restore the pre-swap appearance. */
+  private revertToDemonic(): void {
+    this.power.reset();
+    this.holyBoltButton.setVisible(false);
+    this.holyAura?.destroy();
+    this.holyAura = undefined;
+  }
+
+  /** Create the subtle golden aura that trails the holy player (once). */
+  private ensureHolyAura(): void {
+    if (this.holyAura) return;
+    this.holyAura = this.add.circle(this.player.x, this.player.y, 22, HOLY_TINT, 0.16).setDepth(9);
+    this.worldFx.add(this.holyAura);
+    this.uiCamera?.ignore(this.holyAura); // world object: keep it off the UI camera
+    this.tweens.add({ targets: this.holyAura, alpha: 0.28, scale: 1.18, duration: 900, yoyo: true, repeat: -1, ease: 'Sine.inOut' });
+  }
+
+  /** Holy Bolt damage reuses the level-derived growth (base + the per-level slope). */
+  private holyBoltDamage(): number {
+    return PLAYER_HOLY_BOLT_DAMAGE + (this.progression.level - 1) * DMG_PER_LEVEL;
+  }
+
+  /**
+   * Fire a HOLY BOLT in the facing direction (holy-only). Gated by a small energy
+   * cost + a short cooldown; reuses the projectile system as the PLAYER faction so
+   * it damages enemies, is stopped by terrain, and despawns at max range.
+   */
+  private tryHolyBolt(): void {
+    if (!this.power.isHoly) return; // the player has no Holy Bolt as a demon
+    if (this.playerDead || this.dialogue.isOpen() || this.choice.isOpen()) return;
+    if (this.time.now < this.holyBoltCooldownUntil) return;
+    if (this.energy.current < PLAYER_HOLY_BOLT_ENERGY_COST) return; // button shows disabled
+
+    this.energy.damage(PLAYER_HOLY_BOLT_ENERGY_COST);
+    this.lastEnergySpendTime = this.time.now;
+    this.holyBoltCooldownUntil = this.time.now + PLAYER_HOLY_BOLT_COOLDOWN_MS;
+
+    const len = Math.hypot(this.player.facingX, this.player.facingY) || 1;
+    const dx = this.player.facingX / len;
+    const dy = this.player.facingY / len;
+    this.projectiles.spawn({
+      x: this.player.x + dx * 18,
+      y: this.player.y + dy * 18,
+      dirX: dx,
+      dirY: dy,
+      speed: PLAYER_HOLY_BOLT_SPEED,
+      damage: this.holyBoltDamage(),
+      maxRange: PLAYER_HOLY_BOLT_RANGE,
+      faction: 'player',
+      color: HOLY_BOLT_COLOR,
+      radius: PLAYER_HOLY_BOLT_RADIUS,
+    });
+    this.lastCombatTime = this.time.now;
+  }
+
+  /**
+   * Resolve a player Holy Bolt against the enemies (called by the projectile
+   * system each step). Damages the FIRST enemy within (x,y,radius), reusing the
+   * existing per-enemy kill handlers; returns true so the bolt impacts/despawns.
+   */
+  private resolveHolyBoltHit(x: number, y: number, radius: number, damage: number): boolean {
+    const hit = (sprite: { x: number; y: number }, bodyR: number): boolean =>
+      Phaser.Math.Distance.Between(x, y, sprite.x, sprite.y) <= radius + bodyR;
+
+    if (this.sasquatch.isAlive && hit(this.sasquatch, 18)) {
+      const dealt = this.sasquatch.takeHit(damage);
+      this.spawnDamageNumber(this.sasquatch.x, this.sasquatch.y - 24, dealt, '#fff0b0');
+      this.lastCombatTime = this.time.now;
+      if (!this.sasquatch.isAlive) {
+        this.showBanner('Sasquatch defeated', 1600);
+        this.notifyQuest('sasquatch-defeated');
+        this.gainXP(this.sasquatch.xpReward);
+      }
+      return true;
+    }
+    if (this.swarmersRevealed) {
+      for (const s of this.swarmers) {
+        if (s.isAlive && hit(s, 8)) {
+          const dealt = s.takeHit(damage);
+          if (dealt > 0) {
+            this.spawnDamageNumber(s.x, s.y - 16, dealt, '#fff0b0');
+            this.lastCombatTime = this.time.now;
+            if (!s.isAlive) this.onSwarmerKilled(s);
+          }
+          return true;
+        }
+      }
+    }
+    for (const a of this.angels) {
+      if (a.isAlive && hit(a, 12)) {
+        const dealt = a.takeHit(damage);
+        if (dealt > 0) {
+          this.spawnDamageNumber(a.x, a.y - 28 * a.variant.scale, dealt, '#fff0b0');
+          this.lastCombatTime = this.time.now;
+          if (!a.isAlive) this.onAngelKilled(a);
+        }
+        return true;
+      }
+    }
+    for (const t of this.townsfolk) {
+      if (t.isAlive && hit(t, 10)) {
+        const dealt = t.takeHit(damage);
+        if (dealt > 0) {
+          this.spawnDamageNumber(t.x, t.y - 20, dealt, '#fff0b0');
+          this.lastCombatTime = this.time.now;
+          if (!t.isAlive) this.onTownsfolkKilled(t);
+        }
+        return true;
+      }
+    }
+    for (const g of this.guardians) {
+      if (g.isAlive && hit(g, 12)) {
+        const dealt = g.takeHit(damage);
+        if (dealt > 0) {
+          this.spawnDamageNumber(g.x, g.y - 26, dealt, '#fff0b0');
+          this.lastCombatTime = this.time.now;
+          if (!g.isAlive) this.onGuardianKilled(g);
+        }
+        return true;
+      }
+    }
+    for (const c of this.cherubs) {
+      if (c.isAlive && hit(c, 16)) {
+        const dealt = c.takeHit(damage);
+        if (dealt > 0) {
+          this.spawnDamageNumber(c.x, c.y - 30 * c.variant.scale, dealt, '#fff0b0');
+          this.lastCombatTime = this.time.now;
+          if (!c.isAlive) this.onCherubKilled(c);
+        }
+        return true;
+      }
+    }
+    for (const d of this.demons) {
+      if (d.isAlive && hit(d, 12)) {
+        const dealt = d.takeHit(damage);
+        if (dealt > 0) {
+          this.spawnDamageNumber(d.x, d.y - 24, dealt, '#fff0b0');
+          this.lastCombatTime = this.time.now;
+          if (!d.isAlive) this.onDemonKilled(d);
+        }
+        return true;
+      }
+    }
+    for (const b of this.bosses) {
+      if (b.isAlive && hit(b, 24)) {
+        const dealt = b.takeHit(damage);
+        if (dealt > 0) {
+          this.spawnDamageNumber(b.x, b.y - 40, dealt, '#fff0b0');
+          this.lastCombatTime = this.time.now;
+        }
+        return true;
+      }
+    }
+    return false;
   }
 
   /** Spawn the Hell portal just south of the throne (where the player approached). */
@@ -2706,8 +2917,10 @@ export class MainScene extends Phaser.Scene {
   }
 
   private spawnSlash(x: number, y: number, angle: number): void {
+    // COSMETIC reflavor: golden while holy, the original pale gold while demonic.
+    const color = this.power.isHoly ? HOLY_SLASH_COLOR : 0xffe9a8;
     const arc = this.add
-      .arc(x, y, PLAYER_ATTACK_RANGE * 0.7, -45, 45, false, 0xffe9a8, 0.45)
+      .arc(x, y, PLAYER_ATTACK_RANGE * 0.7, -45, 45, false, color, 0.45)
       .setDepth(13)
       .setRotation(angle);
     this.worldFx.add(arc);
@@ -3036,6 +3249,9 @@ export class MainScene extends Phaser.Scene {
     // Reset God's-judgment beat: gate re-locked, judgment un-fired, Hell portal gone.
     this.resetGodJudgment();
 
+    // Revert the power swap: back to demonic (Holy Bolt hidden, aura gone).
+    this.revertToDemonic();
+
     // Clear any active Demons, then re-seed Hell's placed grunts. (Returns to Earth below.)
     this.clearDemons();
     this.seedHellDemons();
@@ -3095,6 +3311,8 @@ export class MainScene extends Phaser.Scene {
       { label: 'Teleport to Throne', onPress: () => this.devTeleportToThrone() },
       { label: "Trigger God's Judgment", onPress: () => this.devTriggerGodJudgment() },
       { label: 'Reset Judgment', onPress: () => this.resetGodJudgment() },
+      { label: 'Grant Holy Power (swap to holy)', onPress: () => this.swapToHoly() },
+      { label: 'Reset to Demonic', onPress: () => this.revertToDemonic() },
       { label: 'Go to Hell', onPress: () => this.devGoToHell() },
       { label: 'Spawn Demon', onPress: () => this.devSpawnDemon() },
       { label: 'Go to Heaven', onPress: () => this.devGoToHeaven() },
