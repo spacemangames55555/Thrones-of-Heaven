@@ -799,6 +799,137 @@ export const LUST = {
 export const SINS_TOTAL = 7;
 
 
+// --- The Unholy Trinity, Part 1: Dragon + Beast (the finale gauntlet) --------
+//
+// A STAGED gauntlet at Satan's Lair (enterable once all 7 Sins are beaten):
+// Dragon → breather → Beast → "Satan awaits" placeholder. Both are DATA on the
+// boss framework (src/boss/trinityData.ts maps these onto BossDefs — no bespoke
+// classes), composed ENTIRELY from existing library patterns. Tuned HARDER than
+// the seven Sins (Beast harder than Dragon). Satan + the ending are the NEXT
+// build. Every value below is a free tuning knob.
+
+/** The lair ARENA (LOCAL Hell px) — where the Dragon/Beast spawn + are fought (just
+ *  south of Satan's Lair at SATAN_LAIR ≈ (11520, 8600) in hellWorld.ts). */
+export const TRINITY_ARENA = { x: 11520, y: 9000 };
+/** Proximity (px) to the lair that OPENS + enters the Trinity (once 7 Sins beaten). */
+export const TRINITY_ENTER_RANGE = 230;
+/** Recovery pause between stages, in ms (HP + energy restored, a beat, then the next boss). */
+export const TRINITY_BREATHER_MS = 3200;
+
+/** STAGE 1 — THE DRAGON (aerial devastator / evasion fight): fast, dives, fire + flames. */
+export const DRAGON = {
+  name: 'The Dragon',
+  scale: 3.4, // large + imposing
+  color: 0xb01a1a, // deep draconic red
+  maxHP: 16000, // high (harder than every Sin) — but evasive, so it plays bigger
+  moveTilesPerSec: 8.8, // FAST + mobile (faster than the player)
+  moveTilesPerSecP2: 9.6,
+  moveTilesPerSecP3: 10.6, // faster dives in later phases
+  meleeRange: 84,
+  preferredRange: 300,
+  leashRange: 1100,
+  activationRange: 360,
+  meleeDamage: 92, // a snap if you're right under it
+  meleeCooldownMs: 950,
+  // CHARGE — the swooping DIVE (quickens by phase)
+  chargeDamage: 170,
+  chargeSpeed: 1000,
+  chargeRange: 600,
+  chargeTelegraphMs: 520,
+  chargeCooldownMsP1: 3600,
+  chargeCooldownMsP2: 2800,
+  chargeCooldownMsP3: 2200,
+  // BARRAGE — "fire breath" nova (more bolts by phase)
+  fireDamage: 52,
+  fireCountP1: 12,
+  fireCountP2: 16,
+  fireCountP3: 20,
+  fireSpeed: 300,
+  fireTelegraphMs: 680,
+  fireCooldownMs: 3800,
+  fireRange: 640,
+  // HAZARD — "lingering flames" that deny space (more/bigger/faster by phase)
+  flameDamage: 24,
+  flameRadiusP1: 70,
+  flameRadiusP2: 78,
+  flameRadiusP3: 86,
+  flameCadenceMsP1: 4200,
+  flameCadenceMsP2: 3200,
+  flameCadenceMsP3: 2400,
+  flameCapP1: 3,
+  flameCapP2: 5,
+  flameCapP3: 7,
+  flameLifetimeMs: 7000,
+  flameTelegraphMs: 600,
+  flameRange: 620,
+  phase2Threshold: 0.66,
+  phase3Threshold: 0.33,
+  xpReward: 5000,
+  holyPowerDrop: 36,
+} as const;
+
+/** STAGE 2 — THE BEAST (armored summoner-bruiser / multi-axis attrition): the HARDEST. */
+export const BEAST = {
+  name: 'The Beast',
+  scale: 4.0, // the biggest, most imposing silhouette
+  color: 0x6a3aa0, // bruised corruption-purple
+  maxHP: 24000, // VERY HIGH — the hardest fight in the game so far
+  moveTilesPerSec: 3.4, // moderate-slow, overwhelming
+  meleeRange: 94,
+  preferredRange: 240,
+  leashRange: 760,
+  activationRange: 360,
+  meleeDamage: 110, // heavy melee up close
+  meleeCooldownMs: 900,
+  // SUMMON — demon adds (count + cadence escalate; shared cap)
+  summonEnemy: 'demon',
+  summonCap: 8,
+  summonCountP1: 2,
+  summonCountP2: 3,
+  summonCountP3: 4,
+  summonCountP4: 5,
+  summonCadenceMsP1: 9000,
+  summonCadenceMsP2: 7000,
+  summonCadenceMsP3: 5500,
+  summonCadenceMsP4: 4500,
+  // SLAM — heavy ground AoE (quickens by phase)
+  slamDamage: 150,
+  slamRadius: 240,
+  slamTelegraphMs: 850,
+  slamRange: 380,
+  slamCooldownMsP1: 5000,
+  slamCooldownMsP2: 4200,
+  slamCooldownMsP3: 3600,
+  slamCooldownMsP4: 3000,
+  // SHIELD — armored invuln windows (cadence shortens, window grows)
+  shieldDurationMsP1: 2000,
+  shieldDurationMsP2: 2200,
+  shieldDurationMsP3: 2400,
+  shieldDurationMsP4: 2600,
+  shieldCadenceMsP1: 7500,
+  shieldCadenceMsP2: 6500,
+  shieldCadenceMsP3: 5500,
+  shieldCadenceMsP4: 5000,
+  // HAZARD — spreading "corruption" (introduced P2, thickens after)
+  corruptDamage: 22,
+  corruptRadius: 82,
+  corruptLifetimeMs: 9000,
+  corruptTelegraphMs: 650,
+  corruptRange: 600,
+  corruptCadenceMsP2: 5000,
+  corruptCadenceMsP3: 4000,
+  corruptCadenceMsP4: 3200,
+  corruptCapP2: 4,
+  corruptCapP3: 5,
+  corruptCapP4: 6,
+  phase2Threshold: 0.75,
+  phase3Threshold: 0.5,
+  phase4Threshold: 0.25,
+  xpReward: 7000,
+  holyPowerDrop: 50,
+} as const;
+
+
 // --- The Descent arc (quests 1–4) ------------------------------------------
 //
 // Authored, corruption-gated quest chain in Oregon. Locations are placeholder
