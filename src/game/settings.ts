@@ -929,6 +929,92 @@ export const BEAST = {
   holyPowerDrop: 50,
 } as const;
 
+/** STAGE 3 — SATAN (the FINAL boss): the hardest fight, 4 phases escalating through
+ *  the FULL pattern library + the new HELLFIRE eruption + a final ENRAGE (≤25%).
+ *  Defeating him triggers the redemption ENDING (no loot). Composed from existing
+ *  patterns + 'hellfire' — a DATA boss, no bespoke code. Tune freely. */
+export const SATAN = {
+  name: 'SATAN, the Adversary',
+  scale: 4.6, // the grandest, most imposing silhouette in the game
+  color: 0xa01818, // deep infernal crimson
+  maxHP: 32000, // the highest HP in the game — the ultimate fight
+  moveTilesPerSec: 5.0,
+  moveTilesPerSecP4: 6.2, // ENRAGE: faster in the final phase
+  meleeRange: 96,
+  preferredRange: 280,
+  leashRange: 1100,
+  activationRange: 380,
+  meleeDamage: 120,
+  meleeCooldownMs: 850,
+  meleeCooldownMsP4: 600, // enrage
+  // ranged volley (P1 poke)
+  volleyDamage: 50,
+  volleyCount: 3,
+  volleySpeed: 330,
+  volleyCooldownMs: 1700,
+  volleyRange: 620,
+  // CHARGE (dive) — quickens in the enrage
+  chargeDamage: 180,
+  chargeSpeed: 1000,
+  chargeRange: 600,
+  chargeTelegraphMs: 520,
+  chargeCooldownMsP1: 3800,
+  chargeCooldownMsP4: 2400,
+  // BARRAGE nova — more bolts + faster by phase
+  novaDamage: 56,
+  novaCountP2: 16,
+  novaCountP3: 20,
+  novaCountP4: 26,
+  novaSpeed: 300,
+  novaTelegraphMs: 700,
+  novaCooldownMs: 3600,
+  novaCooldownMsP4: 2400,
+  // SUMMON demon adds (escalate; shared cap)
+  summonEnemy: 'demon',
+  summonCap: 8,
+  summonCountP2: 3,
+  summonCountP4: 5,
+  summonCadenceMsP2: 7000,
+  summonCadenceMsP4: 4000,
+  // SLAM heavy AoE — quickens by phase
+  slamDamage: 150,
+  slamRadius: 240,
+  slamTelegraphMs: 800,
+  slamRange: 380,
+  slamCooldownMsP2: 4200,
+  slamCooldownMsP3: 3600,
+  slamCooldownMsP4: 2800,
+  // SHIELD invuln windows (P3+)
+  shieldDurationMs: 2000,
+  shieldCadenceMsP3: 6500,
+  shieldCadenceMsP4: 5000,
+  // HAZARD lingering hellground (P3+)
+  hazardDamage: 24,
+  hazardRadius: 84,
+  hazardLifetimeMs: 9000,
+  hazardTelegraphMs: 650,
+  hazardRange: 620,
+  hazardCadenceMsP3: 4000,
+  hazardCadenceMsP4: 3000,
+  hazardCapP3: 5,
+  hazardCapP4: 7,
+  // HELLFIRE full-arena eruption (P3+): fewer safe zones + less wind-up when enraged
+  hellfireDamage: 200,
+  hellfireArenaRadius: 520, // covers the whole lair arena (incl. typical kiting range)
+  hellfireSafeRadius: 64,
+  hellfireSafeZonesP3: 3,
+  hellfireSafeZonesP4: 2, // ENRAGE: harder — fewer safe spots
+  hellfireTelegraphMsP3: 1400,
+  hellfireTelegraphMsP4: 1100, // ENRAGE: less time to reach safety
+  hellfireCooldownMsP3: 9000,
+  hellfireCooldownMsP4: 6500,
+  phase2Threshold: 0.75,
+  phase3Threshold: 0.5,
+  phase4Threshold: 0.25, // ENRAGE phase
+  xpReward: 8000,
+  holyPowerDrop: 0, // the ending is the reward, not loot
+} as const;
+
 
 // --- The Descent arc (quests 1–4) ------------------------------------------
 //

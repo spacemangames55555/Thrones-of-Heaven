@@ -26,8 +26,9 @@ import type { BossDef, BossHooks } from '../boss/bossTypes';
 import { MICHAEL_DEF, TEST_BOSS_DEF } from '../boss/bossData';
 import { SIN_DEFS } from '../boss/sinsData';
 import { SinGauntlet } from '../boss/SinGauntlet';
-import { DRAGON_DEF, BEAST_DEF } from '../boss/trinityData';
+import { DRAGON_DEF, BEAST_DEF, SATAN_DEF } from '../boss/trinityData';
 import { TrinitySequence } from '../boss/TrinitySequence';
+import { EarthPortal } from '../entities/EarthPortal';
 import { PortalDefense } from '../encounter/PortalDefense';
 import { buildHeavenMapData, HEAVEN_WIDTH, HEAVEN_HEIGHT, HEAVEN_CHERUB_SPAWNS, THRONE_POSITION } from '../map/heavenWorld';
 import { buildHellMapData, HELL_WIDTH, HELL_HEIGHT, HELL_DEMON_SPAWNS, SATAN_LAIR } from '../map/hellWorld';
@@ -177,6 +178,19 @@ const BANISHMENT_LINES = [
   'The ground tears open beneath you. A way down has been made.',
 ];
 
+// >>> PLACEHOLDER TEXT — THE REDEMPTION ENDING. Spoken by the friendly radiant
+// angel after Satan is defeated (the first non-hostile angel). Edit these lines to
+// rewrite the ending speech; each entry is one tap-advanced dialogue line.
+const REDEMPTION_LINES = [
+  'A radiant figure descends — an angel robed in pure light, gentle and unafraid.',
+  'The Angel: You have redeemed yourself, hero. You proved, by trial, that you are not evil.',
+  'The Angel: Now that you have braved the depths of Hell and conquered Satan, you may return to the world of Earth.',
+  'The Angel: But be wary — the territories of Earth have been claimed by gods.',
+  'The Angel: To conquer all of Earth, whether in the name of good or in the name of evil, is yours to choose.',
+];
+// >>> PLACEHOLDER TEXT — the closing beat shown after arriving back in Seattle.
+const ENDING_CLOSING_LINE = 'Your trial is ended. The conquest of Earth begins…';
+
 /**
  * The overworld scene: renders Washington, stamps the Seattle town onto it,
  * spawns the player in the town, and wires camera, controls, the town NPC +
@@ -293,8 +307,14 @@ export class MainScene extends Phaser.Scene {
   private readonly trinity = new TrinitySequence();
   private dragonBoss?: Boss;
   private beastBoss?: Boss;
+  private satanBoss?: Boss;
   /** Bumped on every reset so a pending breather callback from an old run is voided. */
   private trinityRun = 0;
+  // The redemption ENDING (on Satan's defeat): the friendly angel, the Earth portal
+  // home, and the transient hellfire-eruption visuals.
+  private earthPortal?: EarthPortal;
+  private endingFx: Phaser.GameObjects.GameObject[] = [];
+  private hellfireFx: Phaser.GameObjects.GameObject[] = [];
   private bossBar!: HealthBar;
   private bossBarBg!: Phaser.GameObjects.Rectangle;
   private bossNameText!: Phaser.GameObjects.Text;
@@ -313,6 +333,8 @@ export class MainScene extends Phaser.Scene {
     shield: (boss, active) => this.setBossShield(boss.id, boss.x, boss.y, active),
     blocked: (x, y) => this.spawnBlockedFx(x, y),
     hazard: (boss, x, y, radius, damage, lifetimeMs, telegraphMs, cap) => this.hazards.spawn(boss.id, x, y, radius, damage, lifetimeMs, telegraphMs, cap),
+    hellfireWarn: (cx, cy, arenaR, safe, safeR, durationMs) => this.hellfireWarn(cx, cy, arenaR, safe, safeR, durationMs),
+    hellfireBurst: (cx, cy, arenaR, safe, safeR, damage) => this.hellfireBurst(cx, cy, arenaR, safe, safeR, damage),
   };
   /** Live SHIELD bubbles, keyed by boss id (Pride's invuln-window visual). */
   private readonly bossShields = new Map<string, Phaser.GameObjects.Arc>();
@@ -589,6 +611,7 @@ export class MainScene extends Phaser.Scene {
     this.updateObjectiveMarker();
     this.updateSinMarker();
     this.updateLairEntry();
+    this.updateEarthPortal();
 
     if (this.playerDead) {
       this.cancelDash();
@@ -1833,13 +1856,13 @@ export class MainScene extends Phaser.Scene {
     // All seven beaten → the lair is OPEN. Mark it (text reflects Trinity progress);
     // hide the beacon while actually fighting in the lair.
     if (this.sins.count >= this.sins.builtCount) {
-      if (this.trinity.inFight) {
+      // Hide the beacon while fighting in the lair, during the ending, or once done.
+      if (this.trinity.inFight || this.trinity.ending || this.trinity.complete) {
         this.sinMarker.hide();
         return;
       }
       const o = this.hellMap.bounds;
-      const label = this.trinity.awaitingSatan ? 'Satan awaits — (coming soon)' : "Satan's Lair — face the Unholy Trinity";
-      this.sinMarker.show(o.x + SATAN_LAIR.x, o.y + SATAN_LAIR.y, label);
+      this.sinMarker.show(o.x + SATAN_LAIR.x, o.y + SATAN_LAIR.y, "Satan's Lair — face the Unholy Trinity");
     } else {
       this.sinMarker.hide();
     }
@@ -1893,14 +1916,16 @@ export class MainScene extends Phaser.Scene {
     this.teleportToBoss(this.ensureSinSpawned(i), false);
   }
 
-  // --- The Unholy Trinity (Part 1): the staged Dragon → Beast finale gauntlet ---
+  // --- The Unholy Trinity: the staged Dragon → Beast → Satan finale + the ending ---
   //
   // Enterable once all 7 Sins are beaten. Approaching Satan's Lair STARTS a staged
-  // sequence with recovery breathers: Dragon → (HP/energy restore) → Beast →
-  // (restore) → "Satan awaits" placeholder. The Dragon/Beast are DATA bosses on the
-  // framework (DRAGON_DEF/BEAST_DEF). If the player dies mid-stage, that stage
-  // RESTARTS (its boss resets to full HP + dormant and re-activates on re-approach);
-  // the completed stage is kept. State (this.trinity) is serializable.
+  // sequence with recovery breathers: Dragon → (restore) → Beast → (restore) →
+  // SATAN (the final boss) → his defeat fires the REDEMPTION ENDING (a friendly
+  // angel, a speech, an Earth portal home to Seattle — the player carries over
+  // intact). Dragon/Beast/Satan are DATA bosses (DRAGON_DEF/BEAST_DEF/SATAN_DEF). If
+  // the player dies mid-stage, that stage RESTARTS (its boss resets to full HP +
+  // dormant, re-activating on re-approach); completed stages are kept. State
+  // (this.trinity) is serializable.
 
   /** Spawn a Trinity boss at the lair arena (on walkable ground). */
   private spawnTrinityBoss(def: BossDef): Boss {
@@ -1928,14 +1953,17 @@ export class MainScene extends Phaser.Scene {
     this.showBanner('The lair yawns open — THE DRAGON descends!', 2800);
   }
 
-  /** A Trinity boss died → run the breather, then advance to the next stage. */
+  /** A Trinity boss died → run the breather / advance the stage (Satan → the ending). */
   private onTrinityBossDefeated(boss: Boss): void {
     if (boss === this.dragonBoss) {
       this.dragonBoss = undefined;
       this.trinityBreather('The Dragon falls… something worse stirs.', () => this.startBeastStage());
     } else if (boss === this.beastBoss) {
       this.beastBoss = undefined;
-      this.trinityBreather('The Beast is slain.', () => this.reachAwaitingSatan());
+      this.trinityBreather('The Beast is slain… and the Adversary himself awakens.', () => this.startSatanStage());
+    } else if (boss === this.satanBoss) {
+      this.satanBoss = undefined;
+      this.onSatanDefeated(boss.x, boss.y); // the climactic death beat → the redemption ending
     }
   }
 
@@ -1960,27 +1988,122 @@ export class MainScene extends Phaser.Scene {
     this.showBanner('THE BEAST rises — the lair shakes!', 2400);
   }
 
-  /** PLACEHOLDER: both down → "Satan awaits" (Satan + the ending are the NEXT build). */
-  private reachAwaitingSatan(): void {
-    if (this.trinity.current !== 'beast') return;
-    this.trinity.toAwaitingSatan();
-    this.showBanner('The Trinity is broken… but Satan awaits.\n(coming soon)', 5200);
+  /** STAGE 3: SATAN — the final boss. */
+  private startSatanStage(): void {
+    if (this.trinity.current !== 'beast') return; // a reset interrupted the breather
+    this.trinity.toSatan();
+    this.satanBoss = this.spawnTrinityBoss(SATAN_DEF);
+    this.satanBoss.activate();
+    this.showBanner('SATAN AWAKENS — the final reckoning.', 2800);
+  }
+
+  /** Satan reaches 0 HP → the dramatic death beat, then the redemption ending. */
+  private onSatanDefeated(x: number, y: number): void {
+    this.trinity.toEnding();
+    this.controls.setEnabled(false); // the cutscene takes over
+    this.player.setDirection(0, 0);
+    this.cancelDash();
+    this.hazards.clearAll(); // clear any hellground left over
+    this.projectiles.clear();
+    // A big climactic eruption + a clear "Satan is defeated" moment.
+    const flash = this.add.circle(x, y, 60, 0xfff1b8, 0.85).setDepth(14);
+    this.worldFx.add(flash);
+    this.endingFx.push(flash);
+    this.tweens.add({ targets: flash, scale: 14, alpha: 0, duration: 1400, ease: 'Quad.out', onComplete: () => flash.destroy() });
+    this.showBanner('SATAN IS DEFEATED', 3200);
+    this.time.delayedCall(3400, () => this.playRedemptionEnding(x, y));
+  }
+
+  /** THE REDEMPTION ENDING: a friendly radiant angel descends + speaks, then the
+   *  Earth portal home opens. (Speech: REDEMPTION_LINES near the top of this file.) */
+  private playRedemptionEnding(x: number, y: number): void {
+    if (this.trinity.current !== 'ending') return; // voided by a reset
+    this.controls.setEnabled(false); // hold the player still for the cutscene (re-enabled at the portal)
+    this.player.setDirection(0, 0);
+    this.playerHealth.full();
+    this.energy.full();
+    // The FIRST friendly angel: pure white-gold, peaceful — light piercing the lair.
+    const angel = this.spawnRedemptionAngel(x, y - 30);
+    // After the descent, the angel speaks; then the Earth portal opens.
+    this.time.delayedCall(1300, () => {
+      if (this.trinity.current !== 'ending') return;
+      this.dialogue.open([...REDEMPTION_LINES], () => {
+        if (this.trinity.current === 'ending') this.openEarthPortal(x, y, angel);
+      });
+    });
+  }
+
+  /** A radiant, benevolent angel sprite descending into the lair (ending visual). */
+  private spawnRedemptionAngel(x: number, y: number): Phaser.GameObjects.GameObject {
+    MainScene.ensureRedemptionAngelTexture(this);
+    const glow = this.add.circle(x, y, 70, 0xfff3c4, 0.18).setDepth(12);
+    const angel = this.add.image(x, y - 260, 'redemption-angel').setDepth(13).setScale(1.6).setAlpha(0);
+    this.worldFx.add(glow);
+    this.worldFx.add(angel);
+    this.endingFx.push(glow, angel);
+    // Descend gently from above with a radiant fade-in + a soft halo pulse.
+    this.tweens.add({ targets: angel, y, alpha: 1, duration: 1200, ease: 'Quad.out' });
+    this.tweens.add({ targets: glow, scale: 1.5, alpha: 0.32, duration: 1400, yoyo: true, repeat: -1, ease: 'Sine.inOut' });
+    return angel;
+  }
+
+  /** Open the Earth portal home after the angel's speech. */
+  private openEarthPortal(x: number, y: number, angel: Phaser.GameObjects.GameObject): void {
+    // The angel ascends back into the light as the way home opens.
+    this.tweens.add({ targets: angel, y: y - 280, alpha: 0, duration: 1200, ease: 'Quad.in' });
+    this.earthPortal = new EarthPortal(this, x, y + 70);
+    this.uiCamera?.ignore(this.earthPortal.objects());
+    this.showBanner('A way home opens. Step through to return to Earth.', 3200);
+    this.controls.setEnabled(true); // let the player walk into the portal
+  }
+
+  /** Per-frame: stepping into the Earth portal returns the player to Seattle (intact). */
+  private updateEarthPortal(): void {
+    if (!this.earthPortal || this.transitioning || this.time.now < this.worldCooldownUntil) return;
+    if (this.activeWorld !== WORLD_HELL) return;
+    if (Phaser.Math.Distance.Between(this.player.x, this.player.y, this.earthPortal.x, this.earthPortal.y) <= PORTAL_ENTER_RANGE) {
+      this.returnToEarth();
+    }
+  }
+
+  /** Step through the Earth portal → back to the SEATTLE start spawn, character intact. */
+  private returnToEarth(): void {
+    this.trinity.toComplete();
+    this.earthPortal?.destroy();
+    this.earthPortal = undefined;
+    for (const o of this.endingFx) o.destroy();
+    this.endingFx = [];
+    // Reuse the world-transition system; the SAME character carries across (level,
+    // HP, energy, holy power, Holy Bolt + holy reflavor are untouched by travel).
+    this.travelToWorld(WORLD_EARTH, { x: this.town.spawn.x, y: this.town.spawn.y });
+    this.time.delayedCall(WORLD_TRANSITION_MS + 200, () => this.showBanner(ENDING_CLOSING_LINE, 4200));
+
+    // ===================================================================
+    // >>> FUTURE CONQUEST ENDGAME HOOK <<<
+    // The core arc is COMPLETE here (trinity === 'complete'). The angel's mandate
+    // foreshadows the next phase — gods having claimed Earth's territories and a
+    // good/evil conquest. That phase (gods/Demigods on Earth, the good/evil system,
+    // conquest mechanics) is NOT built yet; begin it here when it is. For now the
+    // player simply roams Earth freely (Heaven/Hell remain reachable via portals).
+    // ===================================================================
   }
 
   /** Death during a stage RESTARTS that stage (reset its boss; keep the sequence). */
   private onTrinityPlayerDeath(): void {
-    const b = this.trinity.current === 'dragon' ? this.dragonBoss : this.trinity.current === 'beast' ? this.beastBoss : undefined;
+    const b =
+      this.trinity.current === 'dragon' ? this.dragonBoss : this.trinity.current === 'beast' ? this.beastBoss : this.trinity.current === 'satan' ? this.satanBoss : undefined;
     if (!b) return;
     this.clearBossAdds(b.id);
     this.hazards.clearBoss(b.id);
+    this.clearHellfireFx();
     this.projectiles.clear();
     b.reset(); // dormant + full HP at the arena; updateBosses re-activates on approach
   }
 
-  /** RESET: Trinity back to un-entered — both bosses gone, adds/hazards/bolts cleared. */
+  /** RESET: Trinity back to un-entered — all bosses + the ending state cleared. */
   private resetTrinity(): void {
-    this.trinityRun++; // void any pending breather callback from the previous run
-    for (const b of [this.dragonBoss, this.beastBoss]) {
+    this.trinityRun++; // void any pending breather/ending callback from the previous run
+    for (const b of [this.dragonBoss, this.beastBoss, this.satanBoss]) {
       if (b) {
         this.clearBossAdds(b.id);
         this.hazards.clearBoss(b.id);
@@ -1989,9 +2112,16 @@ export class MainScene extends Phaser.Scene {
     }
     this.dragonBoss = undefined;
     this.beastBoss = undefined;
+    this.satanBoss = undefined;
     this.bosses = this.bosses.filter((b) => b.isAlive);
     this.projectiles.clear();
     this.hazards.clearAll();
+    this.clearHellfireFx();
+    // Tear down any ending visuals (angel, Earth portal) so it can be replayed.
+    this.earthPortal?.destroy();
+    this.earthPortal = undefined;
+    for (const o of this.endingFx) o.destroy();
+    this.endingFx = [];
     this.trinity.reset();
   }
 
@@ -2012,18 +2142,81 @@ export class MainScene extends Phaser.Scene {
     this.startTrinity();
   }
 
-  /** DEV: jump straight to a specific Trinity stage's boss (for testing either fight). */
-  private devStartTrinityBoss(which: 'dragon' | 'beast'): void {
+  /** DEV: jump straight to a specific Trinity stage's boss (for testing any fight). */
+  private devStartTrinityBoss(which: 'dragon' | 'beast' | 'satan'): void {
     this.resetTrinity();
     if (which === 'dragon') {
       this.trinity.toDragon();
       this.dragonBoss = this.spawnTrinityBoss(DRAGON_DEF);
       this.teleportToBoss(this.dragonBoss, true);
-    } else {
+    } else if (which === 'beast') {
       this.trinity.toBeast();
       this.beastBoss = this.spawnTrinityBoss(BEAST_DEF);
       this.teleportToBoss(this.beastBoss, true);
+    } else {
+      this.trinity.toSatan();
+      this.satanBoss = this.spawnTrinityBoss(SATAN_DEF);
+      this.teleportToBoss(this.satanBoss, true);
     }
+  }
+
+  /** DEV: play the redemption ending directly (no Satan fight) for testing. */
+  private devTriggerEnding(): void {
+    this.resetTrinity();
+    this.cancelDash();
+    const o = this.hellMap.bounds;
+    const ax = o.x + TRINITY_ARENA.x;
+    const ay = o.y + TRINITY_ARENA.y;
+    if (this.activeWorld !== WORLD_HELL) this.travelToWorld(WORLD_HELL, { x: ax, y: ay + 120 });
+    else {
+      this.player.sprite.setPosition(ax, ay + 120);
+      this.player.setDirection(0, 0);
+      this.cameras.main.centerOn(ax, ay);
+    }
+    this.trinity.toEnding();
+    this.time.delayedCall(this.activeWorld === WORLD_HELL ? 100 : WORLD_TRANSITION_MS + 200, () => this.playRedemptionEnding(ax, ay));
+  }
+
+  // --- HELLFIRE eruption (Satan's signature pattern): scene-side visuals + damage --
+
+  /** Wind-up: full-arena warning + the SAFE ZONES the player must reach (clear telegraph). */
+  private hellfireWarn(cx: number, cy: number, arenaR: number, safe: { x: number; y: number }[], safeR: number, durationMs: number): void {
+    this.clearHellfireFx();
+    // The whole arena reddens (the impending eruption).
+    const field = this.add.circle(cx, cy, arenaR, 0xff3b1f, 0.12).setStrokeStyle(3, 0xff6a3a, 0.7).setDepth(11);
+    this.worldFx.add(field);
+    this.hellfireFx.push(field);
+    this.tweens.add({ targets: field, alpha: { from: 0.1, to: 0.34 }, duration: durationMs, ease: 'Sine.in' });
+    // The SAFE ZONES, clearly marked (cool blue-white) so they read as "stand here".
+    for (const s of safe) {
+      const safeFill = this.add.circle(s.x, s.y, safeR, 0x9fe0ff, 0.3).setStrokeStyle(3, 0xdff3ff, 0.95).setDepth(12);
+      this.worldFx.add(safeFill);
+      this.hellfireFx.push(safeFill);
+      this.tweens.add({ targets: safeFill, scale: { from: 1.15, to: 1 }, alpha: { from: 0.5, to: 0.3 }, duration: 360, yoyo: true, repeat: -1, ease: 'Sine.inOut' });
+    }
+  }
+
+  /** Detonation: the arena erupts in fire; damage the player UNLESS they're in a safe zone. */
+  private hellfireBurst(cx: number, cy: number, arenaR: number, safe: { x: number; y: number }[], safeR: number, damage: number): void {
+    this.clearHellfireFx();
+    const fire = this.add.circle(cx, cy, arenaR, 0xff5a2a, 0.45).setDepth(13);
+    this.worldFx.add(fire);
+    this.tweens.add({ targets: fire, alpha: 0, scale: 1.08, duration: 520, ease: 'Quad.out', onComplete: () => fire.destroy() });
+    if (this.playerDead) return;
+    const inArena = Phaser.Math.Distance.Between(this.player.x, this.player.y, cx, cy) <= arenaR;
+    const inSafe = safe.some((s) => Phaser.Math.Distance.Between(this.player.x, this.player.y, s.x, s.y) <= safeR);
+    if (inArena && !inSafe) {
+      this.onCherubMelee(damage); // heavy damage for being caught outside a safe zone
+    }
+  }
+
+  /** Drop any active hellfire warning/eruption visuals (telegraph cancel / reset). */
+  private clearHellfireFx(): void {
+    for (const o of this.hellfireFx) {
+      this.tweens.killTweensOf(o);
+      o.destroy();
+    }
+    this.hellfireFx = [];
   }
 
   // --- Portal Defense: townsfolk + the wave encounter -----------------------
@@ -2468,6 +2661,32 @@ export class MainScene extends Phaser.Scene {
       this.player.y + (this.player.facingY / len) * ahead,
       this.activeMap().layer,
     );
+  }
+
+  /** The benevolent redemption angel (ending): pure white/gold, serene — drawn WHITE
+   *  so it reads as radiant light, deliberately unlike the hostile angels. */
+  private static ensureRedemptionAngelTexture(scene: Phaser.Scene): void {
+    if (scene.textures.exists('redemption-angel')) return;
+    const w = 60;
+    const h = 84;
+    const cx = w / 2;
+    const g = scene.make.graphics({ x: 0, y: 0 }, false);
+    g.fillStyle(0xffffff, 0.55); // broad serene wings, raised gently
+    g.fillTriangle(cx - 6, 34, 2, 10, 10, 54);
+    g.fillTriangle(cx + 6, 34, w - 2, 10, w - 10, 54);
+    g.fillStyle(0xffffff, 0.85); // inner wings
+    g.fillTriangle(cx - 5, 34, 14, 20, 16, 50);
+    g.fillTriangle(cx + 5, 34, w - 14, 20, w - 16, 50);
+    g.fillStyle(0xffffff, 1); // flowing robe
+    g.fillRoundedRect(cx - 9, 28, 18, h - 34, 8);
+    g.fillTriangle(cx - 11, h - 4, cx + 11, h - 4, cx, h - 22); // robe hem
+    g.fillCircle(cx, 22, 8); // head
+    g.lineStyle(3, 0xffffff, 1); // bright halo
+    g.strokeCircle(cx, 13, 9);
+    g.fillStyle(0xffffff, 0.5); // a soft aura behind
+    g.fillCircle(cx, 30, 16);
+    g.generateTexture('redemption-angel', w, h);
+    g.destroy();
   }
 
   private static ensureHellPropTextures(scene: Phaser.Scene): void {
@@ -3659,6 +3878,8 @@ export class MainScene extends Phaser.Scene {
       { label: 'Enter Lair / Start Trinity', onPress: () => this.devEnterLair() },
       { label: 'Start Dragon', onPress: () => this.devStartTrinityBoss('dragon') },
       { label: 'Start Beast', onPress: () => this.devStartTrinityBoss('beast') },
+      { label: 'Start Satan', onPress: () => this.devStartTrinityBoss('satan') },
+      { label: 'Trigger Ending', onPress: () => this.devTriggerEnding() },
       { label: 'Reset Trinity', onPress: () => this.resetTrinity() },
       { label: 'Go to Heaven', onPress: () => this.devGoToHeaven() },
       { label: 'Return to Earth', onPress: () => this.devReturnToEarth() },

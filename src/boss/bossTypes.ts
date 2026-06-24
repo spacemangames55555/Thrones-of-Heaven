@@ -18,7 +18,8 @@ export type BossAttackKind =
   | 'charge' // SPECIAL: a telegraphed dash at the player dealing contact damage
   | 'mirror' // REACTIVE: "answers" the player — return volley to ranged, mimic-dash to a dash
   | 'shield' // DEFENSIVE: a telegraphed invulnerability window (damage blocked), then vulnerable
-  | 'hazard'; // ZONE-CONTROL: drops a lingering ground hazard at the player that accumulates
+  | 'hazard' // ZONE-CONTROL: drops a lingering ground hazard at the player that accumulates
+  | 'hellfire'; // FINALE: a telegraphed FULL-ARENA eruption — survive only inside the marked SAFE ZONES
 
 export interface BossAttack {
   readonly kind: BossAttackKind;
@@ -27,15 +28,16 @@ export interface BossAttack {
    *  for 'mirror' the minimum gap between reactions (so it answers, not clones). */
   readonly cooldownMs: number;
   /** Reach: melee/ranged/charge use-distance; for 'slam' the trigger distance;
-   *  for 'mirror' the max distance it will react within; ignored by 'shield'. */
+   *  for 'mirror' the max distance it will react within; for 'hellfire' the ARENA
+   *  radius the eruption covers; ignored by 'shield'. */
   readonly range: number;
-  /** volley fan count / barrage ring count / mirror return-volley count. */
+  /** volley fan count / barrage ring count / mirror return-volley count / hellfire SAFE-ZONE count. */
   readonly bolts?: number;
   /** radians between bolts in a volley fan. */
   readonly spread?: number;
   /** projectile speed (volley/barrage/mirror) or dash speed (charge). */
   readonly speed?: number;
-  /** slam AoE radius (px). */
+  /** slam AoE radius (px) / hellfire SAFE-ZONE radius (px). */
   readonly radius?: number;
   /** SPECIAL wind-up before the effect lands (ms) — the readable telegraph. */
   readonly telegraphMs?: number;
@@ -124,4 +126,10 @@ export interface BossHooks {
   /** Drop a persistent GROUND HAZARD zone at (x,y): telegraphs, then damages the
    *  player who stands in it for `lifetimeMs` (0 = whole fight). Capped per boss. */
   hazard(boss: { id: string }, x: number, y: number, radius: number, damage: number, lifetimeMs: number, telegraphMs: number, cap: number): void;
+  /** HELLFIRE wind-up: mark the impending full-arena eruption + the SAFE ZONES the
+   *  player must reach (clear telegraph) for `durationMs`. */
+  hellfireWarn(centerX: number, centerY: number, arenaRadius: number, safe: { x: number; y: number }[], safeRadius: number, durationMs: number): void;
+  /** HELLFIRE detonation: the arena erupts — damage the player UNLESS they're inside
+   *  a safe zone. Clears the warning visuals. */
+  hellfireBurst(centerX: number, centerY: number, arenaRadius: number, safe: { x: number; y: number }[], safeRadius: number, damage: number): void;
 }

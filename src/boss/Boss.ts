@@ -20,9 +20,9 @@ const BLOCK_FX_GAP_MS = 220;
  * hold-ground movement (advance to preferred range, never flee, leash when far),
  * and the attack loadout — each attack a parameterized pattern from the library
  * ('melee' / 'volley' / special 'barrage' / 'slam' / 'charge', reactive 'mirror',
- * defensive 'shield', zone-control 'hazard'). Effects run through scene-provided
- * {@link BossHooks} (reusing the existing projectile/melee/summon systems).
- * Adding a boss = a new BossDef, not new code.
+ * defensive 'shield', zone-control 'hazard', finale 'hellfire'). Effects run
+ * through scene-provided {@link BossHooks} (reusing the existing projectile/melee/
+ * summon systems). Adding a boss = a new BossDef, not new code.
  *
  * Behavior matches the bespoke Archangel Michael it replaces: IDLE → ENGAGE on
  * activate; per phase, melee up close XOR ranged volley at distance; summon wave
@@ -49,8 +49,8 @@ export class Boss {
   private nextReadyAt: number[] = [];
   private nextSummonAt = Number.POSITIVE_INFINITY;
   private playerNear = false;
-  /** A special move winding up: fires its effect at `at`. */
-  private pending?: { attack: BossAttack; at: number; tx: number; ty: number };
+  /** A special move winding up: fires its effect at `at`. `safe` carries hellfire's safe zones. */
+  private pending?: { attack: BossAttack; at: number; tx: number; ty: number; safe?: { x: number; y: number }[] };
   /** An in-progress charge dash. `speed` is the dash velocity (px/sec). */
   private charge?: { dx: number; dy: number; speed: number; until: number; damage: number; hit: boolean };
   /** SHIELD pattern: invulnerable + rooted until this time (0 = not shielded). */
@@ -315,6 +315,8 @@ export class Boss {
         return !this.isShielded; // cadence-gated by the slot cooldown; never stack
       case 'hazard':
         return dist <= atk.range; // drop a lingering zone at the player when in reach
+      case 'hellfire':
+        return dist <= atk.range; // erupt the whole arena while the player is inside it
     }
   }
 
@@ -357,6 +359,23 @@ export class Boss {
         this.hooks.hazard(this, px, py, atk.radius ?? 70, atk.damage, atk.durationMs ?? 0, atk.telegraphMs ?? 600, atk.cap ?? 6);
         this.pop(1.05);
         break;
+      case 'hellfire': {
+        // FINALE: telegraph a full-arena eruption with a few SAFE ZONES, then detonate
+        // in execSpecial(). The boss is rooted during the wind-up (a fair "go there" window).
+        const tele = atk.telegraphMs ?? 1300;
+        const arena = atk.range;
+        const n = Math.max(1, atk.bolts ?? 3);
+        const safe: { x: number; y: number }[] = [];
+        for (let i = 0; i < n; i++) {
+          const a = (Math.PI * 2 * i) / n + Math.random() * 0.7;
+          // Off the boss but REACHABLE within the telegraph (well inside the arena).
+          const r = arena * (0.2 + Math.random() * 0.4);
+          safe.push({ x: this.x + Math.cos(a) * r, y: this.y + Math.sin(a) * r });
+        }
+        this.pending = { attack: atk, at: time + tele, tx: this.x, ty: this.y, safe };
+        this.hooks.hellfireWarn(this.x, this.y, arena, safe, atk.radius ?? 60, tele);
+        break;
+      }
       case 'barrage':
       case 'slam':
       case 'charge': {
@@ -372,9 +391,12 @@ export class Boss {
     }
   }
 
-  private execSpecial(pending: { attack: BossAttack; tx: number; ty: number }, time: number): void {
+  private execSpecial(pending: { attack: BossAttack; tx: number; ty: number; safe?: { x: number; y: number }[] }, time: number): void {
     const atk = pending.attack;
-    if (atk.kind === 'barrage') {
+    if (atk.kind === 'hellfire') {
+      this.hooks.hellfireBurst(pending.tx, pending.ty, atk.range, pending.safe ?? [], atk.radius ?? 60, atk.damage);
+      this.pop(1.25);
+    } else if (atk.kind === 'barrage') {
       const n = Math.max(3, atk.bolts ?? 12);
       const dirs: { x: number; y: number }[] = [];
       for (let i = 0; i < n; i++) {

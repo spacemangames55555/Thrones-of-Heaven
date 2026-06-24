@@ -234,6 +234,40 @@ const DRAWERS: Record<string, (g: Phaser.GameObjects.Graphics) => { w: number; h
     return { w, h };
   },
 
+  // SATAN — the final boss: a towering horned devil with vast bat wings, a great
+  // crown of horns and a trident. The grandest, most imposing silhouette.
+  satan: (g) => {
+    const w = 104;
+    const h = 100;
+    const cx = w / 2;
+    g.fillStyle(0xffffff, 0.4); // vast bat wings (clawed)
+    g.fillTriangle(cx - 12, 40, 2, 8, 10, 64);
+    g.fillTriangle(cx + 12, 40, w - 2, 8, w - 10, 64);
+    g.fillStyle(0xffffff, 0.62); // wing ribs
+    g.fillTriangle(cx - 10, 40, 18, 22, 20, 58);
+    g.fillTriangle(cx + 10, 40, w - 18, 22, w - 20, 58);
+    g.fillStyle(0xffffff, 1); // hulking torso + legs
+    g.fillRoundedRect(cx - 18, 34, 36, h - 40, 10);
+    g.fillStyle(0xffffff, 1); // head
+    g.fillRoundedRect(cx - 13, 18, 26, 24, 7);
+    g.fillStyle(0xffffff, 1); // great curved crown of horns
+    g.fillTriangle(cx - 13, 20, cx - 6, 20, cx - 26, -2);
+    g.fillTriangle(cx + 13, 20, cx + 6, 20, cx + 26, -2);
+    g.fillTriangle(cx - 6, 18, cx - 1, 18, cx - 9, 2);
+    g.fillTriangle(cx + 6, 18, cx + 1, 18, cx + 9, 2);
+    g.fillStyle(0x000000, 0.6); // burning eyes + maw
+    g.fillCircle(cx - 6, 28, 3);
+    g.fillCircle(cx + 6, 28, 3);
+    g.fillRect(cx - 7, 35, 14, 3);
+    g.fillStyle(0xffffff, 0.9); // a raised trident off to one side
+    g.fillRect(w - 12, 6, 3, 54);
+    g.fillTriangle(w - 17, 8, w - 7, 8, w - 12, -2);
+    g.fillStyle(0xffffff, 0.85); // massive fists
+    g.fillCircle(cx - 24, 56, 12);
+    g.fillCircle(cx + 24, 56, 12);
+    return { w, h };
+  },
+
   // A generic placeholder boss — a faceted crystalline core with an aura ring +
   // a "?" so it clearly reads as a DEV/test stand-in.
   'test-boss': (g) => {
