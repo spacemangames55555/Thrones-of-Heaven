@@ -11,14 +11,17 @@ const TAB_W = 46;
 const TAB_H = 66;
 const BTN_W = 170; // single-column button width
 const BTN_W2 = 138; // two-column button width (narrower so two fit left of the zoom buttons)
-const COL_GAP = 8; // gap between the two columns
+const BTN_W3 = 88; // three-column button width (narrower still; three fit left of the zoom buttons)
+const COL_GAP = 8; // gap between columns
 const BTN_GAP = 6;
 const BTN_H_MAX = 40;
 const BTN_H_MIN = 20;
 const TAB_GAP = 8; // space between the tab and the button column
-// Above this many buttons, lay them out in TWO columns so they stay tappable on a
-// phone (and clear of the right-edge zoom buttons) instead of shrinking to slivers.
+// Above these many buttons, add columns so they stay tappable on a phone (and
+// clear of the right-edge zoom buttons + the bottom controls) instead of either
+// shrinking to slivers or overflowing the safe band.
 const TWO_COL_THRESHOLD = 14;
+const THREE_COL_THRESHOLD = 34;
 // The vertical band the expanded column lives in: below the quest tracker, above
 // the bottom controls. Button height shrinks to fit however many buttons there are
 // (the expanded buttons capture their own taps, so the joystick never spawns under
@@ -126,10 +129,10 @@ export class DevPanel {
     // controls). Many buttons → TWO columns (kept left of the right-edge zoom
     // buttons) so each stays a comfortable height instead of a sliver.
     const n = this.buttons.length;
-    const cols = n > TWO_COL_THRESHOLD ? 2 : 1;
-    const btnW = cols === 2 ? BTN_W2 : BTN_W;
+    const cols = n > THREE_COL_THRESHOLD ? 3 : n > TWO_COL_THRESHOLD ? 2 : 1;
+    const btnW = cols === 3 ? BTN_W3 : cols === 2 ? BTN_W2 : BTN_W;
     const rows = Math.ceil(n / cols);
-    const fontSize = cols === 2 ? '13px' : '15px';
+    const fontSize = cols === 3 ? '11px' : cols === 2 ? '13px' : '15px';
 
     const bandTop = insets.top + BAND_TOP;
     const bandBottom = h - insets.bottom - BAND_BOTTOM_GAP;

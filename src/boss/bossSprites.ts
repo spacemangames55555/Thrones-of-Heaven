@@ -138,6 +138,52 @@ const DRAWERS: Record<string, (g: Phaser.GameObjects.Graphics) => { w: number; h
     return { w, h };
   },
 
+  // SIN 6 — GREED (the Hoarder): a bloated figure hunched over a hoard of coins —
+  // reads as "grasping / treasure".
+  greed: (g) => {
+    const w = 70;
+    const h = 64;
+    const cx = w / 2;
+    g.fillStyle(0xffffff, 1); // hunched bulky body
+    g.fillRoundedRect(cx - 16, 14, 32, h - 28, 9);
+    g.fillCircle(cx, 12, 8); // head
+    g.fillStyle(0xffffff, 0.85); // grasping arms wrapped around the hoard
+    g.fillRoundedRect(cx - 24, 30, 12, 18, 6);
+    g.fillRoundedRect(cx + 12, 30, 12, 18, 6);
+    g.fillStyle(0xffffff, 0.7); // a pile of coins at its feet (the hoard)
+    for (const [dx, dy] of [[-14, -2], [-4, 2], [6, -2], [14, 1], [-9, 4], [2, 5], [11, 4]]) {
+      g.fillCircle(cx + dx, h - 6 + dy, 4);
+    }
+    g.fillStyle(0x000000, 0.5); // greedy eyes
+    g.fillCircle(cx - 3, 11, 2);
+    g.fillCircle(cx + 3, 11, 2);
+    return { w, h };
+  },
+
+  // SIN 7 — LUST (the Chaos Finale): a writhing many-armed silhouette — the
+  // ever-shifting capstone reads as "chaotic / overwhelming".
+  lust: (g) => {
+    const w = 72;
+    const h = 76;
+    const cx = w / 2;
+    const cy = 40;
+    g.fillStyle(0xffffff, 0.5); // a halo of writhing tendrils/arms
+    for (let i = 0; i < 8; i++) {
+      const a = (Math.PI * 2 * i) / 8;
+      const ex = cx + Math.cos(a) * 30;
+      const ey = cy + Math.sin(a) * 30;
+      g.fillTriangle(cx + Math.cos(a - 0.18) * 12, cy + Math.sin(a - 0.18) * 12, cx + Math.cos(a + 0.18) * 12, cy + Math.sin(a + 0.18) * 12, ex, ey);
+    }
+    g.fillStyle(0xffffff, 1); // central body
+    g.fillRoundedRect(cx - 12, 22, 24, h - 28, 10);
+    g.fillCircle(cx, 18, 9); // head
+    g.fillStyle(0x000000, 0.5); // three feverish eyes
+    g.fillCircle(cx - 4, 17, 2);
+    g.fillCircle(cx + 4, 17, 2);
+    g.fillCircle(cx, 22, 2);
+    return { w, h };
+  },
+
   // A generic placeholder boss — a faceted crystalline core with an aura ring +
   // a "?" so it clearly reads as a DEV/test stand-in.
   'test-boss': (g) => {
