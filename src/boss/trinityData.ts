@@ -1,4 +1,4 @@
-import { DRAGON, BEAST, TRINITY_ARENA } from '../game/settings';
+import { DRAGON, BEAST, SATAN, TRINITY_ARENA } from '../game/settings';
 import type { BossDef } from './bossTypes';
 
 /**
@@ -15,8 +15,11 @@ import type { BossDef } from './bossTypes';
  *            (barrage) + lingering flames (hazard). Constant movement.
  *   BEAST  — multi-axis ATTRITION (the hardest): demon summons + heavy slams +
  *            armored shield windows + spreading corruption (hazard) + heavy melee.
+ *   SATAN  — STAGE 3, the FINAL boss + hardest fight: 4 phases through the WHOLE
+ *            library (charge/nova/summon/slam/shield/hazard) + the new HELLFIRE
+ *            full-arena eruption, with a final ENRAGE. His defeat fires the ending.
  *
- * Both spawn at the lair ARENA (TRINITY_ARENA, LOCAL Hell px) — edit it to move.
+ * All three spawn at the lair ARENA (TRINITY_ARENA, LOCAL Hell px) — edit it to move.
  */
 
 /** STAGE 1 — THE DRAGON: 3 phases; dives quicken, fire thickens, flames spread. */
@@ -128,4 +131,72 @@ export const BEAST_DEF: BossDef = {
   ],
   xpReward: BEAST.xpReward,
   holyPowerDrop: BEAST.holyPowerDrop,
+};
+
+/** STAGE 3 — SATAN: the FINAL boss. 4 phases combine MORE of the library each step,
+ *  P3+ add the HELLFIRE full-arena eruption, and P4 ENRAGES (faster move, shorter
+ *  cooldowns, fewer hellfire safe zones). Composed entirely from library patterns. */
+export const SATAN_DEF: BossDef = {
+  id: 'trinity-satan',
+  name: SATAN.name,
+  world: 'hell',
+  placement: TRINITY_ARENA,
+  sprite: { key: 'satan', scale: SATAN.scale, tint: SATAN.color },
+  maxHP: SATAN.maxHP,
+  moveTilesPerSec: SATAN.moveTilesPerSec,
+  meleeRange: SATAN.meleeRange,
+  preferredRange: SATAN.preferredRange,
+  leashRange: SATAN.leashRange,
+  activationRange: SATAN.activationRange,
+  phases: [
+    {
+      // P1 — aggressive opener: melee + dives + ranged pokes.
+      fromRatio: 1,
+      attacks: [
+        { kind: 'melee', damage: SATAN.meleeDamage, cooldownMs: SATAN.meleeCooldownMs, range: SATAN.meleeRange },
+        { kind: 'charge', damage: SATAN.chargeDamage, cooldownMs: SATAN.chargeCooldownMsP1, range: SATAN.chargeRange, speed: SATAN.chargeSpeed, telegraphMs: SATAN.chargeTelegraphMs },
+        { kind: 'volley', damage: SATAN.volleyDamage, cooldownMs: SATAN.volleyCooldownMs, range: SATAN.volleyRange, bolts: SATAN.volleyCount, spread: 0.16, speed: SATAN.volleySpeed },
+      ],
+    },
+    {
+      // P2 — adds novas, slams and demon summons.
+      fromRatio: SATAN.phase2Threshold,
+      attacks: [
+        { kind: 'melee', damage: SATAN.meleeDamage, cooldownMs: SATAN.meleeCooldownMs, range: SATAN.meleeRange },
+        { kind: 'charge', damage: SATAN.chargeDamage, cooldownMs: SATAN.chargeCooldownMsP1, range: SATAN.chargeRange, speed: SATAN.chargeSpeed, telegraphMs: SATAN.chargeTelegraphMs },
+        { kind: 'barrage', damage: SATAN.novaDamage, cooldownMs: SATAN.novaCooldownMs, range: SATAN.volleyRange, bolts: SATAN.novaCountP2, speed: SATAN.novaSpeed, telegraphMs: SATAN.novaTelegraphMs },
+        { kind: 'slam', damage: SATAN.slamDamage, cooldownMs: SATAN.slamCooldownMsP2, range: SATAN.slamRange, radius: SATAN.slamRadius, telegraphMs: SATAN.slamTelegraphMs },
+      ],
+      summon: { enemy: SATAN.summonEnemy, count: SATAN.summonCountP2, cap: SATAN.summonCap, cadenceMs: SATAN.summonCadenceMsP2 },
+    },
+    {
+      // P3 — the full toolkit: shields, lingering hellground, and HELLFIRE eruptions.
+      fromRatio: SATAN.phase3Threshold,
+      attacks: [
+        { kind: 'melee', damage: SATAN.meleeDamage, cooldownMs: SATAN.meleeCooldownMs, range: SATAN.meleeRange },
+        { kind: 'barrage', damage: SATAN.novaDamage, cooldownMs: SATAN.novaCooldownMs, range: SATAN.volleyRange, bolts: SATAN.novaCountP3, speed: SATAN.novaSpeed, telegraphMs: SATAN.novaTelegraphMs },
+        { kind: 'slam', damage: SATAN.slamDamage, cooldownMs: SATAN.slamCooldownMsP3, range: SATAN.slamRange, radius: SATAN.slamRadius, telegraphMs: SATAN.slamTelegraphMs },
+        { kind: 'shield', damage: 0, cooldownMs: SATAN.shieldCadenceMsP3, range: 0, durationMs: SATAN.shieldDurationMs },
+        { kind: 'hazard', damage: SATAN.hazardDamage, cooldownMs: SATAN.hazardCadenceMsP3, range: SATAN.hazardRange, radius: SATAN.hazardRadius, durationMs: SATAN.hazardLifetimeMs, telegraphMs: SATAN.hazardTelegraphMs, cap: SATAN.hazardCapP3 },
+        { kind: 'hellfire', damage: SATAN.hellfireDamage, cooldownMs: SATAN.hellfireCooldownMsP3, range: SATAN.hellfireArenaRadius, bolts: SATAN.hellfireSafeZonesP3, radius: SATAN.hellfireSafeRadius, telegraphMs: SATAN.hellfireTelegraphMsP3 },
+      ],
+      summon: { enemy: SATAN.summonEnemy, count: SATAN.summonCountP2, cap: SATAN.summonCap, cadenceMs: SATAN.summonCadenceMsP2 },
+    },
+    {
+      // P4 — ENRAGE: faster move, shorter cooldowns, fewer/quicker hellfire safe zones.
+      fromRatio: SATAN.phase4Threshold,
+      moveTilesPerSec: SATAN.moveTilesPerSecP4,
+      attacks: [
+        { kind: 'melee', damage: SATAN.meleeDamage, cooldownMs: SATAN.meleeCooldownMsP4, range: SATAN.meleeRange },
+        { kind: 'charge', damage: SATAN.chargeDamage, cooldownMs: SATAN.chargeCooldownMsP4, range: SATAN.chargeRange, speed: SATAN.chargeSpeed, telegraphMs: SATAN.chargeTelegraphMs },
+        { kind: 'barrage', damage: SATAN.novaDamage, cooldownMs: SATAN.novaCooldownMsP4, range: SATAN.volleyRange, bolts: SATAN.novaCountP4, speed: SATAN.novaSpeed, telegraphMs: SATAN.novaTelegraphMs },
+        { kind: 'slam', damage: SATAN.slamDamage, cooldownMs: SATAN.slamCooldownMsP4, range: SATAN.slamRange, radius: SATAN.slamRadius, telegraphMs: SATAN.slamTelegraphMs },
+        { kind: 'hazard', damage: SATAN.hazardDamage, cooldownMs: SATAN.hazardCadenceMsP4, range: SATAN.hazardRange, radius: SATAN.hazardRadius, durationMs: SATAN.hazardLifetimeMs, telegraphMs: SATAN.hazardTelegraphMs, cap: SATAN.hazardCapP4 },
+        { kind: 'hellfire', damage: SATAN.hellfireDamage, cooldownMs: SATAN.hellfireCooldownMsP4, range: SATAN.hellfireArenaRadius, bolts: SATAN.hellfireSafeZonesP4, radius: SATAN.hellfireSafeRadius, telegraphMs: SATAN.hellfireTelegraphMsP4 },
+      ],
+      summon: { enemy: SATAN.summonEnemy, count: SATAN.summonCountP4, cap: SATAN.summonCap, cadenceMs: SATAN.summonCadenceMsP4 },
+    },
+  ],
+  xpReward: SATAN.xpReward,
+  holyPowerDrop: SATAN.holyPowerDrop,
 };
