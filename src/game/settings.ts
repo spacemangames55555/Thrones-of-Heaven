@@ -276,6 +276,33 @@ export const ANGEL_VARIANTS: Record<AngelVariantKey, AngelVariantConfig> = {
 export const DEV_GRANT_HOLY_POWER = 5;
 
 
+// --- The Descent arc (quests 1–4) ------------------------------------------
+//
+// Authored, corruption-gated quest chain in Oregon. Locations are placeholder
+// world positions near the spirit corridor (all verified walkable). The Dark
+// Outpost is the hub the player returns to; the patron (the Oregon spirit) gives
+// every quest. Edit positions / group sizes here; quest TEXT lives in questData.ts.
+
+/** The arc hub: where the dark patron dwells; "return to the outpost" centers here. */
+export const DARK_OUTPOST_POSITION = { x: 12048, y: 13456 };
+/** Oregon City — Quest 1 guardsmen + Quest 3 angels spawn here. */
+export const OREGON_CITY_POSITION = { x: 12800, y: 13300 };
+/** The farm field — Quest 2 farmers + the shipment pickup. */
+export const FARM_FIELD_POSITION = { x: 11650, y: 13650 };
+/** Quest 4's two marked spots. */
+export const DESCENT_LOC_A = { x: 12700, y: 14100 };
+export const DESCENT_LOC_B = { x: 11800, y: 14150 };
+
+/** Proximity (px) that completes a "reach the outpost" / "travel to" objective. */
+export const REACH_OUTPOST_RANGE = 90;
+
+/** Group sizes per arc objective. */
+export const DESCENT_GUARDSMEN_COUNT = 4;
+export const DESCENT_FARMERS_COUNT = 4;
+export const DESCENT_OC_ANGELS = 3; // Quest 3
+export const DESCENT_LOC_ANGELS = 2; // Quest 4, per location
+
+
 // --- Portal Defense (wave-defense encounter) -------------------------------
 //
 // Protect a destructible Dark Portal from waves of townsfolk. Win by surviving
@@ -303,8 +330,22 @@ export const TOWNSFOLK_PLAYER_DAMAGE = 7;
 export const TOWNSFOLK_ATTACK_COOLDOWN_MS = 1000;
 /** Distance (px) within which a townsfolk hits the player instead of advancing. */
 export const TOWNSFOLK_CONTACT_RANGE = 28;
+/** Player-hunting townsfolk (the descent arc) idle at their post until the player is this close. */
+export const TOWNSFOLK_AGGRO_RANGE = 340;
 /** XP awarded for killing one townsfolk. */
 export const TOWNSFOLK_XP_REWARD = 12;
+
+/**
+ * Townsfolk VARIANTS — a reskin layer over the one Townsfolk class (same melee
+ * behavior, different tint + XP). The descent arc uses 'guardsman' and 'farmer';
+ * 'townsperson' is the portal-defense default. Edit a tint/XP to retune a look.
+ */
+export type TownsfolkVariant = 'townsperson' | 'guardsman' | 'farmer';
+export const TOWNSFOLK_VARIANTS: Record<TownsfolkVariant, { color: number; xpReward: number }> = {
+  townsperson: { color: 0xffffff, xpReward: TOWNSFOLK_XP_REWARD }, // no tint (default brown)
+  guardsman: { color: 0x9fb6e6, xpReward: 16 }, // steel-blue
+  farmer: { color: 0xbfe089, xpReward: 13 }, // straw-green
+};
 
 // --- The wave sequence ---
 /** Enemies per wave (escalating); the array LENGTH is the number of waves. */
