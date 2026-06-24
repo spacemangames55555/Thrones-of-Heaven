@@ -1,0 +1,332 @@
+import Phaser from 'phaser';
+import { Health } from '../combat/Health';
+import { TILE_SIZE } from '../render/tileAtlas';
+import { ensureBossTexture } from './bossSprites';
+import type { BossAttack, BossDef, BossHooks } from './bossTypes';
+
+let NEXT = 1;
+type State = 'dormant' | 'active' | 'dead';
+
+/**
+ * The GENERIC, data-driven boss controller. ONE class drives EVERY boss from its
+ * {@link BossDef}: the phase state machine (HP-gated, 1..N phases), the
+ * hold-ground movement (advance to preferred range, never flee, leash when far),
+ * and the attack loadout — each attack a parameterized pattern from the library
+ * ('melee' / 'volley' / special 'barrage' / 'slam' / 'charge'). Effects run through
+ * scene-provided {@link BossHooks} (reusing the existing projectile/melee/summon
+ * systems). Adding a boss = a new BossDef, not new code.
+ *
+ * Behavior matches the bespoke Archangel Michael it replaces: IDLE → ENGAGE on
+ * activate; per phase, melee up close XOR ranged volley at distance; summon wave
+ * on phase entry + on a cadence timer. Boss/phase state is serializable.
+ */
+export class Boss {
+  readonly id: string;
+  readonly def: BossDef;
+  readonly sprite: Phaser.Physics.Arcade.Sprite;
+  readonly health: Health;
+
+  onPhaseChange?: (phase: number) => void;
+  onDefeat?: () => void;
+
+  private readonly scene: Phaser.Scene;
+  private readonly hooks: BossHooks;
+  private readonly speed: number;
+  private readonly homeX: number;
+  private readonly homeY: number;
+  private state: State = 'dormant';
+  private phaseIndex = 0;
+  /** Per-attack-slot cooldown timers (carry across phases, like Michael's). */
+  private nextReadyAt: number[] = [];
+  private nextSummonAt = Number.POSITIVE_INFINITY;
+  private playerNear = false;
+  /** A special move winding up: fires its effect at `at`. */
+  private pending?: { attack: BossAttack; at: number; tx: number; ty: number };
+  /** An in-progress charge dash. */
+  private charge?: { dx: number; dy: number; until: number; damage: number; hit: boolean };
+
+  constructor(scene: Phaser.Scene, def: BossDef, worldX: number, worldY: number, hooks: BossHooks) {
+    this.id = `${def.id}-${NEXT++}`;
+    this.scene = scene;
+    this.def = def;
+    this.hooks = hooks;
+    this.homeX = worldX;
+    this.homeY = worldY;
+    const texKey = ensureBossTexture(scene, def.sprite.key);
+
+    this.sprite = scene.physics.add.sprite(worldX, worldY, texKey).setDepth(10);
+    this.sprite.setScale(def.sprite.scale).setTint(def.sprite.tint);
+    const body = this.sprite.body as Phaser.Physics.Arcade.Body;
+    body.setCircle(16, this.sprite.width / 2 - 16, this.sprite.height / 2 - 16);
+    // No collideWorldBounds — bosses live in offset worlds; terrain contains them.
+
+    this.speed = def.moveTilesPerSec * TILE_SIZE;
+    this.health = new Health(def.maxHP);
+  }
+
+  get x(): number {
+    return this.sprite.x;
+  }
+  get y(): number {
+    return this.sprite.y;
+  }
+  get name(): string {
+    return this.def.name;
+  }
+  get isAlive(): boolean {
+    return this.state !== 'dead';
+  }
+  get isActive(): boolean {
+    return this.state === 'active';
+  }
+  get isAggro(): boolean {
+    return this.state === 'active' && this.playerNear;
+  }
+  get currentPhase(): number {
+    return this.phaseIndex + 1;
+  }
+  get hpRatio(): number {
+    return this.health.ratio;
+  }
+
+  distanceTo(x: number, y: number): number {
+    return Phaser.Math.Distance.Between(this.sprite.x, this.sprite.y, x, y);
+  }
+
+  objects(): Phaser.GameObjects.GameObject[] {
+    return [this.sprite];
+  }
+
+  activate(): void {
+    if (this.state !== 'dormant') return;
+    this.state = 'active';
+    this.enterPhase(0);
+  }
+
+  takeHit(amount: number): number {
+    if (this.state === 'dead') return 0;
+    if (this.state === 'dormant') this.activate();
+    const dealt = this.health.damage(amount);
+    this.sprite.setTint(0xffffff).setTintMode(Phaser.TintModes.FILL);
+    this.scene.time.delayedCall(60, () => {
+      if (this.state !== 'dead') this.sprite.setTint(this.def.sprite.tint).setTintMode(Phaser.TintModes.MULTIPLY);
+    });
+    if (this.health.isDead) this.die();
+    return dealt;
+  }
+
+  update(playerX: number, playerY: number, time: number): void {
+    if (this.state !== 'active') return;
+    const body = this.sprite.body as Phaser.Physics.Arcade.Body;
+    const dist = this.distanceTo(playerX, playerY);
+
+    // Leash — hold (and don't keep the player in combat) when far / in another world.
+    this.playerNear = dist <= this.def.leashRange;
+    if (!this.playerNear) {
+      body.velocity.set(0, 0);
+      return;
+    }
+    this.sprite.setFlipX(playerX < this.sprite.x);
+
+    // In-progress charge dash overrides movement + attacks.
+    if (this.charge) {
+      body.velocity.set(this.charge.dx * this.speed * 2.4, this.charge.dy * this.speed * 2.4);
+      if (!this.charge.hit && dist <= this.def.meleeRange + 8) {
+        this.charge.hit = true;
+        this.hooks.meleeHit(this.charge.damage);
+      }
+      if (time >= this.charge.until) {
+        this.charge = undefined;
+        body.velocity.set(0, 0);
+      }
+      return;
+    }
+
+    // Resolve a special whose telegraph has finished (rooted during wind-up).
+    if (this.pending) {
+      body.velocity.set(0, 0);
+      if (time >= this.pending.at) {
+        this.execSpecial(this.pending, time);
+        this.pending = undefined;
+      }
+      return;
+    }
+
+    // PHASE STATE MACHINE: advance (never regress) as HP crosses thresholds.
+    this.advancePhase();
+    const phase = this.def.phases[this.phaseIndex];
+
+    // Movement: hold & strike up close; advance to preferred range; never flee.
+    if (dist <= this.def.meleeRange) body.velocity.set(0, 0);
+    else if (dist > this.def.preferredRange) this.moveToward(playerX, playerY);
+    else body.velocity.set(0, 0);
+
+    // Attacks — each slot fires independently on its own cooldown + distance gate.
+    for (let i = 0; i < phase.attacks.length; i++) {
+      const atk = phase.attacks[i];
+      if (time < (this.nextReadyAt[i] ?? 0)) continue;
+      if (!this.canUse(atk, dist, playerX, playerY)) continue;
+      this.nextReadyAt[i] = time + atk.cooldownMs;
+      this.trigger(atk, playerX, playerY, time);
+      if (this.pending || this.charge) break; // a special takes over this frame
+    }
+
+    // Summon cadence (the wave on phase entry happens in enterPhase).
+    const s = phase.summon;
+    if (s && s.cadenceMs > 0 && time >= this.nextSummonAt) {
+      this.nextSummonAt = time + s.cadenceMs;
+      this.hooks.summon(this, s.enemy, s.count, s.cap);
+    }
+  }
+
+  halt(): void {
+    if (this.state === 'dead') return;
+    (this.sprite.body as Phaser.Physics.Arcade.Body).velocity.set(0, 0);
+  }
+
+  reset(): void {
+    this.state = 'dormant';
+    this.phaseIndex = 0;
+    this.health.full();
+    this.nextReadyAt = [];
+    this.nextSummonAt = Number.POSITIVE_INFINITY;
+    this.pending = undefined;
+    this.charge = undefined;
+    this.playerNear = false;
+    this.sprite.clearTint().setTint(this.def.sprite.tint);
+    this.sprite.setActive(true).setVisible(true).setAlpha(1).setScale(this.def.sprite.scale).setAngle(0).setFlipX(false);
+    const body = this.sprite.body as Phaser.Physics.Arcade.Body;
+    body.enable = true;
+    body.velocity.set(0, 0);
+    this.sprite.setPosition(this.homeX, this.homeY);
+  }
+
+  destroy(): void {
+    this.state = 'dead';
+    this.sprite.destroy();
+  }
+
+  toJSON(): { id: string; state: State; phase: number; hp: number } {
+    return { id: this.def.id, state: this.state, phase: this.phaseIndex + 1, hp: this.health.current };
+  }
+
+  // --- internals ------------------------------------------------------------
+
+  private advancePhase(): void {
+    const ratio = this.health.ratio;
+    let target = 0;
+    for (let i = 0; i < this.def.phases.length; i++) {
+      if (ratio <= this.def.phases[i].fromRatio) target = i;
+    }
+    if (target > this.phaseIndex) this.enterPhase(target);
+  }
+
+  private enterPhase(i: number): void {
+    this.phaseIndex = i;
+    const phase = this.def.phases[i];
+    this.onPhaseChange?.(i + 1); // telegraph (scene)
+    if (phase.summon) this.hooks.summon(this, phase.summon.enemy, phase.summon.count, phase.summon.cap); // wave on entry
+    this.nextSummonAt = phase.summon && phase.summon.cadenceMs > 0 ? this.scene.time.now + phase.summon.cadenceMs : Number.POSITIVE_INFINITY;
+  }
+
+  /** Distance/LOS gate per attack kind (melee XOR ranged, like Michael). */
+  private canUse(atk: BossAttack, dist: number, px: number, py: number): boolean {
+    switch (atk.kind) {
+      case 'melee':
+        return dist <= atk.range;
+      case 'volley':
+        return dist > this.def.meleeRange && dist <= atk.range && this.hooks.lineOfSight(this.x, this.y, px, py);
+      case 'barrage':
+        return dist <= atk.range && this.hooks.lineOfSight(this.x, this.y, px, py);
+      case 'slam':
+        return dist <= atk.range;
+      case 'charge':
+        return dist > this.def.meleeRange && dist <= atk.range;
+    }
+  }
+
+  private trigger(atk: BossAttack, px: number, py: number, time: number): void {
+    switch (atk.kind) {
+      case 'melee':
+        this.hooks.meleeHit(atk.damage);
+        this.pop(1.15);
+        break;
+      case 'volley':
+        this.fireVolley(atk, px, py);
+        this.pop(1.08);
+        break;
+      case 'barrage':
+      case 'slam':
+      case 'charge': {
+        // SPECIAL: telegraph first, then resolve in update().
+        const tele = atk.telegraphMs ?? 600;
+        this.pending = { attack: atk, at: time + tele, tx: px, ty: py };
+        const tr = atk.kind === 'slam' ? atk.radius ?? 120 : 40;
+        const tx = atk.kind === 'charge' ? px : this.x;
+        const ty = atk.kind === 'charge' ? py : this.y;
+        this.hooks.telegraph(tx, ty, tr, tele);
+        break;
+      }
+    }
+  }
+
+  private execSpecial(pending: { attack: BossAttack; tx: number; ty: number }, time: number): void {
+    const atk = pending.attack;
+    if (atk.kind === 'barrage') {
+      const n = Math.max(3, atk.bolts ?? 12);
+      const dirs: { x: number; y: number }[] = [];
+      for (let i = 0; i < n; i++) {
+        const a = (Math.PI * 2 * i) / n; // even RING / nova
+        dirs.push({ x: Math.cos(a), y: Math.sin(a) });
+      }
+      this.hooks.fireBolts({ x: this.x, y: this.y }, dirs, atk.damage, atk.speed ?? 280, atk.range);
+      this.pop(1.2);
+    } else if (atk.kind === 'slam') {
+      this.hooks.slam(this.x, this.y, atk.radius ?? 120, atk.damage);
+    } else if (atk.kind === 'charge') {
+      const a = Phaser.Math.Angle.Between(this.x, this.y, pending.tx, pending.ty);
+      const dur = Math.min(700, ((atk.range ?? 300) / (this.speed * 2.4)) * 1000);
+      this.charge = { dx: Math.cos(a), dy: Math.sin(a), until: time + dur, damage: atk.damage, hit: false };
+    }
+  }
+
+  private fireVolley(atk: BossAttack, px: number, py: number): void {
+    const base = Phaser.Math.Angle.Between(this.x, this.y, px, py);
+    const n = Math.max(1, atk.bolts ?? 1);
+    const spread = atk.spread ?? 0.16;
+    const dirs: { x: number; y: number }[] = [];
+    for (let i = 0; i < n; i++) {
+      const off = (i - (n - 1) / 2) * spread;
+      dirs.push({ x: Math.cos(base + off), y: Math.sin(base + off) });
+    }
+    const origin = { x: this.x + Math.cos(base) * 22, y: this.y + Math.sin(base) * 22 };
+    this.hooks.fireBolts(origin, dirs, atk.damage, atk.speed ?? 320, atk.range);
+  }
+
+  private moveToward(tx: number, ty: number): void {
+    const a = Phaser.Math.Angle.Between(this.x, this.y, tx, ty);
+    (this.sprite.body as Phaser.Physics.Arcade.Body).velocity.set(Math.cos(a) * this.speed, Math.sin(a) * this.speed);
+  }
+
+  private pop(mult: number): void {
+    const s = this.def.sprite.scale;
+    this.scene.tweens.add({ targets: this.sprite, scaleX: s * mult, scaleY: s * mult, duration: 85, yoyo: true });
+  }
+
+  private die(): void {
+    this.state = 'dead';
+    const body = this.sprite.body as Phaser.Physics.Arcade.Body;
+    body.velocity.set(0, 0);
+    body.enable = false;
+    this.sprite.setTint(0xffffff).setTintMode(Phaser.TintModes.FILL);
+    this.scene.tweens.add({
+      targets: this.sprite,
+      alpha: 0,
+      scale: this.def.sprite.scale * 1.8,
+      duration: 700,
+      ease: 'Quad.out',
+      onComplete: () => this.sprite.setActive(false).setVisible(false),
+    });
+    this.onDefeat?.();
+  }
+}
