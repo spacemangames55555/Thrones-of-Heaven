@@ -365,3 +365,98 @@ export const PORTAL_SPAWN_OFFSETS: { dx: number; dy: number }[] = [
   { dx: -190, dy: 70 },
   { dx: -190, dy: -70 },
 ];
+
+
+// --- The Descent climax: Holy Outpost + Heaven Portal + flaming-sword guardians ---
+//
+// The encounter BEFORE Heaven: a holy outpost with an uncorrupted Heaven Portal
+// guarded by TWO flaming-sword guardians (a melee + a ranged pair). Defeat both,
+// then corrupt the portal (gold/white → black/purple). A self-contained,
+// triggerable unit (FlamingSword ×2 + HeavenPortal, orchestrated by MainScene) —
+// NOT wired to the quest chain yet. Positions are placeholder, verified walkable.
+
+/** The holy outpost (Oregon) — distinct from the Dark Outpost and the Dark Portal. */
+export const HOLY_OUTPOST_POSITION = { x: 11500, y: 14400 };
+/** The Heaven Portal sits at the outpost centre. */
+export const HEAVEN_PORTAL_POSITION = { x: 11500, y: 14400 };
+/** Guardian spawn points, as offsets (px) from the portal (one melee, one ranged). */
+export const GUARDIAN_MELEE_OFFSET = { dx: 78, dy: 34 };
+export const GUARDIAN_RANGED_OFFSET = { dx: -78, dy: 34 };
+
+/** Player within this range of the outpost wakes the two dormant guardians. */
+export const GUARDIAN_ACTIVATION_RANGE = 240;
+/** Player within this range of the portal can corrupt it (only once both swords die). */
+export const PORTAL_CORRUPT_RANGE = 96;
+/** Player within this range of a CORRUPTED portal triggers the placeholder "enter" beat. */
+export const PORTAL_ENTER_RANGE = 60;
+/** How long the gold/white → black/purple corruption transition plays (ms). */
+export const PORTAL_CORRUPT_DURATION_MS = 1000;
+
+export type GuardianRole = 'melee' | 'ranged';
+
+/**
+ * The two flaming-sword guardians — ONE data definition, two ROLES, VISUALLY
+ * identical (same placeholder sprite). They differ only in behavior + tuning:
+ * SWORD A (melee) flies in and slashes; SWORD B (ranged) keeps its distance and
+ * flings fire. Tuned as a MINI-BOSS pair — tougher than normal enemies so
+ * fighting melee pressure + ranged zoning at once is a real challenge. Edit a
+ * field to retune that role. (Player damage already scales with level.)
+ */
+export interface GuardianConfig {
+  /** Health pool (tougher than an Angel's 150; the pair is the challenge). */
+  readonly maxHP: number;
+  /** Move speed in tiles/sec. */
+  readonly moveTilesPerSec: number;
+  /** XP awarded on death (via the existing leveling system). */
+  readonly xpReward: number;
+  // --- Sword A (melee) ---
+  /** Damage one slash deals to the player. */
+  readonly meleeDamage: number;
+  /** Cooldown between slashes (ms). */
+  readonly attackCooldownMs: number;
+  /** Distance (px) within which the melee sword can slash the player. */
+  readonly contactRange: number;
+  // --- Sword B (ranged) ---
+  /** Damage one fire bolt deals to the player. */
+  readonly projectileDamage: number;
+  /** Fire bolt speed (px/sec). */
+  readonly projectileSpeed: number;
+  /** Fire bolt range before it despawns (px). */
+  readonly projectileRange: number;
+  /** Cooldown between volleys (ms). */
+  readonly fireCooldownMs: number;
+  /** Standoff range the ranged sword tries to hold (px). */
+  readonly preferredRange: number;
+}
+
+export const FLAMING_SWORD_VARIANTS: Record<GuardianRole, GuardianConfig> = {
+  melee: {
+    maxHP: 280,
+    moveTilesPerSec: 5.6,
+    xpReward: 130,
+    meleeDamage: 16,
+    attackCooldownMs: 850,
+    contactRange: 36,
+    projectileDamage: 0,
+    projectileSpeed: 0,
+    projectileRange: 0,
+    fireCooldownMs: 0,
+    preferredRange: 0,
+  },
+  ranged: {
+    maxHP: 230,
+    moveTilesPerSec: 4.6,
+    xpReward: 130,
+    meleeDamage: 0,
+    attackCooldownMs: 0,
+    contactRange: 0,
+    projectileDamage: 13,
+    projectileSpeed: 300,
+    projectileRange: 560,
+    fireCooldownMs: 1250,
+    preferredRange: 280,
+  },
+};
+
+/** Fire-bolt collision radius for the ranged guardian (reuses the projectile system). */
+export const GUARDIAN_BOLT_RADIUS = 8;

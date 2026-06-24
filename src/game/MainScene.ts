@@ -16,6 +16,8 @@ import { SpiritSwarmer } from '../entities/SpiritSwarmer';
 import { AngelEnemy } from '../entities/AngelEnemy';
 import { Townsfolk } from '../entities/Townsfolk';
 import { DarkPortal } from '../entities/DarkPortal';
+import { HeavenPortal } from '../entities/HeavenPortal';
+import { FlamingSword } from '../entities/FlamingSword';
 import { PortalDefense } from '../encounter/PortalDefense';
 import { ProjectileSystem } from '../combat/ProjectileSystem';
 import { PickupSystem, type PickupCollected } from '../world/PickupSystem';
@@ -83,6 +85,15 @@ import {
   DESCENT_FARMERS_COUNT,
   DESCENT_OC_ANGELS,
   DESCENT_LOC_ANGELS,
+  HOLY_OUTPOST_POSITION,
+  HEAVEN_PORTAL_POSITION,
+  GUARDIAN_MELEE_OFFSET,
+  GUARDIAN_RANGED_OFFSET,
+  GUARDIAN_ACTIVATION_RANGE,
+  PORTAL_CORRUPT_RANGE,
+  PORTAL_ENTER_RANGE,
+  PORTAL_CORRUPT_DURATION_MS,
+  GUARDIAN_BOLT_RADIUS,
 } from './settings';
 import { TOWN_TILES } from '../town/townTiles';
 import { buildTown, type TownFeatures, type DoorFeature } from '../town/TownBuilder';
@@ -102,6 +113,12 @@ const SASQUATCH_SPAWN = { x: 9872, y: 4464 };
 // Portland (city tile 376,409). World px of tile (382,425). Fightable only with
 // Spirit Vision on — see the Oregon spirit entity in src/spirit/spiritData.ts.
 const OREGON_SWARM_SPAWN = { x: 12240, y: 13616 };
+
+// >>> PLACEHOLDER TEXT — edit these two strings to change the descent-climax beats.
+// Shown when the player corrupts the Heaven Portal (gold→purple), and when the
+// player later walks into the now-corrupted portal (the Heaven map is a LATER build).
+const CORRUPT_PORTAL_LINE = 'The gate is defiled. The way to Heaven opens…';
+const ENTER_PORTAL_PLACEHOLDER = 'Heaven awaits beyond… (coming soon)';
 
 /**
  * The overworld scene: renders Washington, stamps the Seattle town onto it,
@@ -172,6 +189,15 @@ export class MainScene extends Phaser.Scene {
   private portal!: DarkPortal;
   private townsfolk: Townsfolk[] = [];
   private portalDefense!: PortalDefense;
+
+  // The Descent climax: the Heaven Portal + its two flaming-sword guardians, a
+  // triggerable unit (a future quest can drive startGuardianFight/reset). The
+  // phase is the centralized, serializable encounter state.
+  private heavenPortal!: HeavenPortal;
+  private guardians: FlamingSword[] = [];
+  private guardianPhase: 'dormant' | 'fighting' | 'defeated' | 'corrupting' | 'corrupted' = 'dormant';
+  private corruptButton!: TouchButton;
+  private enterPortalShownUntil = 0;
 
   // Story / alignment state.
   private playerPath: PlayerPath = 'neutral';
@@ -342,6 +368,10 @@ export class MainScene extends Phaser.Scene {
     // patron dwells. A world object (in the snapshot below → main camera only).
     this.addOutpostMarker();
 
+    // The Descent climax: the Holy Outpost marker + the Heaven Portal + the two
+    // dormant flaming-sword guardians (all world objects, in the snapshot below).
+    this.setupGuardianEncounter();
+
     const cam = this.cameras.main;
     cam.startFollow(this.player.sprite, true, 0.12, 0.12);
     cam.setZoom(CAMERA_ZOOM); // tune in src/game/settings.ts
@@ -354,6 +384,9 @@ export class MainScene extends Phaser.Scene {
     this.controls = new Controls(this);
     this.dialogue = new DialogueBox(this);
     this.talkButton = new TouchButton(this, 'Talk', () => this.tryTalk());
+    // The defeat-gated portal-corruption button (bottom-centre, like Talk; the
+    // outpost has no NPC so the two never contend). Hidden until both swords die.
+    this.corruptButton = new TouchButton(this, 'Corrupt the Portal', () => this.tryCorruptPortal());
     this.zoomControls = new ZoomControls(this, cam, this.map.pixelWidth, this.map.pixelHeight);
     this.readout = new DebugReadout(this, this.map, this.player);
     // Spirit Vision tint is UI (created after the world snapshot so it lands in
@@ -404,6 +437,8 @@ export class MainScene extends Phaser.Scene {
       this.haltSwarmers();
       this.haltAngels();
       this.haltTownsfolk();
+      this.haltGuardians();
+      this.corruptButton.setVisible(false);
       this.readout.update();
       return;
     }
@@ -418,10 +453,12 @@ export class MainScene extends Phaser.Scene {
       this.cancelDash();
       this.player.setDirection(0, 0);
       this.talkButton.setVisible(false);
+      this.corruptButton.setVisible(false);
       this.sasquatch.halt();
       this.haltSwarmers();
       this.haltAngels();
       this.haltTownsfolk();
+      this.haltGuardians();
       this.readout.update();
       return;
     }
@@ -450,6 +487,7 @@ export class MainScene extends Phaser.Scene {
     this.updateAngels();
     this.updateTownsfolk(); // prune dead first so the wave manager sees the live count
     this.portalDefense.update(this.time.now);
+    this.updateGuardianEncounter();
     this.projectiles.update(delta, this.player.x, this.player.y, PROJECTILE_PLAYER_HIT_RADIUS);
     this.pickups.update(this.player.x, this.player.y);
     this.regenTick(delta);
@@ -534,6 +572,8 @@ export class MainScene extends Phaser.Scene {
     const kb = this.input.keyboard;
     kb?.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE).on('down', () => this.tryAttack());
     kb?.addKey(Phaser.Input.Keyboard.KeyCodes.SHIFT).on('down', () => this.tryDash());
+    // Desktop convenience for the on-screen "Corrupt the Portal" button (self-gates).
+    kb?.addKey(Phaser.Input.Keyboard.KeyCodes.C).on('down', () => this.tryCorruptPortal());
 
     this.refreshXpUi();
   }
@@ -617,6 +657,22 @@ export class MainScene extends Phaser.Scene {
     this.hitSwarmersInRange(sx, sy, PLAYER_ATTACK_RANGE, this.progression.effectiveDamage);
     this.hitAngelsInRange(sx, sy, PLAYER_ATTACK_RANGE, this.progression.effectiveDamage);
     this.hitTownsfolkInRange(sx, sy, PLAYER_ATTACK_RANGE, this.progression.effectiveDamage);
+    this.hitGuardiansInRange(sx, sy, PLAYER_ATTACK_RANGE, this.progression.effectiveDamage);
+  }
+
+  /** Apply damage to every flaming-sword guardian within `range` of (x,y); award XP on kills. */
+  private hitGuardiansInRange(x: number, y: number, range: number, damage: number): void {
+    for (const g of this.guardians) {
+      if (!g.isAlive) continue;
+      if (g.distanceTo(x, y) <= range + 10) {
+        const dealt = g.takeHit(damage);
+        if (dealt > 0) {
+          this.spawnDamageNumber(g.x, g.y - 26, dealt, '#ffd27a');
+          this.lastCombatTime = this.time.now;
+          if (!g.isAlive) this.onGuardianKilled(g);
+        }
+      }
+    }
   }
 
   /** Apply damage to every townsfolk within `range` of (x,y); award XP on kills. */
@@ -705,7 +761,8 @@ export class MainScene extends Phaser.Scene {
       this.sasquatch.isAggro ||
       this.swarmers.some((s) => s.isAggro) ||
       this.angels.some((a) => a.isAggro) ||
-      this.townsfolk.length > 0;
+      this.townsfolk.length > 0 ||
+      this.guardians.some((g) => g.isAggro);
     if (enemiesEngaged) this.lastCombatTime = this.time.now;
     const outOfCombat = !enemiesEngaged && this.time.now - this.lastCombatTime > PLAYER_HP_REGEN_DELAY_MS;
     if (outOfCombat && this.playerHealth.current < this.playerHealth.max) {
@@ -815,6 +872,19 @@ export class MainScene extends Phaser.Scene {
           this.spawnDamageNumber(t.x, t.y - 20, dealt, '#ffe9a8');
           this.lastCombatTime = this.time.now;
           if (!t.isAlive) this.onTownsfolkKilled(t);
+        }
+      }
+    }
+
+    for (const g of this.guardians) {
+      if (!g.isAlive || this.dashHits.has(g)) continue;
+      if (g.distanceTo(px, py) <= DASH_HIT_RADIUS + 10) {
+        this.dashHits.add(g);
+        const dealt = g.takeHit(dmg);
+        if (dealt > 0) {
+          this.spawnDamageNumber(g.x, g.y - 26, dealt, '#ffe9a8');
+          this.lastCombatTime = this.time.now;
+          if (!g.isAlive) this.onGuardianKilled(g);
         }
       }
     }
@@ -1126,6 +1196,160 @@ export class MainScene extends Phaser.Scene {
     this.cameras.main.centerOn(this.portal.x, this.portal.y);
     this.resetPortalDefense(); // clean slate
     this.portalDefense.start(this.time.now);
+  }
+
+  // --- The Descent climax: Heaven Portal + flaming-sword guardians ----------
+  //
+  // A self-contained, TRIGGERABLE unit: the two guardians wake on proximity (or
+  // via startGuardianFight); defeating BOTH unlocks the portal-corruption
+  // interaction; corrupting flips the portal holy → corrupted; entering the
+  // corrupted portal is a placeholder beat (the Heaven map is a LATER build).
+  // A future quest objective can drive startGuardianFight()/resetGuardianEncounter()
+  // exactly like the descent arc drives its spawns — it is NOT wired to the chain.
+
+  /** Build the climax world: the Holy Outpost marker, the Heaven Portal, the two dormant swords. */
+  private setupGuardianEncounter(): void {
+    this.addHolyOutpostMarker();
+    this.heavenPortal = new HeavenPortal(this, HEAVEN_PORTAL_POSITION.x, HEAVEN_PORTAL_POSITION.y);
+    this.guardians = [];
+    this.spawnGuardian('melee', HEAVEN_PORTAL_POSITION.x + GUARDIAN_MELEE_OFFSET.dx, HEAVEN_PORTAL_POSITION.y + GUARDIAN_MELEE_OFFSET.dy);
+    this.spawnGuardian('ranged', HEAVEN_PORTAL_POSITION.x + GUARDIAN_RANGED_OFFSET.dx, HEAVEN_PORTAL_POSITION.y + GUARDIAN_RANGED_OFFSET.dy);
+    this.guardianPhase = 'dormant';
+  }
+
+  /** A radiant gold/white pulsing landmark + label for the Holy Outpost. */
+  private addHolyOutpostMarker(): void {
+    const { x, y } = HOLY_OUTPOST_POSITION;
+    const ring = this.add.circle(x, y, 18, 0xffe9a8, 0.3).setDepth(6);
+    this.tweens.add({ targets: ring, scale: 2, alpha: 0.05, duration: 1300, yoyo: true, repeat: -1, ease: 'Sine.inOut' });
+    this.add
+      .text(x, y - 70, 'Holy Outpost', { fontFamily: 'system-ui, sans-serif', fontSize: '11px', color: '#fff3c4' })
+      .setOrigin(0.5, 1)
+      .setStroke('#2a2410', 4)
+      .setDepth(7);
+  }
+
+  /** Spawn one guardian of the given role; wire its melee strike / fire volley. */
+  private spawnGuardian(role: 'melee' | 'ranged', x: number, y: number): FlamingSword {
+    const g = new FlamingSword(this, x, y, role);
+    g.onHitPlayer = () => this.onGuardianHitPlayer(g.cfg.meleeDamage);
+    g.onFire = (origin, dirs) => {
+      for (const d of dirs) {
+        this.projectiles.spawn({
+          x: origin.x,
+          y: origin.y,
+          dirX: d.x,
+          dirY: d.y,
+          speed: g.cfg.projectileSpeed,
+          damage: g.cfg.projectileDamage,
+          maxRange: g.cfg.projectileRange,
+          faction: 'enemy',
+          color: 0xff7a1f, // fiery orange (distinct from the angels' holy gold)
+          radius: GUARDIAN_BOLT_RADIUS,
+        });
+      }
+    };
+    this.physics.add.collider(g.sprite, this.map.layer);
+    this.uiCamera?.ignore(g.objects()); // runtime world objects: keep off the UI camera
+    this.guardians.push(g);
+    return g;
+  }
+
+  /** TRIGGER: wake both guardians and begin the fight (proximity or dev button). */
+  private startGuardianFight(): void {
+    if (this.guardianPhase !== 'dormant') return;
+    for (const g of this.guardians) g.activate();
+    this.guardianPhase = 'fighting';
+    this.showBanner('The flaming swords awaken!', 1800);
+  }
+
+  /** RESET: swords back to dormant + full HP, the portal back to holy/uncorrupted. */
+  private resetGuardianEncounter(): void {
+    for (const g of this.guardians) g.reset();
+    this.heavenPortal.reset();
+    this.guardianPhase = 'dormant';
+    this.enterPortalShownUntil = 0;
+    this.corruptButton.setVisible(false);
+  }
+
+  /** Drive the guardians + the encounter's phase transitions each frame. */
+  private updateGuardianEncounter(): void {
+    // Proximity activation: nearing the outpost wakes the dormant pair.
+    if (this.guardianPhase === 'dormant') {
+      const d = Phaser.Math.Distance.Between(this.player.x, this.player.y, HOLY_OUTPOST_POSITION.x, HOLY_OUTPOST_POSITION.y);
+      if (d <= GUARDIAN_ACTIVATION_RANGE) this.startGuardianFight();
+    }
+
+    // Advance each guardian (the ranged one needs line of sight from the scene).
+    for (const g of this.guardians) {
+      const los = g.role === 'ranged' ? this.hasLineOfSight(g.x, g.y, this.player.x, this.player.y) : true;
+      g.update(this.player.x, this.player.y, this.time.now, los);
+    }
+
+    // Defeat gate: both swords down → unlock the corruption interaction.
+    if (this.guardianPhase === 'fighting' && this.guardians.every((g) => !g.isAlive)) {
+      this.guardianPhase = 'defeated';
+      this.showBanner('The guardians fall — the gate lies unguarded.', 2600);
+    }
+
+    // The "Corrupt the Portal" button shows only once defeated and near the portal.
+    const nearPortal = Phaser.Math.Distance.Between(this.player.x, this.player.y, this.heavenPortal.x, this.heavenPortal.y) <= PORTAL_CORRUPT_RANGE;
+    this.corruptButton.setVisible(this.guardianPhase === 'defeated' && nearPortal);
+
+    // Entering the now-corrupted portal is a placeholder beat (no map change).
+    if (this.guardianPhase === 'corrupted') {
+      const d = Phaser.Math.Distance.Between(this.player.x, this.player.y, this.heavenPortal.x, this.heavenPortal.y);
+      if (d <= PORTAL_ENTER_RANGE && this.time.now >= this.enterPortalShownUntil) {
+        this.enterPortalShownUntil = this.time.now + 3600;
+        this.showBanner(ENTER_PORTAL_PLACEHOLDER, 2600);
+      }
+    }
+  }
+
+  private haltGuardians(): void {
+    for (const g of this.guardians) g.halt();
+  }
+
+  /** A guardian's melee slash / fire bolt landed on the player. */
+  private onGuardianHitPlayer(damage: number): void {
+    if (this.playerDead) return;
+    const dealt = this.playerHealth.damage(damage);
+    this.player.flash();
+    this.spawnDamageNumber(this.player.x, this.player.y - 26, dealt, '#ff8a3a');
+    this.lastCombatTime = this.time.now;
+    if (this.playerHealth.isDead) this.onPlayerDeath();
+  }
+
+  private onGuardianKilled(g: FlamingSword): void {
+    this.showBanner(g.role === 'melee' ? 'A flaming sword is broken' : 'A flaming sword is quenched', 1500);
+    this.gainXP(g.xpReward); // enemy data drives the award, same as every enemy
+  }
+
+  /** Button/key entry: corrupt the portal if currently allowed (defeated + near). */
+  private tryCorruptPortal(): void {
+    if (this.guardianPhase !== 'defeated') return;
+    const near = Phaser.Math.Distance.Between(this.player.x, this.player.y, this.heavenPortal.x, this.heavenPortal.y) <= PORTAL_CORRUPT_RANGE;
+    if (!near) return;
+    this.corruptPortal();
+  }
+
+  /** Play the gold→purple corruption transition, then mark the portal active. */
+  private corruptPortal(): void {
+    if (this.guardianPhase !== 'defeated') return;
+    this.guardianPhase = 'corrupting';
+    this.corruptButton.setVisible(false);
+    this.heavenPortal.corrupt(PORTAL_CORRUPT_DURATION_MS, () => {
+      this.guardianPhase = 'corrupted';
+      this.showBanner(CORRUPT_PORTAL_LINE, 3200);
+    });
+  }
+
+  /** DEV: jump just south of the Holy Outpost so the guardians can be triggered. */
+  private devTeleportToHolyOutpost(): void {
+    this.cancelDash();
+    this.player.sprite.setPosition(HOLY_OUTPOST_POSITION.x, HOLY_OUTPOST_POSITION.y + GUARDIAN_ACTIVATION_RANGE + 60);
+    this.player.setDirection(0, 0);
+    this.cameras.main.centerOn(HOLY_OUTPOST_POSITION.x, HOLY_OUTPOST_POSITION.y);
   }
 
   // --- The Descent arc (quests 1–4) -----------------------------------------
@@ -1617,6 +1841,9 @@ export class MainScene extends Phaser.Scene {
 
     // Stop + reset any active portal-defense encounter (restores portal HP).
     this.resetPortalDefense();
+
+    // Reset the descent climax: guardians dormant + full HP, Heaven Portal holy.
+    this.resetGuardianEncounter();
   }
 
   /**
@@ -1647,6 +1874,9 @@ export class MainScene extends Phaser.Scene {
       { label: 'Teleport to Oregon', onPress: () => this.devTeleportToOregon() },
       { label: 'Force Corrupt', onPress: () => this.devForceCorrupt() },
       { label: 'Teleport to Dark Outpost', onPress: () => this.devTeleportToOutpost() },
+      { label: 'Teleport to Holy Outpost', onPress: () => this.devTeleportToHolyOutpost() },
+      { label: 'Start Guardian Fight', onPress: () => this.startGuardianFight() },
+      { label: 'Reset Portal', onPress: () => this.resetGuardianEncounter() },
       { label: 'Complete Active Quest', onPress: () => this.chain.completeActive() },
       { label: 'Reset All Quests', onPress: () => this.devResetQuests() },
       { label: 'Dev Reset', key: KC.R, onPress: () => this.devReset() },
