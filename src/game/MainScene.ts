@@ -29,6 +29,8 @@ import { SinGauntlet } from '../boss/SinGauntlet';
 import { DRAGON_DEF, BEAST_DEF, SATAN_DEF } from '../boss/trinityData';
 import { TrinitySequence } from '../boss/TrinitySequence';
 import { EarthPortal } from '../entities/EarthPortal';
+import { SaveSystem } from '../save/SaveSystem';
+import { SAVE_VERSION, type SaveData } from '../save/SaveData';
 import { PortalDefense } from '../encounter/PortalDefense';
 import { buildHeavenMapData, HEAVEN_WIDTH, HEAVEN_HEIGHT, HEAVEN_CHERUB_SPAWNS, THRONE_POSITION } from '../map/heavenWorld';
 import { buildHellMapData, HELL_WIDTH, HELL_HEIGHT, HELL_DEMON_SPAWNS, SATAN_LAIR } from '../map/hellWorld';
@@ -407,8 +409,26 @@ export class MainScene extends Phaser.Scene {
   private portalCooldownUntil = 0;
   private earthCollider!: Phaser.Physics.Arcade.Collider; // player vs Earth terrain
 
+  // --- Save system ---
+  /** How this run was launched from the TitleScene: 'new' or 'continue'. */
+  private launchMode: 'new' | 'continue' = 'new';
+  /** True once create() has finished building + (optionally) loading — gates autosave. */
+  private gameReady = false;
+  /** True while applySave() is restoring — suppresses autosave so it can't write partial state. */
+  private restoring = false;
+  /** The player's current awarded title (mirrors the HUD text; serialized). */
+  private currentTitle: string | null = null;
+  private savedFlash?: Phaser.GameObjects.Text;
+  /** Throttle: time (scene ms) of the last autosave write. */
+  private lastAutosaveAt = -1e9;
+
   constructor() {
     super('MainScene');
+  }
+
+  /** Receive the launch mode from the TitleScene (before create()). */
+  init(data?: { mode?: 'new' | 'continue' }): void {
+    this.launchMode = data?.mode === 'continue' ? 'continue' : 'new';
   }
 
   create(): void {
@@ -577,6 +597,7 @@ export class MainScene extends Phaser.Scene {
     this.tracker = new QuestTracker(this);
     this.createQuestHud();
     this.createBossHud(); // the boss HP bar (UI partition)
+    this.createSaveUi(); // the manual "Save" button + "Saved" indicator (UI partition)
     this.createDevTools(); // dev panel + dev keys (gated by DEV_MODE)
     this.createFadeOverlay(); // full-screen fade for portal transitions (UI partition)
 
@@ -602,6 +623,24 @@ export class MainScene extends Phaser.Scene {
     // The Oregon seed: a second dormant pack south of Portland, proving the
     // spirit corridor extends into Oregon (only fightable with Spirit Vision on).
     this.spawnSwarmPack(OREGON_SWARM_SPAWN.x, OREGON_SWARM_SPAWN.y);
+
+    // SAVE SYSTEM: if launched via "Continue", restore the full saved state now
+    // (everything above is built to defaults first, then overridden). Then arm
+    // autosave (event-driven hooks call autosave() directly; here: a periodic
+    // timer + a page-hide save so closing the tab persists progress).
+    if (this.launchMode === 'continue') {
+      const save = SaveSystem.read();
+      if (save) this.applySave(save);
+    }
+    this.gameReady = true;
+    this.time.addEvent({ delay: 45000, loop: true, callback: () => this.autosave() });
+    const onVisibility = (): void => {
+      // Page hidden (tab closing/backgrounding) → save the EXACT latest state now,
+      // bypassing the throttle so nothing is lost on close.
+      if (document.hidden && this.gameReady && !this.restoring) this.writeSave();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => document.removeEventListener('visibilitychange', onVisibility));
   }
 
   override update(_time: number, delta: number): void {
@@ -833,6 +872,7 @@ export class MainScene extends Phaser.Scene {
     this.time.delayedCall(1100, () => this.levelBanner.setVisible(false));
     this.player.levelUpFlash();
     this.spawnLevelUpBurst();
+    this.autosave(); // meaningful moment: a level gained
   }
 
   /** A quick gold ring bursting from the player (world FX, main camera). */
@@ -1300,6 +1340,7 @@ export class MainScene extends Phaser.Scene {
     if (e.type === 'holy-power') this.holyPower.add(e.amount); // HUD ticks via onChange
     else if (e.type === 'plunder') this.notifyQuest('shipment-collected'); // descent Quest 2
     this.spawnPickupPop(e.x, e.y, e.color);
+    if (e.type === 'holy-power') this.autosave(); // meaningful moment: holy power collected
   }
 
   /** A quick rising sparkle + ring when a mote is collected. */
@@ -1671,11 +1712,12 @@ export class MainScene extends Phaser.Scene {
       this.time.delayedCall(3200, () => this.showBanner(GOD_JUDGMENT_HOOK, 4200));
     } else if (sinIndex >= 0) {
       this.onSinDefeated(sinIndex); // advance the gauntlet + unlock/mark the next Sin
-    } else if (boss === this.dragonBoss || boss === this.beastBoss) {
-      this.onTrinityBossDefeated(boss); // advance the staged Trinity (Dragon → Beast → Satan)
+    } else if (boss === this.dragonBoss || boss === this.beastBoss || boss === this.satanBoss) {
+      this.onTrinityBossDefeated(boss); // advance the staged Trinity (Dragon → Beast → Satan → ending)
     } else {
       this.showBanner(`${boss.name} defeated!`, 2400);
     }
+    this.autosave(); // meaningful moment: a boss fell
   }
 
   /** The shared boss HP bar (UI camera, fixed): name + phase + HP, top-centre. */
@@ -1951,6 +1993,7 @@ export class MainScene extends Phaser.Scene {
     this.dragonBoss = this.spawnTrinityBoss(DRAGON_DEF);
     this.dragonBoss.activate();
     this.showBanner('The lair yawns open — THE DRAGON descends!', 2800);
+    this.autosave(); // meaningful moment: entered the lair (Trinity begins)
   }
 
   /** A Trinity boss died → run the breather / advance the stage (Satan → the ending). */
@@ -2217,6 +2260,210 @@ export class MainScene extends Phaser.Scene {
       o.destroy();
     }
     this.hellfireFx = [];
+  }
+
+  // --- SAVE SYSTEM: serialize the whole game, restore it, autosave -----------
+
+  /** Gather the COMPLETE game state into one serializable {@link SaveData} object. */
+  private serialize(): SaveData {
+    const remembered: Record<string, { x: number; y: number }> = { ...this.worldPos };
+    remembered[this.activeWorld] = { x: this.player.x, y: this.player.y };
+    return {
+      saveVersion: SAVE_VERSION,
+      savedAt: Date.now(),
+      world: { active: this.activeWorld, x: this.player.x, y: this.player.y, remembered },
+      player: {
+        level: this.progression.level,
+        currentXP: this.progression.currentXP,
+        hp: Math.round(this.playerHealth.current),
+        maxHP: this.playerHealth.max,
+        energy: Math.round(this.energy.current),
+        holyPower: this.holyPower.count,
+        path: this.playerPath,
+        power: this.power.state,
+        spiritVision: this.spirit.isActive(),
+        angelEncounterFired: this.angelEncounterFired,
+        title: this.currentTitle,
+      },
+      quests: this.chain.toJSON(),
+      progress: {
+        sinsDefeated: this.sins.count,
+        michaelDefeated: this.michaelDefeated,
+        judgmentDone: this.judgmentFired,
+        guardianPhase: this.guardianPhase,
+        trinityStage: this.trinity.current,
+      },
+    };
+  }
+
+  /** RESTORE the full saved state onto the freshly-built (default) scene. */
+  private applySave(s: SaveData): void {
+    this.restoring = true;
+    try {
+      // Progression first (drives derived maxHP/damage), then vitals.
+      this.progression.level = Math.max(1, Math.floor(s.player.level));
+      this.progression.currentXP = Math.max(0, Math.floor(s.player.currentXP));
+      this.playerHealth.setMax(this.progression.effectiveMaxHP);
+      this.playerHealth.current = Phaser.Math.Clamp(s.player.hp, 1, this.playerHealth.max);
+      this.energy.current = Phaser.Math.Clamp(s.player.energy, 0, this.energy.max);
+      this.holyPower.load({ holyPower: s.player.holyPower });
+
+      // Narrative path + Spirit Vision + the angel-choice flag.
+      this.angelEncounterFired = !!s.player.angelEncounterFired;
+      if (this.angelEncounterFired) this.angel.dismiss();
+      this.setPlayerPath(s.player.path); // 'corrupted' turns Spirit Vision on
+      this.spirit.setSpiritVision(s.player.spiritVision); // then honor the exact saved flag
+      this.awardTitle(s.player.title);
+
+      // Power-state (demonic/holy) + its kit visuals (Holy Bolt button + aura).
+      this.power.load({ alignment: s.player.power });
+      this.holyBoltButton.setVisible(this.power.isHoly);
+      if (this.power.isHoly) this.ensureHolyAura();
+      else {
+        this.holyAura?.destroy();
+        this.holyAura = undefined;
+      }
+
+      // Quests.
+      this.chain.load(s.quests);
+
+      // Endgame flags + world reconstruction.
+      this.michaelDefeated = !!s.progress.michaelDefeated;
+      this.judgmentFired = !!s.progress.judgmentDone;
+      this.judgmentActive = false;
+      if (this.judgmentFired) this.spawnHellPortal(); // Hell reachable from the throne
+      this.restoreGuardianAccess(s.progress.guardianPhase); // Heaven reachable if corrupted
+      this.restoreSins(s.progress.sinsDefeated);
+      this.restoreTrinity(s.progress.trinityStage);
+
+      // Finally place the player in the saved world + position.
+      this.worldPos = { ...s.world.remembered };
+      this.applyWorldSwap(s.world.active as WorldId, { x: s.world.x, y: s.world.y });
+      this.worldPos = { ...s.world.remembered }; // applyWorldSwap rewrote the leave-world entry
+
+      // Refresh every HUD readout.
+      this.refreshXpUi();
+      this.refreshHolyPowerUi();
+      this.refreshQuestUi();
+      this.updateCombatHud();
+    } catch (e) {
+      console.warn('ToH: failed to apply save —', e);
+    }
+    this.restoring = false;
+  }
+
+  /** Restore Heaven-portal access: only the stable 'corrupted' endpoint is re-applied. */
+  private restoreGuardianAccess(phase: string): void {
+    if (phase === 'corrupted') {
+      this.guardianPhase = 'corrupted';
+      this.heavenPortal.load({ state: 'corrupted' });
+    }
+    // Other (transient mid-encounter) phases restore as the default 'dormant'.
+  }
+
+  /** Restore the Sin gauntlet: clear the default-spawned Sin, set the count, re-place the current one. */
+  private restoreSins(count: number): void {
+    for (const b of this.sinBosses) {
+      if (b) {
+        this.clearBossAdds(b.id);
+        b.destroy();
+      }
+    }
+    this.sinBosses = this.sinBosses.map(() => undefined);
+    this.bosses = this.bosses.filter((b) => b.isAlive);
+    this.sins.load({ sinsDefeated: Phaser.Math.Clamp(Math.floor(count), 0, this.sins.builtCount) });
+    this.spawnAvailableSin();
+  }
+
+  /** Restore the Trinity stage: re-spawn the current stage's boss (dormant), or the ending portal. */
+  private restoreTrinity(stage: SaveData['progress']['trinityStage']): void {
+    this.resetTrinity(); // clean slate (no Dragon/Beast/Satan exist on a fresh build)
+    this.trinity.load({ stage });
+    if (stage === 'dragon') this.dragonBoss = this.spawnTrinityBoss(DRAGON_DEF);
+    else if (stage === 'beast') this.beastBoss = this.spawnTrinityBoss(BEAST_DEF);
+    else if (stage === 'satan') this.satanBoss = this.spawnTrinityBoss(SATAN_DEF);
+    else if (stage === 'ending') {
+      // Saved mid-cutscene → just re-open the way home so it can't soft-lock.
+      const o = this.hellMap.bounds;
+      this.earthPortal = new EarthPortal(this, o.x + TRINITY_ARENA.x, o.y + TRINITY_ARENA.y + 70);
+      this.uiCamera?.ignore(this.earthPortal.objects());
+    }
+    // 'none' / 'complete' → nothing to spawn.
+  }
+
+  /** Write the save (serialize → localStorage) + a subtle "Saved" flash. Never throws. */
+  private writeSave(): boolean {
+    const ok = SaveSystem.write(this.serialize());
+    if (ok) this.flashSaved();
+    return ok;
+  }
+
+  /** Event/timer/page-hide autosave — suppressed before the game is ready or mid-restore,
+   *  and lightly throttled so bursts (e.g. collecting many holy-power motes) don't spam writes. */
+  private autosave(): void {
+    if (!this.gameReady || this.restoring) return;
+    if (this.time.now - this.lastAutosaveAt < 1500) return;
+    this.lastAutosaveAt = this.time.now;
+    this.writeSave();
+  }
+
+  /** Explicit player/dev save — always writes (still requires the game to be ready). */
+  private manualSave(): void {
+    if (!this.gameReady) return;
+    this.writeSave();
+  }
+
+  /** DEV: load the slot into the running game (no relaunch needed). */
+  private devLoadSave(): void {
+    const save = SaveSystem.read();
+    if (!save) {
+      this.showBanner('No save to load.', 1600);
+      return;
+    }
+    this.applySave(save);
+    this.showBanner('Save loaded.', 1600);
+  }
+
+  /** DEV: delete the save slot (separate from Dev Reset, which only clears memory). */
+  private devDeleteSave(): void {
+    SaveSystem.clear();
+    this.showBanner('Save deleted.', 1600);
+  }
+
+  /** The on-screen manual SAVE button + a subtle "Saved" indicator (UI camera). */
+  private createSaveUi(): void {
+    const depth = 1360;
+    const w = 64;
+    const h = 30;
+    const bg = this.add.rectangle(0, 0, w, h, 0x1d2b40, 0.92).setStrokeStyle(2, 0x9fd0ff, 0.95).setScrollFactor(0).setDepth(depth).setInteractive({ useHandCursor: true });
+    const label = this.add.text(0, 0, 'Save', { fontFamily: 'system-ui, sans-serif', fontSize: '14px', color: '#dff0ff', fontStyle: 'bold' }).setOrigin(0.5).setScrollFactor(0).setDepth(depth + 1);
+    this.savedFlash = this.add
+      .text(0, 0, 'Saved ✓', { fontFamily: 'system-ui, sans-serif', fontSize: '13px', color: '#a8ffb0', fontStyle: 'bold' })
+      .setOrigin(1, 0.5)
+      .setScrollFactor(0)
+      .setStroke('#0a1a0a', 4)
+      .setDepth(depth + 1)
+      .setVisible(false);
+    bg.on(Phaser.Input.Events.GAMEOBJECT_POINTER_DOWN, () => this.manualSave());
+
+    const layout = (): void => {
+      const insets = getInsets(this);
+      const cx = this.scale.width - insets.right - UI_MARGIN - w / 2;
+      const cy = insets.top + UI_MARGIN + h / 2;
+      bg.setPosition(cx, cy);
+      label.setPosition(cx, cy);
+      this.savedFlash?.setPosition(cx - w / 2 - 8, cy);
+    };
+    layout();
+    this.scale.on(Phaser.Scale.Events.RESIZE, layout);
+  }
+
+  /** A brief, non-intrusive "Saved ✓" flash next to the Save button. */
+  private flashSaved(): void {
+    if (!this.savedFlash) return;
+    this.tweens.killTweensOf(this.savedFlash);
+    this.savedFlash.setVisible(true).setAlpha(1);
+    this.tweens.add({ targets: this.savedFlash, alpha: 0, delay: 700, duration: 600, onComplete: () => this.savedFlash?.setVisible(false) });
   }
 
   // --- Portal Defense: townsfolk + the wave encounter -----------------------
@@ -2783,6 +3030,7 @@ export class MainScene extends Phaser.Scene {
     this.judgmentFired = true;
     this.judgmentActive = false;
     this.reenableControls = true; // resume play; the Hell portal now stands at the throne
+    this.autosave(); // meaningful moment: judgment + power-swap done, Hell opened
   }
 
   /** A draining-light effect rising off the player (narrative power-strip visual). */
@@ -3166,6 +3414,7 @@ export class MainScene extends Phaser.Scene {
             this.transitioning = false;
             this.worldCooldownUntil = this.time.now + WORLD_TRANSITION_COOLDOWN_MS;
             if (!this.playerDead) this.controls.setEnabled(true);
+            this.autosave(); // meaningful moment: a world transition completed
           },
         });
       },
@@ -3633,6 +3882,8 @@ export class MainScene extends Phaser.Scene {
         // Informational (a later quest became available); the marker/giver handle it.
         break;
     }
+    // Autosave on real quest progress (not the informational 'unlocked' event).
+    if (e.type !== 'unlocked') this.autosave();
   }
 
   /** Grant a completed quest's data-driven reward block (heal / title / XP / Holy Power + banner). */
@@ -3886,6 +4137,9 @@ export class MainScene extends Phaser.Scene {
       { label: 'Toggle World', onPress: () => this.devToggleWorld() },
       { label: 'Complete Active Quest', onPress: () => this.chain.completeActive() },
       { label: 'Reset All Quests', onPress: () => this.devResetQuests() },
+      { label: 'Save Now', onPress: () => this.manualSave() },
+      { label: 'Load Save', onPress: () => this.devLoadSave() },
+      { label: 'Delete Save', onPress: () => this.devDeleteSave() },
       { label: 'Dev Reset', key: KC.R, onPress: () => this.devReset() },
     ];
 
@@ -3925,6 +4179,7 @@ export class MainScene extends Phaser.Scene {
 
   /** Store and display the single alignment-title string on the HUD. */
   private awardTitle(title: string | null): void {
+    this.currentTitle = title;
     this.titleText.setText(title ? `Title: ${title}` : '').setVisible(!!title);
   }
 
