@@ -19,7 +19,9 @@ export interface PickupTypeDef {
 }
 
 export const PICKUP_TYPES: Record<string, PickupTypeDef> = {
-  'holy-power': { key: 'holy-power', color: 0xffe06a, collectRadius: 38, label: 'Holy Power' },
+  // Collect radius is deliberately generous so a mote resting against an
+  // obstacle edge is still grabbable (drops are also snapped to walkable tiles).
+  'holy-power': { key: 'holy-power', color: 0xffe06a, collectRadius: 48, label: 'Holy Power' },
   // The descent arc's "pillage the shipment" objective — proves a SECOND pickup
   // type reuses the same system (its collect effect is a quest trigger, not a count).
   plunder: { key: 'plunder', color: 0xc89b3a, collectRadius: 42, label: 'Plunder' },

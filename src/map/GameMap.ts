@@ -145,6 +145,44 @@ export class GameMap {
     return this.terrainAtTile(x, y);
   }
 
+  /** True if the tile at this world point blocks movement (out-of-bounds counts as blocked). */
+  isBlockedAtWorld(worldX: number, worldY: number): boolean {
+    const terrain = this.terrainAtWorld(worldX, worldY);
+    return terrain === null || terrain.blocks;
+  }
+
+  /**
+   * Snap a world point to the nearest WALKABLE tile so dropped items / spawns
+   * never land where the player physically can't reach them. If the point is
+   * already walkable it is returned unchanged (keeps the natural drop spread);
+   * otherwise a spiral search returns the nearest non-blocking tile's center
+   * (falling back to the original point if none is found within `maxTiles`).
+   */
+  nearestWalkableWorld(worldX: number, worldY: number, maxTiles = 10): { x: number; y: number } {
+    if (!this.isBlockedAtWorld(worldX, worldY)) return { x: worldX, y: worldY };
+    const { x: cx, y: cy } = this.worldToTile(worldX, worldY);
+    let best: { x: number; y: number } | null = null;
+    let bestDist = Infinity;
+    for (let r = 1; r <= maxTiles; r++) {
+      for (let ty = cy - r; ty <= cy + r; ty++) {
+        for (let tx = cx - r; tx <= cx + r; tx++) {
+          // Only the ring at Chebyshev distance r (interior already scanned).
+          if (Math.max(Math.abs(tx - cx), Math.abs(ty - cy)) !== r) continue;
+          const terrain = this.terrainAtTile(tx, ty);
+          if (!terrain || terrain.blocks) continue;
+          const c = this.tileToWorldCenter(tx, ty);
+          const d = Phaser.Math.Distance.Between(worldX, worldY, c.x, c.y);
+          if (d < bestDist) {
+            bestDist = d;
+            best = c;
+          }
+        }
+      }
+      if (best) return best; // nearest walkable in this ring wins
+    }
+    return { x: worldX, y: worldY };
+  }
+
   get spawnWorld(): { x: number; y: number } {
     return this.tileToWorldCenter(this.data.spawn.x, this.data.spawn.y);
   }
