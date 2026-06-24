@@ -23,7 +23,7 @@ export const HEAVEN_TERRAIN: TerrainType[] = [
   { id: 2, key: 'heaven_cloud', name: 'Cloud', color: '#e9f0fb', blocks: false },
   { id: 3, key: 'gold_field', name: 'Gold Field', color: '#ecd9a3', blocks: false },
   { id: 4, key: 'heaven_path', name: 'Radiant Path', color: '#ded0a4', blocks: false },
-  { id: 5, key: 'heaven_void', name: 'Void', color: '#0a1124', blocks: true },
+  { id: 5, key: 'heaven_void', name: 'Cloud Edge', color: '#8ea6c6', blocks: true },
 ];
 
 const HOLY = 1;

@@ -78,7 +78,9 @@ export const ATLAS_TILES: AtlasTileDef[] = [
   { key: 'heaven_cloud', color: '#e9f0fb', pattern: 'noise' }, // pale cloud
   { key: 'gold_field', color: '#ecd9a3', pattern: 'noise' }, // soft gold expanse
   { key: 'heaven_path', color: '#ded0a4', pattern: 'rows' }, // radiant path
-  { key: 'heaven_void', color: '#0a1124', pattern: 'flat' }, // edge void (blocks)
+  // The impassable map edge: a denser blue-grey CLOUD bank (reads as a deliberate
+  // cloud-edge of the realm, not the dark void/background it used to look like).
+  { key: 'heaven_void', color: '#8ea6c6', pattern: 'noise' },
 ];
 
 /** Total atlas cells, including the reserved empty frame 0. */
