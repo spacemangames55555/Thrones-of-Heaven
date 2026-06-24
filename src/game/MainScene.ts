@@ -24,6 +24,8 @@ import { Demon } from '../entities/Demon';
 import { Boss } from '../boss/Boss';
 import type { BossDef, BossHooks } from '../boss/bossTypes';
 import { MICHAEL_DEF, TEST_BOSS_DEF } from '../boss/bossData';
+import { SIN_DEFS } from '../boss/sinsData';
+import { SinGauntlet } from '../boss/SinGauntlet';
 import { PortalDefense } from '../encounter/PortalDefense';
 import { buildHeavenMapData, HEAVEN_WIDTH, HEAVEN_HEIGHT, HEAVEN_CHERUB_SPAWNS, THRONE_POSITION } from '../map/heavenWorld';
 import { buildHellMapData, HELL_WIDTH, HELL_HEIGHT, HELL_DEMON_SPAWNS, SATAN_LAIR } from '../map/hellWorld';
@@ -271,6 +273,13 @@ export class MainScene extends Phaser.Scene {
   private michael!: Boss;
   private bosses: Boss[] = [];
   private bossAdds = new Map<string, (Cherub | Demon)[]>();
+  // The 7 Deadly Sins (Batch 1): the central serializable order-state + the live
+  // Sin boss instances (index 0..2 = Wrath/Sloth/Gluttony), lazily spawned in Hell
+  // so a LOCKED Sin simply doesn't exist yet (can't be woken/hit). A reused world
+  // beacon marks the currently-available Sin.
+  private readonly sins = new SinGauntlet();
+  private sinBosses: (Boss | undefined)[] = [undefined, undefined, undefined];
+  private sinMarker!: ObjectiveMarker;
   private bossBar!: HealthBar;
   private bossBarBg!: Phaser.GameObjects.Rectangle;
   private bossNameText!: Phaser.GameObjects.Text;
@@ -481,6 +490,7 @@ export class MainScene extends Phaser.Scene {
     }
     this.chain.evaluateUnlocks(); // opening quest → available from the start
     this.marker = new ObjectiveMarker(this, this.worldFx);
+    this.sinMarker = new ObjectiveMarker(this, this.worldFx); // the Hell "next Sin" beacon (reused system)
 
     // The Dark Outpost — the arc's hub landmark (ominous violet marker) where the
     // patron dwells. A world object (in the snapshot below → main camera only).
@@ -553,6 +563,7 @@ export class MainScene extends Phaser.Scene {
     this.zoomControls.update(delta);
     this.updateCombatHud();
     this.updateObjectiveMarker();
+    this.updateSinMarker();
 
     if (this.playerDead) {
       this.cancelDash();
@@ -1507,14 +1518,15 @@ export class MainScene extends Phaser.Scene {
     this.michael.reset();
   }
 
-  /** Remove every dev-spawned framework boss (all but Michael) + their adds. */
+  /** Remove transient dev-spawned framework bosses (the test boss) + their adds —
+   *  preserving the persistent Michael and the Sin bosses (those have own resets). */
   private removeDevBosses(): void {
     for (const b of this.bosses) {
-      if (b === this.michael) continue;
+      if (b === this.michael || this.sinBosses.includes(b)) continue;
       this.clearBossAdds(b.id);
       b.destroy();
     }
-    this.bosses = this.bosses.filter((b) => b === this.michael);
+    this.bosses = this.bosses.filter((b) => b === this.michael || this.sinBosses.includes(b));
   }
 
   /** Drive every framework boss: proximity activation, behavior, then the boss bar. */
@@ -1600,10 +1612,13 @@ export class MainScene extends Phaser.Scene {
     if (boss.def.xpReward > 0) this.gainXP(boss.def.xpReward);
     if (boss.def.holyPowerDrop > 0) this.dropHolyPower(boss.x, boss.y, boss.def.holyPowerDrop);
 
+    const sinIndex = this.sinBosses.indexOf(boss);
     if (boss.def.onDefeatHook === 'god-judgment') {
       this.michaelDefeated = true; // GATE: unlocks the God's-judgment beat at the throne
       this.showBanner(MICHAEL_VICTORY_LINE, 3000);
       this.time.delayedCall(3200, () => this.showBanner(GOD_JUDGMENT_HOOK, 4200));
+    } else if (sinIndex >= 0) {
+      this.onSinDefeated(sinIndex); // advance the gauntlet + unlock/mark the next Sin
     } else {
       this.showBanner(`${boss.name} defeated!`, 2400);
     }
@@ -1696,6 +1711,101 @@ export class MainScene extends Phaser.Scene {
       this.activeMap().layer,
     );
     b.activate();
+  }
+
+  // --- The 7 Deadly Sins (Batch 1): gauntlet order + the three Hell bosses ----
+  //
+  // Three DISTINCT Sin bosses (Wrath/Sloth/Gluttony) authored as DATA (SIN_DEFS),
+  // fought IN ORDER in Hell. Only the currently-available Sin is spawned, so a
+  // LOCKED Sin literally doesn't exist yet (it can't be woken or hit); defeating
+  // one advances the serializable gauntlet cursor and spawns the next. A reused
+  // world beacon marks where to go. State: `this.sins` (SinGauntlet) + sinBosses.
+
+  /** Spawn Sin `i` (0-based) at its Hell placement if not already live; return it. */
+  private ensureSinSpawned(i: number): Boss {
+    const existing = this.sinBosses[i];
+    if (existing && existing.isAlive) return existing;
+    const def = SIN_DEFS[i];
+    const o = this.hellMap.bounds;
+    const spot = this.hellMap.nearestWalkableWorld(o.x + def.placement.x, o.y + def.placement.y);
+    const boss = this.spawnBoss(def, spot.x, spot.y, this.hellMap.layer);
+    this.sinBosses[i] = boss;
+    return boss;
+  }
+
+  /** Spawn the currently-available (next undefeated, unlocked) Sin, dormant. */
+  private spawnAvailableSin(): void {
+    const i = this.sins.nextIndex;
+    if (i >= 0) this.ensureSinSpawned(i);
+  }
+
+  /** A defeated boss that is a Sin → advance the gauntlet, announce, unlock the next. */
+  private onSinDefeated(i: number): void {
+    this.sinBosses[i] = undefined; // the dead instance gets pruned by updateBosses
+    this.sins.recordDefeat(i);
+    this.showBanner(`${SIN_DEFS[i].name} — Sin ${i + 1} — vanquished!`, 2600);
+    if (this.sins.nextIndex >= 0) {
+      this.spawnAvailableSin(); // place the next Sin deeper in Hell
+      this.time.delayedCall(2700, () => this.showBanner('Another Sin stirs deeper in Hell…', 2400));
+    } else {
+      this.time.delayedCall(2700, () => this.showBanner('The first Sins are vanquished.', 2400));
+    }
+  }
+
+  /** The reused world beacon: mark the available, not-yet-engaged Sin while in Hell. */
+  private updateSinMarker(): void {
+    const i = this.sins.nextIndex;
+    const boss = i >= 0 ? this.sinBosses[i] : undefined;
+    if (this.activeWorld === WORLD_HELL && boss && boss.isAlive && !boss.isActive) {
+      this.sinMarker.show(boss.x, boss.y, `Sin ${i + 1}: ${SIN_DEFS[i].name}`);
+    } else {
+      this.sinMarker.hide();
+    }
+  }
+
+  /** RESET: gauntlet back to 0, all Sin bosses gone + adds cleared, Sin 1 re-placed. */
+  private resetSins(): void {
+    for (let i = 0; i < this.sinBosses.length; i++) {
+      const b = this.sinBosses[i];
+      if (b) {
+        this.clearBossAdds(b.id);
+        b.destroy();
+      }
+      this.sinBosses[i] = undefined;
+    }
+    this.bosses = this.bosses.filter((b) => b.isAlive); // drop the destroyed Sin instances
+    this.sins.reset();
+    this.spawnAvailableSin();
+    this.sinMarker.hide();
+  }
+
+  /** Teleport the player to a boss (travelling to Hell if needed); optionally start it. */
+  private teleportToBoss(boss: Boss, activate: boolean): void {
+    this.cancelDash();
+    const off = boss.def.activationRange + 80;
+    const dest = { x: boss.x, y: boss.y + off };
+    if (this.activeWorld !== WORLD_HELL) this.travelToWorld(WORLD_HELL, dest);
+    else {
+      this.player.sprite.setPosition(dest.x, dest.y);
+      this.player.setDirection(0, 0);
+      this.cameras.main.centerOn(boss.x, boss.y);
+    }
+    if (activate) boss.activate();
+  }
+
+  /** DEV: spawn + start a specific Sin (ignoring gating) and teleport to it. */
+  private devStartSin(i: number): void {
+    this.teleportToBoss(this.ensureSinSpawned(i), true);
+  }
+
+  /** DEV: travel to the currently-available Sin's location (does not force-start it). */
+  private devTeleportToNextSin(): void {
+    const i = this.sins.nextIndex;
+    if (i < 0) {
+      this.showBanner('All available Sins are vanquished.', 2000);
+      return;
+    }
+    this.teleportToBoss(this.ensureSinSpawned(i), false);
   }
 
   // --- Portal Defense: townsfolk + the wave encounter -----------------------
@@ -2037,6 +2147,7 @@ export class MainScene extends Phaser.Scene {
     this.worldPos[WORLD_HELL] = { ...this.hellArrivalPos };
 
     this.seedHellDemons();
+    this.spawnAvailableSin(); // place the first unlocked Sin (Wrath) — dormant until approached
   }
 
   /** Infernal props: jagged spires (collision) + the distant Satan's Lair marker. */
@@ -3244,6 +3355,7 @@ export class MainScene extends Phaser.Scene {
     // Reset the Michael encounter: dormant, full HP, Phase 1, adds cleared, and
     // remove any dev-spawned framework bosses (e.g. the test boss) + their adds.
     this.resetMichael();
+    this.resetSins(); // gauntlet → 0, all Sin bosses dormant/full HP, adds cleared, Sin 1 re-placed
     this.removeDevBosses();
 
     // Reset God's-judgment beat: gate re-locked, judgment un-fired, Hell portal gone.
@@ -3315,6 +3427,11 @@ export class MainScene extends Phaser.Scene {
       { label: 'Reset to Demonic', onPress: () => this.revertToDemonic() },
       { label: 'Go to Hell', onPress: () => this.devGoToHell() },
       { label: 'Spawn Demon', onPress: () => this.devSpawnDemon() },
+      { label: 'Teleport to Next Sin', onPress: () => this.devTeleportToNextSin() },
+      { label: 'Start Wrath', onPress: () => this.devStartSin(0) },
+      { label: 'Start Sloth', onPress: () => this.devStartSin(1) },
+      { label: 'Start Gluttony', onPress: () => this.devStartSin(2) },
+      { label: 'Reset Sins', onPress: () => this.resetSins() },
       { label: 'Go to Heaven', onPress: () => this.devGoToHeaven() },
       { label: 'Return to Earth', onPress: () => this.devReturnToEarth() },
       { label: 'Toggle World', onPress: () => this.devToggleWorld() },

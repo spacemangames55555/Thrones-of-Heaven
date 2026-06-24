@@ -486,6 +486,121 @@ export const DEMON = {
 } as const;
 
 
+// --- The 7 Deadly Sins — Batch 1: Hell bosses (Wrath / Sloth / Gluttony) ----
+//
+// The first THREE Deadly-Sin bosses, fought IN ORDER in Hell (each unlocks the
+// next; see src/boss/SinGauntlet.ts + src/boss/sinsData.ts, which map these
+// constants onto the boss FRAMEWORK — there are NO bespoke per-boss classes).
+// Three deliberately DISTINCT archetypes:
+//   WRATH    = relentless rusher / glass cannon (fast, charges, low-ish HP)
+//   SLOTH    = slow huge-HP wall (telegraphed slams + lazy ranged volleys)
+//   GLUTTONY = summoner / swarm (Demon adds + telegraphed projectile novas)
+// The player arrives holy-powered (~Lv35+); difficulty escalates Sin 1 → 3.
+// `placement` is LOCAL Hell pixels (the scene adds the Hell world offset) — edit
+// it to move a Sin on the map. EVERY value below is a free tuning knob.
+
+/** SIN 1 — WRATH (the Rusher / glass cannon): fast, aggressive, hits hard, dies fast. */
+export const WRATH = {
+  name: 'Wrath, the Ireful',
+  placement: { x: 14080, y: 11520 }, // east of the Hell gate — the FIRST Sin
+  scale: 2.3,
+  color: 0xe23b2a,
+  maxHP: 3600, // LOW-ish for a boss: a glass cannon
+  moveTilesPerSec: 9.2, // faster than the player (8): always closing
+  moveTilesPerSecP2: 10.6, // Phase 2 (≤ threshold): even faster
+  meleeRange: 72,
+  leashRange: 1000,
+  activationRange: 320,
+  meleeDamage: 95, // HIGH melee
+  meleeCooldownMsP1: 850,
+  meleeCooldownMsP2: 520, // Phase 2: shorter melee cooldown
+  chargeDamage: 150, // heavy telegraphed dash
+  chargeSpeed: 900, // dash velocity (px/sec)
+  chargeRange: 540, // dash trigger distance + travel
+  chargeTelegraphMs: 600,
+  chargeCooldownMs: 4200,
+  phase2Threshold: 0.5, // Phase 2 at ≤ 50% HP
+  xpReward: 1200,
+  holyPowerDrop: 12,
+} as const;
+
+/** SIN 2 — SLOTH (the Wall / tank-zoner): enormous HP, crawls, big telegraphed hits. */
+export const SLOTH = {
+  name: 'Sloth, the Leaden',
+  placement: { x: 8200, y: 17800 }, // far south-west — a trek from the gate
+  scale: 2.9,
+  color: 0x5f8a4a,
+  maxHP: 14000, // VERY HIGH: an endurance wall
+  moveTilesPerSec: 2.0, // VERY SLOW: barely chases
+  meleeRange: 96, // a big body
+  preferredRange: 320, // mostly holds ground / zones
+  leashRange: 520, // short pull: won't follow far
+  activationRange: 300,
+  // GROUND SLAM (big telegraphed AoE) — widens + quickens by phase
+  slamDamage: 130,
+  slamRadiusP1: 180,
+  slamRadiusP2: 210,
+  slamRadiusP3: 240,
+  slamCooldownMsP1: 5000,
+  slamCooldownMsP2: 4000,
+  slamCooldownMsP3: 3000,
+  slamTelegraphMs: 850,
+  slamRange: 360, // trigger distance
+  // slow RANGED volleys to discourage free poking
+  volleyDamage: 42,
+  volleyCount: 3,
+  volleyCooldownMs: 2600,
+  volleySpeed: 240,
+  volleyRange: 560,
+  phase2Threshold: 0.66,
+  phase3Threshold: 0.33,
+  xpReward: 1800,
+  holyPowerDrop: 16,
+} as const;
+
+/** SIN 3 — GLUTTONY (the Summoner / swarm): moderate HP, demon adds + projectile novas. */
+export const GLUTTONY = {
+  name: 'Gluttony, the Devourer',
+  placement: { x: 16000, y: 6600 }, // far north-east (near, not at, the lair)
+  scale: 2.7,
+  color: 0x9b4fbf,
+  maxHP: 6800, // MODERATE
+  moveTilesPerSec: 5.0, // moderate
+  meleeRange: 78,
+  preferredRange: 300,
+  leashRange: 760,
+  activationRange: 300,
+  // SUMMONS — reuse the existing Demon enemy as adds; escalate by phase
+  summonEnemy: 'demon',
+  summonCap: 6, // concurrent adds cap
+  summonCountP1: 2,
+  summonCountP2: 3,
+  summonCountP3: 4,
+  summonCadenceMsP1: 8000,
+  summonCadenceMsP2: 6000,
+  summonCadenceMsP3: 4500,
+  // projectile NOVA / barrage (telegraphed ring) — more bolts by phase
+  novaDamage: 46,
+  novaCountP1: 10,
+  novaCountP2: 14,
+  novaCountP3: 18,
+  novaSpeed: 260,
+  novaRange: 640,
+  novaTelegraphMs: 800,
+  novaCooldownMs: 5200,
+  // modest melee when the player is adjacent
+  meleeDamage: 70,
+  meleeCooldownMs: 1100,
+  phase2Threshold: 0.66,
+  phase3Threshold: 0.33,
+  xpReward: 2600,
+  holyPowerDrop: 22,
+} as const;
+
+/** The full Deadly-Sin gauntlet size (this batch authors the first three). */
+export const SINS_TOTAL = 7;
+
+
 // --- The Descent arc (quests 1–4) ------------------------------------------
 //
 // Authored, corruption-gated quest chain in Oregon. Locations are placeholder
