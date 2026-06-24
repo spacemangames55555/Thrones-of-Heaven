@@ -81,6 +81,13 @@ export const ATLAS_TILES: AtlasTileDef[] = [
   // The impassable map edge: a denser blue-grey CLOUD bank (reads as a deliberate
   // cloud-edge of the realm, not the dark void/background it used to look like).
   { key: 'heaven_void', color: '#8ea6c6', pattern: 'noise' },
+  // --- hell tiles (the third world — fire & brimstone; appended so every existing
+  //     terrain keeps its atlas frame and Earth/Heaven are unaffected) ---
+  { key: 'charred_rock', color: '#2a2320', pattern: 'noise' }, // dark charred ground (walk)
+  { key: 'ash_ground', color: '#4a423d', pattern: 'noise' }, // ash-grey (walk)
+  { key: 'ember_rock', color: '#3a241a', pattern: 'speckle' }, // ember-flecked rock (walk)
+  { key: 'lava', color: '#e0531a', pattern: 'noise' }, // glowing lava (BLOCKS — impassable)
+  { key: 'hell_void', color: '#0a0606', pattern: 'flat' }, // chasm edge (blocks)
 ];
 
 /** Total atlas cells, including the reserved empty frame 0. */

@@ -21,9 +21,11 @@ import { FlamingSword } from '../entities/FlamingSword';
 import { Cherub } from '../entities/Cherub';
 import { ArchangelMichael } from '../entities/ArchangelMichael';
 import { HellPortal } from '../entities/HellPortal';
+import { Demon } from '../entities/Demon';
 import { PortalDefense } from '../encounter/PortalDefense';
 import { buildHeavenMapData, HEAVEN_WIDTH, HEAVEN_HEIGHT, HEAVEN_CHERUB_SPAWNS, MICHAEL_SANCTUM, THRONE_POSITION } from '../map/heavenWorld';
-import { WORLD_EARTH, WORLD_HEAVEN, type WorldId, type WorldRuntime } from '../world/worlds';
+import { buildHellMapData, HELL_WIDTH, HELL_HEIGHT, HELL_DEMON_SPAWNS, SATAN_LAIR } from '../map/hellWorld';
+import { WORLD_EARTH, WORLD_HEAVEN, WORLD_HELL, type WorldId, type WorldRuntime } from '../world/worlds';
 import { ProjectileSystem } from '../combat/ProjectileSystem';
 import { PickupSystem, type PickupCollected } from '../world/PickupSystem';
 import { HolyPower } from '../progression/HolyPower';
@@ -153,8 +155,6 @@ const BANISHMENT_LINES = [
   'A Voice from the Clouds: Fall, then — out of My sight, into the dark below.',
   'The ground tears open beneath you. A way down has been made.',
 ];
-/** Shown when the player walks into the Hell portal (the Hell map is the NEXT build). */
-const HELL_PORTAL_ENTER = 'Hell awaits below… (coming soon)';
 
 /**
  * The overworld scene: renders Washington, stamps the Seattle town onto it,
@@ -259,7 +259,15 @@ export class MainScene extends Phaser.Scene {
   private judgmentActive = false; // mid-sequence guard
   private thronePos = { x: 0, y: 0 };
   private hellPortal?: HellPortal;
-  private hellPortalEnterShownUntil = 0;
+
+  // Hell: the third world + its return gate + seeded demons. Built via the same
+  // multi-world system as Heaven (a GameMap at a further coordinate offset).
+  private hellMap!: GameMap;
+  private hellReturnPortal!: HeavenPortal; // reused (corrupted gate) — the way back up
+  private hellArrivalPos = { x: 0, y: 0 };
+  private hellReturnPortalPos = { x: 0, y: 0 };
+  private heavenReturnFromHellPos = { x: 0, y: 0 }; // where Hell→Heaven drops the player
+  private demons: Demon[] = [];
 
   private heavenMap!: GameMap;
   private heavenReturnPortal!: HeavenPortal;
@@ -519,6 +527,7 @@ export class MainScene extends Phaser.Scene {
       this.haltGuardians();
       this.haltCherubs();
       this.haltMichael();
+      this.haltDemons();
       this.corruptButton.setVisible(false);
       this.readout.update();
       return;
@@ -542,6 +551,7 @@ export class MainScene extends Phaser.Scene {
       this.haltGuardians();
       this.haltCherubs();
       this.haltMichael();
+      this.haltDemons();
       this.readout.update();
       return;
     }
@@ -576,15 +586,19 @@ export class MainScene extends Phaser.Scene {
       this.updateTownsfolk(); // prune dead first so the wave manager sees the live count
       this.portalDefense.update(this.time.now);
       this.updateGuardianEncounter();
-    } else {
+    } else if (this.activeWorld === WORLD_HEAVEN) {
       this.talkButton.setVisible(false);
       this.updateHeaven();
+    } else {
+      this.talkButton.setVisible(false);
+      this.updateHell(); // WORLD_HELL: the return-gate proximity
     }
-    // World-agnostic: Cherubs (Heaven defenders + dev spawns), projectiles, and
-    // pickups run for both worlds — Cherubs idle when the player is far, and the
-    // pickup/projectile systems carry drops/bolts in whichever world they exist.
+    // World-agnostic: Cherubs/Michael (Heaven), Demons (Hell), the God-judgment
+    // gate, projectiles + pickups all run for every world — distant enemies idle
+    // (leashed), and the pickup/projectile systems carry items in any world.
     this.updateCherubs();
     this.updateMichael();
+    this.updateDemons();
     this.updateGodJudgment();
     this.projectiles.update(delta, this.player.x, this.player.y, PROJECTILE_PLAYER_HIT_RADIUS);
     this.pickups.update(this.player.x, this.player.y);
@@ -757,6 +771,7 @@ export class MainScene extends Phaser.Scene {
     this.hitTownsfolkInRange(sx, sy, PLAYER_ATTACK_RANGE, this.progression.effectiveDamage);
     this.hitGuardiansInRange(sx, sy, PLAYER_ATTACK_RANGE, this.progression.effectiveDamage);
     this.hitCherubsInRange(sx, sy, PLAYER_ATTACK_RANGE, this.progression.effectiveDamage);
+    this.hitDemonsInRange(sx, sy, PLAYER_ATTACK_RANGE, this.progression.effectiveDamage);
     this.hitMichael(sx, sy, PLAYER_ATTACK_RANGE, this.progression.effectiveDamage);
   }
 
@@ -876,6 +891,7 @@ export class MainScene extends Phaser.Scene {
       this.townsfolk.length > 0 ||
       this.guardians.some((g) => g.isAggro) ||
       this.cherubs.some((c) => c.isAggro) ||
+      this.demons.some((d) => d.isAggro) ||
       (this.michael?.isAggro ?? false);
     if (enemiesEngaged) this.lastCombatTime = this.time.now;
     const outOfCombat = !enemiesEngaged && this.time.now - this.lastCombatTime > PLAYER_HP_REGEN_DELAY_MS;
@@ -1012,6 +1028,19 @@ export class MainScene extends Phaser.Scene {
           this.spawnDamageNumber(c.x, c.y - 30 * c.variant.scale, dealt, '#ffe9a8');
           this.lastCombatTime = this.time.now;
           if (!c.isAlive) this.onCherubKilled(c);
+        }
+      }
+    }
+
+    for (const d of this.demons) {
+      if (!d.isAlive || this.dashHits.has(d)) continue;
+      if (d.distanceTo(px, py) <= DASH_HIT_RADIUS + 10) {
+        this.dashHits.add(d);
+        const dealt = d.takeHit(dmg);
+        if (dealt > 0) {
+          this.spawnDamageNumber(d.x, d.y - 24, dealt, '#ffd0a0');
+          this.lastCombatTime = this.time.now;
+          if (!d.isAlive) this.onDemonKilled(d);
         }
       }
     }
@@ -1394,6 +1423,7 @@ export class MainScene extends Phaser.Scene {
     this.hitTownsfolkInRange(px, py, R, HUGE);
     this.hitGuardiansInRange(px, py, R, HUGE);
     this.hitCherubsInRange(px, py, R, HUGE); // includes Michael's summoned adds
+    this.hitDemonsInRange(px, py, R, HUGE); // Hell's demons
     if (includeBoss) this.hitMichael(px, py, R, HUGE); // → die → onDefeat (rewards + hook)
   }
 
@@ -1873,7 +1903,193 @@ export class MainScene extends Phaser.Scene {
     this.setupMichael();
     // God's throne set piece (the judgment beat is gated on Michael's defeat).
     this.buildThrone();
+    // HELL — the third world (built at a further offset; needs heavenMap + thronePos).
+    this.setupHell();
   }
+
+  // --- Hell: the third world + the Heaven<->Hell portal + seeded demons -------
+  //
+  // Built with the SAME multi-world system as Heaven — Hell is just another
+  // GameMap registered at a further coordinate offset. (This is the "add another
+  // map" case the system was designed for; Earth + Heaven are untouched.)
+
+  private setupHell(): void {
+    const ts = this.map.tileSize;
+    const hb = this.heavenMap.bounds;
+    const origin = { x: hb.x + this.heavenMap.pixelWidth + HEAVEN_WORLD_GAP, y: 0 };
+    this.hellMap = new GameMap(this, buildHellMapData(), [], origin, { forceCpuLayer: true });
+
+    const cx = origin.x + (HELL_WIDTH * ts) / 2;
+    const cy = origin.y + (HELL_HEIGHT * ts) / 2;
+    this.hellReturnPortalPos = { x: cx, y: cy };
+    this.hellArrivalPos = { x: cx + 0, y: cy + 140 };
+    // Hell→Heaven lands the player just south of the Heaven Hell-portal (the throne).
+    this.heavenReturnFromHellPos = { x: this.thronePos.x, y: this.thronePos.y + 260 };
+
+    // Return gate (back UP to Heaven) — reuses the corrupted HeavenPortal visual.
+    this.hellReturnPortal = new HeavenPortal(this, cx, cy);
+    this.hellReturnPortal.load({ state: 'corrupted' });
+    this.addHeavenLabel(cx, cy - 84, 'Return Gate (to Heaven)', '#d6a8ff');
+    this.addHeavenLabel(cx, cy - 230, '— H E L L —', '#ff7a4a');
+
+    // Infernal prop landmarks (spires + a distant Satan's Lair placeholder).
+    this.buildHellProps(cx, cy);
+
+    const hellCollider = this.physics.add.collider(this.player.sprite, this.hellMap.layer);
+    hellCollider.active = false;
+
+    // Register Hell in the multi-world registry (Earth + Heaven set in setupHeaven).
+    this.worlds[WORLD_HELL] = {
+      id: WORLD_HELL,
+      map: this.hellMap,
+      collider: hellCollider,
+      defaultArrival: this.hellArrivalPos,
+    };
+    this.worldPos[WORLD_HELL] = { ...this.hellArrivalPos };
+
+    this.seedHellDemons();
+  }
+
+  /** Infernal props: jagged spires (collision) + the distant Satan's Lair marker. */
+  private buildHellProps(cx: number, cy: number): void {
+    MainScene.ensureHellPropTextures(this);
+    const spires: { dx: number; dy: number }[] = [
+      { dx: -190, dy: -70 },
+      { dx: 200, dy: -50 },
+      { dx: -150, dy: 150 },
+      { dx: 180, dy: 160 },
+      { dx: -60, dy: -200 },
+    ];
+    for (const s of spires) {
+      const img = this.add.image(cx + s.dx, cy + s.dy, 'hell-spire').setDepth(7);
+      this.physics.add.existing(img, true);
+      this.physics.add.collider(this.player.sprite, img);
+    }
+    // Satan's Lair — placeholder for the future final-boss site (visual + collision).
+    const o = this.hellMap.bounds;
+    const lx = o.x + SATAN_LAIR.x;
+    const ly = o.y + SATAN_LAIR.y;
+    const lair = this.add.image(lx, ly, 'satan-lair').setDepth(7);
+    this.physics.add.existing(lair, true);
+    this.physics.add.collider(this.player.sprite, lair);
+    const glow = this.add.circle(lx, ly + 10, 70, 0xff3b1f, 0.14).setDepth(5);
+    this.tweens.add({ targets: glow, scale: 1.3, alpha: 0.05, duration: 2000, yoyo: true, repeat: -1, ease: 'Sine.inOut' });
+    this.addHeavenLabel(lx, ly - lair.height / 2 - 6, "☠ Satan's Lair ☠", '#ff6a4a');
+  }
+
+  /** Spawn one Demon; wire its melee strike + terrain collider for the given world. */
+  private spawnDemon(x: number, y: number, mapLayer: Phaser.Tilemaps.TilemapLayerBase): Demon {
+    const d = new Demon(this, x, y);
+    d.onMelee = (dmg) => this.onCherubMelee(dmg); // reuse: damage the player
+    this.physics.add.collider(d.sprite, mapLayer);
+    this.uiCamera?.ignore(d.objects());
+    this.demons.push(d);
+    return d;
+  }
+
+  /** Seed the placed Hell demons (positions in hellWorld.ts). */
+  private seedHellDemons(): void {
+    const o = this.hellMap.bounds;
+    for (const s of HELL_DEMON_SPAWNS) this.spawnDemon(o.x + s.x, o.y + s.y, this.hellMap.layer);
+  }
+
+  /** Drive every Demon (idle when the player is far/elsewhere), then prune the dead. */
+  private updateDemons(): void {
+    for (const d of this.demons) d.update(this.player.x, this.player.y, this.time.now);
+    if (this.demons.some((d) => !d.isAlive)) this.demons = this.demons.filter((d) => d.isAlive);
+  }
+
+  private haltDemons(): void {
+    for (const d of this.demons) d.halt();
+  }
+
+  private onDemonKilled(d: Demon): void {
+    this.gainXP(d.xpReward); // enemy data drives the award (no special loot)
+  }
+
+  /** Apply damage to every Demon within `range` of (x,y); award XP on kills. */
+  private hitDemonsInRange(x: number, y: number, range: number, damage: number): void {
+    for (const d of this.demons) {
+      if (!d.isAlive) continue;
+      if (d.distanceTo(x, y) <= range + 10) {
+        const dealt = d.takeHit(damage);
+        if (dealt > 0) {
+          this.spawnDamageNumber(d.x, d.y - 24, dealt, '#ffd0a0');
+          this.lastCombatTime = this.time.now;
+          if (!d.isAlive) this.onDemonKilled(d);
+        }
+      }
+    }
+  }
+
+  /** Remove all Demons (dev reset / teardown). */
+  private clearDemons(): void {
+    for (const d of this.demons) d.destroy();
+    this.demons = [];
+  }
+
+  /** Hell-side per-frame logic: entering the return gate transitions back to Heaven. */
+  private updateHell(): void {
+    if (this.transitioning || this.time.now < this.worldCooldownUntil) return;
+    if (Phaser.Math.Distance.Between(this.player.x, this.player.y, this.hellReturnPortalPos.x, this.hellReturnPortalPos.y) <= PORTAL_ENTER_RANGE) {
+      this.travelToWorld(WORLD_HEAVEN, this.heavenReturnFromHellPos);
+    }
+  }
+
+  /** DEV: travel to Hell directly (for testing without the throne sequence). */
+  private devGoToHell(): void {
+    this.travelToWorld(WORLD_HELL, this.hellArrivalPos);
+  }
+
+  /** DEV: spawn a Demon just ahead of the player, in the ACTIVE world. */
+  private devSpawnDemon(): void {
+    const len = Math.hypot(this.player.facingX, this.player.facingY) || 1;
+    const ahead = 160;
+    this.spawnDemon(
+      this.player.x + (this.player.facingX / len) * ahead,
+      this.player.y + (this.player.facingY / len) * ahead,
+      this.activeMap().layer,
+    );
+  }
+
+  private static ensureHellPropTextures(scene: Phaser.Scene): void {
+    if (!scene.textures.exists('hell-spire')) {
+      const g = scene.make.graphics({ x: 0, y: 0 }, false);
+      const w = 34;
+      const h = 78;
+      g.fillStyle(0x140a06, 1); // jagged dark spire
+      g.fillTriangle(2, h, w - 2, h, w / 2, 2);
+      g.fillStyle(0x2a1810, 1);
+      g.fillTriangle(7, h, w - 7, h, w / 2, 12);
+      g.fillStyle(0xff5a2a, 0.6); // ember cracks
+      g.fillRect(w / 2 - 1, h - 30, 2, 22);
+      g.fillRect(w / 2 - 6, h - 14, 2, 10);
+      g.fillRect(w / 2 + 4, h - 18, 2, 12);
+      g.generateTexture('hell-spire', w, h);
+      g.destroy();
+    }
+    if (!scene.textures.exists('satan-lair')) {
+      const g = scene.make.graphics({ x: 0, y: 0 }, false);
+      const w = 130;
+      const h = 110;
+      // A dark, jagged fortress silhouette with a fiery gate — ominous placeholder.
+      g.fillStyle(0x0d0705, 1);
+      g.fillRect(10, 40, w - 20, h - 40);
+      g.fillTriangle(10, 40, 38, 40, 24, 8); // towers
+      g.fillTriangle(w - 38, 40, w - 10, 40, w - 24, 8);
+      g.fillTriangle(w / 2 - 16, 40, w / 2 + 16, 40, w / 2, 0);
+      g.fillStyle(0x1a0f0a, 1);
+      g.fillRect(18, 48, w - 36, h - 48);
+      g.fillStyle(0xff4a1f, 0.9); // fiery gate
+      g.fillRoundedRect(w / 2 - 14, h - 40, 28, 40, 4);
+      g.fillStyle(0xffb04a, 0.9);
+      g.fillRoundedRect(w / 2 - 7, h - 30, 14, 30, 3);
+      g.generateTexture('satan-lair', w, h);
+      g.destroy();
+    }
+  }
+
+  /** A small Heaven world-space label. */
 
   /**
    * The THRONE set piece (placement, not an enemy): a towering golden throne
@@ -1972,11 +2188,10 @@ export class MainScene extends Phaser.Scene {
         this.startGodJudgment();
       }
     }
-    // Entering the Hell portal → placeholder beat (the Hell map is the NEXT build).
-    if (this.hellPortal && this.time.now >= this.hellPortalEnterShownUntil) {
+    // Entering the Hell portal → REAL transition down to the Hell world.
+    if (this.hellPortal && !this.transitioning && this.time.now >= this.worldCooldownUntil) {
       if (Phaser.Math.Distance.Between(this.player.x, this.player.y, this.hellPortal.x, this.hellPortal.y) <= PORTAL_ENTER_RANGE) {
-        this.hellPortalEnterShownUntil = this.time.now + 3600;
-        this.showBanner(HELL_PORTAL_ENTER, 2600);
+        this.travelToWorld(WORLD_HELL, this.hellArrivalPos);
       }
     }
   }
@@ -1986,7 +2201,6 @@ export class MainScene extends Phaser.Scene {
     this.michaelDefeated = false;
     this.judgmentFired = false;
     this.judgmentActive = false;
-    this.hellPortalEnterShownUntil = 0;
     this.hellPortal?.destroy();
     this.hellPortal = undefined;
   }
@@ -2764,6 +2978,10 @@ export class MainScene extends Phaser.Scene {
     // Reset God's-judgment beat: gate re-locked, judgment un-fired, Hell portal gone.
     this.resetGodJudgment();
 
+    // Clear any active Demons, then re-seed Hell's placed grunts. (Returns to Earth below.)
+    this.clearDemons();
+    this.seedHellDemons();
+
     // Return to Earth if currently in Heaven (instant — no fade), and forget the
     // remembered Heaven position so a fresh visit starts at the arrival point.
     this.tweens.killTweensOf(this.fadeOverlay);
@@ -2818,6 +3036,8 @@ export class MainScene extends Phaser.Scene {
       { label: 'Teleport to Throne', onPress: () => this.devTeleportToThrone() },
       { label: "Trigger God's Judgment", onPress: () => this.devTriggerGodJudgment() },
       { label: 'Reset Judgment', onPress: () => this.resetGodJudgment() },
+      { label: 'Go to Hell', onPress: () => this.devGoToHell() },
+      { label: 'Spawn Demon', onPress: () => this.devSpawnDemon() },
       { label: 'Go to Heaven', onPress: () => this.devGoToHeaven() },
       { label: 'Return to Earth', onPress: () => this.devReturnToEarth() },
       { label: 'Toggle World', onPress: () => this.devToggleWorld() },

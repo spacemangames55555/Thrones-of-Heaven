@@ -11,6 +11,7 @@ export type WorldId = string;
 
 export const WORLD_EARTH: WorldId = 'earth';
 export const WORLD_HEAVEN: WorldId = 'heaven';
+export const WORLD_HELL: WorldId = 'hell';
 
 /** A built, registered world: its map plus where to drop the player by default. */
 export interface WorldRuntime {

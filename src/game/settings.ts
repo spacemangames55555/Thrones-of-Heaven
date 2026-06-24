@@ -425,6 +425,32 @@ export const MICHAEL = {
 } as const;
 
 
+// --- Demon: Hell's basic melee grunt ---------------------------------------
+//
+// The first Hell enemy — a simple infernal melee grunt (chase + contact strike),
+// reusing the enemy pattern (see Demon.ts). A grunt, NOT a boss/Satan. Edit a
+// field to retune. (Player damage already scales with level.)
+export const DEMON = {
+  /** Health pool — modest (a basic grunt). */
+  maxHP: 130,
+  /** Move speed in tiles/sec. */
+  moveTilesPerSec: 4.8,
+  /** Damage one contact strike deals to the player. */
+  meleeDamage: 14,
+  /** Distance (px) within which it strikes the player. */
+  meleeRange: 36,
+  /** Cooldown between strikes (ms). */
+  meleeCooldownMs: 800,
+  /** Distance (px) at which it wakes and chases. */
+  aggroRange: 420,
+  /** XP awarded on death (no special loot). */
+  xpReward: 40,
+  /** Sprite scale + tint. */
+  scale: 1.2,
+  color: 0xff5a3a,
+} as const;
+
+
 // --- The Descent arc (quests 1–4) ------------------------------------------
 //
 // Authored, corruption-gated quest chain in Oregon. Locations are placeholder
