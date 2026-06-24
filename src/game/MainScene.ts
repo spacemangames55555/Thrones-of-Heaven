@@ -936,14 +936,20 @@ export class MainScene extends Phaser.Scene {
     this.dropHolyPower(a.x, a.y, a.variant.holyPowerDrop);
   }
 
-  /** Drop `n` Holy Power motes spread slightly around a world point. */
+  /**
+   * Drop `n` Holy Power motes spread slightly around a world point. Every mote
+   * is snapped to the nearest WALKABLE tile so a kill on/against blocking terrain
+   * (water/mountain) never leaves an unreachable pickup — critical for the
+   * descent's "collect their Holy Power" objectives, where each angel drops one.
+   */
   private dropHolyPower(x: number, y: number, n: number): void {
     for (let i = 0; i < n; i++) {
       const ang = (Math.PI * 2 * i) / Math.max(1, n) + Math.random() * 0.6;
       const r = n > 1 ? 18 + Math.random() * 14 : 0;
+      const spot = this.map.nearestWalkableWorld(x + Math.cos(ang) * r, y + Math.sin(ang) * r);
       this.pickups.spawn({
-        x: x + Math.cos(ang) * r,
-        y: y + Math.sin(ang) * r,
+        x: spot.x,
+        y: spot.y,
         type: 'holy-power',
         amount: 1,
       });
