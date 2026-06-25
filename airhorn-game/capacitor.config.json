@@ -1,0 +1,13 @@
+{
+  "appId": "com.airhornhero.app",
+  "appName": "Airhorn Hero",
+  "webDir": "www",
+  "backgroundColor": "#0d0f1aff",
+  "android": {
+    "backgroundColor": "#0d0f1aff"
+  },
+  "ios": {
+    "backgroundColor": "#0d0f1aff",
+    "contentInset": "always"
+  }
+}

@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no" />
+  <meta name="theme-color" content="#0d0f1a" />
+  <meta name="description" content="AIRHORN HERO — a soundboard you can play. Blast airhorns and rack up combos. For Android & iOS." />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Airhorn Hero" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="icon" type="image/svg+xml" href="icons/icon.svg" />
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
+  <link rel="stylesheet" href="styles.css" />
+  <title>Airhorn Hero</title>
+</head>
+<body>
+  <div id="app">
+    <header class="topbar">
+      <div class="brand"><span class="brand-emoji">📢</span><span class="brand-name">AIRHORN&nbsp;HERO</span></div>
+      <div class="tabs" role="tablist">
+        <button class="tab is-active" data-tab="board" role="tab">Soundboard</button>
+        <button class="tab" data-tab="game" role="tab">Frenzy</button>
+      </div>
+    </header>
+
+    <!-- SOUNDBOARD MODE -->
+    <main id="view-board" class="view is-active">
+      <p class="hint">Tap &amp; hold a pad to blast. Different pads, different horns.</p>
+      <div id="pad-grid" class="pad-grid"></div>
+    </main>
+
+    <!-- FRENZY GAME MODE -->
+    <main id="view-game" class="view">
+      <div class="hud">
+        <div class="hud-item"><span class="hud-label">Score</span><span id="g-score" class="hud-val">0</span></div>
+        <div class="hud-item"><span class="hud-label">Combo</span><span id="g-combo" class="hud-val">0×</span></div>
+        <div class="hud-item"><span class="hud-label">Time</span><span id="g-time" class="hud-val">30</span></div>
+        <div class="hud-item"><span class="hud-label">Best</span><span id="g-high" class="hud-val">0</span></div>
+      </div>
+      <div class="rep-wrap"><div id="g-rep" class="rep-bar"></div></div>
+
+      <div id="game-grid" class="game-grid"></div>
+
+      <div id="game-overlay" class="overlay is-active">
+        <div class="overlay-card">
+          <h2 id="ov-title">AIRHORN FRENZY</h2>
+          <p id="ov-text">Tap the horns before they drop. Chain hits to crank the pitch and your multiplier. Don't let your REP hit zero.</p>
+          <div class="style-pick">
+            <span class="style-pick-label">Horn:</span>
+            <div id="game-style" class="style-row"></div>
+          </div>
+          <button id="ov-start" class="btn-big">START</button>
+        </div>
+      </div>
+    </main>
+
+    <footer class="footer">
+      <button id="mute" class="mini" aria-label="Mute">🔊</button>
+      <span class="footer-note">Web Audio · no samples · works offline</span>
+    </footer>
+  </div>
+  <script type="module" src="main.js"></script>
+</body>
+</html>

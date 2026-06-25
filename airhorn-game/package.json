@@ -1,0 +1,25 @@
+{
+  "name": "airhorn-hero",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Airhorn Hero — a soundboard you can play. Cross-platform (web / Android / iOS) airhorn game built on a procedural Web Audio synth.",
+  "type": "module",
+  "scripts": {
+    "start": "node serve.mjs",
+    "build:www": "node copy-www.mjs",
+    "cap:copy": "node copy-www.mjs && cap copy",
+    "cap:sync": "node copy-www.mjs && cap sync",
+    "android:add": "node copy-www.mjs && cap add android",
+    "ios:add": "node copy-www.mjs && cap add ios",
+    "android:open": "cap open android",
+    "ios:open": "cap open ios"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^6.2.0"
+  },
+  "dependencies": {
+    "@capacitor/core": "^6.2.0",
+    "@capacitor/android": "^6.2.0",
+    "@capacitor/ios": "^6.2.0"
+  }
+}
