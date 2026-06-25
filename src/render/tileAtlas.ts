@@ -130,6 +130,11 @@ export const TERRAIN_TILE_IMAGES: { key: string; file: string }[] = [
   { key: 'scabland', file: 'tiles/terrain/Scabland.png' }, // Scabland.png → "Scabland / Coulee"
   { key: 'farmland', file: 'tiles/terrain/Farmlandwheat.png' }, // Farmlandwheat.png → "Palouse Farmland"
   { key: 'montane', file: 'tiles/terrain/Evergreenmontane_forest.png' }, // Evergreenmontane_forest.png → "Montane Forest"
+  { key: 'foothills', file: 'tiles/terrain/Foothills.png' }, // Foothills.png → "Foothills"
+  { key: 'mountain', file: 'tiles/terrain/Alpinesnow_peak.png' }, // Alpinesnow_peak.png → "Alpine Peak"
+  { key: 'pass', file: 'tiles/terrain/Mountain_pass.png' }, // Mountain_pass.png → "Mountain Pass"
+  { key: 'urban', file: 'tiles/terrain/Urbantown_ground.png' }, // Urbantown_ground.png → "Urban / Town"
+  { key: 'bridge', file: 'tiles/terrain/Bridge.png' }, // Bridge.png → "Bridge"
 ];
 
 /** Texture cache key under which a terrain's real tile PNG is loaded. */
