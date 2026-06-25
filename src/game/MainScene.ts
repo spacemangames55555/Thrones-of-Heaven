@@ -48,6 +48,7 @@ import { SkillState } from '../skills/SkillState';
 import { classSkills, combineMods, type SkillDef, type SkillStatMods, type ActiveActionId } from '../skills/skillData';
 import { TANK_TUNING } from '../skills/blacksmithTank';
 import { DPS_TUNING } from '../skills/blacksmithDps';
+import { CONTROL_TUNING, COUNTER_ID, IRON_WILL_ID, DOMINANCE_ID, IRON_PYRITE_ID } from '../skills/blacksmithControl';
 import { PlayerPower } from '../player/PlayerPower';
 import { ANGEL_ENCOUNTER } from '../story/angelData';
 import { QuestChain, type QuestEvent } from '../quest/QuestChain';
@@ -213,6 +214,7 @@ const ENDING_ANGEL_APPROACH_RANGE = 90;
  */
 interface CombatEnemy {
   readonly sprite: Phaser.Physics.Arcade.Sprite;
+  readonly health: Health; // for HP-threshold effects (Execute) + aura targeting
   get x(): number;
   get y(): number;
   get isAlive(): boolean;
@@ -272,6 +274,18 @@ export class MainScene extends Phaser.Scene {
   private skillTimed: { id: string; endsAt: number; stats: SkillStatMods; tint?: number; auraDamage?: number; auraRadius?: number; auraNextAt?: number }[] = [];
   /** Stun registry: enemy → time the stun ends. Stunned bodies are frozen (moves=false). */
   private stunnedEnemies = new Map<CombatEnemy, number>();
+  /** Slow registry: enemy → { until, factor } (velocity scaled each frame). */
+  private slowedEnemies = new Map<CombatEnemy, { until: number; factor: number }>();
+  /** Counter Attack (Control passive) internal-cooldown end time. */
+  private counterReadyAt = 0;
+  /** Base incoming-damage multiplier from skill DR (recompute); weaken stacks on top per-frame. */
+  private baseIncomingMult = 1;
+  /** Timed Intimidate WEAKEN: while active, the player takes (1 - factor) damage. */
+  private intimidateWeakenUntil = 0;
+  private intimidateWeakenFactor = 0;
+  /** True while a Charge rush is in progress (reuses the dash movement, like Plow). */
+  private chargeActive = false;
+  private chargeHits = new Set<CombatEnemy>();
 
   // Progression / leveling. Level-derived maxHP + damage feed the combat above.
   private progression!: PlayerProgression;
@@ -554,6 +568,7 @@ export class MainScene extends Phaser.Scene {
     this.progression = new PlayerProgression();
     this.progression.onChange = () => this.refreshXpUi();
     this.playerHealth = new Health(this.progression.effectiveMaxHP);
+    this.playerHealth.onDamaged = () => this.onPlayerHurt(); // Counter Attack (Control passive)
     this.energy = new Health(MAX_ENERGY); // energy is a generic clamped pool
     this.sasquatch = new Sasquatch(this, SASQUATCH_SPAWN.x, SASQUATCH_SPAWN.y);
     this.sasquatch.onStrike = () => this.onSasquatchStrike();
@@ -758,6 +773,7 @@ export class MainScene extends Phaser.Scene {
       this.player.sprite.setVelocity(this.dashDir.x * DASH_SPEED, this.dashDir.y * DASH_SPEED);
       this.spawnDashTrail();
       if (this.plowActive) this.plowTick();
+      else if (this.chargeActive) this.chargeTick();
       else this.dashDamageTick();
       if (this.time.now >= this.dashEndsAt) this.endDash();
     } else {
@@ -797,6 +813,11 @@ export class MainScene extends Phaser.Scene {
     this.updateBosses();
     this.updateDemons();
     this.updateGodJudgment();
+    // Control tree: register the always-on auras (Dominance / Iron Pyrite) + the
+    // player-incoming WEAKEN, then scale slowed enemies' velocity. These run AFTER
+    // every enemy update so the slow overrides the chase velocity just set.
+    this.updateControlEffects();
+    this.applyEnemySlows();
     this.projectiles.update(delta, this.player.x, this.player.y, PROJECTILE_PLAYER_HIT_RADIUS);
     this.hazards.update(this.time.now, this.player.x, this.player.y, this.playerDead);
     this.pickups.update(this.player.x, this.player.y);
@@ -1060,7 +1081,13 @@ export class MainScene extends Phaser.Scene {
     if (this.player) this.player.speedMultiplier = 1 + (m.moveSpeedMult ?? 0);
     // Damage reduction (capped so the player can always be hurt a little). A NEGATIVE
     // damageReduction (Crazed's berserk tradeoff) raises it above 1 → takes MORE damage.
-    if (this.playerHealth) this.playerHealth.incomingMultiplier = Phaser.Math.Clamp(1 - (m.damageReduction ?? 0), 0.1, 2);
+    // This is the BASE; per-frame enemy-WEAKEN (Intimidate/Dominance/Pyrite) stacks on
+    // top in updateControlEffects → playerHealth.incomingMultiplier.
+    // Iron Will / Iron Pyrite (CC-immune) also add a flat damage-reduction here.
+    let dr = m.damageReduction ?? 0;
+    if (this.isPlayerCcImmune()) dr += CONTROL_TUNING.ironWill.damageReduction;
+    this.baseIncomingMult = Phaser.Math.Clamp(1 - dr, 0.1, 2);
+    if (this.playerHealth) this.playerHealth.incomingMultiplier = this.baseIncomingMult;
     // Block chance + strength (Double Block / Dual Shield) — rolled per hit in Health.
     if (this.playerHealth) {
       this.playerHealth.blockChance = Phaser.Math.Clamp(m.blockChance ?? 0, 0, 0.9);
@@ -1203,7 +1230,69 @@ export class MainScene extends Phaser.Scene {
         radius: c.radius,
       });
       this.notifyBossesPlayerAction('ranged');
+    } else if (action === 'control_charge') {
+      this.startCharge(); // Control #1 — forward rush + knockdown along the path
+    } else if (action === 'disarm') {
+      // Control #3 — strike a target in front + lock it down (can't act). (Disarm is
+      // modeled as a freeze: per-enemy attack-only suppression isn't generic here.)
+      const c = CONTROL_TUNING.disarm;
+      const fx = px + this.player.facingX * c.range * 0.6;
+      const fy = py + this.player.facingY * c.range * 0.6;
+      this.spawnSkillRing(fx, fy, c.range, 0xb0a0ff);
+      this.aoeHitAll(fx, fy, c.range, this.skillDamage(c.damage));
+      this.stunEnemiesInRange(fx, fy, c.range, c.disarmMs);
+    } else if (action === 'intimidate') {
+      // Control #4 — AoE shout: SLOW + WEAKEN all nearby enemies for a duration.
+      const c = CONTROL_TUNING.intimidate;
+      this.spawnSkillRing(px, py, c.radius, 0xffa040);
+      this.slowEnemiesInRange(px, py, c.radius, c.durationMs, c.slowFactor);
+      this.intimidateWeakenUntil = this.time.now + c.durationMs;
+      this.intimidateWeakenFactor = c.weaken;
+    } else if (action === 'cripple') {
+      // Control #6 — heavy blow + sharp single-target SLOW.
+      const c = CONTROL_TUNING.cripple;
+      const fx = px + this.player.facingX * c.range * 0.6;
+      const fy = py + this.player.facingY * c.range * 0.6;
+      this.spawnSkillRing(fx, fy, c.range, 0x8af0d0);
+      this.aoeHitAll(fx, fy, c.range, this.skillDamage(c.damage));
+      this.slowEnemiesInRange(fx, fy, c.range, c.slowMs, c.slowFactor);
+    } else if (action === 'execute') {
+      // Control #8 — finisher: enemies below the HP threshold take massive bonus damage.
+      const c = CONTROL_TUNING.execute;
+      const fx = px + this.player.facingX * c.range * 0.6;
+      const fy = py + this.player.facingY * c.range * 0.6;
+      this.spawnSkillRing(fx, fy, c.range, 0xff5050);
+      const low = this.combatEnemiesInRange(fx, fy, c.range).some((e) => e.health.ratio < c.thresholdPct);
+      this.aoeHitAll(fx, fy, c.range, this.skillDamage(low ? c.damage * c.executeMult : c.damage));
     }
+  }
+
+  /** CHARGE (Control #1): a forward rush reusing the dash movement; enemies in the
+   *  path are damaged + KNOCKED DOWN (a brief stun). Independent of the dodge cooldown. */
+  private startCharge(): void {
+    const c = CONTROL_TUNING.charge;
+    const len = Math.hypot(this.player.facingX, this.player.facingY) || 1;
+    this.dashDir = { x: this.player.facingX / len, y: this.player.facingY / len };
+    this.dashEndsAt = this.time.now + (c.distance / DASH_SPEED) * 1000;
+    this.chargeHits.clear();
+    this.chargeActive = true;
+  }
+
+  /** CHARGE per-frame: damage + knock down each enemy in the path once. */
+  private chargeTick(): void {
+    const c = CONTROL_TUNING.charge;
+    const px = this.player.x;
+    const py = this.player.y;
+    const r = DASH_HIT_RADIUS + 16;
+    for (const e of this.combatEnemiesInRange(px, py, r)) {
+      if (this.chargeHits.has(e)) continue;
+      this.chargeHits.add(e);
+      const dealt = e.takeHit(this.skillDamage(c.damage));
+      if (dealt > 0) this.dmgDealtAccum += dealt;
+      this.spawnDamageNumber(e.x, e.y - 24, dealt, '#ffe9a8');
+      this.stunEnemiesInRange(e.x, e.y, 12, c.knockdownMs); // knockdown = brief stun
+    }
+    this.lastCombatTime = this.time.now;
   }
 
   /** A skill's base damage scaled by the player's damage multiplier (Berserker's Edge,
@@ -1281,6 +1370,14 @@ export class MainScene extends Phaser.Scene {
     this.hitCherubsInRange(x, y, range, dmg);
     this.hitDemonsInRange(x, y, range, dmg);
     this.hitBossesInRange(x, y, range, dmg);
+    this.applyStaggerIfActive(x, y, range);
+  }
+
+  /** Iron Pyrite (capstone form): the player's attacks STAGGER (briefly stun) enemies hit. */
+  private applyStaggerIfActive(x: number, y: number, range: number): void {
+    if (this.skillTimed.some((t) => t.id === IRON_PYRITE_ID)) {
+      this.stunEnemiesInRange(x, y, range, CONTROL_TUNING.pyrite.staggerMs);
+    }
   }
 
   // --- Generic enemy-effect primitives (reusable across all CombatEnemy types) -
@@ -1346,6 +1443,14 @@ export class MainScene extends Phaser.Scene {
   private releaseAllStuns(): void {
     for (const [e] of this.stunnedEnemies) if (e.isAlive) this.freezeEnemyBody(e, false);
     this.stunnedEnemies.clear();
+    // Also clear transient Control state (slows / timed weaken / counter / charge) so a
+    // respawn, save-load or dev reset starts clean.
+    this.slowedEnemies.clear();
+    this.intimidateWeakenUntil = 0;
+    this.counterReadyAt = 0;
+    this.chargeActive = false;
+    this.chargeHits.clear();
+    if (this.playerHealth) this.playerHealth.incomingMultiplier = this.baseIncomingMult;
   }
 
   /** Per-frame: release enemies whose stun/knockback-freeze has expired (or that died). */
@@ -1359,6 +1464,76 @@ export class MainScene extends Phaser.Scene {
         this.stunnedEnemies.delete(e);
       }
     }
+  }
+
+  // --- Control primitives: SLOW (per-enemy velocity scale) + WEAKEN + reactive ---
+
+  /** SLOW: scale the movement speed of enemies in range to `factor` (0.5 = half) for `ms`. */
+  private slowEnemiesInRange(x: number, y: number, range: number, ms: number, factor: number): void {
+    const until = this.time.now + ms;
+    for (const e of this.combatEnemiesInRange(x, y, range)) {
+      const cur = this.slowedEnemies.get(e);
+      // Keep the strongest slow + the latest expiry while refreshed (auras refresh each frame).
+      this.slowedEnemies.set(e, { until: Math.max(cur?.until ?? 0, until), factor: Math.min(cur?.factor ?? 1, factor) });
+    }
+  }
+
+  /** Per-frame: scale slowed enemies' velocity (and prune the expired). Runs AFTER the
+   *  enemy updates so it overrides the chase velocity they just set. */
+  private applyEnemySlows(): void {
+    if (this.slowedEnemies.size === 0) return;
+    for (const [e, s] of this.slowedEnemies) {
+      if (!e.isAlive || this.time.now >= s.until) {
+        this.slowedEnemies.delete(e);
+        continue;
+      }
+      const body = e.sprite?.body as Phaser.Physics.Arcade.Body | undefined;
+      if (body && body.moves) body.velocity.scale(s.factor);
+    }
+  }
+
+  /** Reactive: the player took damage → Counter Attack (Control passive), if owned + ready. */
+  private onPlayerHurt(): void {
+    if (this.playerDead) return;
+    if (!this.skills.isUnlocked(COUNTER_ID)) return;
+    if (this.time.now < this.counterReadyAt) return;
+    const c = CONTROL_TUNING.counter;
+    this.counterReadyAt = this.time.now + c.internalCdMs;
+    this.spawnSkillRing(this.player.x, this.player.y, c.range, 0xffcaa0);
+    this.aoeHitAll(this.player.x, this.player.y, c.range, this.skillDamage(c.damage));
+  }
+
+  /** True while the player ignores crowd control (Iron Will passive or Iron Pyrite form). */
+  private isPlayerCcImmune(): boolean {
+    return this.skills.isUnlocked(IRON_WILL_ID) || this.skillTimed.some((t) => t.id === IRON_PYRITE_ID);
+  }
+
+  /**
+   * Per-frame Control effects: the Dominance aura (continuous slow+weaken near the
+   * player), the Iron Pyrite aura, and the combined enemy-WEAKEN applied to the
+   * player's incoming damage (on top of the recompute base). Slows themselves are
+   * applied by applyEnemySlows().
+   */
+  private updateControlEffects(): void {
+    let weaken = 0; // strongest enemy-weaken in effect → player takes (1-weaken) damage
+    // Dominance: always-on aura while unlocked.
+    if (this.skills.isUnlocked(DOMINANCE_ID)) {
+      const d = CONTROL_TUNING.dominance;
+      if (this.combatEnemiesInRange(this.player.x, this.player.y, d.radius).length > 0) {
+        this.slowEnemiesInRange(this.player.x, this.player.y, d.radius, 250, d.slowFactor);
+        weaken = Math.max(weaken, d.enemyDamageReduction);
+      }
+    }
+    // Iron Pyrite form: aura slow+weaken + stagger flag handled where attacks land.
+    if (this.skillTimed.some((t) => t.id === IRON_PYRITE_ID)) {
+      const p = CONTROL_TUNING.pyrite;
+      this.slowEnemiesInRange(this.player.x, this.player.y, p.auraRadius, 250, p.auraSlowFactor);
+      weaken = Math.max(weaken, p.auraWeaken);
+    }
+    // Timed Intimidate weaken (set on cast).
+    if (this.time.now < this.intimidateWeakenUntil) weaken = Math.max(weaken, this.intimidateWeakenFactor);
+    // Apply: incoming = base × (1 - weaken).
+    if (this.playerHealth) this.playerHealth.incomingMultiplier = this.baseIncomingMult * (1 - weaken);
   }
 
   /** Start a timed BUFF / TRANSFORMATION: add its stats (+ optional tint / aura) until it expires. */
@@ -1592,6 +1767,7 @@ export class MainScene extends Phaser.Scene {
   private endDash(): void {
     this.dashEndsAt = 0;
     this.plowActive = false;
+    this.chargeActive = false;
     this.player.sprite.setVelocity(0, 0);
   }
 
@@ -1599,6 +1775,7 @@ export class MainScene extends Phaser.Scene {
   private cancelDash(): void {
     this.dashEndsAt = 0;
     this.plowActive = false;
+    this.chargeActive = false;
   }
 
   /** Dash damage reuses the level-derived growth: base + the melee per-level slope. */
