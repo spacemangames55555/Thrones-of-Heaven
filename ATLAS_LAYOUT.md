@@ -76,6 +76,11 @@ Currently mapped real tiles:
 | `Scabland.png` | `scabland` | Scabland / Coulee |
 | `Farmlandwheat.png` | `farmland` | Palouse Farmland |
 | `Evergreenmontane_forest.png` | `montane` | Montane Forest |
+| `Foothills.png` | `foothills` | Foothills |
+| `Alpinesnow_peak.png` | `mountain` | Alpine Peak |
+| `Mountain_pass.png` | `pass` | Mountain Pass |
+| `Urbantown_ground.png` | `urban` | Urban / Town |
+| `Bridge.png` | `bridge` | Bridge |
 
 ## Swapping the WHOLE atlas at once (alternative)
 
