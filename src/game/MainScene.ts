@@ -195,6 +195,9 @@ const REDEMPTION_LINES = [
 ];
 // >>> PLACEHOLDER TEXT — the closing beat shown after arriving back in Seattle.
 const ENDING_CLOSING_LINE = 'Your trial is ended. The conquest of Earth begins…';
+// How close the player must get to the redemption angel for its speech to begin
+// (the ending is player-driven: walk up to the angel, like approaching an NPC).
+const ENDING_ANGEL_APPROACH_RANGE = 90;
 
 /**
  * The overworld scene: renders Washington, stamps the Seattle town onto it,
@@ -322,6 +325,12 @@ export class MainScene extends Phaser.Scene {
    *  trigger on the spawn frame — the player must actually walk into it). */
   private earthPortalArmedAt = 0;
   private endingFx: Phaser.GameObjects.GameObject[] = [];
+  // The redemption ending is PLAYER-DRIVEN: after Satan falls the angel appears, but
+  // the player must WALK UP to it to begin the speech. These track that approach.
+  private endingAngel?: Phaser.GameObjects.GameObject;
+  private endingAngelPos?: { x: number; y: number };
+  private endingSpeechStarted = false;
+  private endingApproachArmedAt = 0; // small grace so the speech can't pop on the spawn frame
   private hellfireFx: Phaser.GameObjects.GameObject[] = [];
   private bossBar!: HealthBar;
   private bossBarBg!: Phaser.GameObjects.Rectangle;
@@ -354,6 +363,10 @@ export class MainScene extends Phaser.Scene {
   private judgmentActive = false; // mid-sequence guard
   private thronePos = { x: 0, y: 0 };
   private hellPortal?: HellPortal;
+  /** Becomes true once the player has stepped CLEAR of the freshly-opened Hell
+   *  portal at the throne, so entering it is always a deliberate walk-in (never an
+   *  instant pull-in when it spawns near where the player approached the throne). */
+  private hellPortalArmed = false;
 
   // Hell: the third world + its return gate + seeded demons. Built via the same
   // multi-world system as Heaven (a GameMap at a further coordinate offset).
@@ -662,6 +675,7 @@ export class MainScene extends Phaser.Scene {
     this.updateObjectiveMarker();
     this.updateSinMarker();
     this.updateLairEntry();
+    this.updateRedemptionApproach();
     this.updateEarthPortal();
 
     if (this.playerDead) {
@@ -1902,6 +1916,13 @@ export class MainScene extends Phaser.Scene {
       this.sinMarker.hide();
       return;
     }
+    // ENDING CUE: after Satan falls, reuse this beacon to point the player at the
+    // redemption angel until they walk up to it (the speech is player-driven). This
+    // takes priority over the Sin/lair beacons (the gauntlet is long over by now).
+    if (this.trinity.ending && this.endingAngel && !this.endingSpeechStarted && this.endingAngelPos) {
+      this.sinMarker.show(this.endingAngelPos.x, this.endingAngelPos.y, 'Approach the angel');
+      return;
+    }
     // Quest 7 owns Hell guidance: its quest marker (gold beacon + off-screen edge
     // arrow) is the single indicator on the current Sin / lair. Suppress this older
     // beacon while that quest is active so the two never double up. It remains as a
@@ -2084,18 +2105,47 @@ export class MainScene extends Phaser.Scene {
    *  Earth portal home opens. (Speech: REDEMPTION_LINES near the top of this file.) */
   private playRedemptionEnding(x: number, y: number): void {
     if (this.trinity.current !== 'ending') return; // voided by a reset
-    this.controls.setEnabled(false); // hold the player still for the cutscene (re-enabled at the portal)
     this.player.setDirection(0, 0);
     this.playerHealth.full();
     this.energy.full();
     // The FIRST friendly angel: pure white-gold, peaceful — light piercing the lair.
     const angel = this.spawnRedemptionAngel(x, y - 30);
-    // After the descent, the angel speaks; then the Earth portal opens.
+    // PLAYER-DRIVEN: the angel descends, then the player is freed to WALK UP to it.
+    // updateRedemptionApproach() starts the speech on approach (no auto-talk). The
+    // sinMarker beacon + this banner cue the player so they never stand confused.
+    this.endingAngel = angel;
+    this.endingAngelPos = { x, y: y - 30 };
+    this.endingSpeechStarted = false;
+    this.endingApproachArmedAt = this.time.now + 700; // let the angel descend + the cue read first
     this.time.delayedCall(1300, () => {
-      if (this.trinity.current !== 'ending') return;
-      this.dialogue.open([...REDEMPTION_LINES], () => {
-        if (this.trinity.current === 'ending') this.openEarthPortal(x, y, angel);
-      });
+      if (this.trinity.current !== 'ending' || this.endingSpeechStarted) return;
+      if (!this.playerDead) this.controls.setEnabled(true); // free to approach
+      this.showBanner('A radiant angel descends. Approach it.', 4000);
+    });
+  }
+
+  /** Per-frame (Hell, ending): walking up to the redemption angel BEGINS its speech. */
+  private updateRedemptionApproach(): void {
+    if (this.endingSpeechStarted || !this.endingAngel || !this.endingAngelPos) return;
+    if (this.trinity.current !== 'ending') return;
+    if (this.activeWorld !== WORLD_HELL || this.transitioning) return;
+    if (this.time.now < this.endingApproachArmedAt) return; // spawn-frame grace
+    if (this.dialogue.isOpen() || this.choice.isOpen()) return;
+    const d = Phaser.Math.Distance.Between(this.player.x, this.player.y, this.endingAngelPos.x, this.endingAngelPos.y);
+    if (d <= ENDING_ANGEL_APPROACH_RANGE) this.startRedemptionSpeech();
+  }
+
+  /** Begin the redemption speech (reached the angel); on its end the Earth portal opens. */
+  private startRedemptionSpeech(): void {
+    if (this.endingSpeechStarted || this.trinity.current !== 'ending') return;
+    this.endingSpeechStarted = true;
+    this.sinMarker.hide(); // drop the "approach the angel" cue
+    this.controls.setEnabled(false); // hold still for the speech (re-enabled at the portal)
+    this.player.setDirection(0, 0);
+    this.cancelDash();
+    const pos = this.endingAngelPos!;
+    this.dialogue.open([...REDEMPTION_LINES], () => {
+      if (this.trinity.current === 'ending' && this.endingAngel) this.openEarthPortal(pos.x, pos.y, this.endingAngel);
     });
   }
 
@@ -2115,6 +2165,8 @@ export class MainScene extends Phaser.Scene {
 
   /** Open the Earth portal home after the angel's speech. */
   private openEarthPortal(_x: number, y: number, angel: Phaser.GameObjects.GameObject): void {
+    this.endingAngel = undefined; // speech done; stop the approach/cue tracking
+    this.endingAngelPos = undefined;
     // The angel ascends back into the light as the way home opens.
     this.tweens.add({ targets: angel, y: y - 280, alpha: 0, duration: 1200, ease: 'Quad.in' });
     // Open the portal a clear WALKING distance from the player (never on top of
@@ -2199,6 +2251,9 @@ export class MainScene extends Phaser.Scene {
     this.earthPortal = undefined;
     for (const o of this.endingFx) o.destroy();
     this.endingFx = [];
+    this.endingAngel = undefined; // clear the player-driven angel-approach state
+    this.endingAngelPos = undefined;
+    this.endingSpeechStarted = false;
     this.trinity.reset();
   }
 
@@ -3115,6 +3170,8 @@ export class MainScene extends Phaser.Scene {
     this.judgmentActive = false;
     this.reenableControls = true; // resume play; the Hell portal now stands at the throne
     this.notifyQuest('throne-judgment'); // Quest 6 obj 2 → arrow now points to the Hell portal
+    // Player-driven: the player walks INTO the portal themselves (no auto-teleport).
+    this.showBanner('A portal to Hell tears open at the throne. Step through to descend.', 3600);
     this.autosave(); // meaningful moment: judgment + power-swap done, Hell opened
   }
 
@@ -3326,6 +3383,7 @@ export class MainScene extends Phaser.Scene {
     if (this.hellPortal) return;
     this.hellPortal = new HellPortal(this, this.thronePos.x, this.thronePos.y + 160);
     this.uiCamera?.ignore(this.hellPortal.objects());
+    this.hellPortalArmed = false; // require a deliberate walk-in (step clear, then enter)
   }
 
   /** Gate + drive the God's-judgment beat each frame (Heaven only). */
@@ -3337,9 +3395,15 @@ export class MainScene extends Phaser.Scene {
         this.startGodJudgment();
       }
     }
-    // Entering the Hell portal → REAL transition down to the Hell world.
+    // Entering the Hell portal → REAL transition down to the Hell world. The portal
+    // is a deliberate WALK-IN: it only accepts the player once they've stepped clear
+    // of it after it opens (so it never auto-pulls them in on the frame it spawns,
+    // which would feel like a teleport when they approached the throne from the south).
     if (this.hellPortal && !this.transitioning && this.time.now >= this.worldCooldownUntil) {
-      if (Phaser.Math.Distance.Between(this.player.x, this.player.y, this.hellPortal.x, this.hellPortal.y) <= PORTAL_ENTER_RANGE) {
+      const d = Phaser.Math.Distance.Between(this.player.x, this.player.y, this.hellPortal.x, this.hellPortal.y);
+      if (!this.hellPortalArmed) {
+        if (d > PORTAL_ENTER_RANGE + 40) this.hellPortalArmed = true; // stepped clear → now armed
+      } else if (d <= PORTAL_ENTER_RANGE) {
         this.travelToWorld(WORLD_HELL, this.hellArrivalPos);
       }
     }
@@ -3352,6 +3416,7 @@ export class MainScene extends Phaser.Scene {
     this.judgmentActive = false;
     this.hellPortal?.destroy();
     this.hellPortal = undefined;
+    this.hellPortalArmed = false;
   }
 
   /** DEV: jump to the throne (travelling to Heaven if needed). */
