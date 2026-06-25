@@ -47,7 +47,8 @@ import { DashButton } from '../ui/DashButton';
 import { HolyBoltButton } from '../ui/HolyBoltButton';
 import { SkillButtonBar } from '../ui/SkillButtonBar';
 import { SkillState } from '../skills/SkillState';
-import { classSkills, combineMods, type SkillDef, type SkillStatMods } from '../skills/skillData';
+import { classSkills, combineMods, type SkillDef, type SkillStatMods, type ActiveActionId } from '../skills/skillData';
+import { TANK_TUNING } from '../skills/blacksmithTank';
 import { PlayerPower } from '../player/PlayerPower';
 import { ANGEL_ENCOUNTER } from '../story/angelData';
 import { QuestChain, type QuestEvent } from '../quest/QuestChain';
@@ -208,6 +209,21 @@ const ENDING_ANGEL_APPROACH_RANGE = 90;
  * dialogue, building-door portals, and the debug readout. Building interiors
  * run in the separate, reusable InteriorScene.
  */
+
+/**
+ * The shared shape of every COMBAT enemy (Sasquatch, Swarmer, AngelEnemy, Cherub,
+ * Demon, FlamingSword guardian, Townsfolk, Boss). Lets skill primitives (AoE,
+ * stun, knockback) operate generically across all enemy types without a base class.
+ */
+interface CombatEnemy {
+  readonly sprite: Phaser.Physics.Arcade.Sprite;
+  get x(): number;
+  get y(): number;
+  get isAlive(): boolean;
+  takeHit(amount: number): number;
+  halt(): void;
+}
+
 export class MainScene extends Phaser.Scene {
   private map!: GameMap;
   private player!: Player;
@@ -254,7 +270,9 @@ export class MainScene extends Phaser.Scene {
   /** Cooldown end-times for activatable skills, keyed by skill id. */
   private skillCooldownUntil: Record<string, number> = {};
   /** Live timed effects (buffs / transformations): each contributes stats until endsAt. */
-  private skillTimed: { id: string; endsAt: number; stats: SkillStatMods; tint?: number }[] = [];
+  private skillTimed: { id: string; endsAt: number; stats: SkillStatMods; tint?: number; auraDamage?: number; auraRadius?: number; auraNextAt?: number }[] = [];
+  /** Stun registry: enemy → time the stun ends. Stunned bodies are frozen (moves=false). */
+  private stunnedEnemies = new Map<CombatEnemy, number>();
 
   // Progression / leveling. Level-derived maxHP + damage feed the combat above.
   private progression!: PlayerProgression;
@@ -268,6 +286,10 @@ export class MainScene extends Phaser.Scene {
   private lastEnergySpendTime = -1e9;
   private dashButton!: DashButton;
   private dashCooldownUntil = 0;
+  /** True while a Tank "Plow" charge is in progress (reuses the dash movement). */
+  private plowActive = false;
+  /** Enemies already damaged by the current Plow (so each is hit once per charge). */
+  private plowHits = new Set<CombatEnemy>();
   private dashEndsAt = 0;
   private dashDir = { x: 0, y: 1 };
   private dashHits = new Set<object>();
@@ -691,7 +713,7 @@ export class MainScene extends Phaser.Scene {
     this.updateSinMarker();
     this.updateLairEntry();
     this.updateRedemptionApproach();
-    this.updateSkills(); // expire timed buffs/forms + refresh skill-button cooldowns
+    this.updateSkills(delta); // expire timed buffs/forms, regen/aura, stun release, cooldowns
     this.updateEarthPortal();
 
     if (this.playerDead) {
@@ -738,7 +760,8 @@ export class MainScene extends Phaser.Scene {
     if (this.isDashing()) {
       this.player.sprite.setVelocity(this.dashDir.x * DASH_SPEED, this.dashDir.y * DASH_SPEED);
       this.spawnDashTrail();
-      this.dashDamageTick();
+      if (this.plowActive) this.plowTick();
+      else this.dashDamageTick();
       if (this.time.now >= this.dashEndsAt) this.endDash();
     } else {
       const dir = this.controls.getDirection();
@@ -985,6 +1008,7 @@ export class MainScene extends Phaser.Scene {
   private devResetSkills(): void {
     this.skillTimed = [];
     this.skillCooldownUntil = {};
+    this.releaseAllStuns();
     this.skills.reset(); // refunds spent points, clears unlocks (onChange → recompute)
   }
 
@@ -1021,6 +1045,12 @@ export class MainScene extends Phaser.Scene {
     if (this.player) this.player.speedMultiplier = 1 + (m.moveSpeedMult ?? 0);
     // Damage reduction (capped so the player can always be hurt a little).
     if (this.playerHealth) this.playerHealth.incomingMultiplier = Phaser.Math.Clamp(1 - (m.damageReduction ?? 0), 0.1, 1);
+    // Block chance + strength (Double Block / Dual Shield) — rolled per hit in Health.
+    if (this.playerHealth) {
+      this.playerHealth.blockChance = Phaser.Math.Clamp(m.blockChance ?? 0, 0, 0.9);
+      this.playerHealth.blockReduction = Phaser.Math.Clamp(m.blockReduction ?? 0, 0, 1);
+      this.playerHealth.onBlock = () => this.spawnBlockFlash();
+    }
     // Transformation tint: the last active form wins; else clear (unless mid red hit-flash).
     const form = this.skillTimed.find((t) => t.tint !== undefined);
     if (this.player) {
@@ -1032,7 +1062,7 @@ export class MainScene extends Phaser.Scene {
     // (The HP bar reflects the new max next frame via updateCombatHud.)
   }
 
-  /** Activate an unlocked skill button: dispatch by its effect kind (respecting cooldown). */
+  /** Activate an unlocked skill button: dispatch by its effect kind (respecting cooldown + energy). */
   private activateSkill(id: string): void {
     if (this.playerDead || this.dialogue.isOpen() || this.choice.isOpen()) return;
     const def = classSkills(this.skills.activeClass).skills.find((s) => s.id === id);
@@ -1040,12 +1070,20 @@ export class MainScene extends Phaser.Scene {
     const e = def.effect;
     if (e.kind === 'passive') return;
     if (this.time.now < (this.skillCooldownUntil[id] ?? 0)) return; // on cooldown
+    const energyCost = 'energyCost' in e ? e.energyCost ?? 0 : 0;
+    if (energyCost > 0 && this.energy.current < energyCost) return; // not enough energy
+    // Commit: spend energy + start the cooldown, then fire the effect.
+    if (energyCost > 0) {
+      this.energy.damage(energyCost);
+      this.lastEnergySpendTime = this.time.now;
+    }
     this.skillCooldownUntil[id] = this.time.now + e.cooldownMs;
 
     if (e.kind === 'active') {
       this.runActiveSkill(e.action);
     } else if (e.kind === 'buff' || e.kind === 'transformation') {
-      this.startTimedSkill(id, e.durationMs, e.stats, e.kind === 'transformation' ? e.tint : undefined);
+      const aura = e.kind === 'transformation' ? { auraDamage: e.auraDamage, auraRadius: e.auraRadius } : {};
+      this.startTimedSkill(id, e.durationMs, e.stats, e.tint, aura);
       this.showBanner(`${this.skillButtonLabel(def)} active!`, 1400);
     } else if (e.kind === 'debuff') {
       this.runDebuffSkill(e.radius);
@@ -1053,18 +1091,82 @@ export class MainScene extends Phaser.Scene {
   }
 
   /** ACTIVE handler — dispatched by action id. New actives add a case (data picks the id). */
-  private runActiveSkill(action: 'forge_strike'): void {
+  private runActiveSkill(action: ActiveActionId): void {
+    const px = this.player.x;
+    const py = this.player.y;
+    this.lastCombatTime = this.time.now;
     if (action === 'forge_strike') {
-      // A heavy shockwave: a ring FX + a strong AoE hit around the player (reuses
-      // the existing aggregate hit helpers; damage scales with the skill multiplier).
+      // A heavy shockwave: a ring FX + a strong AoE hit around the player.
       const r = 150;
-      const dmg = this.playerDamage() * 2;
-      const ring = this.add.circle(this.player.x, this.player.y, 20, 0xffcaa0, 0).setStrokeStyle(4, 0xff8a3a, 0.95).setDepth(13);
-      this.worldFx.add(ring);
-      this.tweens.add({ targets: ring, scale: r / 20, alpha: 0, duration: 360, ease: 'Quad.out', onComplete: () => ring.destroy() });
-      this.aoeHitAll(this.player.x, this.player.y, r, dmg);
-      this.lastCombatTime = this.time.now;
+      this.spawnSkillRing(px, py, r, 0xff8a3a);
+      this.aoeHitAll(px, py, r, this.playerDamage() * 2);
+    } else if (action === 'shield_bash') {
+      // Short shield strike in front + STUN to hit enemies (Tank #2).
+      const c = TANK_TUNING.shieldBash;
+      const fx = px + this.player.facingX * c.range * 0.6;
+      const fy = py + this.player.facingY * c.range * 0.6;
+      this.spawnSkillRing(fx, fy, c.range, 0xcfe3ff);
+      this.aoeHitAll(fx, fy, c.range, c.damage);
+      this.stunEnemiesInRange(fx, fy, c.range, c.stunMs);
+    } else if (action === 'shove') {
+      // Knock back all nearby enemies, creating space (Tank #4).
+      const c = TANK_TUNING.shove;
+      this.spawnSkillRing(px, py, c.radius, 0x9fd0ff);
+      if (c.damage > 0) this.aoeHitAll(px, py, c.radius, c.damage);
+      this.knockbackEnemiesInRange(px, py, c.radius, c.knockback, c.stunMs);
+    } else if (action === 'shield_swing') {
+      // Wide frontal arc (offset AoE in the facing direction) (Tank #6).
+      const c = TANK_TUNING.shieldSwing;
+      const fx = px + this.player.facingX * c.range * c.arcReach;
+      const fy = py + this.player.facingY * c.range * c.arcReach;
+      this.spawnSkillRing(fx, fy, c.range, 0xffd27a);
+      this.aoeHitAll(fx, fy, c.range, c.damage);
+    } else if (action === 'plow') {
+      this.startPlow(); // tanky forward charge that shoves + damages the path (Tank #8)
     }
+  }
+
+  /** A quick expanding ring FX for a skill activation (world FX, main camera). */
+  private spawnSkillRing(x: number, y: number, r: number, color: number): void {
+    const ring = this.add.circle(x, y, 18, color, 0).setStrokeStyle(4, color, 0.95).setDepth(13);
+    this.worldFx.add(ring);
+    this.tweens.add({ targets: ring, scale: r / 18, alpha: 0, duration: 360, ease: 'Quad.out', onComplete: () => ring.destroy() });
+  }
+
+  /** A brief "BLOCK" flash over the player when a hit is blocked. */
+  private spawnBlockFlash(): void {
+    const t = this.add.text(this.player.x, this.player.y - 30, 'BLOCK', { fontFamily: 'system-ui, sans-serif', fontSize: '14px', color: '#9fd0ff', fontStyle: 'bold' }).setOrigin(0.5).setDepth(14).setStroke('#06121f', 4);
+    this.worldFx.add(t);
+    this.tweens.add({ targets: t, y: t.y - 26, alpha: 0, duration: 600, ease: 'Quad.out', onComplete: () => t.destroy() });
+  }
+
+  /** PLOW (Tank #8): a forward charge reusing the dash movement, shoving + damaging
+   *  enemies in the path. Independent of the dodge-dash cooldown (the skill gates it). */
+  private startPlow(): void {
+    const c = TANK_TUNING.plow;
+    const len = Math.hypot(this.player.facingX, this.player.facingY) || 1;
+    this.dashDir = { x: this.player.facingX / len, y: this.player.facingY / len };
+    this.dashEndsAt = this.time.now + (c.distance / DASH_SPEED) * 1000;
+    this.plowHits.clear();
+    this.plowActive = true;
+  }
+
+  /** PLOW per-frame: damage each enemy in the path once + continuously shove them aside. */
+  private plowTick(): void {
+    const c = TANK_TUNING.plow;
+    const px = this.player.x;
+    const py = this.player.y;
+    const r = DASH_HIT_RADIUS + 16;
+    for (const e of this.combatEnemiesInRange(px, py, r)) {
+      if (!this.plowHits.has(e)) {
+        this.plowHits.add(e);
+        const dealt = e.takeHit(c.damage);
+        if (dealt > 0) this.spawnDamageNumber(e.x, e.y - 24, dealt, '#ffe9a8');
+      }
+    }
+    // Shove anything in the path aside (no extra freeze so the charge keeps clearing it).
+    this.knockbackEnemiesInRange(px, py, r, c.knockback, 100);
+    this.lastCombatTime = this.time.now;
   }
 
   /** DEBUFF handler (stub): a weakening pulse — visible ring + light AoE damage near
@@ -1093,20 +1195,116 @@ export class MainScene extends Phaser.Scene {
     this.hitBossesInRange(x, y, range, dmg);
   }
 
-  /** Start a timed BUFF / TRANSFORMATION: add its stats (+ optional tint) until it expires. */
-  private startTimedSkill(id: string, durationMs: number, stats: SkillStatMods, tint?: number): void {
+  // --- Generic enemy-effect primitives (reusable across all CombatEnemy types) -
+
+  /** Every LIVE combat enemy across all type lists, as the shared CombatEnemy shape. */
+  private combatEnemies(): CombatEnemy[] {
+    const all: CombatEnemy[] = [
+      this.sasquatch,
+      ...this.swarmers,
+      ...this.angels,
+      ...this.townsfolk,
+      ...this.guardians,
+      ...this.cherubs,
+      ...this.demons,
+      ...this.bosses,
+    ];
+    return all.filter((e) => e && e.isAlive);
+  }
+
+  /** Live enemies within `range` of (x,y). */
+  private combatEnemiesInRange(x: number, y: number, range: number): CombatEnemy[] {
+    return this.combatEnemies().filter((e) => Phaser.Math.Distance.Between(x, y, e.x, e.y) <= range);
+  }
+
+  /** Freeze/unfreeze an enemy's physics body (the stun primitive's "can't move"). */
+  private freezeEnemyBody(e: CombatEnemy, frozen: boolean): void {
+    const body = e.sprite?.body as Phaser.Physics.Arcade.Body | undefined;
+    if (!body) return;
+    body.moves = !frozen;
+    if (frozen) e.halt();
+  }
+
+  /** STUN: freeze every enemy within range in place for `ms` (generic primitive). */
+  private stunEnemiesInRange(x: number, y: number, range: number, ms: number): void {
+    const until = this.time.now + ms;
+    for (const e of this.combatEnemiesInRange(x, y, range)) {
+      this.stunnedEnemies.set(e, until);
+      this.freezeEnemyBody(e, true);
+      // A brief star spark over the stunned enemy (world FX).
+      const star = this.add.text(e.x, e.y - 30, '✦', { fontFamily: 'system-ui, sans-serif', fontSize: '16px', color: '#ffe9a8' }).setOrigin(0.5).setDepth(14);
+      this.worldFx.add(star);
+      this.tweens.add({ targets: star, y: e.y - 44, alpha: 0, duration: ms, onComplete: () => star.destroy() });
+    }
+  }
+
+  /** KNOCKBACK: shove enemies within range away from (x,y) by `distance`, with a brief freeze. */
+  private knockbackEnemiesInRange(x: number, y: number, range: number, distance: number, freezeMs = 200): void {
+    const b = this.physics.world.bounds;
+    for (const e of this.combatEnemiesInRange(x, y, range)) {
+      const dx = e.x - x;
+      const dy = e.y - y;
+      const len = Math.hypot(dx, dy) || 1;
+      const nx = Phaser.Math.Clamp(e.x + (dx / len) * distance, b.x + 8, b.x + b.width - 8);
+      const ny = Phaser.Math.Clamp(e.y + (dy / len) * distance, b.y + 8, b.y + b.height - 8);
+      e.sprite.setPosition(nx, ny);
+      // Briefly freeze so they don't instantly walk back into the player.
+      this.stunnedEnemies.set(e, this.time.now + freezeMs);
+      this.freezeEnemyBody(e, true);
+    }
+  }
+
+  /** Release every stunned enemy immediately (reset / load / teardown). */
+  private releaseAllStuns(): void {
+    for (const [e] of this.stunnedEnemies) if (e.isAlive) this.freezeEnemyBody(e, false);
+    this.stunnedEnemies.clear();
+  }
+
+  /** Per-frame: release enemies whose stun/knockback-freeze has expired (or that died). */
+  private updateEnemyStun(): void {
+    if (this.stunnedEnemies.size === 0) return;
+    for (const [e, until] of this.stunnedEnemies) {
+      if (!e.isAlive) {
+        this.stunnedEnemies.delete(e);
+      } else if (this.time.now >= until) {
+        this.freezeEnemyBody(e, false);
+        this.stunnedEnemies.delete(e);
+      }
+    }
+  }
+
+  /** Start a timed BUFF / TRANSFORMATION: add its stats (+ optional tint / aura) until it expires. */
+  private startTimedSkill(id: string, durationMs: number, stats: SkillStatMods, tint?: number, aura?: { auraDamage?: number; auraRadius?: number }): void {
     this.skillTimed = this.skillTimed.filter((t) => t.id !== id); // refresh if re-activated
-    this.skillTimed.push({ id, endsAt: this.time.now + durationMs, stats, tint });
+    this.skillTimed.push({ id, endsAt: this.time.now + durationMs, stats, tint, auraDamage: aura?.auraDamage, auraRadius: aura?.auraRadius, auraNextAt: this.time.now + 400 });
     this.recomputeSkillEffects();
   }
 
-  /** Per-frame: expire timed buffs/forms + update the skill buttons' cooldown shades. */
-  private updateSkills(): void {
+  /** Per-frame: expire timed buffs/forms, apply regen + transformation auras, release
+   *  expired enemy stuns, and update the skill buttons' cooldown shades. */
+  private updateSkills(delta: number): void {
+    // Expire timed buffs/forms.
     if (this.skillTimed.length) {
       const before = this.skillTimed.length;
       this.skillTimed = this.skillTimed.filter((t) => this.time.now < t.endsAt);
       if (this.skillTimed.length !== before) this.recomputeSkillEffects(); // a buff/form ended
     }
+    if (!this.playerDead) {
+      // HP regen (War Chant) — heal per second from any active regen mod.
+      const regen = this.combinedSkillMods().regenPerSec ?? 0;
+      if (regen > 0 && this.playerHealth.current < this.playerHealth.max) this.playerHealth.heal((regen * delta) / 1000);
+      // Transformation aura (Calcite) — periodic radiant pulse damaging nearby foes.
+      for (const t of this.skillTimed) {
+        if (t.auraDamage && t.auraRadius && this.time.now >= (t.auraNextAt ?? 0)) {
+          t.auraNextAt = this.time.now + 500;
+          this.spawnSkillRing(this.player.x, this.player.y, t.auraRadius, t.tint ?? 0xfff3c4);
+          this.aoeHitAll(this.player.x, this.player.y, t.auraRadius, t.auraDamage);
+        }
+      }
+    }
+    // Release enemies whose stun/knockback-freeze has expired.
+    this.updateEnemyStun();
+    // Cooldown shades on the on-screen skill buttons.
     for (const def of this.skills.activatableUnlocked()) {
       if (def.effect.kind === 'passive') continue;
       const cd = def.effect.cooldownMs;
@@ -1293,12 +1491,14 @@ export class MainScene extends Phaser.Scene {
 
   private endDash(): void {
     this.dashEndsAt = 0;
+    this.plowActive = false;
     this.player.sprite.setVelocity(0, 0);
   }
 
   /** Abort an in-progress dash (used when control is frozen mid-lunge). */
   private cancelDash(): void {
     this.dashEndsAt = 0;
+    this.plowActive = false;
   }
 
   /** Dash damage reuses the level-derived growth: base + the melee per-level slope. */
@@ -2618,6 +2818,7 @@ export class MainScene extends Phaser.Scene {
       this.progression.currentXP = Math.max(0, Math.floor(s.player.currentXP));
       this.skills.load(s.skills); // old saves lack this → defaults to 0 pts / nothing unlocked
       this.skillTimed = []; // timed buffs/forms are runtime-only (not persisted)
+      this.releaseAllStuns();
       this.recomputeSkillEffects(); // apply passive maxHP/damage/speed/reduction now
       this.playerHealth.setMax(this.skillAdjustedMaxHP());
       this.playerHealth.current = Phaser.Math.Clamp(s.player.hp, 1, this.playerHealth.max);
@@ -4388,6 +4589,7 @@ export class MainScene extends Phaser.Scene {
     // back to Lv1 / 0 XP, and the HP pool back to the (skill-adjusted) level-1 max.
     this.skillTimed = [];
     this.skillCooldownUntil = {};
+    this.releaseAllStuns();
     this.skills.hardReset();
     this.progression.reset();
     this.recomputeSkillEffects();
