@@ -2,8 +2,8 @@ import {
   classSkills,
   combineMods,
   isEquippableSkill,
+  isDamagingActive,
   LOADOUT_SLOTS,
-  BASIC_STRIKE_ID,
   type ClassId,
   type SkillDef,
   type SkillStatMods,
@@ -97,6 +97,26 @@ export class SkillState {
     return classSkills(this.activeClass).skills.filter((d) => this.isUnlocked(d.id) && isEquippableSkill(d));
   }
 
+  /** Unlocked DAMAGING-ACTIVE skills (in tree/tier order) — the player's real offense. */
+  unlockedDamagingActives(classId: ClassId = this.activeClass): SkillDef[] {
+    return classSkills(classId).skills.filter((d) => this.isUnlocked(d.id, classId) && isDamagingActive(d));
+  }
+
+  /**
+   * True when the player owns NO damaging active (a brand-new character, or an old save
+   * that only had the now-removed free kit). The New-Game forced-first-skill flow must
+   * run before play so the player is never left unable to attack.
+   */
+  needsFirstSkill(classId: ClassId = this.activeClass): boolean {
+    return this.unlockedDamagingActives(classId).length === 0;
+  }
+
+  /** Is this equipped id a DAMAGING ACTIVE (counts toward the anti-soft-lock floor)? */
+  private isDamagingActiveId(id: string): boolean {
+    const d = this.def(id);
+    return !!d && isDamagingActive(d);
+  }
+
   // --- LOADOUT (the 6 equip slots; the player's entire active kit) --------------
 
   /** The active class's loadout (always length LOADOUT_SLOTS; null = empty slot). */
@@ -144,11 +164,22 @@ export class SkillState {
   }
 
   /**
-   * Forced-first + ANTI-SOFT-LOCK FLOOR: the loadout is never left fully empty —
-   * if it is, slot 0 gets the basic attack so the player always has offense.
+   * ANTI-SOFT-LOCK FLOOR (load-bearing under the no-base-kit model): the player must
+   * never be left with ZERO damaging actives equipped ONCE THEY OWN ONE. If the loadout
+   * holds no damaging active but the player owns at least one, auto-equip the lowest one.
+   * Before they own any (a brand-new character), the loadout stays empty — the New-Game
+   * forced-first-skill flow gives them their first ability. There is no free fallback
+   * attack to fall back on anymore, so this is the only thing preventing a can't-attack
+   * soft-lock; callers re-run the forced pick when {@link needsFirstSkill} is true.
    */
   ensureLoadoutFloor(): void {
-    if (this.equippedIds().length === 0) this.loadout()[0] = BASIC_STRIKE_ID;
+    const arr = this.loadout();
+    if (arr.some((id) => id != null && this.isDamagingActiveId(id))) return; // already covered
+    const owned = this.unlockedDamagingActives();
+    if (owned.length === 0) return; // no offense to enforce yet (pre-first-pick)
+    let slot = arr.indexOf(null);
+    if (slot < 0) slot = 0; // every slot full of non-damaging skills → reclaim slot 0
+    arr[slot] = owned[0].id;
   }
 
   /** Drop any equipped skills no longer unlocked (after a respec), then re-floor. */
@@ -173,12 +204,13 @@ export class SkillState {
     this.onChange?.();
   }
 
-  /** HARD reset to zero points / no unlocks / fresh loadout (Dev Reset / new game). */
+  /** HARD reset to zero points / no unlocks / empty loadout (Dev Reset / new game). The
+   *  caller then runs the forced-first-skill flow (needsFirstSkill is now true). */
   hardReset(): void {
     this.unspentPoints = 0;
     this.unlocked = {};
     this.loadoutByClass = {};
-    this.ensureLoadoutFloor(); // forced first skill: basic attack in slot 0
+    this.ensureLoadoutFloor(); // no owned actives yet → loadout stays empty
     this.onChange?.();
   }
 
@@ -200,7 +232,7 @@ export class SkillState {
     this.loadoutByClass = {};
     const lo = state?.loadoutByClass ?? {};
     for (const k of Object.keys(lo)) this.loadoutByClass[k] = [...(lo[k] ?? [])];
-    this.pruneLoadout(); // drop unknown/locked ids + keep the floor (old saves → basic attack)
+    this.pruneLoadout(); // drop unknown/locked ids (e.g. the old free kit) + re-floor
     this.onChange?.();
   }
 }

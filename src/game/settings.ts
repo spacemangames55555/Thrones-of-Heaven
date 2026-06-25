@@ -113,8 +113,14 @@ export const PLAYER_HP_REGEN_PER_SEC = 7;
 /** How long after combat before regen starts, in ms. */
 export const PLAYER_HP_REGEN_DELAY_MS = 4000;
 
-/** Sasquatch health pool. */
-export const SASQUATCH_MAX_HP = 120;
+/**
+ * Sasquatch health pool — the FIRST fight, and (under the no-base-kit model) it must be
+ * defeatable by ANY tree's starting damaging active, used solo. The weakest opener is
+ * Control's Charge at 22 dmg/cast on a long cooldown, so this is tuned low enough that
+ * ~2 casts of any first skill (Shield Bash 24, Bash 26, Charge 22) finish it. Raise it
+ * once the player has more than one ability; this value is intentionally forgiving.
+ */
+export const SASQUATCH_MAX_HP = 44;
 /** Damage one Sasquatch strike deals to the player. */
 export const SASQUATCH_DAMAGE = 14;
 /** Sasquatch move speed in tiles/sec (slightly slower than the player, kiteable). */

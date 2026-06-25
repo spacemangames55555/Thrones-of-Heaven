@@ -3,25 +3,25 @@
  *
  * Every skill in the game is one {@link SkillDef} entry here; the engine
  * (SkillState) + the scene's generic effect handlers read this data, so authoring
- * the real trees later is PURELY adding entries — no new code per skill. Each
- * class owns THREE trees building toward a capstone Crystal Form.
+ * the real trees is PURELY adding entries — no new code per skill. Each class owns
+ * THREE trees building toward a capstone Crystal Form.
  *
- * This batch ships the FRAMEWORK + a few clearly-marked TEST skills on the
- * Blacksmith proving each effect type. The full 30 Blacksmith skills (and the
- * Wizard/Necromancer trees) are later data-only batches.
+ * NO BASE KIT: there is no free default attack/dodge. A new character starts with ZERO
+ * playable abilities; the first skill point must be spent on a tree's FIRST node (always
+ * a DAMAGING ACTIVE — see {@link isDamagingActive}), which becomes the starting ability.
+ * The Blacksmith ships all 30 skills across its three trees (data in blacksmith{Tank,
+ * Dps,Control}.ts); the Wizard/Necromancer trees are later data-only batches.
  *
  * ─── TO ADD A REAL SKILL (the whole step) ─────────────────────────────────────
  *  Append a SkillDef to the class's `skills` array with the right `tree`, `tier`,
  *  optional `prereq` (a skill id in the SAME tree), `cost`, and an `effect` of one
- *  of the supported kinds below. Nothing else changes. Templates: see the test
- *  skills at the bottom — one per effect kind.
+ *  of the supported kinds below. Nothing else changes.
  * ──────────────────────────────────────────────────────────────────────────────
  */
 
 import { TANK_TREE_SKILLS } from './blacksmithTank';
 import { DPS_TREE_SKILLS } from './blacksmithDps';
 import { CONTROL_TREE_SKILLS } from './blacksmithControl';
-import { PLAYER_ATTACK_COOLDOWN_MS, DASH_COOLDOWN_MS, DASH_ENERGY_COST } from '../game/settings';
 
 /** How many active skills the player can equip to on-screen slots. */
 export const LOADOUT_SLOTS = 6;
@@ -134,6 +134,21 @@ export function isEquippableSkill(def: SkillDef): boolean {
   return def.effect.kind !== 'passive';
 }
 
+/** ACTIVE ability ids that deal NO direct damage (pure utility) — excluded from the
+ *  "damaging active" classification below. Keep this list tiny + explicit. */
+const NON_DAMAGING_ACTIVE_ACTIONS: ReadonlySet<ActiveActionId> = new Set(['intimidate']);
+
+/**
+ * DAMAGING ACTIVE = an `active`-kind skill whose ability deals damage. This is the
+ * load-bearing classification for the NO-BASE-KIT model: every tree's FIRST node is one
+ * of these (so any first pick can win the first fight), the New-Game forced-first pick
+ * must land on one, and the anti-soft-lock floor guarantees the player always has at
+ * least one EQUIPPED once they own one (there is no free fallback attack anymore).
+ */
+export function isDamagingActive(def: SkillDef): boolean {
+  return def.effect.kind === 'active' && !NON_DAMAGING_ACTIVE_ACTIONS.has(def.effect.action);
+}
+
 export interface SkillTree {
   readonly id: string;
   readonly name: string;
@@ -147,55 +162,22 @@ export interface ClassSkills {
   readonly skills: readonly SkillDef[];
 }
 
-// ─── BLACKSMITH (scaffold: 3 trees, mostly empty, a few TEST skills) ───────────
-// Trees are placeholder-named (Defense / Offense / Control) — finalize later. The
-// real ~30 skills + the true Crystal Form capstones are later data-only batches.
-
-/**
- * BASICS — the folded-in default attack + dodge, now EQUIPPABLE skills (replacing
- * the old fixed buttons). Always unlocked + free; they live in a "Basics" tab so the
- * player can equip/swap them. Basic Strike is the New-Game forced first skill + the
- * anti-soft-lock floor (the loadout always keeps at least this).
- *
- * >>> EDIT BASIC SKILL NAMES / NUMBERS HERE. <<<
- */
-export const BASIC_STRIKE_ID = 'basic_strike';
-export const BASIC_SKILLS: SkillDef[] = [
-  {
-    id: BASIC_STRIKE_ID,
-    tree: 'basics',
-    name: 'Basic Strike',
-    description: 'A quick weapon strike in front of you. Your reliable default attack.',
-    cost: 0,
-    tier: 0,
-    freeUnlock: true,
-    basic: true,
-    effect: { kind: 'active', action: 'basic_strike', cooldownMs: PLAYER_ATTACK_COOLDOWN_MS },
-  },
-  {
-    id: 'dodge',
-    tree: 'basics',
-    name: 'Dodge',
-    description: 'A quick evasive lunge in your facing direction, damaging foes dashed through.',
-    cost: 0,
-    tier: 1,
-    freeUnlock: true,
-    basic: true,
-    effect: { kind: 'active', action: 'dodge', cooldownMs: DASH_COOLDOWN_MS, energyCost: DASH_ENERGY_COST },
-  },
-];
+// ─── BLACKSMITH (three full skill trees → a Crystal Form capstone each) ────────
+//
+// NO BASE KIT: the class no longer ships with a free default attack/dodge. A new
+// character starts with ZERO playable abilities; the FIRST skill point must be spent
+// on a tree's first node (a DAMAGING ACTIVE), which becomes the starting ability. The
+// player's entire active kit is the unlocked + equipped skills (plus Holy Bolt, the
+// throne-granted universal ability). Every tree's tier-0 node is a damaging active.
 
 const BLACKSMITH: ClassSkills = {
   classId: 'blacksmith',
   trees: [
-    { id: 'basics', name: 'Basics' }, // the folded-in default attack + dodge (free, equippable)
-    { id: 'defense', name: 'Tank' }, // the first FULL tree (10 Tank skills below)
-    { id: 'offense', name: 'Offense' }, // still test/placeholder (later batch)
-    { id: 'control', name: 'Control' }, // still test/placeholder (later batch)
+    { id: 'defense', name: 'Tank' }, // 10 Tank skills → Celestial Calcite (opens on Shield Bash)
+    { id: 'offense', name: 'Offense' }, // 10 DPS skills → Prism Quartz (opens on Bash)
+    { id: 'control', name: 'Control' }, // 10 Control skills → Iron Pyrite (opens on Charge)
   ],
   skills: [
-    // --- BASICS (free, always-unlocked, equippable: the folded-in attack + dodge). ---
-    ...BASIC_SKILLS,
     // --- TANK TREE (10 real skills, linear → Celestial Calcite). Data in blacksmithTank.ts. ---
     ...TANK_TREE_SKILLS,
     // --- OFFENSE / DPS TREE (10 real skills, linear → Prism Quartz). Data in blacksmithDps.ts. ---

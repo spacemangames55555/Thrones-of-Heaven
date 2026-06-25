@@ -45,7 +45,7 @@ import { HealthBar } from '../combat/HealthBar';
 import { HolyBoltButton } from '../ui/HolyBoltButton';
 import { LoadoutBar } from '../ui/LoadoutBar';
 import { SkillState } from '../skills/SkillState';
-import { classSkills, combineMods, type SkillDef, type SkillStatMods, type ActiveActionId } from '../skills/skillData';
+import { classSkills, combineMods, isDamagingActive, type SkillDef, type SkillStatMods, type ActiveActionId } from '../skills/skillData';
 import { TANK_TUNING } from '../skills/blacksmithTank';
 import { DPS_TUNING } from '../skills/blacksmithDps';
 import { CONTROL_TUNING, COUNTER_ID, IRON_WILL_ID, DOMINANCE_ID, IRON_PYRITE_ID } from '../skills/blacksmithControl';
@@ -261,6 +261,9 @@ export class MainScene extends Phaser.Scene {
   //     plus the runtime layer that applies effects (passives + timed buffs/forms).
   private readonly skills = new SkillState();
   private skillBar!: LoadoutBar;
+  /** True while the New-Game / post-reset forced first-skill picker must run (game frozen
+   *  until the player chooses a starting damaging active — there is no base kit). */
+  private pendingFirstSkill = false;
   /** Cached melee-damage multiplier (passives + active buffs/forms), recomputed on change. */
   private skillDamageMult = 1;
   /** Cooldown end-times for activatable skills, keyed by skill id. */
@@ -705,6 +708,10 @@ export class MainScene extends Phaser.Scene {
       const save = SaveSystem.read();
       if (save) this.applySave(save);
     }
+    // No base kit: decide the starting loadout now that any save is restored — a new
+    // character (or an old save with no damaging active) must pick a first skill before
+    // play; otherwise just enforce the anti-soft-lock floor.
+    this.requireStartingSkill();
     this.gameReady = true;
     this.time.addEvent({ delay: 45000, loop: true, callback: () => this.autosave() });
     const onVisibility = (): void => {
@@ -717,6 +724,16 @@ export class MainScene extends Phaser.Scene {
   }
 
   override update(_time: number, delta: number): void {
+    // FORCED FIRST SKILL (no base kit): freeze everything and open the picker until the
+    // player chooses a starting damaging active. Launched here (not in create) so the
+    // scene is fully running before we pause it; the pick clears the flag + resumes.
+    if (this.pendingFirstSkill) {
+      if (!this.scene.isActive('FirstSkillScene')) {
+        this.scene.launch('FirstSkillScene');
+        this.scene.pause();
+      }
+      return;
+    }
     // Zoom keeps smoothing every frame, even during dialogue.
     this.zoomControls.update(delta);
     this.updateCombatHud();
@@ -991,10 +1008,41 @@ export class MainScene extends Phaser.Scene {
       onOpen: () => this.openSkillTree(),
       onActivate: (slot) => this.activateLoadoutSlot(slot),
     });
-    // Re-apply effects + refresh the bar whenever points/unlocks/loadout change.
+    // Re-apply effects + refresh the bar whenever points/unlocks/loadout change. The
+    // starting loadout (forced first-skill pick vs. floor) is decided in
+    // requireStartingSkill(), called after any "Continue" save has been restored.
     this.skills.onChange = () => this.recomputeSkillEffects();
-    this.skills.ensureLoadoutFloor(); // New Game: forced first skill (basic attack in slot 0)
     this.recomputeSkillEffects();
+  }
+
+  /**
+   * NO-BASE-KIT START. The player's first ability comes ONLY from a tree skill. If the
+   * player owns no damaging active (a new game, or an old save / dev reset that left
+   * none), open the forced first-skill picker — the game stays frozen until they choose.
+   * Otherwise enforce the anti-soft-lock floor (auto-equip an owned damaging active if
+   * an old save somehow had none equipped). Idempotent; safe to call repeatedly.
+   */
+  private requireStartingSkill(): void {
+    if (this.skills.needsFirstSkill()) {
+      if (this.skills.unspentPoints < 1) this.skills.awardPoints(1); // afford the first node
+      this.pendingFirstSkill = true; // update() launches the picker + pauses the game
+    } else {
+      this.skills.ensureLoadoutFloor(); // migrate old saves: keep an owned damaging active equipped
+      this.recomputeSkillEffects();
+    }
+  }
+
+  /** SkillHost (FirstSkillScene): unlock the chosen first skill, auto-equip it to slot 1,
+   *  and unfreeze the game. Rejects anything that isn't a valid damaging-active opener. */
+  completeFirstSkill(id: string): boolean {
+    const def = classSkills(this.skills.activeClass).skills.find((s) => s.id === id);
+    if (!def || !isDamagingActive(def)) return false;
+    if (!this.skills.isUnlocked(id) && !this.skills.unlock(def)) return false; // spend the point
+    this.skills.equip(0, id); // the chosen skill lands on loadout slot 1 (index 0)
+    this.pendingFirstSkill = false;
+    this.recomputeSkillEffects();
+    this.autosave();
+    return true;
   }
 
   /** Activate the skill equipped in loadout `slot` (no-op for an empty slot). */
@@ -1039,13 +1087,15 @@ export class MainScene extends Phaser.Scene {
     this.autosave();
   }
 
-  /** DEV: respec — refund every unlocked skill, clear live buffs/forms + cooldowns. */
+  /** DEV: respec — refund every unlocked skill, clear live buffs/forms + cooldowns. With
+   *  no base kit this can leave zero damaging actives, so re-run the forced first pick. */
   private devResetSkills(): void {
     this.skillTimed = [];
     this.skillCooldownUntil = {};
     this.skillCooldownDur = {};
     this.releaseAllStuns();
     this.skills.reset(); // refunds spent points, clears unlocks (onChange → recompute)
+    this.requireStartingSkill(); // floor respects: never leaves the player unable to attack
   }
 
   /** The live melee damage (level-derived × skill multiplier from passives + buffs/forms). */
@@ -4890,6 +4940,7 @@ export class MainScene extends Phaser.Scene {
     this.releaseAllStuns();
     this.skills.hardReset();
     this.progression.reset();
+    this.requireStartingSkill(); // no base kit → re-open the forced first-skill pick
     this.recomputeSkillEffects();
     this.playerHealth.setMax(this.skillAdjustedMaxHP());
     this.playerHealth.full();
