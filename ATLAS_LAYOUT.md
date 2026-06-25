@@ -87,6 +87,11 @@ Currently mapped real tiles:
 | `Gold_field.png` | `gold_field` | Heaven — Gold Field |
 | `Heaven_path.png` | `heaven_path` | Heaven — Radiant Path |
 | `Heaven_void.png` | `heaven_void` | Heaven — Cloud Edge (blocks) |
+| `Charred_rock.png` | `charred_rock` | Hell — Charred Rock |
+| `Ash_ground.png` | `ash_ground` | Hell — Ash |
+| `Ember_rock.png` | `ember_rock` | Hell — Ember Rock |
+| `Lava.png` | `lava` | Hell — Lava (blocks) |
+| `Hell_void.png` | `hell_void` | Hell — Chasm (blocks) |
 
 ## Swapping the WHOLE atlas at once (alternative)
 
