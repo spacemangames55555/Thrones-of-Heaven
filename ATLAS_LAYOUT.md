@@ -82,6 +82,11 @@ Currently mapped real tiles:
 | `Urbantown_ground.png` | `urban` | Urban / Town |
 | `Bridge.png` | `bridge` | Bridge |
 | `Corruptionrift.png` | `corruption_rift` | Corruption Rift |
+| `Holy_ground.png` | `holy_ground` | Heaven — Holy Ground |
+| `Heaven_cloud.png` | `heaven_cloud` | Heaven — Cloud |
+| `Gold_field.png` | `gold_field` | Heaven — Gold Field |
+| `Heaven_path.png` | `heaven_path` | Heaven — Radiant Path |
+| `Heaven_void.png` | `heaven_void` | Heaven — Cloud Edge (blocks) |
 
 ## Swapping the WHOLE atlas at once (alternative)
 
