@@ -1,5 +1,5 @@
 import { QUEST_XP_REWARD } from '../game/settings';
-import { WORLD_EARTH, WORLD_HEAVEN, type WorldId } from '../world/worlds';
+import { WORLD_EARTH, WORLD_HEAVEN, WORLD_HELL, type WorldId } from '../world/worlds';
 
 /**
  * Quests — DATA, not code. This file is the QUEST REGISTRY: every quest the game
@@ -38,7 +38,11 @@ export type ObjectiveTrigger =
   | 'entered-heaven'
   | 'michael-defeated'
   | 'throne-judgment'
-  | 'entered-hell';
+  | 'entered-hell'
+  // The Hell gauntlet (Quest 7) — fired off EXISTING events (onSinDefeated, the
+  // lair-entry that starts the Trinity):
+  | 'sin-defeated'
+  | 'entered-lair';
 
 /** Which world thing the objective marker points at (resolved to a position by the scene). */
 export type TargetKind =
@@ -56,7 +60,9 @@ export type TargetKind =
   | 'holy-outpost' // Earth — Holy Outpost == the Heaven Portal site
   | 'michael' // Heaven — Archangel Michael's sanctum
   | 'throne' // Heaven — God's throne (judgment site)
-  | 'hell-portal'; // Heaven — the Hell portal that opens at the throne
+  | 'hell-portal' // Heaven — the Hell portal that opens at the throne
+  | 'current-sin' // Hell — the gauntlet's CURRENT undefeated Sin (resolved live)
+  | 'satan-lair'; // Hell — Satan's Lair (the Unholy Trinity)
 
 /**
  * The WORLD each marker target lives in. The scene only shows the gold beacon +
@@ -78,6 +84,8 @@ export const TARGET_WORLD: Record<TargetKind, WorldId> = {
   michael: WORLD_HEAVEN,
   throne: WORLD_HEAVEN,
   'hell-portal': WORLD_HEAVEN,
+  'current-sin': WORLD_HELL,
+  'satan-lair': WORLD_HELL,
 };
 
 export interface ObjectiveDef {
@@ -360,6 +368,59 @@ export const QUEST_6_JUDGMENT: QuestDef = {
   },
 };
 
+/** Quest 7's id — referenced by the scene to keep the gauntlet + quest in lockstep. */
+export const SEVEN_SINS_QUEST_ID = 'climax-seven-sins';
+
+/**
+ * QUEST 7 — "The Seven Sins": the Hell gauntlet, guiding the player through all 7
+ * Deadly Sins IN GAUNTLET ORDER, then to Satan's Lair. ONE quest with sequential
+ * objectives (NOT one per Sin as separate quests). Auto-activates the instant Hell
+ * is entered (the same Heaven→Hell transition that completes Quest 6).
+ *
+ * Lockstep with the gauntlet: every Sin objective uses the `current-sin` target,
+ * which the scene resolves LIVE to whatever Sin the gauntlet (`sinsDefeated`) says
+ * is next — so the quest and the gauntlet can never disagree about which Sin is
+ * current. The scene also fast-forwards the Sin objectives to match `sinsDefeated`
+ * (covers stale saves / out-of-quest kills).
+ *
+ * >>> EDIT QUEST 7 TEXT HERE: `title`, every objective `text` (the 7 Sin names must
+ *     stay in the SAME ORDER as SIN_DEFS / the gauntlet: Wrath, Sloth, Gluttony,
+ *     Envy, Pride, Greed, Lust), and `npcInactiveLines` (the start narration /
+ *     patron's whisper shown as a banner when the quest auto-begins in Hell). <<<
+ */
+export const QUEST_7_THE_SEVEN_SINS: QuestDef = {
+  id: SEVEN_SINS_QUEST_ID,
+  title: 'The Seven Sins', // [placeholder]
+  prerequisites: ['climax-judgment'],
+  autoActivate: true, // begins the instant Hell is entered (Quest 6's last objective)
+  objectives: [
+    // Objectives 1–7: one per Sin, IN GAUNTLET ORDER. Same trigger/target — the
+    // scene advances them in lockstep with `sinsDefeated`, and `current-sin`
+    // resolves to the live current Sin, so the arrow always points at the right one.
+    { text: 'Defeat Wrath', trigger: 'sin-defeated', target: 'current-sin' }, // [placeholder]
+    { text: 'Defeat Sloth', trigger: 'sin-defeated', target: 'current-sin' }, // [placeholder]
+    { text: 'Defeat Gluttony', trigger: 'sin-defeated', target: 'current-sin' }, // [placeholder]
+    { text: 'Defeat Envy', trigger: 'sin-defeated', target: 'current-sin' }, // [placeholder]
+    { text: 'Defeat Pride', trigger: 'sin-defeated', target: 'current-sin' }, // [placeholder]
+    { text: 'Defeat Greed', trigger: 'sin-defeated', target: 'current-sin' }, // [placeholder]
+    { text: 'Defeat Lust', trigger: 'sin-defeated', target: 'current-sin' }, // [placeholder]
+    // Objective 8: the lair (completes when entering it starts the Trinity).
+    { text: 'Enter the Unholy Trinity’s lair', trigger: 'entered-lair', target: 'satan-lair' },
+  ],
+  // [placeholder narration — shown as a banner when the quest auto-starts in Hell]
+  npcInactiveLines: [
+    'Hell receives you. Seven Sins stand between you and the Adversary’s lair — cut down each in turn.',
+  ],
+  npcActiveLines: [],
+  npcCompleteLines: [],
+  preAcceptHint: 'Descend through the Seven Sins',
+  reward: {
+    healToFull: true,
+    xp: 600,
+    banner: 'The Seven Sins — complete', // [placeholder]
+  },
+};
+
 /**
  * THE REGISTRY. Order is only cosmetic; unlocking is driven by `prerequisites`.
  *
@@ -383,4 +444,5 @@ export const QUEST_REGISTRY: readonly QuestDef[] = [
   DESCENT_4,
   QUEST_5_THE_DEFILED_GATE,
   QUEST_6_JUDGMENT,
+  QUEST_7_THE_SEVEN_SINS,
 ];
