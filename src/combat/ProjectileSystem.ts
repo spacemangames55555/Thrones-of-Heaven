@@ -19,6 +19,10 @@ export interface ProjectileSpawn {
   faction: Faction;
   color?: number;
   radius?: number; // collision radius (px)
+  /** Optional SPLASH on impact (player bolts): an AoE burst where the bolt lands.
+   *  Reusable for spells like Combust + storm-empowered bolts. */
+  splashRadius?: number;
+  splashDamage?: number;
 }
 
 /** One pooled bolt: a glowing sprite plus its flight state. */
@@ -34,6 +38,8 @@ class Bolt {
   faction: Faction = 'enemy';
   radius = 7;
   color = 0xffe9a8;
+  splashRadius = 0;
+  splashDamage = 0;
 
   constructor(scene: Phaser.Scene, layer: Phaser.GameObjects.Layer) {
     this.sprite = scene.add.image(0, 0, TEXTURE_KEY).setDepth(13).setVisible(false);
@@ -51,6 +57,8 @@ class Bolt {
     this.faction = s.faction;
     this.radius = s.radius ?? 7;
     this.color = s.color ?? 0xffe9a8;
+    this.splashRadius = s.splashRadius ?? 0;
+    this.splashDamage = s.splashDamage ?? 0;
     this.sprite
       .setPosition(s.x, s.y)
       .setTint(this.color)
@@ -87,6 +95,9 @@ export class ProjectileSystem {
   onEnemyHit?: (x: number, y: number, radius: number, damage: number) => boolean;
   /** Optional impact FX hook (e.g. a small poof). */
   onImpact?: (x: number, y: number, color: number) => void;
+  /** Called when a SPLASH player bolt despawns (hit/terrain/range) so the scene can apply
+   *  an AoE burst at the impact point. Only fired for bolts spawned with splash. */
+  onSplash?: (x: number, y: number, radius: number, damage: number) => void;
 
   constructor(scene: Phaser.Scene, map: GameMap, layer: Phaser.GameObjects.Layer) {
     this.scene = scene;
@@ -152,6 +163,10 @@ export class ProjectileSystem {
 
   private impact(b: Bolt): void {
     this.onImpact?.(b.sprite.x, b.sprite.y, b.color);
+    // Splash bolts burst into an AoE where they land (Combust / storm-empowered bolts).
+    if (b.faction === 'player' && b.splashRadius > 0 && b.splashDamage > 0) {
+      this.onSplash?.(b.sprite.x, b.sprite.y, b.splashRadius, b.splashDamage);
+    }
     b.deactivate();
   }
 

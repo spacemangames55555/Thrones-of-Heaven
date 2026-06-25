@@ -22,6 +22,7 @@
 import { TANK_TREE_SKILLS } from './blacksmithTank';
 import { DPS_TREE_SKILLS } from './blacksmithDps';
 import { CONTROL_TREE_SKILLS } from './blacksmithControl';
+import { WIZARD_FIREWIND_SKILLS, WIZ_FIREWIND_TREE } from './wizardFireWind';
 
 /** How many active skills the player can equip to on-screen slots. */
 export const LOADOUT_SLOTS = 6;
@@ -73,7 +74,17 @@ export type ActiveActionId =
   | 'disarm'
   | 'intimidate'
   | 'cripple'
-  | 'execute';
+  | 'execute'
+  // Wizard — Fire/Wind DPS tree.
+  | 'wiz_fireball'
+  | 'wiz_flicker'
+  | 'wiz_combust'
+  | 'wiz_dust_devil'
+  | 'wiz_gust'
+  | 'wiz_lava'
+  | 'wiz_immolation'
+  | 'wiz_jet_stream'
+  | 'wiz_tornado';
 
 /**
  * The five supported EFFECT KINDS. The scene applies them generically:
@@ -187,13 +198,34 @@ const BLACKSMITH: ClassSkills = {
   ],
 };
 
+// ─── WIZARD (fragile glass-cannon caster) ─────────────────────────────────────
+//
+// First of three trees authored: the FIRE/WIND DPS tree (10 damage skills → the
+// Elemental Storm transformation). The Ice/Poison Control + Ethereal Survival trees
+// arrive in later batches (Control needs an allied-summon system first) — they appear
+// as empty "Coming Soon" tabs for now. Same no-kit rules as the Blacksmith: the first
+// skill point buys the tree's tier-0 damaging active (Fireball), which becomes the
+// starting ability.
+const WIZARD: ClassSkills = {
+  classId: 'wizard',
+  trees: [
+    { id: WIZ_FIREWIND_TREE, name: 'Fire/Wind' }, // 10 DPS skills → Elemental Storm (opens on Fireball)
+    { id: 'wiz_icepoison', name: 'Ice/Poison' }, // Control tree — later batch (empty for now)
+    { id: 'wiz_ethereal', name: 'Ethereal' }, // Survival tree — later batch (empty for now)
+  ],
+  skills: [
+    // --- FIRE/WIND DPS TREE (10 damage skills, linear → Elemental Storm). Data in wizardFireWind.ts. ---
+    ...WIZARD_FIREWIND_SKILLS,
+  ],
+};
+
 /** Per-class trees + skills. The scene reads the ACTIVE class's entry. */
 export const CLASS_SKILLS: Record<ClassId, ClassSkills> = {
   blacksmith: BLACKSMITH,
-  // Necromancer / Wizard trees are later data-only batches; empty for now so the
-  // framework reads them safely if a future class is set active.
+  wizard: WIZARD,
+  // Necromancer is a later data-only batch; empty for now so the framework reads it
+  // safely if it is ever set active.
   necromancer: { classId: 'necromancer', trees: [], skills: [] },
-  wizard: { classId: 'wizard', trees: [], skills: [] },
 };
 
 /** Look up a class's full skill set (trees + skills). */
