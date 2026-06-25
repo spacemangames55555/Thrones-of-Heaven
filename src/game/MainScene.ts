@@ -47,6 +47,7 @@ import { LoadoutBar } from '../ui/LoadoutBar';
 import { SkillState } from '../skills/SkillState';
 import { classSkills, combineMods, type SkillDef, type SkillStatMods, type ActiveActionId } from '../skills/skillData';
 import { TANK_TUNING } from '../skills/blacksmithTank';
+import { DPS_TUNING } from '../skills/blacksmithDps';
 import { PlayerPower } from '../player/PlayerPower';
 import { ANGEL_ENCOUNTER } from '../story/angelData';
 import { QuestChain, type QuestEvent } from '../quest/QuestChain';
@@ -262,6 +263,11 @@ export class MainScene extends Phaser.Scene {
   private skillDamageMult = 1;
   /** Cooldown end-times for activatable skills, keyed by skill id. */
   private skillCooldownUntil: Record<string, number> = {};
+  /** Effective cooldown DURATION used at activation (attack-speed shortens it),
+   *  keyed by skill id — drives the on-screen button shade ratio. */
+  private skillCooldownDur: Record<string, number> = {};
+  /** Damage the player has dealt since the last lifesteal flush (Bloodlust). */
+  private dmgDealtAccum = 0;
   /** Live timed effects (buffs / transformations): each contributes stats until endsAt. */
   private skillTimed: { id: string; endsAt: number; stats: SkillStatMods; tint?: number; auraDamage?: number; auraRadius?: number; auraNextAt?: number }[] = [];
   /** Stun registry: enemy → time the stun ends. Stunned bodies are frozen (moves=false). */
@@ -1016,6 +1022,7 @@ export class MainScene extends Phaser.Scene {
   private devResetSkills(): void {
     this.skillTimed = [];
     this.skillCooldownUntil = {};
+    this.skillCooldownDur = {};
     this.releaseAllStuns();
     this.skills.reset(); // refunds spent points, clears unlocks (onChange → recompute)
   }
@@ -1051,8 +1058,9 @@ export class MainScene extends Phaser.Scene {
     this.skillDamageMult = 1 + (m.damageMult ?? 0);
     // Move speed.
     if (this.player) this.player.speedMultiplier = 1 + (m.moveSpeedMult ?? 0);
-    // Damage reduction (capped so the player can always be hurt a little).
-    if (this.playerHealth) this.playerHealth.incomingMultiplier = Phaser.Math.Clamp(1 - (m.damageReduction ?? 0), 0.1, 1);
+    // Damage reduction (capped so the player can always be hurt a little). A NEGATIVE
+    // damageReduction (Crazed's berserk tradeoff) raises it above 1 → takes MORE damage.
+    if (this.playerHealth) this.playerHealth.incomingMultiplier = Phaser.Math.Clamp(1 - (m.damageReduction ?? 0), 0.1, 2);
     // Block chance + strength (Double Block / Dual Shield) — rolled per hit in Health.
     if (this.playerHealth) {
       this.playerHealth.blockChance = Phaser.Math.Clamp(m.blockChance ?? 0, 0, 0.9);
@@ -1097,7 +1105,11 @@ export class MainScene extends Phaser.Scene {
       this.energy.damage(energyCost);
       this.lastEnergySpendTime = this.time.now;
     }
-    this.skillCooldownUntil[id] = this.time.now + e.cooldownMs;
+    // Attack-speed (Crazed / Prism) shortens cooldowns: effCd = baseCd / (1 + atkSpeed).
+    const atkSpeed = this.combinedSkillMods().attackSpeedMult ?? 0;
+    const effCd = e.cooldownMs / (1 + Math.max(0, atkSpeed));
+    this.skillCooldownUntil[id] = this.time.now + effCd;
+    this.skillCooldownDur[id] = effCd;
 
     if (e.kind === 'active') {
       this.runActiveSkill(e.action);
@@ -1147,7 +1159,57 @@ export class MainScene extends Phaser.Scene {
       this.doBasicStrike(); // the folded-in default attack (equippable basic)
     } else if (action === 'dodge') {
       this.doDodge(); // the folded-in default dodge/lunge (equippable basic)
+    } else if (action === 'bash') {
+      // DPS #1 — a quick hard strike in front.
+      const c = DPS_TUNING.bash;
+      const fx = px + this.player.facingX * c.range * 0.6;
+      const fy = py + this.player.facingY * c.range * 0.6;
+      this.spawnSkillRing(fx, fy, c.range, 0xff7a3a);
+      this.aoeHitAll(fx, fy, c.range, this.skillDamage(c.damage));
+    } else if (action === 'overswing') {
+      // DPS #3 — slow telegraphed heavy strike: wind-up ring, then a big hit.
+      const c = DPS_TUNING.overswing;
+      const tele = this.add.circle(px, py, 10, 0xffd27a, 0).setStrokeStyle(3, 0xffb04a, 0.9).setDepth(13);
+      this.worldFx.add(tele);
+      this.tweens.add({ targets: tele, scale: c.range / 10, alpha: { from: 0.7, to: 0 }, duration: c.windUpMs, ease: 'Quad.in', onComplete: () => tele.destroy() });
+      this.time.delayedCall(c.windUpMs, () => {
+        if (this.playerDead) return;
+        const fx = this.player.x + this.player.facingX * c.range * 0.6;
+        const fy = this.player.y + this.player.facingY * c.range * 0.6;
+        this.spawnSkillRing(fx, fy, c.range, 0xffb04a);
+        this.aoeHitAll(fx, fy, c.range, this.skillDamage(c.damage));
+      });
+    } else if (action === 'windmill') {
+      // DPS #6 — spin: hit ALL enemies around the player.
+      const c = DPS_TUNING.windmill;
+      this.spawnSkillRing(px, py, c.radius, 0xff9a5a);
+      this.aoeHitAll(px, py, c.radius, this.skillDamage(c.damage));
+    } else if (action === 'hammer_throw') {
+      // DPS #7 — ranged thrown hammer (player-faction projectile; reuses the bolt path).
+      const c = DPS_TUNING.hammerThrow;
+      const len = Math.hypot(this.player.facingX, this.player.facingY) || 1;
+      const dx = this.player.facingX / len;
+      const dy = this.player.facingY / len;
+      this.projectiles.spawn({
+        x: px + dx * 18,
+        y: py + dy * 18,
+        dirX: dx,
+        dirY: dy,
+        speed: c.speed,
+        damage: this.skillDamage(c.damage),
+        maxRange: c.range,
+        faction: 'player',
+        color: 0xd9c08a,
+        radius: c.radius,
+      });
+      this.notifyBossesPlayerAction('ranged');
     }
+  }
+
+  /** A skill's base damage scaled by the player's damage multiplier (Berserker's Edge,
+   *  Crazed, Prism Quartz) so active abilities scale with offensive passives + buffs. */
+  private skillDamage(base: number): number {
+    return Math.round(base * this.skillDamageMult);
   }
 
   /** A quick expanding ring FX for a skill activation (world FX, main camera). */
@@ -1185,6 +1247,7 @@ export class MainScene extends Phaser.Scene {
       if (!this.plowHits.has(e)) {
         this.plowHits.add(e);
         const dealt = e.takeHit(c.damage);
+        if (dealt > 0) this.dmgDealtAccum += dealt; // lifesteal accounting
         if (dealt > 0) this.spawnDamageNumber(e.x, e.y - 24, dealt, '#ffe9a8');
       }
     }
@@ -1207,6 +1270,7 @@ export class MainScene extends Phaser.Scene {
   private aoeHitAll(x: number, y: number, range: number, dmg: number): void {
     if (this.sasquatch.isAlive && this.sasquatch.distanceTo(x, y) <= range) {
       const dealt = this.sasquatch.takeHit(dmg);
+      if (dealt > 0) this.dmgDealtAccum += dealt; // lifesteal accounting
       this.spawnDamageNumber(this.sasquatch.x, this.sasquatch.y - 24, dealt, '#ffcaa0');
       if (!this.sasquatch.isAlive) this.gainXP(this.sasquatch.xpReward);
     }
@@ -1313,6 +1377,12 @@ export class MainScene extends Phaser.Scene {
       this.skillTimed = this.skillTimed.filter((t) => this.time.now < t.endsAt);
       if (this.skillTimed.length !== before) this.recomputeSkillEffects(); // a buff/form ended
     }
+    // LIFESTEAL (Bloodlust): heal a fraction of the damage dealt since last frame.
+    const lifesteal = this.combinedSkillMods().lifestealPct ?? 0;
+    if (!this.playerDead && lifesteal > 0 && this.dmgDealtAccum > 0 && this.playerHealth.current < this.playerHealth.max) {
+      this.playerHealth.heal(this.dmgDealtAccum * lifesteal);
+    }
+    this.dmgDealtAccum = 0; // reset the accumulator every frame
     if (!this.playerDead) {
       // HP regen (War Chant) — heal per second from any active regen mod.
       const regen = this.combinedSkillMods().regenPerSec ?? 0;
@@ -1335,7 +1405,7 @@ export class MainScene extends Phaser.Scene {
       if (!id) continue;
       const def = classSkills(this.skills.activeClass).skills.find((s) => s.id === id);
       if (!def || def.effect.kind === 'passive') continue;
-      const cd = def.effect.cooldownMs;
+      const cd = this.skillCooldownDur[id] ?? def.effect.cooldownMs; // effective (attack-speed) cd
       const until = this.skillCooldownUntil[id] ?? 0;
       const cdRatio = until > this.time.now ? (until - this.time.now) / cd : 0;
       const energyCost = 'energyCost' in def.effect ? def.effect.energyCost ?? 0 : 0;
@@ -1350,11 +1420,14 @@ export class MainScene extends Phaser.Scene {
     // Swing in the facing direction; forgiving radius (the enemy is large).
     const sx = this.player.x + this.player.facingX * (PLAYER_ATTACK_RANGE * 0.5);
     const sy = this.player.y + this.player.facingY * (PLAYER_ATTACK_RANGE * 0.5);
-    this.spawnSlash(sx, sy, Math.atan2(this.player.facingY, this.player.facingX));
-
-    const dmg = this.playerDamage();
+    const angle = Math.atan2(this.player.facingY, this.player.facingX);
+    // MULTI-HIT (Double/Triple Swing, Prism refract): the swing lands `hits` times.
+    const hits = Math.max(1, this.combinedSkillMods().basicHitCount ?? 0);
+    for (let i = 0; i < hits; i++) this.spawnSlash(sx, sy, angle);
+    const dmg = this.playerDamage() * hits;
     if (this.sasquatch.isAlive && this.sasquatch.distanceTo(sx, sy) <= PLAYER_ATTACK_RANGE + 24) {
       const dealt = this.sasquatch.takeHit(dmg);
+      if (dealt > 0) this.dmgDealtAccum += dealt; // lifesteal accounting
       this.spawnDamageNumber(this.sasquatch.x, this.sasquatch.y - 24, dealt, '#ffffff');
       this.lastCombatTime = this.time.now;
       if (!this.sasquatch.isAlive) {
@@ -1380,6 +1453,7 @@ export class MainScene extends Phaser.Scene {
       if (!g.isAlive) continue;
       if (g.distanceTo(x, y) <= range + 10) {
         const dealt = g.takeHit(damage);
+        if (dealt > 0) this.dmgDealtAccum += dealt; // lifesteal accounting
         if (dealt > 0) {
           this.spawnDamageNumber(g.x, g.y - 26, dealt, '#ffd27a');
           this.lastCombatTime = this.time.now;
@@ -1395,6 +1469,7 @@ export class MainScene extends Phaser.Scene {
       if (!t.isAlive) continue;
       if (t.distanceTo(x, y) <= range) {
         const dealt = t.takeHit(damage);
+        if (dealt > 0) this.dmgDealtAccum += dealt; // lifesteal accounting
         if (dealt > 0) {
           this.spawnDamageNumber(t.x, t.y - 20, dealt, '#ffffff');
           this.lastCombatTime = this.time.now;
@@ -1410,6 +1485,7 @@ export class MainScene extends Phaser.Scene {
       if (!a.isAlive) continue;
       if (a.distanceTo(x, y) <= range + 8) {
         const dealt = a.takeHit(damage);
+        if (dealt > 0) this.dmgDealtAccum += dealt; // lifesteal accounting
         if (dealt > 0) {
           this.spawnDamageNumber(a.x, a.y - 28 * a.variant.scale, dealt, '#ffffff');
           this.lastCombatTime = this.time.now;
@@ -1426,6 +1502,7 @@ export class MainScene extends Phaser.Scene {
       if (!s.isAlive) continue;
       if (s.distanceTo(x, y) <= range) {
         const dealt = s.takeHit(damage);
+        if (dealt > 0) this.dmgDealtAccum += dealt; // lifesteal accounting
         if (dealt > 0) {
           this.spawnDamageNumber(s.x, s.y - 16, dealt, '#d6b4ff');
           this.lastCombatTime = this.time.now;
@@ -1542,6 +1619,7 @@ export class MainScene extends Phaser.Scene {
     ) {
       this.dashHits.add(this.sasquatch);
       const dealt = this.sasquatch.takeHit(dmg);
+      if (dealt > 0) this.dmgDealtAccum += dealt; // lifesteal accounting
       this.spawnDamageNumber(this.sasquatch.x, this.sasquatch.y - 24, dealt, '#ffe9a8');
       this.lastCombatTime = this.time.now;
       if (!this.sasquatch.isAlive) {
@@ -1557,6 +1635,7 @@ export class MainScene extends Phaser.Scene {
         if (s.distanceTo(px, py) <= DASH_HIT_RADIUS) {
           this.dashHits.add(s);
           const dealt = s.takeHit(dmg);
+          if (dealt > 0) this.dmgDealtAccum += dealt; // lifesteal accounting
           if (dealt > 0) {
             this.spawnDamageNumber(s.x, s.y - 16, dealt, '#ffe9a8');
             this.lastCombatTime = this.time.now;
@@ -1571,6 +1650,7 @@ export class MainScene extends Phaser.Scene {
       if (a.distanceTo(px, py) <= DASH_HIT_RADIUS + 12) {
         this.dashHits.add(a);
         const dealt = a.takeHit(dmg);
+        if (dealt > 0) this.dmgDealtAccum += dealt; // lifesteal accounting
         if (dealt > 0) {
           this.spawnDamageNumber(a.x, a.y - 28 * a.variant.scale, dealt, '#ffe9a8');
           this.lastCombatTime = this.time.now;
@@ -1584,6 +1664,7 @@ export class MainScene extends Phaser.Scene {
       if (t.distanceTo(px, py) <= DASH_HIT_RADIUS) {
         this.dashHits.add(t);
         const dealt = t.takeHit(dmg);
+        if (dealt > 0) this.dmgDealtAccum += dealt; // lifesteal accounting
         if (dealt > 0) {
           this.spawnDamageNumber(t.x, t.y - 20, dealt, '#ffe9a8');
           this.lastCombatTime = this.time.now;
@@ -1597,6 +1678,7 @@ export class MainScene extends Phaser.Scene {
       if (g.distanceTo(px, py) <= DASH_HIT_RADIUS + 10) {
         this.dashHits.add(g);
         const dealt = g.takeHit(dmg);
+        if (dealt > 0) this.dmgDealtAccum += dealt; // lifesteal accounting
         if (dealt > 0) {
           this.spawnDamageNumber(g.x, g.y - 26, dealt, '#ffe9a8');
           this.lastCombatTime = this.time.now;
@@ -1610,6 +1692,7 @@ export class MainScene extends Phaser.Scene {
       if (c.distanceTo(px, py) <= DASH_HIT_RADIUS + 16) {
         this.dashHits.add(c);
         const dealt = c.takeHit(dmg);
+        if (dealt > 0) this.dmgDealtAccum += dealt; // lifesteal accounting
         if (dealt > 0) {
           this.spawnDamageNumber(c.x, c.y - 30 * c.variant.scale, dealt, '#ffe9a8');
           this.lastCombatTime = this.time.now;
@@ -1623,6 +1706,7 @@ export class MainScene extends Phaser.Scene {
       if (d.distanceTo(px, py) <= DASH_HIT_RADIUS + 10) {
         this.dashHits.add(d);
         const dealt = d.takeHit(dmg);
+        if (dealt > 0) this.dmgDealtAccum += dealt; // lifesteal accounting
         if (dealt > 0) {
           this.spawnDamageNumber(d.x, d.y - 24, dealt, '#ffd0a0');
           this.lastCombatTime = this.time.now;
@@ -1636,6 +1720,7 @@ export class MainScene extends Phaser.Scene {
       if (b.distanceTo(px, py) <= DASH_HIT_RADIUS + 24) {
         this.dashHits.add(b);
         const dealt = b.takeHit(dmg);
+        if (dealt > 0) this.dmgDealtAccum += dealt; // lifesteal accounting
         if (dealt > 0) {
           this.spawnDamageNumber(b.x, b.y - 40, dealt, '#ffe9a8');
           this.lastCombatTime = this.time.now;
@@ -1949,6 +2034,7 @@ export class MainScene extends Phaser.Scene {
       if (!c.isAlive) continue;
       if (c.distanceTo(x, y) <= range + 14) {
         const dealt = c.takeHit(damage);
+        if (dealt > 0) this.dmgDealtAccum += dealt; // lifesteal accounting
         if (dealt > 0) {
           this.spawnDamageNumber(c.x, c.y - 30 * c.variant.scale, dealt, '#ffffff');
           this.lastCombatTime = this.time.now;
@@ -2001,6 +2087,7 @@ export class MainScene extends Phaser.Scene {
     // Sasquatch (killed inline elsewhere; replicate its on-death rewards here).
     if (this.sasquatch.isAlive) {
       const dealt = this.sasquatch.takeHit(HUGE);
+      if (dealt > 0) this.dmgDealtAccum += dealt; // lifesteal accounting
       if (dealt > 0 && !this.sasquatch.isAlive) {
         this.showBanner('Sasquatch defeated', 1600);
         this.notifyQuest('sasquatch-defeated');
@@ -2093,6 +2180,7 @@ export class MainScene extends Phaser.Scene {
       if (!b.isAlive) continue;
       if (b.distanceTo(x, y) <= range + 24) {
         const dealt = b.takeHit(damage);
+        if (dealt > 0) this.dmgDealtAccum += dealt; // lifesteal accounting
         if (dealt > 0) {
           this.spawnDamageNumber(b.x, b.y - 40, dealt, '#ffffff');
           this.lastCombatTime = this.time.now;
@@ -3438,6 +3526,7 @@ export class MainScene extends Phaser.Scene {
       if (!d.isAlive) continue;
       if (d.distanceTo(x, y) <= range + 10) {
         const dealt = d.takeHit(damage);
+        if (dealt > 0) this.dmgDealtAccum += dealt; // lifesteal accounting
         if (dealt > 0) {
           this.spawnDamageNumber(d.x, d.y - 24, dealt, '#ffd0a0');
           this.lastCombatTime = this.time.now;
@@ -3716,6 +3805,7 @@ export class MainScene extends Phaser.Scene {
 
     if (this.sasquatch.isAlive && hit(this.sasquatch, 18)) {
       const dealt = this.sasquatch.takeHit(damage);
+      if (dealt > 0) this.dmgDealtAccum += dealt; // lifesteal accounting
       this.spawnDamageNumber(this.sasquatch.x, this.sasquatch.y - 24, dealt, '#fff0b0');
       this.lastCombatTime = this.time.now;
       if (!this.sasquatch.isAlive) {
@@ -3729,6 +3819,7 @@ export class MainScene extends Phaser.Scene {
       for (const s of this.swarmers) {
         if (s.isAlive && hit(s, 8)) {
           const dealt = s.takeHit(damage);
+          if (dealt > 0) this.dmgDealtAccum += dealt; // lifesteal accounting
           if (dealt > 0) {
             this.spawnDamageNumber(s.x, s.y - 16, dealt, '#fff0b0');
             this.lastCombatTime = this.time.now;
@@ -3741,6 +3832,7 @@ export class MainScene extends Phaser.Scene {
     for (const a of this.angels) {
       if (a.isAlive && hit(a, 12)) {
         const dealt = a.takeHit(damage);
+        if (dealt > 0) this.dmgDealtAccum += dealt; // lifesteal accounting
         if (dealt > 0) {
           this.spawnDamageNumber(a.x, a.y - 28 * a.variant.scale, dealt, '#fff0b0');
           this.lastCombatTime = this.time.now;
@@ -3752,6 +3844,7 @@ export class MainScene extends Phaser.Scene {
     for (const t of this.townsfolk) {
       if (t.isAlive && hit(t, 10)) {
         const dealt = t.takeHit(damage);
+        if (dealt > 0) this.dmgDealtAccum += dealt; // lifesteal accounting
         if (dealt > 0) {
           this.spawnDamageNumber(t.x, t.y - 20, dealt, '#fff0b0');
           this.lastCombatTime = this.time.now;
@@ -3763,6 +3856,7 @@ export class MainScene extends Phaser.Scene {
     for (const g of this.guardians) {
       if (g.isAlive && hit(g, 12)) {
         const dealt = g.takeHit(damage);
+        if (dealt > 0) this.dmgDealtAccum += dealt; // lifesteal accounting
         if (dealt > 0) {
           this.spawnDamageNumber(g.x, g.y - 26, dealt, '#fff0b0');
           this.lastCombatTime = this.time.now;
@@ -3774,6 +3868,7 @@ export class MainScene extends Phaser.Scene {
     for (const c of this.cherubs) {
       if (c.isAlive && hit(c, 16)) {
         const dealt = c.takeHit(damage);
+        if (dealt > 0) this.dmgDealtAccum += dealt; // lifesteal accounting
         if (dealt > 0) {
           this.spawnDamageNumber(c.x, c.y - 30 * c.variant.scale, dealt, '#fff0b0');
           this.lastCombatTime = this.time.now;
@@ -3785,6 +3880,7 @@ export class MainScene extends Phaser.Scene {
     for (const d of this.demons) {
       if (d.isAlive && hit(d, 12)) {
         const dealt = d.takeHit(damage);
+        if (dealt > 0) this.dmgDealtAccum += dealt; // lifesteal accounting
         if (dealt > 0) {
           this.spawnDamageNumber(d.x, d.y - 24, dealt, '#fff0b0');
           this.lastCombatTime = this.time.now;
@@ -3796,6 +3892,7 @@ export class MainScene extends Phaser.Scene {
     for (const b of this.bosses) {
       if (b.isAlive && hit(b, 24)) {
         const dealt = b.takeHit(damage);
+        if (dealt > 0) this.dmgDealtAccum += dealt; // lifesteal accounting
         if (dealt > 0) {
           this.spawnDamageNumber(b.x, b.y - 40, dealt, '#fff0b0');
           this.lastCombatTime = this.time.now;
@@ -4612,6 +4709,7 @@ export class MainScene extends Phaser.Scene {
     // back to Lv1 / 0 XP, and the HP pool back to the (skill-adjusted) level-1 max.
     this.skillTimed = [];
     this.skillCooldownUntil = {};
+    this.skillCooldownDur = {};
     this.releaseAllStuns();
     this.skills.hardReset();
     this.progression.reset();

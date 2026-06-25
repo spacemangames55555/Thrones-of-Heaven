@@ -19,6 +19,7 @@
  */
 
 import { TANK_TREE_SKILLS } from './blacksmithTank';
+import { DPS_TREE_SKILLS } from './blacksmithDps';
 import { PLAYER_ATTACK_COOLDOWN_MS, DASH_COOLDOWN_MS, DASH_ENERGY_COST } from '../game/settings';
 
 /** How many active skills the player can equip to on-screen slots. */
@@ -46,10 +47,27 @@ export interface SkillStatMods {
   blockReduction?: number;
   /** HP regenerated per second while this mod is active (buffs). */
   regenPerSec?: number;
+  /** +fraction of ATTACK SPEED (0.5 = +50%, i.e. active cooldowns ÷ 1.5). Summed. */
+  attackSpeedMult?: number;
+  /** Number of times the BASIC strike hits (multi-hit). MAX across sources; base 1. */
+  basicHitCount?: number;
+  /** LIFESTEAL: heal this fraction of damage the player deals. Summed. */
+  lifestealPct?: number;
 }
 
 /** Ids dispatched by the scene's ACTIVE-ability handler. New actives add an id + a case. */
-export type ActiveActionId = 'forge_strike' | 'shield_bash' | 'shove' | 'shield_swing' | 'plow' | 'basic_strike' | 'dodge';
+export type ActiveActionId =
+  | 'forge_strike'
+  | 'shield_bash'
+  | 'shove'
+  | 'shield_swing'
+  | 'plow'
+  | 'basic_strike'
+  | 'dodge'
+  | 'bash'
+  | 'overswing'
+  | 'windmill'
+  | 'hammer_throw';
 
 /**
  * The five supported EFFECT KINDS. The scene applies them generically:
@@ -174,17 +192,8 @@ const BLACKSMITH: ClassSkills = {
     ...BASIC_SKILLS,
     // --- TANK TREE (10 real skills, linear → Celestial Calcite). Data in blacksmithTank.ts. ---
     ...TANK_TREE_SKILLS,
-    // --- ACTIVE test: a usable bonus AoE strike on a button. ---
-    {
-      id: 'bs_test_forge_strike',
-      tree: 'offense',
-      name: '[TEST] Forge Strike',
-      description: 'Activate: a heavy shockwave strikes all nearby enemies. 6s cooldown. (test: ACTIVE ability)',
-      cost: 1,
-      tier: 0,
-      effect: { kind: 'active', cooldownMs: 6000, action: 'forge_strike' },
-      test: true,
-    },
+    // --- OFFENSE / DPS TREE (10 real skills, linear → Prism Quartz). Data in blacksmithDps.ts. ---
+    ...DPS_TREE_SKILLS,
     // --- BUFF test: an activatable timed self-buff. ---
     {
       id: 'bs_test_buff',
@@ -237,16 +246,22 @@ export function combineMods(mods: readonly SkillStatMods[]): SkillStatMods {
     blockChance: 0,
     blockReduction: 0,
     regenPerSec: 0,
+    attackSpeedMult: 0,
+    basicHitCount: 0, // 0 = none specified; consumers use max(1, value)
+    lifestealPct: 0,
   };
   for (const m of mods) {
     out.flatMaxHP += m.flatMaxHP ?? 0;
     out.maxHPMult += m.maxHPMult ?? 0;
     out.damageMult += m.damageMult ?? 0;
     out.moveSpeedMult += m.moveSpeedMult ?? 0;
-    out.damageReduction += m.damageReduction ?? 0;
+    out.damageReduction += m.damageReduction ?? 0; // negative = takes MORE damage (Crazed)
     out.blockChance += m.blockChance ?? 0; // block chances stack (capped when applied)
     out.blockReduction = Math.max(out.blockReduction, m.blockReduction ?? 0); // best block strength wins
     out.regenPerSec += m.regenPerSec ?? 0;
+    out.attackSpeedMult += m.attackSpeedMult ?? 0;
+    out.basicHitCount = Math.max(out.basicHitCount, m.basicHitCount ?? 0); // highest multi-hit wins
+    out.lifestealPct += m.lifestealPct ?? 0;
   }
   return out;
 }
