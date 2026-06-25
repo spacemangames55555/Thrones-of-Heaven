@@ -136,6 +136,12 @@ export const TERRAIN_TILE_IMAGES: { key: string; file: string }[] = [
   { key: 'urban', file: 'tiles/terrain/Urbantown_ground.png' }, // Urbantown_ground.png → "Urban / Town"
   { key: 'bridge', file: 'tiles/terrain/Bridge.png' }, // Bridge.png → "Bridge"
   { key: 'corruption_rift', file: 'tiles/terrain/Corruptionrift.png' }, // Corruptionrift.png → "Corruption Rift"
+  // --- Heaven tiles ---
+  { key: 'holy_ground', file: 'tiles/terrain/Holy_ground.png' }, // Holy_ground.png → Heaven "Holy Ground"
+  { key: 'heaven_cloud', file: 'tiles/terrain/Heaven_cloud.png' }, // Heaven_cloud.png → Heaven "Cloud"
+  { key: 'gold_field', file: 'tiles/terrain/Gold_field.png' }, // Gold_field.png → Heaven "Gold Field"
+  { key: 'heaven_path', file: 'tiles/terrain/Heaven_path.png' }, // Heaven_path.png → Heaven "Radiant Path"
+  { key: 'heaven_void', file: 'tiles/terrain/Heaven_void.png' }, // Heaven_void.png → Heaven "Cloud Edge" (BLOCKS — unchanged)
 ];
 
 /** Texture cache key under which a terrain's real tile PNG is loaded. */
