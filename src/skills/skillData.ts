@@ -20,6 +20,7 @@
 
 import { TANK_TREE_SKILLS } from './blacksmithTank';
 import { DPS_TREE_SKILLS } from './blacksmithDps';
+import { CONTROL_TREE_SKILLS } from './blacksmithControl';
 import { PLAYER_ATTACK_COOLDOWN_MS, DASH_COOLDOWN_MS, DASH_ENERGY_COST } from '../game/settings';
 
 /** How many active skills the player can equip to on-screen slots. */
@@ -67,7 +68,12 @@ export type ActiveActionId =
   | 'bash'
   | 'overswing'
   | 'windmill'
-  | 'hammer_throw';
+  | 'hammer_throw'
+  | 'control_charge'
+  | 'disarm'
+  | 'intimidate'
+  | 'cripple'
+  | 'execute';
 
 /**
  * The five supported EFFECT KINDS. The scene applies them generically:
@@ -194,30 +200,8 @@ const BLACKSMITH: ClassSkills = {
     ...TANK_TREE_SKILLS,
     // --- OFFENSE / DPS TREE (10 real skills, linear → Prism Quartz). Data in blacksmithDps.ts. ---
     ...DPS_TREE_SKILLS,
-    // --- BUFF test: an activatable timed self-buff. ---
-    {
-      id: 'bs_test_buff',
-      tree: 'control',
-      name: '[TEST] Forge Fury',
-      description: 'Activate: +40% damage and +20% speed for 6s. 15s cooldown. (test: BUFF self-buff)',
-      cost: 1,
-      tier: 0,
-      effect: { kind: 'buff', cooldownMs: 15000, durationMs: 6000, stats: { damageMult: 0.4, moveSpeedMult: 0.2 } },
-      test: true,
-    },
-    // --- DEBUFF test (structure + stub action): a timed weaken pulse on enemies. ---
-    {
-      id: 'bs_test_weaken',
-      tree: 'control',
-      name: '[TEST] Weakening Pulse',
-      description:
-        'Activate: a pulse weakens nearby enemies (stub effect). 12s cooldown. (test: DEBUFF hooks/structure)',
-      cost: 1,
-      prereq: 'bs_test_buff',
-      tier: 1,
-      effect: { kind: 'debuff', cooldownMs: 12000, durationMs: 4000, radius: 160 },
-      test: true,
-    },
+    // --- CONTROL TREE (10 real skills, linear → Iron Pyrite). Data in blacksmithControl.ts. ---
+    ...CONTROL_TREE_SKILLS,
   ],
 };
 

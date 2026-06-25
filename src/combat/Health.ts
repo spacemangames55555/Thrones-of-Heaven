@@ -13,6 +13,8 @@ export class Health {
   blockReduction = 0;
   /** Optional hook fired when a hit is blocked (for a visual flash). */
   onBlock?: () => void;
+  /** Optional hook fired when damage is actually taken (amount removed > 0). */
+  onDamaged?: (amount: number) => void;
 
   constructor(max: number) {
     this.max = max;
@@ -45,7 +47,9 @@ export class Health {
     }
     const before = this.current;
     this.current = Math.max(0, this.current - amt);
-    return before - this.current;
+    const removed = before - this.current;
+    if (removed > 0) this.onDamaged?.(removed);
+    return removed;
   }
 
   heal(amount: number): void {
