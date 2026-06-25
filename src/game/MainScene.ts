@@ -53,6 +53,7 @@ import {
   THE_CORRUPTION_AT_THE_GATES,
   PATRON_IDLE_LINES,
   TARGET_WORLD,
+  SEVEN_SINS_QUEST_ID,
   type ObjectiveTrigger,
   type TargetKind,
   type QuestDef,
@@ -1881,6 +1882,7 @@ export class MainScene extends Phaser.Scene {
   private onSinDefeated(i: number): void {
     this.sinBosses[i] = undefined; // the dead instance gets pruned by updateBosses
     this.sins.recordDefeat(i);
+    this.notifyQuest('sin-defeated'); // Quest 7: advance to the next Sin objective (lockstep)
     this.showBanner(`${SIN_DEFS[i].name} — Sin ${i + 1} — vanquished!`, 2600);
     if (this.sins.nextIndex >= 0) {
       this.spawnAvailableSin(); // place the next Sin deeper in Hell
@@ -1897,6 +1899,14 @@ export class MainScene extends Phaser.Scene {
    *  once all seven are fallen, point it at Satan's Lair (the Trinity's future site). */
   private updateSinMarker(): void {
     if (this.activeWorld !== WORLD_HELL) {
+      this.sinMarker.hide();
+      return;
+    }
+    // Quest 7 owns Hell guidance: its quest marker (gold beacon + off-screen edge
+    // arrow) is the single indicator on the current Sin / lair. Suppress this older
+    // beacon while that quest is active so the two never double up. It remains as a
+    // fallback for non-quest states (e.g. a dev-reset gauntlet with no active quest).
+    if (this.chain.activeQuest?.id === SEVEN_SINS_QUEST_ID) {
       this.sinMarker.hide();
       return;
     }
@@ -2001,6 +2011,7 @@ export class MainScene extends Phaser.Scene {
   /** STAGE 1: open the lair + summon the Dragon. */
   private startTrinity(): void {
     if (this.trinity.started) return;
+    this.notifyQuest('entered-lair'); // Quest 7 obj 8: lair entered → Quest 7 completes
     this.trinity.toDragon();
     this.dragonBoss = this.spawnTrinityBoss(DRAGON_DEF);
     this.dragonBoss.activate();
@@ -4324,8 +4335,10 @@ export class MainScene extends Phaser.Scene {
    * NPC-given quests (opening + descent) are never auto-activated (no autoActivate flag).
    */
   private updateClimaxQuestActivation(): void {
+    // Guard caps the per-frame catch-up; the worst case (a fully-stale save in Hell
+    // fast-forwarding Quests 5+6 and all of Quest 7's Sin objectives) is ~16 steps.
     let guard = 0;
-    while (guard++ < 16) {
+    while (guard++ < 32) {
       if (!this.chain.activeQuest) {
         // (1) Start the next available auto-activate quest, if any.
         const next = QUEST_REGISTRY.find((d) => d.autoActivate && this.chain.status(d.id) === 'available');
@@ -4336,10 +4349,21 @@ export class MainScene extends Phaser.Scene {
       if (!q?.autoActivate) break; // NPC quest or none → leave it alone
       const obj = this.chain.activeObjectiveDef;
       if (!obj?.target) break;
-      // (2) Keep the objective only if its world is the player's world or ahead;
-      //     otherwise we've passed it — complete it and re-check.
-      if (this.worldOrder(TARGET_WORLD[obj.target]) >= this.worldOrder(this.activeWorld)) break;
-      this.notifyQuest(obj.trigger);
+      // (2) World catch-up: if this objective's world is one we've already moved
+      //     beyond, complete it and re-check (forward-march; stale saves / skips).
+      if (this.worldOrder(TARGET_WORLD[obj.target]) < this.worldOrder(this.activeWorld)) {
+        this.notifyQuest(obj.trigger);
+        continue;
+      }
+      // (3) Quest 7 Sin lockstep: keep the per-Sin objective index in sync with the
+      //     gauntlet cursor (sinsDefeated) — covers stale saves / out-of-quest kills.
+      //     `current-sin` already resolves live, so the arrow is right regardless;
+      //     this just keeps the tracker TEXT on the matching Sin.
+      if (q.id === SEVEN_SINS_QUEST_ID && obj.trigger === 'sin-defeated' && this.chain.activeObjectiveIndex < this.sins.count) {
+        this.notifyQuest('sin-defeated');
+        continue;
+      }
+      break;
     }
   }
 
@@ -4426,7 +4450,29 @@ export class MainScene extends Phaser.Scene {
         return this.hellPortal
           ? { x: this.hellPortal.x, y: this.hellPortal.y, label: '' }
           : { x: this.thronePos.x, y: this.thronePos.y, label: '' };
+      case 'current-sin':
+        return this.currentSinPosition();
+      case 'satan-lair': {
+        const o = this.hellMap.bounds;
+        return { x: o.x + SATAN_LAIR.x, y: o.y + SATAN_LAIR.y, label: '' };
+      }
     }
+  }
+
+  /**
+   * World position of the gauntlet's CURRENT (next undefeated, unlocked) Sin —
+   * the live boss if it's spawned, else its data placement. Lockstep with the
+   * gauntlet cursor (`sinsDefeated`), so Quest 7's arrow always tracks the right
+   * Sin. Falls back to the lair once all seven are down.
+   */
+  private currentSinPosition(): { x: number; y: number; label: string } {
+    const o = this.hellMap.bounds;
+    const i = this.sins.nextIndex;
+    if (i < 0) return { x: o.x + SATAN_LAIR.x, y: o.y + SATAN_LAIR.y, label: '' };
+    const boss = this.sinBosses[i];
+    if (boss && boss.isAlive) return { x: boss.x, y: boss.y, label: '' };
+    const def = SIN_DEFS[i];
+    return { x: o.x + def.placement.x, y: o.y + def.placement.y, label: '' };
   }
 
   /** The awarded-title HUD line (top-left, just under the health bar + readout). */
