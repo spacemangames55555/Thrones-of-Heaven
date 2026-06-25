@@ -45,10 +45,11 @@ import { HealthBar } from '../combat/HealthBar';
 import { HolyBoltButton } from '../ui/HolyBoltButton';
 import { LoadoutBar } from '../ui/LoadoutBar';
 import { SkillState } from '../skills/SkillState';
-import { classSkills, combineMods, isDamagingActive, type SkillDef, type SkillStatMods, type ActiveActionId } from '../skills/skillData';
+import { classSkills, combineMods, isDamagingActive, type SkillDef, type SkillStatMods, type ActiveActionId, type ClassId } from '../skills/skillData';
 import { TANK_TUNING } from '../skills/blacksmithTank';
 import { DPS_TUNING } from '../skills/blacksmithDps';
 import { CONTROL_TUNING, COUNTER_ID, IRON_WILL_ID, DOMINANCE_ID, IRON_PYRITE_ID } from '../skills/blacksmithControl';
+import { WIZARD_FIREWIND_TUNING, WIZ_STORM_ID } from '../skills/wizardFireWind';
 import { PlayerPower } from '../player/PlayerPower';
 import { ANGEL_ENCOUNTER } from '../story/angelData';
 import { QuestChain, type QuestEvent } from '../quest/QuestChain';
@@ -137,6 +138,7 @@ import {
   TRINITY_ARENA,
   TRINITY_ENTER_RANGE,
   TRINITY_BREATHER_MS,
+  classBaseStats,
 } from './settings';
 import { TOWN_TILES } from '../town/townTiles';
 import { buildTown, type TownFeatures, type DoorFeature } from '../town/TownBuilder';
@@ -304,6 +306,13 @@ export class MainScene extends Phaser.Scene {
   private plowActive = false;
   /** Enemies already damaged by the current Plow (so each is hit once per charge). */
   private plowHits = new Set<CombatEnemy>();
+  /** True while a Wizard "Gust" wind-dash is in progress (reuses the dash movement). */
+  private gustActive = false;
+  /** Enemies already damaged by the current Gust (so each is hit once per dash). */
+  private gustHits = new Set<CombatEnemy>();
+  /** Active Wizard "Lava" ground patches: reusable persistent-hazard pattern that damages
+   *  ENEMIES standing in them over time (mirrors the boss HazardField, enemy-facing). */
+  private spellHazards: { x: number; y: number; radius: number; tickDamage: number; tickMs: number; nextTickAt: number; expireAt: number; fx: Phaser.GameObjects.Arc }[] = [];
   private dashEndsAt = 0;
   private dashDir = { x: 0, y: 1 };
   private dashHits = new Set<object>();
@@ -481,6 +490,9 @@ export class MainScene extends Phaser.Scene {
   // --- Save system ---
   /** How this run was launched from the TitleScene: 'new' or 'continue'. */
   private launchMode: 'new' | 'continue' = 'new';
+  /** The active class for this run (chosen at character-select for a new game, or read
+   *  from the save on continue). Drives the avatar, base stats, and the active skill tree. */
+  private classId: ClassId = 'blacksmith';
   /** True once create() has finished building + (optionally) loading — gates autosave. */
   private gameReady = false;
   /** True while applySave() is restoring — suppresses autosave so it can't write partial state. */
@@ -495,9 +507,16 @@ export class MainScene extends Phaser.Scene {
     super('MainScene');
   }
 
-  /** Receive the launch mode from the TitleScene (before create()). */
-  init(data?: { mode?: 'new' | 'continue' }): void {
+  /** Receive the launch mode + chosen class from the Title/character-select (before create()). */
+  init(data?: { mode?: 'new' | 'continue'; classId?: ClassId }): void {
     this.launchMode = data?.mode === 'continue' ? 'continue' : 'new';
+    // New game: the class comes from character-select. Continue: read it from the save
+    // now (before the player avatar is built) so the right sprite + stats are used.
+    if (this.launchMode === 'continue') {
+      this.classId = SaveSystem.read()?.skills?.activeClass ?? 'blacksmith';
+    } else {
+      this.classId = data?.classId ?? 'blacksmith';
+    }
   }
 
   /** Load real terrain tile art before create() builds the atlas (drop-in PNG path). */
@@ -528,7 +547,7 @@ export class MainScene extends Phaser.Scene {
     this.addTownLabel(this.portland.label);
 
     // Spawn the player in the town square.
-    this.player = new Player(this, this.town.spawn.x, this.town.spawn.y);
+    this.player = new Player(this, this.town.spawn.x, this.town.spawn.y, this.classId);
     this.earthCollider = this.physics.add.collider(this.player.sprite, this.map.layer);
 
     // Quest-giver NPC in the plaza. Its dialogue is chosen per quest-state at
@@ -559,6 +578,11 @@ export class MainScene extends Phaser.Scene {
     this.projectiles.onPlayerHit = (dmg) => this.onProjectileHitPlayer(dmg);
     this.projectiles.onEnemyHit = (x, y, radius, dmg) => this.resolveHolyBoltHit(x, y, radius, dmg);
     this.projectiles.onImpact = (x, y, color) => this.spawnBoltImpact(x, y, color);
+    // Splash bolts (Wizard's Combust + storm-empowered bolts) burst into an AoE on impact.
+    this.projectiles.onSplash = (x, y, radius, dmg) => {
+      this.spawnSkillRing(x, y, radius, 0xff8a3a);
+      this.aoeHitAll(x, y, radius, dmg);
+    };
     // Persistent ground hazards (Greed): zones draw into the world-FX layer; a tick
     // applies player damage through the existing contact-damage path.
     this.hazards = new HazardField(this, this.worldFx);
@@ -569,6 +593,8 @@ export class MainScene extends Phaser.Scene {
     this.holyPower.onChange = () => this.refreshHolyPowerUi();
     // Progression first: the player's HP pool is the level-derived max (Lv1 → BASE_MAX_HP).
     this.progression = new PlayerProgression();
+    this.progression.profile = classBaseStats(this.classId); // per-class HP/damage/speed
+    this.skills.activeClass = this.classId; // select this class's trees/unlocks/loadout
     this.progression.onChange = () => this.refreshXpUi();
     this.playerHealth = new Health(this.progression.effectiveMaxHP);
     this.playerHealth.onDamaged = () => this.onPlayerHurt(); // Counter Attack (Control passive)
@@ -791,6 +817,7 @@ export class MainScene extends Phaser.Scene {
       this.spawnDashTrail();
       if (this.plowActive) this.plowTick();
       else if (this.chargeActive) this.chargeTick();
+      else if (this.gustActive) this.gustTick();
       else this.dashDamageTick();
       if (this.time.now >= this.dashEndsAt) this.endDash();
     } else {
@@ -835,6 +862,7 @@ export class MainScene extends Phaser.Scene {
     // every enemy update so the slow overrides the chase velocity just set.
     this.updateControlEffects();
     this.applyEnemySlows();
+    this.updateSpellHazards(); // Wizard "Lava" patches tick damage to enemies in them
     this.projectiles.update(delta, this.player.x, this.player.y, PROJECTILE_PLAYER_HIT_RADIUS);
     this.hazards.update(this.time.now, this.player.x, this.player.y, this.playerDead);
     this.pickups.update(this.player.x, this.player.y);
@@ -1098,6 +1126,26 @@ export class MainScene extends Phaser.Scene {
     this.requireStartingSkill(); // floor respects: never leaves the player unable to attack
   }
 
+  /** DEV: switch the active class (avatar + base stats + that class's trees/loadout). If
+   *  the new class owns no damaging active yet, the forced first-skill pick re-opens. */
+  private devSetClass(classId: ClassId): void {
+    this.classId = classId;
+    this.skills.activeClass = classId;
+    this.progression.profile = classBaseStats(classId);
+    this.player.setClassSkin(classId);
+    this.skillTimed = [];
+    this.skillCooldownUntil = {};
+    this.skillCooldownDur = {};
+    this.releaseAllStuns();
+    this.clearSpellHazards();
+    this.requireStartingSkill(); // pick a first skill if this class has none yet
+    this.recomputeSkillEffects();
+    this.playerHealth.setMax(this.skillAdjustedMaxHP());
+    this.playerHealth.full();
+    this.refreshLoadoutBar();
+    this.showBanner(`Class: ${classId}`, 1400);
+  }
+
   /** The live melee damage (level-derived × skill multiplier from passives + buffs/forms). */
   private playerDamage(): number {
     return Math.round(this.progression.effectiveDamage * this.skillDamageMult);
@@ -1127,8 +1175,8 @@ export class MainScene extends Phaser.Scene {
     if (this.playerHealth && this.playerHealth.max !== newMax) this.playerHealth.setMax(newMax);
     // Damage multiplier (read by playerDamage()).
     this.skillDamageMult = 1 + (m.damageMult ?? 0);
-    // Move speed.
-    if (this.player) this.player.speedMultiplier = 1 + (m.moveSpeedMult ?? 0);
+    // Move speed: the class base multiplier (Wizard is slightly faster) × skill bonuses.
+    if (this.player) this.player.speedMultiplier = this.progression.profile.moveSpeedMult * (1 + (m.moveSpeedMult ?? 0));
     // Damage reduction (capped so the player can always be hurt a little). A NEGATIVE
     // damageReduction (Crazed's berserk tradeoff) raises it above 1 → takes MORE damage.
     // This is the BASE; per-frame enemy-WEAKEN (Intimidate/Dominance/Pyrite) stacks on
@@ -1314,7 +1362,237 @@ export class MainScene extends Phaser.Scene {
       this.spawnSkillRing(fx, fy, c.range, 0xff5050);
       const low = this.combatEnemiesInRange(fx, fy, c.range).some((e) => e.health.ratio < c.thresholdPct);
       this.aoeHitAll(fx, fy, c.range, this.skillDamage(low ? c.damage * c.executeMult : c.damage));
+    } else if (action === 'wiz_fireball') {
+      // Wizard #1 — single-target fire bolt (the entry damaging active).
+      const c = WIZARD_FIREWIND_TUNING.fireball;
+      this.castFireBolt(c.damage, c.speed, c.range, c.radius, 0xff7a2a);
+    } else if (action === 'wiz_flicker') {
+      // Wizard #2 — multi-projectile spread of fast bolts.
+      const c = WIZARD_FIREWIND_TUNING.flicker;
+      const { dx, dy } = this.facingUnit();
+      const baseAng = Math.atan2(dy, dx);
+      const spread = (c.spreadDeg * Math.PI) / 180;
+      const dmg = this.skillDamage(c.damageEach);
+      for (let i = 0; i < c.boltCount; i++) {
+        const t = c.boltCount > 1 ? i / (c.boltCount - 1) - 0.5 : 0; // -0.5..0.5 across the fan
+        const ang = baseAng + t * spread;
+        this.spawnWizardBolt(Math.cos(ang), Math.sin(ang), dmg, c.speed, c.range, c.radius, 0xffb24a, this.stormSplash(dmg));
+      }
+      this.notifyBossesPlayerAction('ranged');
+    } else if (action === 'wiz_combust') {
+      // Wizard #3 — bolt that EXPLODES into splash AoE on impact (always splashes).
+      const c = WIZARD_FIREWIND_TUNING.combust;
+      const { dx, dy } = this.facingUnit();
+      this.spawnWizardBolt(dx, dy, this.skillDamage(c.directDamage), c.speed, c.range, c.radius, 0xff5a2a, {
+        splashRadius: c.splashRadius,
+        splashDamage: this.skillDamage(c.splashDamage),
+      });
+      this.notifyBossesPlayerAction('ranged');
+    } else if (action === 'wiz_dust_devil') {
+      // Wizard #4 — cone of wind in front of the player (true wedge hitbox).
+      const c = WIZARD_FIREWIND_TUNING.dustDevil;
+      const { dx, dy } = this.facingUnit();
+      const half = (c.coneHalfAngleDeg * Math.PI) / 180;
+      this.spawnConeFx(px, py, dx, dy, c.range, half, 0x9ad8ff);
+      this.aoeHitAll(px, py, c.range, this.skillDamage(c.damage), (ex, ey) => this.inCone(px, py, dx, dy, ex, ey, c.range, half));
+    } else if (action === 'wiz_gust') {
+      this.startGust(); // Wizard #5 — wind-dash + path damage (reuses the dash movement)
+    } else if (action === 'wiz_lava') {
+      // Wizard #6 — persistent burning ground patch ahead (reuses the hazard pattern).
+      const c = WIZARD_FIREWIND_TUNING.lava;
+      const { dx, dy } = this.facingUnit();
+      this.spawnSpellHazard(px + dx * c.placeAhead, py + dy * c.placeAhead, c.radius, this.skillDamage(c.tickDamage), c.durationMs, c.tickMs);
+    } else if (action === 'wiz_immolation') {
+      // Wizard #7 — fiery burst around the player (self-centered circle AoE).
+      const c = WIZARD_FIREWIND_TUNING.immolation;
+      this.spawnSkillRing(px, py, c.radius, 0xff7a2a);
+      this.aoeHitAll(px, py, c.radius, this.skillDamage(c.damage));
+    } else if (action === 'wiz_jet_stream') {
+      // Wizard #8 — line/wall of wind projected straight ahead (true segment hitbox).
+      const c = WIZARD_FIREWIND_TUNING.jetStream;
+      const { dx, dy } = this.facingUnit();
+      const x2 = px + dx * c.length;
+      const y2 = py + dy * c.length;
+      this.spawnLineFx(px, py, x2, y2, c.width, 0xbfe6ff);
+      const bx = (px + x2) / 2;
+      const by = (py + y2) / 2;
+      this.aoeHitAll(bx, by, c.length / 2 + c.width, this.skillDamage(c.damage), (ex, ey) => this.inLine(px, py, x2, y2, ex, ey, c.width / 2));
+    } else if (action === 'wiz_tornado') {
+      // Wizard #9 — large multi-pulse vortex that follows the player (bigger than Immolation).
+      const c = WIZARD_FIREWIND_TUNING.tornado;
+      for (let i = 0; i < c.pulses; i++) {
+        this.time.delayedCall(i * c.pulseMs, () => {
+          if (this.playerDead) return;
+          this.spawnSkillRing(this.player.x, this.player.y, c.radius, 0xbfe6ff);
+          this.aoeHitAll(this.player.x, this.player.y, c.radius, this.skillDamage(c.damage));
+        });
+      }
     }
+  }
+
+  // --- Wizard helpers (Fire/Wind tree): bolts, storm splash, cone/line geometry ---
+
+  /** Normalized facing direction (defaults to "down" when idle). */
+  private facingUnit(): { dx: number; dy: number } {
+    const len = Math.hypot(this.player.facingX, this.player.facingY) || 1;
+    return { dx: this.player.facingX / len, dy: this.player.facingY / len };
+  }
+
+  /** True while the Elemental Storm transformation is active (bolts gain splash). */
+  private isElementalStormActive(): boolean {
+    return this.skillTimed.some((t) => t.id === WIZ_STORM_ID);
+  }
+
+  /** Storm-form splash fields for a player bolt dealing `boltDmg`, or none if not stormed. */
+  private stormSplash(boltDmg: number): { splashRadius: number; splashDamage: number } {
+    if (!this.isElementalStormActive()) return { splashRadius: 0, splashDamage: 0 };
+    const s = WIZARD_FIREWIND_TUNING.storm;
+    return { splashRadius: s.splashRadius, splashDamage: Math.round(boltDmg * s.splashFraction) };
+  }
+
+  /** Fire one Wizard fire bolt (already-scaled `dmg`) in (dx,dy), with optional splash. */
+  private spawnWizardBolt(dx: number, dy: number, dmg: number, speed: number, range: number, radius: number, color: number, splash?: { splashRadius: number; splashDamage: number }): void {
+    this.projectiles.spawn({
+      x: this.player.x + dx * 18,
+      y: this.player.y + dy * 18,
+      dirX: dx,
+      dirY: dy,
+      speed,
+      damage: dmg,
+      maxRange: range,
+      faction: 'player',
+      color,
+      radius,
+      splashRadius: splash?.splashRadius ?? 0,
+      splashDamage: splash?.splashDamage ?? 0,
+    });
+  }
+
+  /** Fireball-style single bolt in the facing direction (scales `base` + adds storm splash). */
+  private castFireBolt(base: number, speed: number, range: number, radius: number, color: number): void {
+    const { dx, dy } = this.facingUnit();
+    const dmg = this.skillDamage(base);
+    this.spawnWizardBolt(dx, dy, dmg, speed, range, radius, color, this.stormSplash(dmg));
+    this.notifyBossesPlayerAction('ranged');
+  }
+
+  /** True if (ex,ey) lies within the forward CONE from (px,py) along (dx,dy). */
+  private inCone(px: number, py: number, dx: number, dy: number, ex: number, ey: number, range: number, halfAngle: number): boolean {
+    const vx = ex - px;
+    const vy = ey - py;
+    const dist = Math.hypot(vx, vy);
+    if (dist > range) return false;
+    if (dist < 1) return true; // point-blank
+    const cos = (vx * dx + vy * dy) / dist; // cosine of the angle to the facing
+    return cos >= Math.cos(halfAngle);
+  }
+
+  /** True if (ex,ey) lies within `halfWidth` of the segment (x1,y1)→(x2,y2) (line/wall hit). */
+  private inLine(x1: number, y1: number, x2: number, y2: number, ex: number, ey: number, halfWidth: number): boolean {
+    const dxL = x2 - x1;
+    const dyL = y2 - y1;
+    const l2 = dxL * dxL + dyL * dyL || 1;
+    let t = ((ex - x1) * dxL + (ey - y1) * dyL) / l2;
+    t = Math.max(0, Math.min(1, t));
+    const cxp = x1 + t * dxL;
+    const cyp = y1 + t * dyL;
+    return Math.hypot(ex - cxp, ey - cyp) <= halfWidth;
+  }
+
+  /** GUST (Wizard #5): a forward wind-dash reusing the dash movement; enemies in the
+   *  path are damaged once. Independent of the dodge cooldown (the skill gates it). */
+  private startGust(): void {
+    const c = WIZARD_FIREWIND_TUNING.gust;
+    const { dx, dy } = this.facingUnit();
+    this.dashDir = { x: dx, y: dy };
+    this.dashEndsAt = this.time.now + (c.distance / DASH_SPEED) * 1000;
+    this.gustHits.clear();
+    this.gustActive = true;
+  }
+
+  /** GUST per-frame: damage each enemy in the path once. */
+  private gustTick(): void {
+    const c = WIZARD_FIREWIND_TUNING.gust;
+    const r = DASH_HIT_RADIUS + 16;
+    for (const e of this.combatEnemiesInRange(this.player.x, this.player.y, r)) {
+      if (this.gustHits.has(e)) continue;
+      this.gustHits.add(e);
+      const dealt = e.takeHit(this.skillDamage(c.damage));
+      if (dealt > 0) this.dmgDealtAccum += dealt;
+      this.spawnDamageNumber(e.x, e.y - 24, dealt, '#bfe6ff');
+    }
+    this.lastCombatTime = this.time.now;
+  }
+
+  /** Drop a Wizard "Lava" patch: a persistent ground zone that damages enemies standing
+   *  in it each tick for its lifetime (the enemy-facing twin of the boss HazardField). */
+  private spawnSpellHazard(x: number, y: number, radius: number, tickDamage: number, durationMs: number, tickMs: number): void {
+    const now = this.time.now;
+    const fx = this.add.circle(x, y, radius, 0xff6a1a, 0.28).setStrokeStyle(2, 0xffb020, 0.9).setDepth(6);
+    this.worldFx.add(fx);
+    this.tweens.add({ targets: fx, alpha: { from: 0.4, to: 0.18 }, duration: 380, yoyo: true, repeat: -1 });
+    this.spellHazards.push({ x, y, radius, tickDamage, tickMs, nextTickAt: now + tickMs, expireAt: now + durationMs, fx });
+  }
+
+  /** Per-frame: tick + expire the Wizard ground hazards (Lava). Runs after enemy updates. */
+  private updateSpellHazards(): void {
+    if (this.spellHazards.length === 0) return;
+    const now = this.time.now;
+    for (const h of this.spellHazards) {
+      if (now >= h.nextTickAt) {
+        h.nextTickAt = now + h.tickMs;
+        this.aoeHitAll(h.x, h.y, h.radius, h.tickDamage);
+      }
+    }
+    if (this.spellHazards.some((h) => now >= h.expireAt)) {
+      for (const h of this.spellHazards) {
+        if (now >= h.expireAt) {
+          this.tweens.killTweensOf(h.fx);
+          this.tweens.add({ targets: h.fx, alpha: 0, duration: 200, onComplete: () => h.fx.destroy() });
+        }
+      }
+      this.spellHazards = this.spellHazards.filter((h) => now < h.expireAt);
+    }
+  }
+
+  /** Remove every Wizard ground hazard immediately (dev reset / save load). */
+  private clearSpellHazards(): void {
+    for (const h of this.spellHazards) {
+      this.tweens.killTweensOf(h.fx);
+      h.fx.destroy();
+    }
+    this.spellHazards = [];
+  }
+
+  /** A translucent cone wedge FX (Dust Devil), fading out (world FX, main camera). */
+  private spawnConeFx(px: number, py: number, dx: number, dy: number, range: number, halfAngle: number, color: number): void {
+    const ang = Math.atan2(dy, dx);
+    const x1 = px + Math.cos(ang - halfAngle) * range;
+    const y1 = py + Math.sin(ang - halfAngle) * range;
+    const x2 = px + Math.cos(ang + halfAngle) * range;
+    const y2 = py + Math.sin(ang + halfAngle) * range;
+    const g = this.add.graphics().setDepth(13);
+    g.fillStyle(color, 0.25);
+    g.beginPath();
+    g.moveTo(px, py);
+    g.lineTo(x1, y1);
+    g.lineTo(x2, y2);
+    g.closePath();
+    g.fillPath();
+    this.worldFx.add(g);
+    this.tweens.add({ targets: g, alpha: 0, duration: 320, ease: 'Quad.out', onComplete: () => g.destroy() });
+  }
+
+  /** A thick line/wall wind FX (Jet Stream), fading out (world FX, main camera). */
+  private spawnLineFx(x1: number, y1: number, x2: number, y2: number, width: number, color: number): void {
+    const g = this.add.graphics().setDepth(13);
+    g.lineStyle(width, color, 0.3);
+    g.beginPath();
+    g.moveTo(x1, y1);
+    g.lineTo(x2, y2);
+    g.strokePath();
+    this.worldFx.add(g);
+    this.tweens.add({ targets: g, alpha: 0, duration: 340, ease: 'Quad.out', onComplete: () => g.destroy() });
   }
 
   /** CHARGE (Control #1): a forward rush reusing the dash movement; enemies in the
@@ -1405,22 +1683,33 @@ export class MainScene extends Phaser.Scene {
     this.aoeHitAll(this.player.x, this.player.y, radius, Math.max(4, this.playerDamage() * 0.5));
   }
 
-  /** Apply damage to every enemy type within `range` of (x,y) (reuses the swing helpers). */
-  private aoeHitAll(x: number, y: number, range: number, dmg: number): void {
-    if (this.sasquatch.isAlive && this.sasquatch.distanceTo(x, y) <= range) {
+  /** Apply damage to every enemy type within `range` of (x,y), reusing the per-type
+   *  reward helpers. An optional SHAPE predicate `where(ex,ey)` further filters which
+   *  enemies are hit — this is what lets the CONE (Dust Devil) and LINE/WALL (Jet Stream)
+   *  AoE reuse the exact same full-reward path with a real, non-circular hitbox. */
+  private aoeHitAll(x: number, y: number, range: number, dmg: number, where?: (ex: number, ey: number) => boolean): void {
+    if (this.sasquatch.isAlive && this.sasquatch.distanceTo(x, y) <= range && (!where || where(this.sasquatch.x, this.sasquatch.y))) {
       const dealt = this.sasquatch.takeHit(dmg);
       if (dealt > 0) this.dmgDealtAccum += dealt; // lifesteal accounting
       this.spawnDamageNumber(this.sasquatch.x, this.sasquatch.y - 24, dealt, '#ffcaa0');
-      if (!this.sasquatch.isAlive) this.gainXP(this.sasquatch.xpReward);
+      if (!this.sasquatch.isAlive) this.onSasquatchDefeated();
     }
-    this.hitSwarmersInRange(x, y, range, dmg);
-    this.hitAngelsInRange(x, y, range, dmg);
-    this.hitTownsfolkInRange(x, y, range, dmg);
-    this.hitGuardiansInRange(x, y, range, dmg);
-    this.hitCherubsInRange(x, y, range, dmg);
-    this.hitDemonsInRange(x, y, range, dmg);
-    this.hitBossesInRange(x, y, range, dmg);
+    this.hitSwarmersInRange(x, y, range, dmg, where);
+    this.hitAngelsInRange(x, y, range, dmg, where);
+    this.hitTownsfolkInRange(x, y, range, dmg, where);
+    this.hitGuardiansInRange(x, y, range, dmg, where);
+    this.hitCherubsInRange(x, y, range, dmg, where);
+    this.hitDemonsInRange(x, y, range, dmg, where);
+    this.hitBossesInRange(x, y, range, dmg, where);
     this.applyStaggerIfActive(x, y, range);
+  }
+
+  /** Sasquatch defeat: the banner + quest beat + XP, from ANY kill path (melee, AoE,
+   *  projectile, dash) so the opening quest always advances no matter the class/skill. */
+  private onSasquatchDefeated(): void {
+    this.showBanner('Sasquatch defeated', 1600);
+    this.notifyQuest('sasquatch-defeated');
+    this.gainXP(this.sasquatch.xpReward);
   }
 
   /** Iron Pyrite (capstone form): the player's attacks STAGGER (briefly stun) enemies hit. */
@@ -1673,10 +1962,10 @@ export class MainScene extends Phaser.Scene {
   }
 
   /** Apply damage to every flaming-sword guardian within `range` of (x,y); award XP on kills. */
-  private hitGuardiansInRange(x: number, y: number, range: number, damage: number): void {
+  private hitGuardiansInRange(x: number, y: number, range: number, damage: number, where?: (ex: number, ey: number) => boolean): void {
     for (const g of this.guardians) {
       if (!g.isAlive) continue;
-      if (g.distanceTo(x, y) <= range + 10) {
+      if (g.distanceTo(x, y) <= range + 10 && (!where || where(g.x, g.y))) {
         const dealt = g.takeHit(damage);
         if (dealt > 0) this.dmgDealtAccum += dealt; // lifesteal accounting
         if (dealt > 0) {
@@ -1689,10 +1978,10 @@ export class MainScene extends Phaser.Scene {
   }
 
   /** Apply damage to every townsfolk within `range` of (x,y); award XP on kills. */
-  private hitTownsfolkInRange(x: number, y: number, range: number, damage: number): void {
+  private hitTownsfolkInRange(x: number, y: number, range: number, damage: number, where?: (ex: number, ey: number) => boolean): void {
     for (const t of this.townsfolk) {
       if (!t.isAlive) continue;
-      if (t.distanceTo(x, y) <= range) {
+      if (t.distanceTo(x, y) <= range && (!where || where(t.x, t.y))) {
         const dealt = t.takeHit(damage);
         if (dealt > 0) this.dmgDealtAccum += dealt; // lifesteal accounting
         if (dealt > 0) {
@@ -1705,10 +1994,10 @@ export class MainScene extends Phaser.Scene {
   }
 
   /** Apply damage to every angel within `range` of (x,y); award XP on kills. */
-  private hitAngelsInRange(x: number, y: number, range: number, damage: number): void {
+  private hitAngelsInRange(x: number, y: number, range: number, damage: number, where?: (ex: number, ey: number) => boolean): void {
     for (const a of this.angels) {
       if (!a.isAlive) continue;
-      if (a.distanceTo(x, y) <= range + 8) {
+      if (a.distanceTo(x, y) <= range + 8 && (!where || where(a.x, a.y))) {
         const dealt = a.takeHit(damage);
         if (dealt > 0) this.dmgDealtAccum += dealt; // lifesteal accounting
         if (dealt > 0) {
@@ -1721,11 +2010,11 @@ export class MainScene extends Phaser.Scene {
   }
 
   /** Apply damage to every revealed swarmer within `range` of (x,y); award XP on kills. */
-  private hitSwarmersInRange(x: number, y: number, range: number, damage: number): void {
+  private hitSwarmersInRange(x: number, y: number, range: number, damage: number, where?: (ex: number, ey: number) => boolean): void {
     if (!this.swarmersRevealed) return;
     for (const s of this.swarmers) {
       if (!s.isAlive) continue;
-      if (s.distanceTo(x, y) <= range) {
+      if (s.distanceTo(x, y) <= range && (!where || where(s.x, s.y))) {
         const dealt = s.takeHit(damage);
         if (dealt > 0) this.dmgDealtAccum += dealt; // lifesteal accounting
         if (dealt > 0) {
@@ -1818,6 +2107,7 @@ export class MainScene extends Phaser.Scene {
     this.dashEndsAt = 0;
     this.plowActive = false;
     this.chargeActive = false;
+    this.gustActive = false;
     this.player.sprite.setVelocity(0, 0);
   }
 
@@ -1826,6 +2116,7 @@ export class MainScene extends Phaser.Scene {
     this.dashEndsAt = 0;
     this.plowActive = false;
     this.chargeActive = false;
+    this.gustActive = false;
   }
 
   /** Dash damage reuses the level-derived growth: base + the melee per-level slope. */
@@ -2256,10 +2547,10 @@ export class MainScene extends Phaser.Scene {
   }
 
   /** Apply damage to every Cherub within `range` of (x,y); award XP + drops on kills. */
-  private hitCherubsInRange(x: number, y: number, range: number, damage: number): void {
+  private hitCherubsInRange(x: number, y: number, range: number, damage: number, where?: (ex: number, ey: number) => boolean): void {
     for (const c of this.cherubs) {
       if (!c.isAlive) continue;
-      if (c.distanceTo(x, y) <= range + 14) {
+      if (c.distanceTo(x, y) <= range + 14 && (!where || where(c.x, c.y))) {
         const dealt = c.takeHit(damage);
         if (dealt > 0) this.dmgDealtAccum += dealt; // lifesteal accounting
         if (dealt > 0) {
@@ -2402,10 +2693,10 @@ export class MainScene extends Phaser.Scene {
   }
 
   /** Apply a player hit to every framework boss in range. */
-  private hitBossesInRange(x: number, y: number, range: number, damage: number): void {
+  private hitBossesInRange(x: number, y: number, range: number, damage: number, where?: (ex: number, ey: number) => boolean): void {
     for (const b of this.bosses) {
       if (!b.isAlive) continue;
-      if (b.distanceTo(x, y) <= range + 24) {
+      if (b.distanceTo(x, y) <= range + 24 && (!where || where(b.x, b.y))) {
         const dealt = b.takeHit(damage);
         if (dealt > 0) this.dmgDealtAccum += dealt; // lifesteal accounting
         if (dealt > 0) {
@@ -3155,8 +3446,13 @@ export class MainScene extends Phaser.Scene {
       this.progression.level = Math.max(1, Math.floor(s.player.level));
       this.progression.currentXP = Math.max(0, Math.floor(s.player.currentXP));
       this.skills.load(s.skills); // old saves lack this → defaults to 0 pts / nothing unlocked
+      // Apply the saved class: avatar skin + base-stat profile (drives derived HP/damage).
+      this.classId = this.skills.activeClass;
+      this.progression.profile = classBaseStats(this.classId);
+      this.player.setClassSkin(this.classId);
       this.skillTimed = []; // timed buffs/forms are runtime-only (not persisted)
       this.releaseAllStuns();
+      this.clearSpellHazards(); // drop any Wizard Lava patches
       this.recomputeSkillEffects(); // apply passive maxHP/damage/speed/reduction now
       this.playerHealth.setMax(this.skillAdjustedMaxHP());
       this.playerHealth.current = Phaser.Math.Clamp(s.player.hp, 1, this.playerHealth.max);
@@ -3748,10 +4044,10 @@ export class MainScene extends Phaser.Scene {
   }
 
   /** Apply damage to every Demon within `range` of (x,y); award XP on kills. */
-  private hitDemonsInRange(x: number, y: number, range: number, damage: number): void {
+  private hitDemonsInRange(x: number, y: number, range: number, damage: number, where?: (ex: number, ey: number) => boolean): void {
     for (const d of this.demons) {
       if (!d.isAlive) continue;
-      if (d.distanceTo(x, y) <= range + 10) {
+      if (d.distanceTo(x, y) <= range + 10 && (!where || where(d.x, d.y))) {
         const dealt = d.takeHit(damage);
         if (dealt > 0) this.dmgDealtAccum += dealt; // lifesteal accounting
         if (dealt > 0) {
@@ -4938,6 +5234,7 @@ export class MainScene extends Phaser.Scene {
     this.skillCooldownUntil = {};
     this.skillCooldownDur = {};
     this.releaseAllStuns();
+    this.clearSpellHazards();
     this.skills.hardReset();
     this.progression.reset();
     this.requireStartingSkill(); // no base kit → re-open the forced first-skill pick
@@ -5025,6 +5322,8 @@ export class MainScene extends Phaser.Scene {
       { label: 'Reset Holy Power', onPress: () => this.holyPower.reset() },
       { label: 'Grant Skill Points (+5)', onPress: () => this.skills.awardPoints(5) },
       { label: 'Reset Skills', onPress: () => this.devResetSkills() },
+      { label: 'Set Class: Wizard', onPress: () => this.devSetClass('wizard') },
+      { label: 'Set Class: Blacksmith', onPress: () => this.devSetClass('blacksmith') },
       { label: 'Start Portal Defense', onPress: () => this.devStartPortalDefense() },
       { label: 'Stop Portal Defense', onPress: () => this.resetPortalDefense() },
       { label: 'Refill Energy', onPress: () => this.energy.full() },

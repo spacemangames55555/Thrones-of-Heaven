@@ -1,12 +1,4 @@
-import {
-  BASE_XP,
-  GROWTH_FACTOR,
-  MAX_LEVEL,
-  BASE_MAX_HP,
-  HP_PER_LEVEL,
-  BASE_DAMAGE,
-  DMG_PER_LEVEL,
-} from '../game/settings';
+import { BASE_XP, GROWTH_FACTOR, MAX_LEVEL, classBaseStats, type ClassBaseStats } from '../game/settings';
 
 /**
  * The player's leveling state — DATA + a generic XP curve. Deliberately knows
@@ -21,8 +13,18 @@ export class PlayerProgression {
   level = 1;
   currentXP = 0;
 
+  /** The active class's base-stat profile (HP/damage slopes + move speed). Defaults to
+   *  the Blacksmith baseline; the scene sets it from the chosen/loaded class. */
+  profile: ClassBaseStats = classBaseStats('blacksmith');
+
   /** Fired whenever level or XP changes (UI refresh hook). */
   onChange?: () => void;
+
+  /** Point the progression at a class's base-stat profile (HP/damage/move per class). */
+  setClass(classId: string): void {
+    this.profile = classBaseStats(classId);
+    this.onChange?.();
+  }
 
   /** True once the level cap is reached. */
   get isMaxLevel(): boolean {
@@ -46,14 +48,14 @@ export class PlayerProgression {
     return Math.max(0, Math.min(1, this.currentXP / need));
   }
 
-  /** Level-derived maximum HP. */
+  /** Level-derived maximum HP (per the active class's profile). */
   get effectiveMaxHP(): number {
-    return BASE_MAX_HP + (this.level - 1) * HP_PER_LEVEL;
+    return this.profile.baseMaxHP + (this.level - 1) * this.profile.hpPerLevel;
   }
 
-  /** Level-derived melee swing damage. */
+  /** Level-derived base/melee damage (per the active class's profile). */
   get effectiveDamage(): number {
-    return BASE_DAMAGE + (this.level - 1) * DMG_PER_LEVEL;
+    return this.profile.baseDamage + (this.level - 1) * this.profile.dmgPerLevel;
   }
 
   /**

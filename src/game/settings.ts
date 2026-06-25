@@ -101,6 +101,41 @@ export const BASE_DAMAGE = 25;
 /** Extra melee damage gained per level. */
 export const DMG_PER_LEVEL = 5;
 
+/**
+ * PER-CLASS BASE STATS. The four constants above are the BLACKSMITH baseline; each
+ * playable class scales HP/damage/move-speed off its own profile so classes feel
+ * distinct (the Blacksmith is a tanky bruiser; the Wizard is a fragile glass-cannon
+ * caster). PlayerProgression reads the active class's profile for effectiveMaxHP /
+ * effectiveDamage; the scene applies `moveSpeedMult` on top of skill move bonuses.
+ * Keyed by ClassId string to avoid a settings→skills import cycle. EDIT TO TUNE.
+ */
+export interface ClassBaseStats {
+  /** HP pool at level 1. */
+  baseMaxHP: number;
+  /** Extra max HP per level. */
+  hpPerLevel: number;
+  /** Ability/melee base damage at level 1 (skill damage scales off this via the level slope). */
+  baseDamage: number;
+  /** Extra base damage per level. */
+  dmgPerLevel: number;
+  /** Class move-speed multiplier (1 = the Blacksmith baseline). */
+  moveSpeedMult: number;
+}
+
+export const CLASS_BASE_STATS: Record<string, ClassBaseStats> = {
+  // Blacksmith — the existing tanky baseline (unchanged numbers).
+  blacksmith: { baseMaxHP: BASE_MAX_HP, hpPerLevel: HP_PER_LEVEL, baseDamage: BASE_DAMAGE, dmgPerLevel: DMG_PER_LEVEL, moveSpeedMult: 1 },
+  // Wizard — fragile glass cannon: low HP, slightly faster, high spell damage.
+  wizard: { baseMaxHP: 60, hpPerLevel: 11, baseDamage: 34, dmgPerLevel: 8, moveSpeedMult: 1.1 },
+  // Necromancer — "Coming Soon"; falls back to the Blacksmith baseline if ever set active.
+  necromancer: { baseMaxHP: BASE_MAX_HP, hpPerLevel: HP_PER_LEVEL, baseDamage: BASE_DAMAGE, dmgPerLevel: DMG_PER_LEVEL, moveSpeedMult: 1 },
+};
+
+/** The base-stat profile for a class id (defaults to the Blacksmith baseline). */
+export function classBaseStats(classId: string): ClassBaseStats {
+  return CLASS_BASE_STATS[classId] ?? CLASS_BASE_STATS.blacksmith;
+}
+
 /** XP awarded for defeating the Sasquatch (each enemy carries its own xpReward). */
 export const SASQUATCH_XP_REWARD = 35;
 

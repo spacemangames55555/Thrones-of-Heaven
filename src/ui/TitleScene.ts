@@ -74,11 +74,16 @@ export class TitleScene extends Phaser.Scene {
     if (hasSave) {
       this.showConfirm('Start a new game?\nThis OVERWRITES your existing save.', () => {
         SaveSystem.clear();
-        this.launch('new');
+        this.toCharacterSelect();
       });
     } else {
-      this.launch('new');
+      this.toCharacterSelect();
     }
+  }
+
+  /** New Game → pick a class first (the class then drives the forced first-skill pick). */
+  private toCharacterSelect(): void {
+    this.scene.start('CharacterSelectScene');
   }
 
   private onContinue(): void {

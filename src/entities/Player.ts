@@ -2,25 +2,33 @@ import Phaser from 'phaser';
 import { PLAYER_SPEED_TILES_PER_SEC } from '../game/settings';
 import { TILE_SIZE } from '../render/tileAtlas';
 
-const TEXTURE_KEY = 'player-figure';
+const TEXTURE_KEY = 'player-figure'; // Blacksmith (gold soul/herald) avatar
+const WIZARD_TEXTURE_KEY = 'wizard-figure'; // Wizard (Egyptian sorcerer) avatar
 const WIDTH = 32; // ~1 tile wide
 const HEIGHT = 48; // ~1.5 tiles tall — fixes the "character = one giant block" look
 const SPEED = PLAYER_SPEED_TILES_PER_SEC * TILE_SIZE; // px/sec
 
+/** Pick the avatar texture for a class id (defaults to the Blacksmith figure). */
+function textureForClass(classId: string): string {
+  return classId === 'wizard' ? WIZARD_TEXTURE_KEY : TEXTURE_KEY;
+}
+
 /**
  * The player avatar: a simple colored figure (~1 x 1.5 tiles) driven by Arcade
- * Physics. Same placeholder gold "soul/herald" look as before, just sized for
- * 32px tiles. Movement is free and analog (8-directional), never grid-snapped.
+ * Physics. The look is per-class (the gold Blacksmith herald, or the Egyptian
+ * sorcerer Wizard) but the body/footprint are identical so movement + collision are
+ * class-agnostic. Movement is free and analog (8-directional), never grid-snapped.
  */
 export class Player {
   readonly sprite: Phaser.Physics.Arcade.Sprite;
-  /** Move-speed multiplier (1 = base). Skill passives/buffs set this above 1. */
+  /** Move-speed multiplier (1 = base). Skill passives/buffs + class base speed set this. */
   speedMultiplier = 1;
 
-  constructor(scene: Phaser.Scene, x: number, y: number) {
+  constructor(scene: Phaser.Scene, x: number, y: number, classId: string = 'blacksmith') {
     Player.ensureTexture(scene);
+    Player.ensureWizardTexture(scene);
 
-    this.sprite = scene.physics.add.sprite(x, y, TEXTURE_KEY);
+    this.sprite = scene.physics.add.sprite(x, y, textureForClass(classId));
     this.sprite.setCollideWorldBounds(true);
     this.sprite.setDepth(10);
 
@@ -73,6 +81,12 @@ export class Player {
     });
   }
 
+  /** Re-skin the avatar for a class (used when a save loads a different class). Keeps
+   *  any active tint/transform; only swaps the base texture. */
+  setClassSkin(classId: string): void {
+    this.sprite.setTexture(textureForClass(classId));
+  }
+
   get x(): number {
     return this.sprite.x;
   }
@@ -96,6 +110,43 @@ export class Player {
     g.fillStyle(0xffffff, 0.85);
     g.fillCircle(w / 2 - 3, 11, 2); // tiny highlight
     g.generateTexture(TEXTURE_KEY, w, h);
+    g.destroy();
+  }
+
+  /** The Wizard avatar — an Egyptian sorcerer: deep-blue robe, gold trim, a striped
+   *  nemes-style headdress, and a small staff. Same footprint as the Blacksmith figure. */
+  private static ensureWizardTexture(scene: Phaser.Scene): void {
+    if (scene.textures.exists(WIZARD_TEXTURE_KEY)) return;
+    const w = WIDTH;
+    const h = HEIGHT;
+    const g = scene.make.graphics({ x: 0, y: 0 }, false);
+    // Dark outline + deep-blue robe body (a vertical caster capsule).
+    g.fillStyle(0x0b0f1c, 1);
+    g.fillRoundedRect(4, 8, w - 8, h - 10, 9);
+    g.fillStyle(0x21347a, 1); // lapis-blue robe
+    g.fillRoundedRect(6, 10, w - 12, h - 14, 7);
+    // Gold robe trim down the center (Egyptian collar/hem feel).
+    g.fillStyle(0xffd24a, 1);
+    g.fillRect(w / 2 - 1.5, 18, 3, h - 24);
+    g.fillRoundedRect(8, 18, w - 16, 4, 2); // gold collar
+    // Head + striped nemes headdress.
+    g.fillStyle(0xe8c79a, 1); // warm skin
+    g.fillCircle(w / 2, 13, 6);
+    g.fillStyle(0x2a6ec0, 1); // blue headdress drape
+    g.fillRoundedRect(w / 2 - 8, 7, 16, 9, 3);
+    g.fillStyle(0xffd24a, 1); // gold band
+    g.fillRect(w / 2 - 8, 12, 16, 2);
+    g.fillStyle(0xe8c79a, 1); // face opening
+    g.fillCircle(w / 2, 13, 4);
+    g.fillStyle(0x101418, 1); // eyes
+    g.fillCircle(w / 2 - 2, 13, 1);
+    g.fillCircle(w / 2 + 2, 13, 1);
+    // A small staff with a glowing ember tip on the right.
+    g.fillStyle(0x6b4a2a, 1);
+    g.fillRect(w - 7, 12, 2, h - 20);
+    g.fillStyle(0xff7a2a, 1);
+    g.fillCircle(w - 6, 11, 3);
+    g.generateTexture(WIZARD_TEXTURE_KEY, w, h);
     g.destroy();
   }
 }
