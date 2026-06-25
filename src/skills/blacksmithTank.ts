@@ -16,10 +16,10 @@ import type { SkillDef } from './skillData';
 
 // ─── TUNING (all starting values; tune freely) ────────────────────────────────
 export const TANK_TUNING = {
-  /** 1) GRIT — passive max-HP %. */
-  grit: { maxHPMult: 0.2 },
-  /** 2) SHIELD BASH — active melee + stun. */
+  /** 1) SHIELD BASH — ENTRY damaging active (melee + stun). First node of the tree. */
   shieldBash: { damage: 24, range: 70, stunMs: 1000, cooldownMs: 7000, energyCost: 15 },
+  /** 2) GRIT — passive max-HP %. */
+  grit: { maxHPMult: 0.2 },
   /** 3) IRON HIDE — passive damage reduction. */
   ironHide: { damageReduction: 0.15 },
   /** 4) SHOVE — active knockback (low damage). */
@@ -42,23 +42,26 @@ export const TANK_TUNING = {
 // >>> EDIT NAMES / DESCRIPTIONS HERE (placeholder prose). <<<
 export const TANK_TREE_SKILLS: SkillDef[] = [
   {
-    id: 'bs_tank_grit',
-    tree: 'defense',
-    name: 'Grit',
-    description: `Toughened flesh. +${Math.round(TANK_TUNING.grit.maxHPMult * 100)}% maximum HP.`,
-    cost: 1,
-    tier: 0,
-    effect: { kind: 'passive', stats: { maxHPMult: TANK_TUNING.grit.maxHPMult } },
-  },
-  {
+    // ENTRY NODE — must be a DAMAGING ACTIVE (no base kit; this can be the player's
+    // sole starting ability, so it has to be able to defeat the first enemy). Grit
+    // (the old opener) now sits at tier 1, just below.
     id: 'bs_tank_shield_bash',
     tree: 'defense',
     name: 'Shield Bash',
     description: `Activate: a short shield strike — moderate damage and STUNS hit enemies for ${(TANK_TUNING.shieldBash.stunMs / 1000).toFixed(1)}s.`,
     cost: 1,
-    prereq: 'bs_tank_grit',
-    tier: 1,
+    tier: 0,
     effect: { kind: 'active', action: 'shield_bash', cooldownMs: TANK_TUNING.shieldBash.cooldownMs, energyCost: TANK_TUNING.shieldBash.energyCost },
+  },
+  {
+    id: 'bs_tank_grit',
+    tree: 'defense',
+    name: 'Grit',
+    description: `Toughened flesh. +${Math.round(TANK_TUNING.grit.maxHPMult * 100)}% maximum HP.`,
+    cost: 1,
+    prereq: 'bs_tank_shield_bash',
+    tier: 1,
+    effect: { kind: 'passive', stats: { maxHPMult: TANK_TUNING.grit.maxHPMult } },
   },
   {
     id: 'bs_tank_iron_hide',
@@ -66,7 +69,7 @@ export const TANK_TREE_SKILLS: SkillDef[] = [
     name: 'Iron Hide',
     description: `Hardened skin. −${Math.round(TANK_TUNING.ironHide.damageReduction * 100)}% incoming damage.`,
     cost: 1,
-    prereq: 'bs_tank_shield_bash',
+    prereq: 'bs_tank_grit',
     tier: 2,
     effect: { kind: 'passive', stats: { damageReduction: TANK_TUNING.ironHide.damageReduction } },
   },
