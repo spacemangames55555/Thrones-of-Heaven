@@ -52,6 +52,7 @@ import {
   QUEST_REGISTRY,
   THE_CORRUPTION_AT_THE_GATES,
   PATRON_IDLE_LINES,
+  TARGET_WORLD,
   type ObjectiveTrigger,
   type TargetKind,
   type QuestDef,
@@ -1719,6 +1720,7 @@ export class MainScene extends Phaser.Scene {
       this.michaelDefeated = true; // GATE: unlocks the God's-judgment beat at the throne
       this.showBanner(MICHAEL_VICTORY_LINE, 3000);
       this.time.delayedCall(3200, () => this.showBanner(GOD_JUDGMENT_HOOK, 4200));
+      this.notifyQuest('michael-defeated'); // Quest 6 obj 1 → arrow now points to the throne
     } else if (sinIndex >= 0) {
       this.onSinDefeated(sinIndex); // advance the gauntlet + unlock/mark the next Sin
     } else if (boss === this.dragonBoss || boss === this.beastBoss || boss === this.satanBoss) {
@@ -2676,6 +2678,7 @@ export class MainScene extends Phaser.Scene {
     for (const g of this.guardians) g.activate();
     this.guardianPhase = 'fighting';
     this.showBanner('The flaming swords awaken!', 1800);
+    this.notifyQuest('reach-holy-outpost'); // Quest 5 obj 1: reached the Holy Outpost
   }
 
   /** RESET: swords back to dormant + full HP, the portal back to holy/uncorrupted. */
@@ -2704,6 +2707,7 @@ export class MainScene extends Phaser.Scene {
     if (this.guardianPhase === 'fighting' && this.guardians.every((g) => !g.isAlive)) {
       this.guardianPhase = 'defeated';
       this.showBanner('The guardians fall — the gate lies unguarded.', 2600);
+      this.notifyQuest('guardians-defeated'); // Quest 5 obj 2
     }
 
     // The "Corrupt the Portal" button shows only once defeated and near the portal.
@@ -2753,6 +2757,7 @@ export class MainScene extends Phaser.Scene {
     this.heavenPortal.corrupt(PORTAL_CORRUPT_DURATION_MS, () => {
       this.guardianPhase = 'corrupted';
       this.showBanner(CORRUPT_PORTAL_LINE, 3200);
+      this.notifyQuest('portal-corrupted'); // Quest 5 obj 3
     });
   }
 
@@ -3097,6 +3102,7 @@ export class MainScene extends Phaser.Scene {
     this.judgmentFired = true;
     this.judgmentActive = false;
     this.reenableControls = true; // resume play; the Hell portal now stands at the throne
+    this.notifyQuest('throne-judgment'); // Quest 6 obj 2 → arrow now points to the Hell portal
     this.autosave(); // meaningful moment: judgment + power-swap done, Hell opened
   }
 
@@ -3481,6 +3487,11 @@ export class MainScene extends Phaser.Scene {
             this.transitioning = false;
             this.worldCooldownUntil = this.time.now + WORLD_TRANSITION_COOLDOWN_MS;
             if (!this.playerDead) this.controls.setEnabled(true);
+            // Quest hooks off the EXISTING transition: arriving in Heaven completes
+            // Quest 5's last objective (and auto-starts Quest 6); arriving in Hell
+            // completes Quest 6's last objective. No-ops if not the active objective.
+            if (worldId === WORLD_HEAVEN) this.notifyQuest('entered-heaven');
+            else if (worldId === WORLD_HELL) this.notifyQuest('entered-hell');
             this.autosave(); // meaningful moment: a world transition completed
           },
         });
@@ -3927,12 +3938,20 @@ export class MainScene extends Phaser.Scene {
   /** React to discrete quest lifecycle events (kept out of frame logic). */
   private handleQuestEvent(e: QuestEvent): void {
     switch (e.type) {
-      case 'started':
+      case 'started': {
         // No-soft-lock: if the opening beast was already slain, respawn it.
         if (e.questId === 'corruption-at-the-gates' && !this.sasquatch.isAlive) this.sasquatch.reset();
         if (this.DESCENT_IDS.has(e.questId)) this.beginArcObjective(); // set up objective 0
+        // Auto-activating climax quests have no NPC: show their start narration as a
+        // banner (a beat after any preceding completion banner reads).
+        const startDef = this.chain.get(e.questId);
+        if (startDef?.autoActivate && startDef.npcInactiveLines.length) {
+          const narration = startDef.npcInactiveLines.join('  ');
+          this.time.delayedCall(1300, () => this.showBanner(`${startDef.title}\n\n${narration}`, 4200));
+        }
         this.refreshQuestUi();
         break;
+      }
       case 'objective-complete':
         // For descent quests, set up the NEXT objective's world state (the chain
         // has already advanced; if that was the last objective, activeObjectiveDef
@@ -3945,9 +3964,17 @@ export class MainScene extends Phaser.Scene {
         this.grantQuestReward(e.questId);
         this.refreshQuestUi();
         break;
-      case 'unlocked':
-        // Informational (a later quest became available); the marker/giver handle it.
+      case 'unlocked': {
+        // Auto-activating quests (the climax) START the moment they unlock — no NPC
+        // turn-in. Guard on no active quest (one active at a time). This is what
+        // makes Quest 5 begin on descent-4 completion and Quest 6 begin on the
+        // entered-Heaven transition that completes Quest 5.
+        const def = this.chain.get(e.questId);
+        if (def?.autoActivate && !this.chain.activeQuest && this.chain.status(e.questId) === 'available') {
+          this.acceptQuest(e.questId);
+        }
         break;
+      }
     }
     // Autosave on real quest progress (not the informational 'unlocked' event).
     if (e.type !== 'unlocked') this.autosave();
@@ -4285,18 +4312,30 @@ export class MainScene extends Phaser.Scene {
     this.tracker.updateArrow(this.cameras.main, t);
   }
 
-  /** Where the objective marker should point right now, or null for none. */
+  /**
+   * Where the objective marker should point right now, or null for none.
+   *
+   * WORLD-AWARE (Guidance Build 1): the gold beacon + the off-screen edge arrow
+   * show the active objective's target ONLY when the player is in the SAME world
+   * as that target (TARGET_WORLD). In a different world we point at nothing — no
+   * cross-world arrows — so e.g. once the player drops into Hell, Quest 6's last
+   * (Heaven) target stops drawing and the Sin beacon owns the screen. This works
+   * in Heaven and Hell now, not just Earth (the marker layer + the tracker arrow
+   * already render in any world; only this gate was Earth-only before).
+   */
   private currentMarkerTarget(): { x: number; y: number; label: string } | null {
-    // Quests live on Earth; no marker while in Heaven.
-    if (this.activeWorld !== WORLD_EARTH) return null;
-    // Active quest → its current objective's world target.
+    // Active quest → its current objective's world target, if we're in its world.
     const active = this.chain.activeQuest;
     if (active) {
       const obj = this.chain.activeObjectiveDef;
-      return obj && obj.target ? this.resolveTarget(obj.target) : null;
+      if (!obj || !obj.target) return null;
+      if (TARGET_WORLD[obj.target] !== this.activeWorld) return null; // don't point across worlds
+      return this.resolveTarget(obj.target);
     }
-    // No active quest → point at the giver of the next OFFERABLE quest (the
-    // pre-accept pointer), so finishing one quest leads to the next.
+    // No active quest → the pre-accept pointer to the next OFFERABLE quest's giver.
+    // Givers live on Earth, so this only applies on Earth (auto-activating climax
+    // quests have no giver and need no pre-accept pointer).
+    if (this.activeWorld !== WORLD_EARTH) return null;
     for (const g of this.questGivers) {
       const offer = this.offerableQuest(g);
       if (offer) {
@@ -4330,6 +4369,19 @@ export class MainScene extends Phaser.Scene {
         return { x: DESCENT_LOC_A.x, y: DESCENT_LOC_A.y, label: '' };
       case 'loc-b':
         return { x: DESCENT_LOC_B.x, y: DESCENT_LOC_B.y, label: '' };
+      // --- Climax arc (the Holy Outpost is on Earth; the rest are in Heaven) ---
+      case 'holy-outpost':
+        return { x: HOLY_OUTPOST_POSITION.x, y: HOLY_OUTPOST_POSITION.y, label: '' };
+      case 'michael':
+        return { x: this.michael.x, y: this.michael.y, label: '' };
+      case 'throne':
+        return { x: this.thronePos.x, y: this.thronePos.y, label: '' };
+      case 'hell-portal':
+        // The Hell portal opens at the throne once judgment fires; before then,
+        // fall back to the throne position so the arrow never goes blank mid-quest.
+        return this.hellPortal
+          ? { x: this.hellPortal.x, y: this.hellPortal.y, label: '' }
+          : { x: this.thronePos.x, y: this.thronePos.y, label: '' };
     }
   }
 
