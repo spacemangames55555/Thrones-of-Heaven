@@ -81,6 +81,7 @@ Currently mapped real tiles:
 | `Mountain_pass.png` | `pass` | Mountain Pass |
 | `Urbantown_ground.png` | `urban` | Urban / Town |
 | `Bridge.png` | `bridge` | Bridge |
+| `Corruptionrift.png` | `corruption_rift` | Corruption Rift |
 
 ## Swapping the WHOLE atlas at once (alternative)
 

@@ -135,6 +135,7 @@ export const TERRAIN_TILE_IMAGES: { key: string; file: string }[] = [
   { key: 'pass', file: 'tiles/terrain/Mountain_pass.png' }, // Mountain_pass.png → "Mountain Pass"
   { key: 'urban', file: 'tiles/terrain/Urbantown_ground.png' }, // Urbantown_ground.png → "Urban / Town"
   { key: 'bridge', file: 'tiles/terrain/Bridge.png' }, // Bridge.png → "Bridge"
+  { key: 'corruption_rift', file: 'tiles/terrain/Corruptionrift.png' }, // Corruptionrift.png → "Corruption Rift"
 ];
 
 /** Texture cache key under which a terrain's real tile PNG is loaded. */
