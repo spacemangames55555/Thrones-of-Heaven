@@ -1,4 +1,5 @@
 import { QUEST_XP_REWARD } from '../game/settings';
+import { WORLD_EARTH, WORLD_HEAVEN, type WorldId } from '../world/worlds';
 
 /**
  * Quests — DATA, not code. This file is the QUEST REGISTRY: every quest the game
@@ -27,7 +28,17 @@ export type ObjectiveTrigger =
   | 'oc-angels-plundered'
   | 'loca-angels-plundered'
   | 'locb-angels-plundered'
-  | 'reach-outpost';
+  | 'reach-outpost'
+  // The Climax arc (Quests 5–6) — each fires off an EXISTING world event, no new
+  // encounters (see MainScene: startGuardianFight, guardian-defeat, corruptPortal,
+  // travelToWorld, the god-judgment hook, godJudgmentComplete):
+  | 'reach-holy-outpost'
+  | 'guardians-defeated'
+  | 'portal-corrupted'
+  | 'entered-heaven'
+  | 'michael-defeated'
+  | 'throne-judgment'
+  | 'entered-hell';
 
 /** Which world thing the objective marker points at (resolved to a position by the scene). */
 export type TargetKind =
@@ -40,7 +51,34 @@ export type TargetKind =
   | 'farm-field'
   | 'shipment'
   | 'loc-a'
-  | 'loc-b';
+  | 'loc-b'
+  // The Climax arc locations:
+  | 'holy-outpost' // Earth — Holy Outpost == the Heaven Portal site
+  | 'michael' // Heaven — Archangel Michael's sanctum
+  | 'throne' // Heaven — God's throne (judgment site)
+  | 'hell-portal'; // Heaven — the Hell portal that opens at the throne
+
+/**
+ * The WORLD each marker target lives in. The scene only shows the gold beacon +
+ * the off-screen edge arrow when the player is in the SAME world as the active
+ * objective's target (no pointing across worlds). Adding a target above = add its
+ * world here. All Descent/opening targets are on Earth; the Climax adds Heaven.
+ */
+export const TARGET_WORLD: Record<TargetKind, WorldId> = {
+  sasquatch: WORLD_EARTH,
+  rift: WORLD_EARTH,
+  npc: WORLD_EARTH,
+  outpost: WORLD_EARTH,
+  'oregon-city': WORLD_EARTH,
+  'farm-field': WORLD_EARTH,
+  shipment: WORLD_EARTH,
+  'loc-a': WORLD_EARTH,
+  'loc-b': WORLD_EARTH,
+  'holy-outpost': WORLD_EARTH,
+  michael: WORLD_HEAVEN,
+  throne: WORLD_HEAVEN,
+  'hell-portal': WORLD_HEAVEN,
+};
 
 export interface ObjectiveDef {
   /** Shown in the objective tracker as the player's current goal. */
@@ -74,6 +112,13 @@ export interface QuestDef {
   readonly prerequisites: readonly string[];
   /** If true, the giver only OFFERS this quest while the player is corrupted (the descent gate). */
   readonly requiresCorruption?: boolean;
+  /**
+   * If true, this quest AUTO-ACTIVATES the moment it becomes available (its
+   * prerequisite completes) — no NPC turn-in. Used for the main-story climax
+   * (Quests 5–6), which is a forward march with no friendly givers. The scene
+   * shows `npcInactiveLines` as start narration when an auto-quest begins.
+   */
+  readonly autoActivate?: boolean;
   /** ORDERED objectives — the player works through them top to bottom. */
   readonly objectives: readonly ObjectiveDef[];
 
@@ -243,7 +288,75 @@ export const DESCENT_4: QuestDef = {
     holyPower: 25,
     title: 'Harbinger',
     banner: 'THE DESCENT — Arc Complete',
-    note: 'The way to the holy outpost lies ahead… (to be continued — the climax is not yet built.)',
+    // >>> EDIT THE DESCENT→CLIMAX HAND-OFF LINE HERE. Quest 5 auto-starts the
+    //     instant this completes, so this is no longer a dead end. <<<
+    note: 'The Holy Outpost wards the last gate between worlds. Defile it.',
+  },
+};
+
+/**
+ * THE CLIMAX ARC (Quests 5–6) — the main-story forward march that replaces the
+ * old proximity-only climax with real guidance. Both AUTO-ACTIVATE (no NPC: there
+ * are no friends in Heaven), wrap EXISTING encounters (guardians, portal
+ * corruption, Michael, the throne judgment, the portals) with objectives + a
+ * world-aware marker/arrow, and use `npcInactiveLines` as start narration.
+ *
+ * >>> EDIT QUEST 5 & 6 TEXT HERE: `title`, every objective `text`, and
+ *     `npcInactiveLines` (the quest-start narration / the patron's whisper shown
+ *     as a banner when the quest auto-begins). The other npc*Lines are unused
+ *     (these quests have no giver) but kept to satisfy the shared QuestDef shape.
+ */
+
+/** QUEST 5 — guides the descent→Heaven hand-off (fixes the unmarked Holy Outpost gap). */
+export const QUEST_5_THE_DEFILED_GATE: QuestDef = {
+  id: 'climax-defiled-gate',
+  title: 'The Defiled Gate', // [placeholder]
+  prerequisites: ['descent-4'],
+  autoActivate: true,
+  objectives: [
+    // All four objectives sit at the same Earth coordinate (the Holy Outpost IS the
+    // Heaven Portal site), so the arrow points there for the whole quest.
+    { text: 'Travel to the Holy Outpost', trigger: 'reach-holy-outpost', target: 'holy-outpost' },
+    { text: 'Destroy the flaming-sword guardians', trigger: 'guardians-defeated', target: 'holy-outpost' },
+    { text: 'Corrupt the Heaven Portal', trigger: 'portal-corrupted', target: 'holy-outpost' },
+    { text: 'Enter the Heaven Portal', trigger: 'entered-heaven', target: 'holy-outpost' },
+  ],
+  // [placeholder narration — shown as a banner when the quest auto-starts]
+  npcInactiveLines: [
+    'The Harbinger’s road ends at a gate of light to the north — the Holy Outpost. Tear it open.',
+  ],
+  npcActiveLines: [],
+  npcCompleteLines: [],
+  preAcceptHint: 'Defile the Holy Outpost',
+  reward: {
+    healToFull: true,
+    xp: 250,
+    banner: 'The Defiled Gate — complete', // [placeholder]
+  },
+};
+
+/** QUEST 6 — guides Heaven→Michael→throne→Hell (fixes the silently-skippable finale). */
+export const QUEST_6_JUDGMENT: QuestDef = {
+  id: 'climax-judgment',
+  title: 'Judgment', // [placeholder]
+  prerequisites: ['climax-defiled-gate'],
+  autoActivate: true, // begins the instant Heaven is entered (Quest 5's last objective)
+  objectives: [
+    { text: 'Cut down Archangel Michael', trigger: 'michael-defeated', target: 'michael' },
+    { text: 'Approach the throne', trigger: 'throne-judgment', target: 'throne' },
+    { text: 'Descend through the Hell Portal', trigger: 'entered-hell', target: 'hell-portal' },
+  ],
+  // [placeholder narration — shown as a banner when the quest auto-starts on arrival in Heaven]
+  npcInactiveLines: [
+    'Heaven lies open before you. Its champion bars the way to the throne — and to what waits beyond it.',
+  ],
+  npcActiveLines: [],
+  npcCompleteLines: [],
+  preAcceptHint: 'Ascend to the throne',
+  reward: {
+    healToFull: true,
+    xp: 400,
+    banner: 'Judgment — complete', // [placeholder]
   },
 };
 
@@ -268,4 +381,6 @@ export const QUEST_REGISTRY: readonly QuestDef[] = [
   DESCENT_2,
   DESCENT_3,
   DESCENT_4,
+  QUEST_5_THE_DEFILED_GATE,
+  QUEST_6_JUDGMENT,
 ];
