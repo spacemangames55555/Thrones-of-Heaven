@@ -657,6 +657,7 @@ export class MainScene extends Phaser.Scene {
     // Zoom keeps smoothing every frame, even during dialogue.
     this.zoomControls.update(delta);
     this.updateCombatHud();
+    this.updateClimaxQuestActivation(); // self-healing climax start + world catch-up (all worlds)
     this.updateObjectiveMarker();
     this.updateSinMarker();
     this.updateLairEntry();
@@ -4302,6 +4303,49 @@ export class MainScene extends Phaser.Scene {
       return `  (Holy Power ${Math.max(0, got)}/${this.arcHolyRequired}, ${left} angels left)`;
     }
     return '';
+  }
+
+  /**
+   * Self-healing activation for the auto-activate (main-story climax) quests, run
+   * every frame in EVERY world. These quests have no NPC giver, so they must start
+   * themselves — and the chain must never lag behind the player's actual world.
+   *
+   * This is the robust fix for "no quest arrow in Heaven": Quest 6's activation used
+   * to hang entirely off the single one-shot `entered-heaven` event firing inside the
+   * world-transition tween. If that was ever missed — a loaded save (chain.load runs
+   * before activeWorld is set), a player who reached Heaven on an older build with no
+   * climax quests, or any re-entrancy — Quest 6 never activated and the marker stayed
+   * null. Now:
+   *   1) If NO quest is active, start the first AVAILABLE auto-activate quest.
+   *   2) Fast-forward an active climax quest past any objective whose target world the
+   *      player has ALREADY moved beyond (forward-march), so the active objective's
+   *      world always matches where the player actually is. In a clean playthrough
+   *      step (2) never triggers; it only catches the chain up after a skip / stale save.
+   * NPC-given quests (opening + descent) are never auto-activated (no autoActivate flag).
+   */
+  private updateClimaxQuestActivation(): void {
+    let guard = 0;
+    while (guard++ < 16) {
+      if (!this.chain.activeQuest) {
+        // (1) Start the next available auto-activate quest, if any.
+        const next = QUEST_REGISTRY.find((d) => d.autoActivate && this.chain.status(d.id) === 'available');
+        if (!next) break;
+        this.acceptQuest(next.id);
+      }
+      const q = this.chain.activeQuest;
+      if (!q?.autoActivate) break; // NPC quest or none → leave it alone
+      const obj = this.chain.activeObjectiveDef;
+      if (!obj?.target) break;
+      // (2) Keep the objective only if its world is the player's world or ahead;
+      //     otherwise we've passed it — complete it and re-check.
+      if (this.worldOrder(TARGET_WORLD[obj.target]) >= this.worldOrder(this.activeWorld)) break;
+      this.notifyQuest(obj.trigger);
+    }
+  }
+
+  /** Forward-march ordering of the worlds (Earth → Heaven → Hell) for quest catch-up. */
+  private worldOrder(w: WorldId): number {
+    return w === WORLD_EARTH ? 0 : w === WORLD_HEAVEN ? 1 : 2;
   }
 
   /** Position the world marker on the current target and update the edge arrow. */
