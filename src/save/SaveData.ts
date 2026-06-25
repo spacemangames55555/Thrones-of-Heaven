@@ -2,9 +2,10 @@ import type { QuestChainState } from '../quest/QuestChain';
 import type { TrinityStage } from '../boss/TrinitySequence';
 import type { PowerAlignment } from '../player/PlayerPower';
 import type { PlayerPath } from '../story/playerPath';
+import type { SkillSaveState } from '../skills/SkillState';
 
 /** Bump when the SaveData shape changes; SaveSystem.read can then migrate old saves. */
-export const SAVE_VERSION = 1;
+export const SAVE_VERSION = 2;
 /** The single localStorage slot key. */
 export const SAVE_KEY = 'toh_save';
 
@@ -43,6 +44,10 @@ export interface SaveData {
 
   /** The full quest-chain state (completed set + active quest + objective index). */
   quests: QuestChainState;
+
+  /** Skill economy: active class, unspent points, and unlocked skills per class.
+   *  Optional so v1 saves (no skill data) load gracefully → 0 points / nothing unlocked. */
+  skills?: SkillSaveState;
 
   /** Boss / endgame progress + the unlock flags that gate content. */
   progress: {

@@ -31,9 +31,9 @@ export class PauseScene extends Phaser.Scene {
     this.add.rectangle(cx, h / 2, w, h, 0x05060a, 0.6).setInteractive();
 
     const panelW = Math.min(300, w - 48);
-    this.add.rectangle(cx, h / 2, panelW, 280, 0x161018, 0.98).setStrokeStyle(2, 0xffd24a, 0.9);
+    this.add.rectangle(cx, h / 2, panelW, 336, 0x161018, 0.98).setStrokeStyle(2, 0xffd24a, 0.9);
     this.add
-      .text(cx, h / 2 - 104, 'Paused', {
+      .text(cx, h / 2 - 134, 'Paused', {
         fontFamily: 'Georgia, serif',
         fontSize: '26px',
         color: '#ffe9a8',
@@ -42,13 +42,14 @@ export class PauseScene extends Phaser.Scene {
       .setOrigin(0.5);
 
     const btnW = panelW - 48;
-    this.makeButton(cx, h / 2 - 50, btnW, 'Resume', 0x13506b, 0x49d6ff, () => this.resumeGame());
-    this.makeButton(cx, h / 2 + 6, btnW, 'Save Game', 0x1d2b40, 0x9fd0ff, () => this.onSave());
-    this.makeButton(cx, h / 2 + 62, btnW, 'Return to Title', 0x4a1d1d, 0xff7a5a, () => this.onReturnToTitle());
+    this.makeButton(cx, h / 2 - 84, btnW, 'Resume', 0x13506b, 0x49d6ff, () => this.resumeGame());
+    this.makeButton(cx, h / 2 - 28, btnW, 'Skills', 0x2a1f3a, 0xb98aff, () => this.onSkills());
+    this.makeButton(cx, h / 2 + 28, btnW, 'Save Game', 0x1d2b40, 0x9fd0ff, () => this.onSave());
+    this.makeButton(cx, h / 2 + 84, btnW, 'Return to Title', 0x4a1d1d, 0xff7a5a, () => this.onReturnToTitle());
 
     // A small toast for save feedback (the game's own "Saved" flash is paused).
     this.toast = this.add
-      .text(cx, h / 2 + 110, '', { fontFamily: 'system-ui, sans-serif', fontSize: '13px', color: '#a8ffb0', fontStyle: 'bold' })
+      .text(cx, h / 2 + 128, '', { fontFamily: 'system-ui, sans-serif', fontSize: '13px', color: '#a8ffb0', fontStyle: 'bold' })
       .setOrigin(0.5)
       .setVisible(false);
 
@@ -62,6 +63,13 @@ export class PauseScene extends Phaser.Scene {
   private resumeGame(): void {
     this.scene.resume('MainScene');
     this.scene.stop();
+  }
+
+  /** Open the skill tree. MainScene stays paused (this menu paused it); the skill
+   *  scene resumes MainScene when it closes. The pause menu closes behind it. */
+  private onSkills(): void {
+    this.scene.stop();
+    this.scene.launch('SkillTreeScene');
   }
 
   private onSave(): void {

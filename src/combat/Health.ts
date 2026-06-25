@@ -4,6 +4,9 @@
 export class Health {
   max: number;
   current: number;
+  /** Multiplier applied to incoming damage (1 = none). Skill damage-reduction sets
+   *  this below 1 so every damage source is reduced centrally (no combat-site edits). */
+  incomingMultiplier = 1;
 
   constructor(max: number) {
     this.max = max;
@@ -27,10 +30,10 @@ export class Health {
     return this.current <= 0;
   }
 
-  /** Apply damage; returns the amount actually removed (clamped at 0). */
+  /** Apply damage (scaled by incomingMultiplier); returns the amount actually removed. */
   damage(amount: number): number {
     const before = this.current;
-    this.current = Math.max(0, this.current - amount);
+    this.current = Math.max(0, this.current - amount * this.incomingMultiplier);
     return before - this.current;
   }
 

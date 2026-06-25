@@ -45,6 +45,9 @@ import { HealthBar } from '../combat/HealthBar';
 import { AttackButton } from '../ui/AttackButton';
 import { DashButton } from '../ui/DashButton';
 import { HolyBoltButton } from '../ui/HolyBoltButton';
+import { SkillButtonBar } from '../ui/SkillButtonBar';
+import { SkillState } from '../skills/SkillState';
+import { classSkills, combineMods, type SkillDef, type SkillStatMods } from '../skills/skillData';
 import { PlayerPower } from '../player/PlayerPower';
 import { ANGEL_ENCOUNTER } from '../story/angelData';
 import { QuestChain, type QuestEvent } from '../quest/QuestChain';
@@ -241,6 +244,17 @@ export class MainScene extends Phaser.Scene {
   private holyBoltButton!: HolyBoltButton;
   private holyBoltCooldownUntil = 0;
   private holyAura?: Phaser.GameObjects.Arc; // subtle golden aura while holy
+
+  // --- SKILL TREE (framework): points economy + per-class unlocks (serializable),
+  //     plus the runtime layer that applies effects (passives + timed buffs/forms).
+  private readonly skills = new SkillState();
+  private skillBar!: SkillButtonBar;
+  /** Cached melee-damage multiplier (passives + active buffs/forms), recomputed on change. */
+  private skillDamageMult = 1;
+  /** Cooldown end-times for activatable skills, keyed by skill id. */
+  private skillCooldownUntil: Record<string, number> = {};
+  /** Live timed effects (buffs / transformations): each contributes stats until endsAt. */
+  private skillTimed: { id: string; endsAt: number; stats: SkillStatMods; tint?: number }[] = [];
 
   // Progression / leveling. Level-derived maxHP + damage feed the combat above.
   private progression!: PlayerProgression;
@@ -622,6 +636,7 @@ export class MainScene extends Phaser.Scene {
     this.createQuestHud();
     this.createBossHud(); // the boss HP bar (UI partition)
     this.createSaveUi(); // the manual "Save" button + "Saved" indicator (UI partition)
+    this.createSkillUi(); // skill open-button + activatable-skill bar (UI partition)
     this.createDevTools(); // dev panel + dev keys (gated by DEV_MODE)
     this.createFadeOverlay(); // full-screen fade for portal transitions (UI partition)
 
@@ -676,6 +691,7 @@ export class MainScene extends Phaser.Scene {
     this.updateSinMarker();
     this.updateLairEntry();
     this.updateRedemptionApproach();
+    this.updateSkills(); // expire timed buffs/forms + refresh skill-button cooldowns
     this.updateEarthPortal();
 
     if (this.playerDead) {
@@ -884,12 +900,15 @@ export class MainScene extends Phaser.Scene {
   /** Single XP entry point for every source (kills, quest, dev keys). */
   private gainXP(amount: number): void {
     const levelsGained = this.progression.addXP(amount);
-    if (levelsGained > 0) this.onLevelUp();
+    if (levelsGained > 0) {
+      this.skills.awardPoints(levelsGained); // 1 skill point per level gained
+      this.onLevelUp();
+    }
   }
 
   /** Apply level-derived stats, heal to full, and play the level-up moment. */
   private onLevelUp(): void {
-    this.playerHealth.setMax(this.progression.effectiveMaxHP);
+    this.playerHealth.setMax(this.skillAdjustedMaxHP());
     this.playerHealth.full();
     this.levelBanner
       .setText(`LEVEL UP — Lv ${this.progression.level}`)
@@ -918,6 +937,185 @@ export class MainScene extends Phaser.Scene {
     });
   }
 
+  // --- SKILL TREE: economy + generic effect handlers (framework) --------------
+  //
+  // SkillState holds the serializable points + unlocks; this layer turns unlocked
+  // skills into live effects: PASSIVE stats apply while owned, ACTIVE/BUFF/DEBUFF/
+  // TRANSFORMATION skills get on-screen buttons that dispatch by effect kind. New
+  // skills are pure data (skillData.ts) — no new code per skill.
+
+  /** Build the skill UI (open button + activatable-skill bar) + wire the change hook. */
+  private createSkillUi(): void {
+    const activatables = classSkills(this.skills.activeClass).skills.filter((d) => d.effect.kind !== 'passive');
+    this.skillBar = new SkillButtonBar(
+      this,
+      activatables.map((d) => ({ id: d.id, label: this.skillButtonLabel(d) })),
+      { onOpen: () => this.openSkillTree(), onActivate: (id) => this.activateSkill(id) },
+    );
+    // Re-apply effects + refresh the bar whenever points/unlocks change.
+    this.skills.onChange = () => this.recomputeSkillEffects();
+    this.recomputeSkillEffects();
+  }
+
+  /** A short button caption for an activatable skill (first word of its name, minus the [TEST] tag). */
+  private skillButtonLabel(d: SkillDef): string {
+    return d.name.replace(/^\[TEST\]\s*/, '').split(' ').slice(0, 2).join(' ');
+  }
+
+  /** Open the skill-tree screen (pauses the game underneath, like the pause menu). */
+  private openSkillTree(): void {
+    if (this.scene.isActive('SkillTreeScene')) return;
+    this.scene.launch('SkillTreeScene');
+    this.scene.pause();
+  }
+
+  // --- SkillHost interface (used by SkillTreeScene) ---
+  getSkillState(): SkillState {
+    return this.skills;
+  }
+  tryUnlockSkill(id: string): boolean {
+    const def = classSkills(this.skills.activeClass).skills.find((s) => s.id === id);
+    if (!def) return false;
+    const ok = this.skills.unlock(def);
+    if (ok) this.autosave(); // persist the spend immediately
+    return ok; // recomputeSkillEffects runs via skills.onChange
+  }
+
+  /** DEV: respec — refund every unlocked skill, clear live buffs/forms + cooldowns. */
+  private devResetSkills(): void {
+    this.skillTimed = [];
+    this.skillCooldownUntil = {};
+    this.skills.reset(); // refunds spent points, clears unlocks (onChange → recompute)
+  }
+
+  /** The live melee damage (level-derived × skill multiplier from passives + buffs/forms). */
+  private playerDamage(): number {
+    return Math.round(this.progression.effectiveDamage * this.skillDamageMult);
+  }
+
+  /** Level-derived max HP adjusted by skill passive/timed maxHP mods. */
+  private skillAdjustedMaxHP(): number {
+    const m = this.combinedSkillMods();
+    const base = this.progression.effectiveMaxHP;
+    return Math.round(base * (1 + (m.maxHPMult ?? 0)) + (m.flatMaxHP ?? 0));
+  }
+
+  /** Aggregate of passive mods (from unlocks) + every live timed buff/form. */
+  private combinedSkillMods(): SkillStatMods {
+    return combineMods([this.skills.passiveMods(), ...this.skillTimed.map((t) => t.stats)]);
+  }
+
+  /**
+   * Recompute + APPLY all skill effects to the live player: max HP, damage mult,
+   * move speed, damage reduction, and the transformation tint. Called on unlock,
+   * on a timed buff/form starting or ending, on load, and on dev grant/reset.
+   */
+  private recomputeSkillEffects(): void {
+    const m = this.combinedSkillMods();
+    // Max HP (keep current HP, clamped) — the bar's max visibly rises with +HP skills.
+    const newMax = this.skillAdjustedMaxHP();
+    if (this.playerHealth && this.playerHealth.max !== newMax) this.playerHealth.setMax(newMax);
+    // Damage multiplier (read by playerDamage()).
+    this.skillDamageMult = 1 + (m.damageMult ?? 0);
+    // Move speed.
+    if (this.player) this.player.speedMultiplier = 1 + (m.moveSpeedMult ?? 0);
+    // Damage reduction (capped so the player can always be hurt a little).
+    if (this.playerHealth) this.playerHealth.incomingMultiplier = Phaser.Math.Clamp(1 - (m.damageReduction ?? 0), 0.1, 1);
+    // Transformation tint: the last active form wins; else clear (unless mid red hit-flash).
+    const form = this.skillTimed.find((t) => t.tint !== undefined);
+    if (this.player) {
+      if (form) this.player.sprite.setTint(form.tint!).setTintMode(Phaser.TintModes.MULTIPLY);
+      else this.player.sprite.clearTint();
+    }
+    // Refresh the on-screen activatable buttons to match current unlocks.
+    this.skillBar?.refresh(this.skills.activatableUnlocked().map((d) => d.id));
+    // (The HP bar reflects the new max next frame via updateCombatHud.)
+  }
+
+  /** Activate an unlocked skill button: dispatch by its effect kind (respecting cooldown). */
+  private activateSkill(id: string): void {
+    if (this.playerDead || this.dialogue.isOpen() || this.choice.isOpen()) return;
+    const def = classSkills(this.skills.activeClass).skills.find((s) => s.id === id);
+    if (!def || !this.skills.isUnlocked(id)) return;
+    const e = def.effect;
+    if (e.kind === 'passive') return;
+    if (this.time.now < (this.skillCooldownUntil[id] ?? 0)) return; // on cooldown
+    this.skillCooldownUntil[id] = this.time.now + e.cooldownMs;
+
+    if (e.kind === 'active') {
+      this.runActiveSkill(e.action);
+    } else if (e.kind === 'buff' || e.kind === 'transformation') {
+      this.startTimedSkill(id, e.durationMs, e.stats, e.kind === 'transformation' ? e.tint : undefined);
+      this.showBanner(`${this.skillButtonLabel(def)} active!`, 1400);
+    } else if (e.kind === 'debuff') {
+      this.runDebuffSkill(e.radius);
+    }
+  }
+
+  /** ACTIVE handler — dispatched by action id. New actives add a case (data picks the id). */
+  private runActiveSkill(action: 'forge_strike'): void {
+    if (action === 'forge_strike') {
+      // A heavy shockwave: a ring FX + a strong AoE hit around the player (reuses
+      // the existing aggregate hit helpers; damage scales with the skill multiplier).
+      const r = 150;
+      const dmg = this.playerDamage() * 2;
+      const ring = this.add.circle(this.player.x, this.player.y, 20, 0xffcaa0, 0).setStrokeStyle(4, 0xff8a3a, 0.95).setDepth(13);
+      this.worldFx.add(ring);
+      this.tweens.add({ targets: ring, scale: r / 20, alpha: 0, duration: 360, ease: 'Quad.out', onComplete: () => ring.destroy() });
+      this.aoeHitAll(this.player.x, this.player.y, r, dmg);
+      this.lastCombatTime = this.time.now;
+    }
+  }
+
+  /** DEBUFF handler (stub): a weakening pulse — visible ring + light AoE damage near
+   *  the player. The enemy STATUS layer (slow/weaken stacks) is a later system; this
+   *  proves the data→activate→effect path for the debuff kind. */
+  private runDebuffSkill(radius: number): void {
+    const ring = this.add.circle(this.player.x, this.player.y, 20, 0x9a6bff, 0).setStrokeStyle(3, 0xb98aff, 0.9).setDepth(13);
+    this.worldFx.add(ring);
+    this.tweens.add({ targets: ring, scale: radius / 20, alpha: 0, duration: 420, ease: 'Quad.out', onComplete: () => ring.destroy() });
+    this.aoeHitAll(this.player.x, this.player.y, radius, Math.max(4, this.playerDamage() * 0.5));
+  }
+
+  /** Apply damage to every enemy type within `range` of (x,y) (reuses the swing helpers). */
+  private aoeHitAll(x: number, y: number, range: number, dmg: number): void {
+    if (this.sasquatch.isAlive && this.sasquatch.distanceTo(x, y) <= range) {
+      const dealt = this.sasquatch.takeHit(dmg);
+      this.spawnDamageNumber(this.sasquatch.x, this.sasquatch.y - 24, dealt, '#ffcaa0');
+      if (!this.sasquatch.isAlive) this.gainXP(this.sasquatch.xpReward);
+    }
+    this.hitSwarmersInRange(x, y, range, dmg);
+    this.hitAngelsInRange(x, y, range, dmg);
+    this.hitTownsfolkInRange(x, y, range, dmg);
+    this.hitGuardiansInRange(x, y, range, dmg);
+    this.hitCherubsInRange(x, y, range, dmg);
+    this.hitDemonsInRange(x, y, range, dmg);
+    this.hitBossesInRange(x, y, range, dmg);
+  }
+
+  /** Start a timed BUFF / TRANSFORMATION: add its stats (+ optional tint) until it expires. */
+  private startTimedSkill(id: string, durationMs: number, stats: SkillStatMods, tint?: number): void {
+    this.skillTimed = this.skillTimed.filter((t) => t.id !== id); // refresh if re-activated
+    this.skillTimed.push({ id, endsAt: this.time.now + durationMs, stats, tint });
+    this.recomputeSkillEffects();
+  }
+
+  /** Per-frame: expire timed buffs/forms + update the skill buttons' cooldown shades. */
+  private updateSkills(): void {
+    if (this.skillTimed.length) {
+      const before = this.skillTimed.length;
+      this.skillTimed = this.skillTimed.filter((t) => this.time.now < t.endsAt);
+      if (this.skillTimed.length !== before) this.recomputeSkillEffects(); // a buff/form ended
+    }
+    for (const def of this.skills.activatableUnlocked()) {
+      if (def.effect.kind === 'passive') continue;
+      const cd = def.effect.cooldownMs;
+      const until = this.skillCooldownUntil[def.id] ?? 0;
+      const ratio = until > this.time.now ? (until - this.time.now) / cd : 0;
+      this.skillBar?.setState(def.id, ratio, ratio > 0);
+    }
+  }
+
   private tryAttack(): void {
     if (this.playerDead || this.dialogue.isOpen() || this.choice.isOpen()) return;
     if (this.time.now < this.attackCooldownUntil) return; // on cooldown: tap does nothing
@@ -928,8 +1126,9 @@ export class MainScene extends Phaser.Scene {
     const sy = this.player.y + this.player.facingY * (PLAYER_ATTACK_RANGE * 0.5);
     this.spawnSlash(sx, sy, Math.atan2(this.player.facingY, this.player.facingX));
 
+    const dmg = this.playerDamage();
     if (this.sasquatch.isAlive && this.sasquatch.distanceTo(sx, sy) <= PLAYER_ATTACK_RANGE + 24) {
-      const dealt = this.sasquatch.takeHit(this.progression.effectiveDamage);
+      const dealt = this.sasquatch.takeHit(dmg);
       this.spawnDamageNumber(this.sasquatch.x, this.sasquatch.y - 24, dealt, '#ffffff');
       this.lastCombatTime = this.time.now;
       if (!this.sasquatch.isAlive) {
@@ -940,13 +1139,13 @@ export class MainScene extends Phaser.Scene {
     }
 
     // The same free swing also cleaves any swarmers / angels / townsfolk in the arc.
-    this.hitSwarmersInRange(sx, sy, PLAYER_ATTACK_RANGE, this.progression.effectiveDamage);
-    this.hitAngelsInRange(sx, sy, PLAYER_ATTACK_RANGE, this.progression.effectiveDamage);
-    this.hitTownsfolkInRange(sx, sy, PLAYER_ATTACK_RANGE, this.progression.effectiveDamage);
-    this.hitGuardiansInRange(sx, sy, PLAYER_ATTACK_RANGE, this.progression.effectiveDamage);
-    this.hitCherubsInRange(sx, sy, PLAYER_ATTACK_RANGE, this.progression.effectiveDamage);
-    this.hitDemonsInRange(sx, sy, PLAYER_ATTACK_RANGE, this.progression.effectiveDamage);
-    this.hitBossesInRange(sx, sy, PLAYER_ATTACK_RANGE, this.progression.effectiveDamage);
+    this.hitSwarmersInRange(sx, sy, PLAYER_ATTACK_RANGE, dmg);
+    this.hitAngelsInRange(sx, sy, PLAYER_ATTACK_RANGE, dmg);
+    this.hitTownsfolkInRange(sx, sy, PLAYER_ATTACK_RANGE, dmg);
+    this.hitGuardiansInRange(sx, sy, PLAYER_ATTACK_RANGE, dmg);
+    this.hitCherubsInRange(sx, sy, PLAYER_ATTACK_RANGE, dmg);
+    this.hitDemonsInRange(sx, sy, PLAYER_ATTACK_RANGE, dmg);
+    this.hitBossesInRange(sx, sy, PLAYER_ATTACK_RANGE, dmg);
   }
 
   /** Apply damage to every flaming-sword guardian within `range` of (x,y); award XP on kills. */
@@ -2398,6 +2597,7 @@ export class MainScene extends Phaser.Scene {
         title: this.currentTitle,
       },
       quests: this.chain.toJSON(),
+      skills: this.skills.toJSON(),
       progress: {
         sinsDefeated: this.sins.count,
         michaelDefeated: this.michaelDefeated,
@@ -2412,10 +2612,14 @@ export class MainScene extends Phaser.Scene {
   private applySave(s: SaveData): void {
     this.restoring = true;
     try {
-      // Progression first (drives derived maxHP/damage), then vitals.
+      // Progression first (drives derived maxHP/damage), then skills (adjust maxHP/
+      // damage/speed via passives), then vitals against the skill-adjusted max.
       this.progression.level = Math.max(1, Math.floor(s.player.level));
       this.progression.currentXP = Math.max(0, Math.floor(s.player.currentXP));
-      this.playerHealth.setMax(this.progression.effectiveMaxHP);
+      this.skills.load(s.skills); // old saves lack this → defaults to 0 pts / nothing unlocked
+      this.skillTimed = []; // timed buffs/forms are runtime-only (not persisted)
+      this.recomputeSkillEffects(); // apply passive maxHP/damage/speed/reduction now
+      this.playerHealth.setMax(this.skillAdjustedMaxHP());
       this.playerHealth.current = Phaser.Math.Clamp(s.player.hp, 1, this.playerHealth.max);
       this.energy.current = Phaser.Math.Clamp(s.player.energy, 0, this.energy.max);
       this.holyPower.load({ holyPower: s.player.holyPower });
@@ -4180,9 +4384,14 @@ export class MainScene extends Phaser.Scene {
   private devReset(): void {
     this.devResetQuests();
 
-    // Progression back to Lv1 / 0 XP, and the HP pool back to the level-1 max.
+    // Skills: clear all points + unlocks + live timed effects, then progression
+    // back to Lv1 / 0 XP, and the HP pool back to the (skill-adjusted) level-1 max.
+    this.skillTimed = [];
+    this.skillCooldownUntil = {};
+    this.skills.hardReset();
     this.progression.reset();
-    this.playerHealth.setMax(this.progression.effectiveMaxHP);
+    this.recomputeSkillEffects();
+    this.playerHealth.setMax(this.skillAdjustedMaxHP());
     this.playerHealth.full();
 
     // Combat Depth: refill energy, end any dash, and reset the swarms to their
@@ -4264,6 +4473,8 @@ export class MainScene extends Phaser.Scene {
       { label: 'Spawn Archangel', onPress: () => this.devSpawnAngel('archangel') },
       { label: 'Grant Holy Power', onPress: () => this.holyPower.add(DEV_GRANT_HOLY_POWER) },
       { label: 'Reset Holy Power', onPress: () => this.holyPower.reset() },
+      { label: 'Grant Skill Points (+5)', onPress: () => this.skills.awardPoints(5) },
+      { label: 'Reset Skills', onPress: () => this.devResetSkills() },
       { label: 'Start Portal Defense', onPress: () => this.devStartPortalDefense() },
       { label: 'Stop Portal Defense', onPress: () => this.resetPortalDefense() },
       { label: 'Refill Energy', onPress: () => this.energy.full() },

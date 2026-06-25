@@ -14,6 +14,8 @@ const SPEED = PLAYER_SPEED_TILES_PER_SEC * TILE_SIZE; // px/sec
  */
 export class Player {
   readonly sprite: Phaser.Physics.Arcade.Sprite;
+  /** Move-speed multiplier (1 = base). Skill passives/buffs set this above 1. */
+  speedMultiplier = 1;
 
   constructor(scene: Phaser.Scene, x: number, y: number) {
     Player.ensureTexture(scene);
@@ -43,7 +45,8 @@ export class Player {
       this.facingX = x / f;
       this.facingY = y / f;
     }
-    this.sprite.setVelocity(x * SPEED, y * SPEED);
+    const s = SPEED * this.speedMultiplier;
+    this.sprite.setVelocity(x * s, y * s);
   }
 
   /** Last-moved direction (defaults to facing down), for the melee swing. */
