@@ -14,16 +14,20 @@ export interface SkillHost {
 }
 
 /**
- * THE SKILL TREE screen (mobile, its own scene → its own camera, fixed + unzoomed).
- * Launched over MainScene (which is paused, like the pause menu), so game state is
- * untouched. Shows the active class's THREE trees as tabs; each tree lists its
- * skill nodes (name / cost / locked-unlocked-available state). Tap a node to
- * select it → the detail box + an "Unlock" button confirm the spend.
+ * THE SKILL TREE screen (mobile, its own scene → own camera, fixed + unzoomed).
+ * Launched over MainScene (paused). Tabs select a tree; the tree's nodes list down
+ * the full height (no bottom panel covering them). TAPPING a node opens a centered
+ * modal popup with its details + the action: Unlock (if affordable), or — for an
+ * unlocked active/buff/transformation — a row of "Equip to slot N" buttons (tap an
+ * empty slot to equip; tap the slot holding this skill to unequip). Passives show
+ * "applies automatically". This replaces the old cramped bottom detail box (which
+ * overlapped the list and hid the bottom nodes + buried the equip control).
  */
 export class SkillTreeScene extends Phaser.Scene {
   private activeTree = 0;
-  private selectedId: string | null = null;
-  private dynamic?: Phaser.GameObjects.Container; // redrawn on tab change / unlock
+  private dynamic?: Phaser.GameObjects.Container; // node list (redrawn on change)
+  private tabsC?: Phaser.GameObjects.Container; // tab row (redrawn so the active tab updates)
+  private popup?: Phaser.GameObjects.Container; // the tap-to-open node modal
 
   constructor() {
     super('SkillTreeScene');
@@ -39,242 +43,220 @@ export class SkillTreeScene extends Phaser.Scene {
   create(): void {
     const w = this.scale.width;
     const h = this.scale.height;
-
-    // Dim + eat taps so nothing leaks to the (paused) game underneath.
-    this.add.rectangle(w / 2, h / 2, w, h, 0x05060a, 0.82).setInteractive();
-
     const cx = w / 2;
-    this.add
-      .text(cx, this.topInset() + 14, 'SKILLS', {
-        fontFamily: 'Georgia, serif',
-        fontSize: '24px',
-        color: '#ffe9a8',
-        fontStyle: 'bold',
-      })
-      .setOrigin(0.5, 0);
 
-    // Close (top-right).
-    this.makeButton(w - 44, this.topInset() + 24, 64, 36, '✕', 0x4a1d1d, 0xff7a5a, () => this.close());
+    // Full-screen dim that also eats taps so nothing leaks to the paused game.
+    this.add.rectangle(w / 2, h / 2, w, h, 0x05060a, 0.9).setInteractive();
+
+    // Header band (depth 20) covers the top of the node list; the title/points/tabs/
+    // close sit on top of it. Drawn BEFORE the list so the list (depth 5) is behind.
+    const headerH = this.listTop();
+    this.add.rectangle(cx, headerH / 2, w, headerH, 0x05060a, 1).setDepth(20);
+    this.add
+      .text(cx, this.topInset() + 12, 'SKILLS', { fontFamily: 'Georgia, serif', fontSize: '24px', color: '#ffe9a8', fontStyle: 'bold' })
+      .setOrigin(0.5, 0)
+      .setDepth(21);
+    this.pointsText = this.add
+      .text(cx, this.topInset() + 44, '', { fontFamily: 'system-ui, sans-serif', fontSize: '16px', color: '#9fd0ff', fontStyle: 'bold' })
+      .setOrigin(0.5, 0)
+      .setDepth(21);
+    this.makeButton(w - 42, this.topInset() + 22, 60, 34, '✕', 0x4a1d1d, 0xff7a5a, () => this.close()).setDepth(21);
 
     this.activeTree = 0;
-    this.selectedId = null;
-    this.redraw();
+    this.redraw(); // draws the tabs (depth 22) + the node list (depth 5)
+    this.refreshPoints();
 
-    this.input.keyboard?.on('keydown-ESC', () => this.close());
+    this.input.keyboard?.on('keydown-ESC', () => (this.popup ? this.closePopup() : this.close()));
     this.scale.on(Phaser.Scale.Events.RESIZE, () => this.scene.restart());
   }
 
+  private pointsText!: Phaser.GameObjects.Text;
+
   private topInset(): number {
-    // Keep clear of the notch; mirror the rest of the UI's top margin.
     return 18;
   }
+  /** Y where the node list begins (below title + points + tabs). */
+  private listTop(): number {
+    return this.topInset() + 116;
+  }
 
-  /** Full redraw of the tabs + node list + detail (cheap; few nodes). */
-  private redraw(): void {
-    this.dynamic?.destroy();
-    const c = this.add.container(0, 0);
-    this.dynamic = c;
+  private refreshPoints(): void {
+    this.pointsText.setText(`Skill Points: ${this.skills().unspentPoints}`);
+  }
 
+  private drawTabs(): void {
+    this.tabsC?.destroy();
+    const tc = this.add.container(0, 0).setDepth(22);
+    this.tabsC = tc;
     const w = this.scale.width;
     const cx = w / 2;
-    const cls = classSkills(this.skills().activeClass);
-    const trees = cls.trees;
-
-    // Points readout.
-    c.add(
-      this.add
-        .text(cx, this.topInset() + 48, `Skill Points: ${this.skills().unspentPoints}`, {
-          fontFamily: 'system-ui, sans-serif',
-          fontSize: '16px',
-          color: '#9fd0ff',
-          fontStyle: 'bold',
-        })
-        .setOrigin(0.5, 0),
-    );
-
-    // Tabs (one per tree).
-    const tabY = this.topInset() + 86;
-    const tabW = Math.min(132, (w - 24) / Math.max(1, trees.length));
+    const trees = classSkills(this.skills().activeClass).trees;
+    const tabY = this.topInset() + 80;
+    const tabW = Math.min(120, (w - 16) / Math.max(1, trees.length));
     const startX = cx - (tabW * trees.length) / 2 + tabW / 2;
     trees.forEach((t, i) => {
       const x = startX + i * tabW;
       const active = i === this.activeTree;
       const bg = this.add
-        .rectangle(x, tabY, tabW - 6, 38, active ? 0x2a3550 : 0x161c28, 0.98)
+        .rectangle(x, tabY, tabW - 5, 34, active ? 0x2a3550 : 0x161c28, 1)
         .setStrokeStyle(2, active ? 0xffd24a : 0x44506a, 1)
         .setInteractive({ useHandCursor: true });
-      const label = this.add
-        .text(x, tabY, t.name, { fontFamily: 'system-ui, sans-serif', fontSize: '13px', color: active ? '#ffe9a8' : '#aebbd0', fontStyle: 'bold' })
-        .setOrigin(0.5);
+      const label = this.add.text(x, tabY, t.name, { fontFamily: 'system-ui, sans-serif', fontSize: '13px', color: active ? '#ffe9a8' : '#aebbd0', fontStyle: 'bold' }).setOrigin(0.5);
       bg.on(Phaser.Input.Events.GAMEOBJECT_POINTER_DOWN, () => {
+        if (this.activeTree === i) return;
         this.activeTree = i;
-        this.selectedId = null;
         this.redraw();
       });
-      c.add([bg, label]);
+      tc.add([bg, label]);
     });
-
-    // Node list for the active tree (ordered by tier).
-    const treeId = trees[this.activeTree]?.id;
-    const nodes = cls.skills.filter((s) => s.tree === treeId).sort((a, b) => a.tier - b.tier);
-    let y = tabY + 38;
-    if (nodes.length === 0) {
-      c.add(
-        this.add
-          .text(cx, y + 30, '(no skills yet — coming soon)', { fontFamily: 'system-ui, sans-serif', fontSize: '13px', color: '#7a8aa0' })
-          .setOrigin(0.5, 0),
-      );
-    }
-    for (const def of nodes) {
-      y += 14;
-      c.add(this.makeNode(cx, y, def));
-      y += 46;
-    }
-
-    // Detail + unlock for the selected node.
-    this.drawDetail(c);
   }
 
-  /** One skill node row: color-coded by state, tappable to select. */
+  /** Draw the active tree's tabs (active highlight updates) + node list. */
+  private redraw(): void {
+    this.drawTabs();
+    this.dynamic?.destroy();
+    const c = this.add.container(0, 0).setDepth(5);
+    this.dynamic = c;
+
+    const w = this.scale.width;
+    const cx = w / 2;
+    const cls = classSkills(this.skills().activeClass);
+    const treeId = cls.trees[this.activeTree]?.id;
+    const nodes = cls.skills.filter((s) => s.tree === treeId).sort((a, b) => a.tier - b.tier);
+
+    let y = this.listTop() + 8;
+    if (nodes.length === 0) {
+      c.add(this.add.text(cx, y + 20, '(no skills yet — coming soon)', { fontFamily: 'system-ui, sans-serif', fontSize: '13px', color: '#7a8aa0' }).setOrigin(0.5, 0));
+    }
+    const stride = 50;
+    for (const def of nodes) {
+      c.add(this.makeNode(cx, y, def));
+      y += stride;
+    }
+  }
+
+  /** One node row: color-coded by state; tapping opens its detail/equip popup. */
   private makeNode(cx: number, y: number, def: SkillDef): Phaser.GameObjects.GameObject[] {
     const w = this.scale.width;
-    const nodeW = Math.min(360, w - 28);
+    const nodeW = Math.min(380, w - 24);
     const st = this.skills();
     const unlocked = st.isUnlocked(def.id);
     const can = st.canUnlock(def);
-    const selected = this.selectedId === def.id;
+    const equipped = isEquippableSkill(def) && st.isEquipped(def.id);
 
-    // State → colors: unlocked = gold, available = blue, locked = grey.
-    const fill = unlocked ? 0x3a2f12 : can.ok ? 0x13294a : 0x1a1d24;
-    const stroke = selected ? 0xffffff : unlocked ? 0xffd24a : can.ok ? 0x49a6ff : 0x3a4150;
+    const fill = unlocked ? 0x33300f : can.ok ? 0x13294a : 0x1a1d24;
+    const stroke = equipped ? 0x66e0ff : unlocked ? 0xffd24a : can.ok ? 0x49a6ff : 0x3a4150;
     const bg = this.add
-      .rectangle(cx, y, nodeW, 42, fill, 0.98)
+      .rectangle(cx, y, nodeW, 44, fill, 0.98)
       .setOrigin(0.5, 0)
-      .setStrokeStyle(selected ? 3 : 2, stroke, 1)
+      .setStrokeStyle(equipped ? 3 : 2, stroke, 1)
       .setInteractive({ useHandCursor: true });
 
-    const name = this.add
-      .text(cx - nodeW / 2 + 12, y + 8, def.name, { fontFamily: 'system-ui, sans-serif', fontSize: '14px', color: unlocked ? '#ffe9a8' : '#eaf2ff', fontStyle: 'bold' })
-      .setOrigin(0, 0);
-    const tag = unlocked ? '✓ owned' : `${def.cost} pt`;
-    const tagColor = unlocked ? '#a8ffb0' : can.ok ? '#9fd0ff' : '#7a8aa0';
-    const cost = this.add
-      .text(cx + nodeW / 2 - 12, y + 8, tag, { fontFamily: 'system-ui, sans-serif', fontSize: '13px', color: tagColor, fontStyle: 'bold' })
-      .setOrigin(1, 0);
-    const sub = this.add
-      .text(cx - nodeW / 2 + 12, y + 25, this.kindLabel(def), { fontFamily: 'system-ui, sans-serif', fontSize: '11px', color: '#90a0b8' })
-      .setOrigin(0, 0);
+    const name = this.add.text(cx - nodeW / 2 + 12, y + 7, def.name, { fontFamily: 'system-ui, sans-serif', fontSize: '14px', color: unlocked ? '#ffe9a8' : '#eaf2ff', fontStyle: 'bold' }).setOrigin(0, 0);
+    const slot = isEquippableSkill(def) ? st.slotIndexOf(def.id) : -1;
+    const tag = !unlocked ? `${def.cost} pt` : slot >= 0 ? `★ slot ${slot + 1}` : isEquippableSkill(def) ? 'tap to equip' : '✓ owned';
+    const tagColor = !unlocked ? (can.ok ? '#9fd0ff' : '#7a8aa0') : slot >= 0 ? '#66e0ff' : '#a8ffb0';
+    const cost = this.add.text(cx + nodeW / 2 - 12, y + 7, tag, { fontFamily: 'system-ui, sans-serif', fontSize: '12px', color: tagColor, fontStyle: 'bold' }).setOrigin(1, 0);
+    const sub = this.add.text(cx - nodeW / 2 + 12, y + 25, this.kindLabel(def), { fontFamily: 'system-ui, sans-serif', fontSize: '11px', color: '#90a0b8' }).setOrigin(0, 0);
 
-    bg.on(Phaser.Input.Events.GAMEOBJECT_POINTER_DOWN, () => {
-      this.selectedId = def.id;
-      this.redraw();
-    });
+    bg.on(Phaser.Input.Events.GAMEOBJECT_POINTER_DOWN, () => this.openPopup(def.id));
     return [bg, name, cost, sub];
   }
 
   private kindLabel(def: SkillDef): string {
-    const k = def.effect.kind;
-    const map: Record<string, string> = {
-      passive: 'Passive',
-      active: 'Active ability',
-      buff: 'Buff',
-      debuff: 'Debuff',
-      transformation: 'Transformation',
-    };
-    return def.prereq ? `${map[k]} · needs previous` : map[k];
+    const map: Record<string, string> = { passive: 'Passive', active: 'Active', buff: 'Buff', debuff: 'Debuff', transformation: 'Transformation' };
+    let s = map[def.effect.kind];
+    // Only flag the prereq when it's NOT yet met (don't nag once it's owned).
+    if (def.prereq && !this.skills().isUnlocked(def.prereq)) s += ' · needs previous';
+    return s;
   }
 
-  /** The bottom detail box for the selected node + the Unlock button. */
-  private drawDetail(c: Phaser.GameObjects.Container): void {
+  // --- The tap-to-open node modal (details + Unlock / Equip-to-slot) ------------
+
+  private openPopup(id: string): void {
+    this.closePopup();
+    const def = classSkills(this.skills().activeClass).skills.find((s) => s.id === id);
+    if (!def) return;
     const w = this.scale.width;
     const h = this.scale.height;
     const cx = w / 2;
-    const boxW = Math.min(380, w - 20);
-    const boxH = 132;
-    const boxY = h - this.bottomInset() - boxH - 12;
-
-    c.add(this.add.rectangle(cx, boxY, boxW, boxH, 0x0c1322, 0.98).setOrigin(0.5, 0).setStrokeStyle(2, 0xffd24a, 0.8));
-
-    const def = this.selectedId ? classSkills(this.skills().activeClass).skills.find((s) => s.id === this.selectedId) : undefined;
-    if (!def) {
-      c.add(
-        this.add
-          .text(cx, boxY + boxH / 2, 'Tap a skill to see details', { fontFamily: 'system-ui, sans-serif', fontSize: '14px', color: '#7a8aa0' })
-          .setOrigin(0.5),
-      );
-      return;
-    }
-
-    c.add(
-      this.add.text(cx, boxY + 10, def.name, { fontFamily: 'system-ui, sans-serif', fontSize: '15px', color: '#ffe9a8', fontStyle: 'bold' }).setOrigin(0.5, 0),
-    );
-    c.add(
-      this.add
-        .text(cx, boxY + 34, def.description, {
-          fontFamily: 'system-ui, sans-serif',
-          fontSize: '12px',
-          color: '#cdd9ec',
-          align: 'center',
-          wordWrap: { width: boxW - 28 },
-        })
-        .setOrigin(0.5, 0),
-    );
-
+    const cy = h / 2;
     const st = this.skills();
     const unlocked = st.isUnlocked(def.id);
-    const can = st.canUnlock(def);
-    const btnY = boxY + boxH - 26;
-    if (unlocked) {
-      if (isEquippableSkill(def)) {
-        // Equippable → show the 6 loadout slot chips (tap a chip to equip here; tap
-        // the highlighted chip to clear it). Passives are auto-applied, no equip.
-        c.add(this.add.text(cx, btnY - 18, 'Equip to slot:', { fontFamily: 'system-ui, sans-serif', fontSize: '11px', color: '#9fd0ff' }).setOrigin(0.5));
-        c.add(this.equipChips(def.id, cx, btnY + 4));
-      } else {
-        c.add(this.add.text(cx, btnY, '✓ Unlocked — passive (always on)', { fontFamily: 'system-ui, sans-serif', fontSize: '13px', color: '#a8ffb0', fontStyle: 'bold' }).setOrigin(0.5));
-      }
-    } else if (can.ok) {
-      c.add(this.makeButton(cx, btnY, 200, 40, `Unlock  (${def.cost} pt)`, 0x13506b, 0x49d6ff, () => this.doUnlock(def.id)));
+    const equippable = isEquippableSkill(def);
+
+    const c = this.add.container(0, 0).setDepth(100);
+    this.popup = c;
+    c.add(this.add.rectangle(cx, cy, w, h, 0x05060a, 0.72).setInteractive().on(Phaser.Input.Events.GAMEOBJECT_POINTER_DOWN, () => this.closePopup()));
+
+    const panelW = Math.min(360, w - 28);
+    const panelH = unlocked && equippable ? 290 : 210;
+    const top = cy - panelH / 2;
+    c.add(this.add.rectangle(cx, cy, panelW, panelH, 0x111826, 0.99).setStrokeStyle(2, 0xffd24a, 0.9));
+    c.add(this.add.text(cx, top + 14, def.name, { fontFamily: 'system-ui, sans-serif', fontSize: '17px', color: '#ffe9a8', fontStyle: 'bold', align: 'center', wordWrap: { width: panelW - 28 } }).setOrigin(0.5, 0));
+    c.add(this.add.text(cx, top + 44, def.description, { fontFamily: 'system-ui, sans-serif', fontSize: '12px', color: '#cdd9ec', align: 'center', wordWrap: { width: panelW - 32 } }).setOrigin(0.5, 0));
+
+    const actionY = top + panelH - (unlocked && equippable ? 116 : 56);
+    if (!unlocked) {
+      const can = st.canUnlock(def);
+      if (can.ok) c.add(this.makeButton(cx, actionY, 200, 42, `Unlock  (${def.cost} pt)`, 0x13506b, 0x49d6ff, () => this.doUnlock(def.id)));
+      else c.add(this.add.text(cx, actionY, can.reason, { fontFamily: 'system-ui, sans-serif', fontSize: '14px', color: '#ff9a8a', fontStyle: 'bold' }).setOrigin(0.5));
+    } else if (!equippable) {
+      c.add(this.add.text(cx, actionY, '✓ Owned — passive (applies automatically)', { fontFamily: 'system-ui, sans-serif', fontSize: '13px', color: '#a8ffb0', fontStyle: 'bold', align: 'center', wordWrap: { width: panelW - 24 } }).setOrigin(0.5));
     } else {
-      c.add(this.add.text(cx, btnY, can.reason, { fontFamily: 'system-ui, sans-serif', fontSize: '13px', color: '#ff9a8a', fontStyle: 'bold' }).setOrigin(0.5));
+      // Equip-to-slot grid: 6 buttons (2 rows × 3) showing what each slot holds.
+      c.add(this.add.text(cx, actionY - 16, 'Equip to a slot (tap):', { fontFamily: 'system-ui, sans-serif', fontSize: '12px', color: '#9fd0ff' }).setOrigin(0.5));
+      const loadout = st.loadout();
+      const cols = 3;
+      const bw = (panelW - 28) / cols;
+      const bh = 40;
+      const gx = 6;
+      const gy = 6;
+      const gridX = cx - ((bw + gx) * cols - gx) / 2 + bw / 2;
+      const gridY = actionY + 8;
+      for (let i = 0; i < LOADOUT_SLOTS; i++) {
+        const col = i % cols;
+        const row = Math.floor(i / cols);
+        const bx = gridX + col * (bw + gx);
+        const by = gridY + row * (bh + gy);
+        const occupant = loadout[i];
+        const mine = occupant === def.id;
+        const occLabel = occupant ? this.shortLabel(occupant) : 'Empty';
+        const fill = mine ? 0x2a3f16 : occupant ? 0x202632 : 0x13294a;
+        const stroke = mine ? 0x66e0ff : occupant ? 0x55617a : 0x49a6ff;
+        const bg = this.add.rectangle(bx, by, bw - 4, bh, fill, 0.98).setStrokeStyle(2, stroke, 1).setInteractive({ useHandCursor: true });
+        const lbl = this.add.text(bx, by, `${mine ? '★ ' : ''}${i + 1}: ${occLabel}`, { fontFamily: 'system-ui, sans-serif', fontSize: '11px', color: mine ? '#cffaff' : '#dbe6f5', fontStyle: 'bold', align: 'center', wordWrap: { width: bw - 8 } }).setOrigin(0.5);
+        bg.on(Phaser.Input.Events.GAMEOBJECT_POINTER_DOWN, () => {
+          if (mine) this.host().unequipSlot(i);
+          else this.host().equipSkill(i, def.id);
+          this.redraw(); // node tags update
+          this.openPopup(def.id); // re-open with fresh slot state
+        });
+        c.add([bg, lbl]);
+      }
     }
+
+    c.add(this.makeButton(cx, top + panelH - 22, 120, 34, 'Close', 0x33373d, 0x8a93a6, () => this.closePopup()));
   }
 
-  /** A row of LOADOUT_SLOTS chips for equipping `id`: tap to equip here, tap the
-   *  highlighted (★) chip to clear it. Returns the chip objects for the container. */
-  private equipChips(id: string, cx: number, y: number): Phaser.GameObjects.GameObject[] {
-    const st = this.skills();
-    const loadout = st.loadout();
-    const objs: Phaser.GameObjects.GameObject[] = [];
-    const chipW = 30;
-    const gap = 6;
-    const total = LOADOUT_SLOTS * chipW + (LOADOUT_SLOTS - 1) * gap;
-    const startX = cx - total / 2 + chipW / 2;
-    for (let i = 0; i < LOADOUT_SLOTS; i++) {
-      const x = startX + i * (chipW + gap);
-      const occupant = loadout[i];
-      const isThis = occupant === id;
-      const filledOther = !!occupant && !isThis;
-      const fill = isThis ? 0x3a2f12 : filledOther ? 0x202632 : 0x13294a;
-      const stroke = isThis ? 0xffd24a : filledOther ? 0x44506a : 0x49a6ff;
-      const bg = this.add.rectangle(x, y, chipW, 26, fill, 0.98).setStrokeStyle(2, stroke, 1).setInteractive({ useHandCursor: true });
-      const t = this.add.text(x, y, isThis ? '★' : String(i + 1), { fontFamily: 'system-ui, sans-serif', fontSize: '12px', color: isThis ? '#ffe9a8' : '#cdd9ec', fontStyle: 'bold' }).setOrigin(0.5);
-      bg.on(Phaser.Input.Events.GAMEOBJECT_POINTER_DOWN, () => {
-        if (isThis) this.host().unequipSlot(i);
-        else this.host().equipSkill(i, id);
-        this.redraw();
-      });
-      objs.push(bg, t);
-    }
-    return objs;
+  private closePopup(): void {
+    this.popup?.destroy();
+    this.popup = undefined;
+  }
+
+  /** Short caption for an equipped skill id (first two words). */
+  private shortLabel(id: string): string {
+    const def = classSkills(this.skills().activeClass).skills.find((s) => s.id === id);
+    if (!def) return id;
+    return def.name.split(' ').slice(0, 2).join(' ');
   }
 
   private doUnlock(id: string): void {
-    if (this.host().tryUnlockSkill(id)) this.redraw();
-  }
-
-  private bottomInset(): number {
-    return 16;
+    if (this.host().tryUnlockSkill(id)) {
+      this.refreshPoints();
+      this.redraw();
+      this.openPopup(id); // re-open with the now-unlocked (equip) state
+    }
   }
 
   private close(): void {
@@ -282,12 +264,11 @@ export class SkillTreeScene extends Phaser.Scene {
     this.scene.stop();
   }
 
-  /** A small labeled button; returns its objects so callers can add them to a container. */
-  private makeButton(x: number, y: number, w: number, h: number, label: string, fill: number, stroke: number, onTap: () => void): Phaser.GameObjects.GameObject {
-    const bg = this.add.rectangle(x, y, w, h, fill, 0.96).setStrokeStyle(2, stroke, 1).setInteractive({ useHandCursor: true });
-    const t = this.add.text(x, y, label, { fontFamily: 'system-ui, sans-serif', fontSize: '15px', color: '#ffffff', fontStyle: 'bold' }).setOrigin(0.5);
+  /** A small labeled button; returns its container so callers can nest/position it. */
+  private makeButton(x: number, y: number, w: number, h: number, label: string, fill: number, stroke: number, onTap: () => void): Phaser.GameObjects.Container {
+    const bg = this.add.rectangle(0, 0, w, h, fill, 0.96).setStrokeStyle(2, stroke, 1).setInteractive({ useHandCursor: true });
+    const t = this.add.text(0, 0, label, { fontFamily: 'system-ui, sans-serif', fontSize: '15px', color: '#ffffff', fontStyle: 'bold' }).setOrigin(0.5);
     bg.on(Phaser.Input.Events.GAMEOBJECT_POINTER_DOWN, onTap);
-    // Group as a tiny container so it can live inside `dynamic`.
-    return this.add.container(0, 0, [bg, t]);
+    return this.add.container(x, y, [bg, t]);
   }
 }
