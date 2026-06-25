@@ -19,6 +19,10 @@
  */
 
 import { TANK_TREE_SKILLS } from './blacksmithTank';
+import { PLAYER_ATTACK_COOLDOWN_MS, DASH_COOLDOWN_MS, DASH_ENERGY_COST } from '../game/settings';
+
+/** How many active skills the player can equip to on-screen slots. */
+export const LOADOUT_SLOTS = 6;
 
 /** The playable classes. Only the Blacksmith has trees this batch; others slot in later. */
 export type ClassId = 'blacksmith' | 'necromancer' | 'wizard';
@@ -45,7 +49,7 @@ export interface SkillStatMods {
 }
 
 /** Ids dispatched by the scene's ACTIVE-ability handler. New actives add an id + a case. */
-export type ActiveActionId = 'forge_strike' | 'shield_bash' | 'shove' | 'shield_swing' | 'plow';
+export type ActiveActionId = 'forge_strike' | 'shield_bash' | 'shove' | 'shield_swing' | 'plow' | 'basic_strike' | 'dodge';
 
 /**
  * The five supported EFFECT KINDS. The scene applies them generically:
@@ -94,6 +98,16 @@ export interface SkillDef {
   readonly effect: SkillEffect;
   /** Marks scaffolding TEST skills (proving effect types), not final content. */
   readonly test?: boolean;
+  /** Always unlocked + free (no point cost) — e.g. the basic attack/dodge. */
+  readonly freeUnlock?: boolean;
+  /** A default "basic" skill (the folded-in basic attack / dodge). */
+  readonly basic?: boolean;
+}
+
+/** EQUIPPABLE = goes into a loadout slot + gets an on-screen button (everything that
+ *  isn't a passive). PASSIVE skills auto-apply when unlocked and are never equipped. */
+export function isEquippableSkill(def: SkillDef): boolean {
+  return def.effect.kind !== 'passive';
 }
 
 export interface SkillTree {
@@ -113,14 +127,51 @@ export interface ClassSkills {
 // Trees are placeholder-named (Defense / Offense / Control) — finalize later. The
 // real ~30 skills + the true Crystal Form capstones are later data-only batches.
 
+/**
+ * BASICS — the folded-in default attack + dodge, now EQUIPPABLE skills (replacing
+ * the old fixed buttons). Always unlocked + free; they live in a "Basics" tab so the
+ * player can equip/swap them. Basic Strike is the New-Game forced first skill + the
+ * anti-soft-lock floor (the loadout always keeps at least this).
+ *
+ * >>> EDIT BASIC SKILL NAMES / NUMBERS HERE. <<<
+ */
+export const BASIC_STRIKE_ID = 'basic_strike';
+export const BASIC_SKILLS: SkillDef[] = [
+  {
+    id: BASIC_STRIKE_ID,
+    tree: 'basics',
+    name: 'Basic Strike',
+    description: 'A quick weapon strike in front of you. Your reliable default attack.',
+    cost: 0,
+    tier: 0,
+    freeUnlock: true,
+    basic: true,
+    effect: { kind: 'active', action: 'basic_strike', cooldownMs: PLAYER_ATTACK_COOLDOWN_MS },
+  },
+  {
+    id: 'dodge',
+    tree: 'basics',
+    name: 'Dodge',
+    description: 'A quick evasive lunge in your facing direction, damaging foes dashed through.',
+    cost: 0,
+    tier: 1,
+    freeUnlock: true,
+    basic: true,
+    effect: { kind: 'active', action: 'dodge', cooldownMs: DASH_COOLDOWN_MS, energyCost: DASH_ENERGY_COST },
+  },
+];
+
 const BLACKSMITH: ClassSkills = {
   classId: 'blacksmith',
   trees: [
+    { id: 'basics', name: 'Basics' }, // the folded-in default attack + dodge (free, equippable)
     { id: 'defense', name: 'Tank' }, // the first FULL tree (10 Tank skills below)
     { id: 'offense', name: 'Offense' }, // still test/placeholder (later batch)
     { id: 'control', name: 'Control' }, // still test/placeholder (later batch)
   ],
   skills: [
+    // --- BASICS (free, always-unlocked, equippable: the folded-in attack + dodge). ---
+    ...BASIC_SKILLS,
     // --- TANK TREE (10 real skills, linear → Celestial Calcite). Data in blacksmithTank.ts. ---
     ...TANK_TREE_SKILLS,
     // --- ACTIVE test: a usable bonus AoE strike on a button. ---

@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { classSkills, type SkillDef } from '../skills/skillData';
+import { classSkills, isEquippableSkill, LOADOUT_SLOTS, type SkillDef } from '../skills/skillData';
 import type { SkillState } from '../skills/SkillState';
 
 /** The bits of MainScene the skill UI needs (kept narrow + decoupled). */
@@ -7,6 +7,10 @@ export interface SkillHost {
   getSkillState(): SkillState;
   /** Spend a point to unlock the skill (applies its effect); returns success. */
   tryUnlockSkill(id: string): boolean;
+  /** Equip an unlocked equippable skill into a loadout slot. */
+  equipSkill(slot: number, id: string): boolean;
+  /** Clear a loadout slot. */
+  unequipSlot(slot: number): void;
 }
 
 /**
@@ -221,12 +225,48 @@ export class SkillTreeScene extends Phaser.Scene {
     const can = st.canUnlock(def);
     const btnY = boxY + boxH - 26;
     if (unlocked) {
-      c.add(this.add.text(cx, btnY, '✓ Unlocked', { fontFamily: 'system-ui, sans-serif', fontSize: '14px', color: '#a8ffb0', fontStyle: 'bold' }).setOrigin(0.5));
+      if (isEquippableSkill(def)) {
+        // Equippable → show the 6 loadout slot chips (tap a chip to equip here; tap
+        // the highlighted chip to clear it). Passives are auto-applied, no equip.
+        c.add(this.add.text(cx, btnY - 18, 'Equip to slot:', { fontFamily: 'system-ui, sans-serif', fontSize: '11px', color: '#9fd0ff' }).setOrigin(0.5));
+        c.add(this.equipChips(def.id, cx, btnY + 4));
+      } else {
+        c.add(this.add.text(cx, btnY, '✓ Unlocked — passive (always on)', { fontFamily: 'system-ui, sans-serif', fontSize: '13px', color: '#a8ffb0', fontStyle: 'bold' }).setOrigin(0.5));
+      }
     } else if (can.ok) {
       c.add(this.makeButton(cx, btnY, 200, 40, `Unlock  (${def.cost} pt)`, 0x13506b, 0x49d6ff, () => this.doUnlock(def.id)));
     } else {
       c.add(this.add.text(cx, btnY, can.reason, { fontFamily: 'system-ui, sans-serif', fontSize: '13px', color: '#ff9a8a', fontStyle: 'bold' }).setOrigin(0.5));
     }
+  }
+
+  /** A row of LOADOUT_SLOTS chips for equipping `id`: tap to equip here, tap the
+   *  highlighted (★) chip to clear it. Returns the chip objects for the container. */
+  private equipChips(id: string, cx: number, y: number): Phaser.GameObjects.GameObject[] {
+    const st = this.skills();
+    const loadout = st.loadout();
+    const objs: Phaser.GameObjects.GameObject[] = [];
+    const chipW = 30;
+    const gap = 6;
+    const total = LOADOUT_SLOTS * chipW + (LOADOUT_SLOTS - 1) * gap;
+    const startX = cx - total / 2 + chipW / 2;
+    for (let i = 0; i < LOADOUT_SLOTS; i++) {
+      const x = startX + i * (chipW + gap);
+      const occupant = loadout[i];
+      const isThis = occupant === id;
+      const filledOther = !!occupant && !isThis;
+      const fill = isThis ? 0x3a2f12 : filledOther ? 0x202632 : 0x13294a;
+      const stroke = isThis ? 0xffd24a : filledOther ? 0x44506a : 0x49a6ff;
+      const bg = this.add.rectangle(x, y, chipW, 26, fill, 0.98).setStrokeStyle(2, stroke, 1).setInteractive({ useHandCursor: true });
+      const t = this.add.text(x, y, isThis ? '★' : String(i + 1), { fontFamily: 'system-ui, sans-serif', fontSize: '12px', color: isThis ? '#ffe9a8' : '#cdd9ec', fontStyle: 'bold' }).setOrigin(0.5);
+      bg.on(Phaser.Input.Events.GAMEOBJECT_POINTER_DOWN, () => {
+        if (isThis) this.host().unequipSlot(i);
+        else this.host().equipSkill(i, id);
+        this.redraw();
+      });
+      objs.push(bg, t);
+    }
+    return objs;
   }
 
   private doUnlock(id: string): void {

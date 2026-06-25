@@ -42,10 +42,8 @@ import { PickupSystem, type PickupCollected } from '../world/PickupSystem';
 import { HolyPower } from '../progression/HolyPower';
 import { Health } from '../combat/Health';
 import { HealthBar } from '../combat/HealthBar';
-import { AttackButton } from '../ui/AttackButton';
-import { DashButton } from '../ui/DashButton';
 import { HolyBoltButton } from '../ui/HolyBoltButton';
-import { SkillButtonBar } from '../ui/SkillButtonBar';
+import { LoadoutBar } from '../ui/LoadoutBar';
 import { SkillState } from '../skills/SkillState';
 import { classSkills, combineMods, type SkillDef, type SkillStatMods, type ActiveActionId } from '../skills/skillData';
 import { TANK_TUNING } from '../skills/blacksmithTank';
@@ -74,7 +72,6 @@ import { getInsets, UI_MARGIN } from '../ui/uiLayout';
 import {
   CAMERA_ZOOM,
   PLAYER_ATTACK_RANGE,
-  PLAYER_ATTACK_COOLDOWN_MS,
   PLAYER_HP_REGEN_PER_SEC,
   PLAYER_HP_REGEN_DELAY_MS,
   SASQUATCH_DAMAGE,
@@ -85,8 +82,6 @@ import {
   ENERGY_REGEN_PER_SEC,
   ENERGY_REGEN_DELAY_MS,
   DASH_DAMAGE,
-  DASH_ENERGY_COST,
-  DASH_COOLDOWN_MS,
   DASH_DISTANCE,
   DASH_SPEED,
   DASH_HIT_RADIUS,
@@ -247,10 +242,8 @@ export class MainScene extends Phaser.Scene {
   private playerHealth!: Health;
   private playerBar!: HealthBar;
   private playerHpText!: Phaser.GameObjects.Text;
-  private attackButton!: AttackButton;
   private banner!: Phaser.GameObjects.Text;
   private worldFx!: Phaser.GameObjects.Layer;
-  private attackCooldownUntil = 0;
   private lastCombatTime = -1e9;
   private playerDead = false;
 
@@ -264,7 +257,7 @@ export class MainScene extends Phaser.Scene {
   // --- SKILL TREE (framework): points economy + per-class unlocks (serializable),
   //     plus the runtime layer that applies effects (passives + timed buffs/forms).
   private readonly skills = new SkillState();
-  private skillBar!: SkillButtonBar;
+  private skillBar!: LoadoutBar;
   /** Cached melee-damage multiplier (passives + active buffs/forms), recomputed on change. */
   private skillDamageMult = 1;
   /** Cooldown end-times for activatable skills, keyed by skill id. */
@@ -284,8 +277,6 @@ export class MainScene extends Phaser.Scene {
   private energy!: Health;
   private energyBar!: HealthBar;
   private lastEnergySpendTime = -1e9;
-  private dashButton!: DashButton;
-  private dashCooldownUntil = 0;
   /** True while a Tank "Plow" charge is in progress (reuses the dash movement). */
   private plowActive = false;
   /** Enemies already damaged by the current Plow (so each is hit once per charge). */
@@ -834,8 +825,6 @@ export class MainScene extends Phaser.Scene {
       .setOrigin(0, 0.5)
       .setScrollFactor(0)
       .setDepth(depth + 2);
-    this.attackButton = new AttackButton(this, () => this.tryAttack());
-    this.dashButton = new DashButton(this, () => this.tryDash());
     // Third ability — hidden until the player becomes holy at the throne swap.
     this.holyBoltButton = new HolyBoltButton(this, () => this.tryHolyBolt());
     this.holyBoltButton.setVisible(this.power.isHoly);
@@ -886,8 +875,9 @@ export class MainScene extends Phaser.Scene {
     // Gameplay keys (never gated by DEV_MODE): Attack (also the on-screen button)
     // and a desktop-convenience Dash key alongside the on-screen Dash button.
     const kb = this.input.keyboard;
-    kb?.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE).on('down', () => this.tryAttack());
-    kb?.addKey(Phaser.Input.Keyboard.KeyCodes.SHIFT).on('down', () => this.tryDash());
+    // Desktop convenience: trigger the first two equipped loadout skills.
+    kb?.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE).on('down', () => this.activateLoadoutSlot(0));
+    kb?.addKey(Phaser.Input.Keyboard.KeyCodes.SHIFT).on('down', () => this.activateLoadoutSlot(1));
     // Desktop convenience for the Holy Bolt (self-gates: holy-only + cost/cooldown).
     kb?.addKey(Phaser.Input.Keyboard.KeyCodes.F).on('down', () => this.tryHolyBolt());
     // Desktop convenience for the on-screen "Corrupt the Portal" button (self-gates).
@@ -897,13 +887,12 @@ export class MainScene extends Phaser.Scene {
   }
 
   private updateCombatHud(): void {
-    const remaining = this.attackCooldownUntil - this.time.now;
-    this.attackButton.setCooldownRatio(remaining / PLAYER_ATTACK_COOLDOWN_MS);
+    // The default attack/dash buttons are gone — the player's active kit is the
+    // equipped-skill loadout (its buttons update their own cooldown/energy state in
+    // updateSkills). Here we only refresh the vitals + the Holy Bolt grant button.
     this.playerBar.setRatio(this.playerHealth.ratio);
     this.playerHpText.setText(`${Math.ceil(this.playerHealth.current)} / ${this.playerHealth.max}`);
     this.energyBar.setRatio(this.energy.ratio);
-    const dashCdRatio = (this.dashCooldownUntil - this.time.now) / DASH_COOLDOWN_MS;
-    this.dashButton.setState(dashCdRatio, this.energy.current < DASH_ENERGY_COST);
     // Holy Bolt button (only visible/active while holy) + the trailing aura.
     if (this.power.isHoly) {
       const hbCdRatio = (this.holyBoltCooldownUntil - this.time.now) / PLAYER_HOLY_BOLT_COOLDOWN_MS;
@@ -969,15 +958,22 @@ export class MainScene extends Phaser.Scene {
 
   /** Build the skill UI (open button + activatable-skill bar) + wire the change hook. */
   private createSkillUi(): void {
-    const activatables = classSkills(this.skills.activeClass).skills.filter((d) => d.effect.kind !== 'passive');
-    this.skillBar = new SkillButtonBar(
-      this,
-      activatables.map((d) => ({ id: d.id, label: this.skillButtonLabel(d) })),
-      { onOpen: () => this.openSkillTree(), onActivate: (id) => this.activateSkill(id) },
-    );
-    // Re-apply effects + refresh the bar whenever points/unlocks change.
+    // The loadout bar (6 equipped-skill buttons) IS the player's active kit; it
+    // replaces the old fixed Attack/Dash buttons in the bottom-right.
+    this.skillBar = new LoadoutBar(this, {
+      onOpen: () => this.openSkillTree(),
+      onActivate: (slot) => this.activateLoadoutSlot(slot),
+    });
+    // Re-apply effects + refresh the bar whenever points/unlocks/loadout change.
     this.skills.onChange = () => this.recomputeSkillEffects();
+    this.skills.ensureLoadoutFloor(); // New Game: forced first skill (basic attack in slot 0)
     this.recomputeSkillEffects();
+  }
+
+  /** Activate the skill equipped in loadout `slot` (no-op for an empty slot). */
+  private activateLoadoutSlot(slot: number): void {
+    const id = this.skills.loadout()[slot];
+    if (id) this.activateSkill(id);
   }
 
   /** A short button caption for an activatable skill (first word of its name, minus the [TEST] tag). */
@@ -1002,6 +998,18 @@ export class MainScene extends Phaser.Scene {
     const ok = this.skills.unlock(def);
     if (ok) this.autosave(); // persist the spend immediately
     return ok; // recomputeSkillEffects runs via skills.onChange
+  }
+
+  /** Equip an unlocked equippable skill into a loadout slot (SkillHost; from the tree UI). */
+  equipSkill(slot: number, id: string): boolean {
+    const ok = this.skills.equip(slot, id);
+    if (ok) this.autosave();
+    return ok;
+  }
+  /** Clear a loadout slot (SkillHost). */
+  unequipSlot(slot: number): void {
+    this.skills.unequip(slot);
+    this.autosave();
   }
 
   /** DEV: respec — refund every unlocked skill, clear live buffs/forms + cooldowns. */
@@ -1057,9 +1065,21 @@ export class MainScene extends Phaser.Scene {
       if (form) this.player.sprite.setTint(form.tint!).setTintMode(Phaser.TintModes.MULTIPLY);
       else this.player.sprite.clearTint();
     }
-    // Refresh the on-screen activatable buttons to match current unlocks.
-    this.skillBar?.refresh(this.skills.activatableUnlocked().map((d) => d.id));
+    // Refresh the loadout bar: the 6 equipped skills + their labels.
+    this.refreshLoadoutBar();
     // (The HP bar reflects the new max next frame via updateCombatHud.)
+  }
+
+  /** Push the current loadout (equipped ids + labels) onto the on-screen bar. */
+  private refreshLoadoutBar(): void {
+    if (!this.skillBar) return;
+    const ids = this.skills.loadout();
+    const labels = ids.map((id) => {
+      if (!id) return null;
+      const def = classSkills(this.skills.activeClass).skills.find((s) => s.id === id);
+      return def ? this.skillButtonLabel(def) : null;
+    });
+    this.skillBar.setLoadout(ids, labels);
   }
 
   /** Activate an unlocked skill button: dispatch by its effect kind (respecting cooldown + energy). */
@@ -1123,6 +1143,10 @@ export class MainScene extends Phaser.Scene {
       this.aoeHitAll(fx, fy, c.range, c.damage);
     } else if (action === 'plow') {
       this.startPlow(); // tanky forward charge that shoves + damages the path (Tank #8)
+    } else if (action === 'basic_strike') {
+      this.doBasicStrike(); // the folded-in default attack (equippable basic)
+    } else if (action === 'dodge') {
+      this.doDodge(); // the folded-in default dodge/lunge (equippable basic)
     }
   }
 
@@ -1304,21 +1328,25 @@ export class MainScene extends Phaser.Scene {
     }
     // Release enemies whose stun/knockback-freeze has expired.
     this.updateEnemyStun();
-    // Cooldown shades on the on-screen skill buttons.
-    for (const def of this.skills.activatableUnlocked()) {
-      if (def.effect.kind === 'passive') continue;
+    // Cooldown / low-energy shades on the 6 loadout-slot buttons.
+    const loadout = this.skills.loadout();
+    for (let i = 0; i < loadout.length; i++) {
+      const id = loadout[i];
+      if (!id) continue;
+      const def = classSkills(this.skills.activeClass).skills.find((s) => s.id === id);
+      if (!def || def.effect.kind === 'passive') continue;
       const cd = def.effect.cooldownMs;
-      const until = this.skillCooldownUntil[def.id] ?? 0;
-      const ratio = until > this.time.now ? (until - this.time.now) / cd : 0;
-      this.skillBar?.setState(def.id, ratio, ratio > 0);
+      const until = this.skillCooldownUntil[id] ?? 0;
+      const cdRatio = until > this.time.now ? (until - this.time.now) / cd : 0;
+      const energyCost = 'energyCost' in def.effect ? def.effect.energyCost ?? 0 : 0;
+      const lowEnergy = energyCost > 0 && this.energy.current < energyCost;
+      this.skillBar?.setSlotState(i, cdRatio > 0 ? cdRatio : lowEnergy ? 1 : 0, cdRatio > 0 || lowEnergy);
     }
   }
 
-  private tryAttack(): void {
-    if (this.playerDead || this.dialogue.isOpen() || this.choice.isOpen()) return;
-    if (this.time.now < this.attackCooldownUntil) return; // on cooldown: tap does nothing
-    this.attackCooldownUntil = this.time.now + PLAYER_ATTACK_COOLDOWN_MS;
-
+  /** The BASIC STRIKE effect (the former default melee swing) — now an equippable
+   *  skill action. Cooldown/energy/dead-guards are handled by the skill system. */
+  private doBasicStrike(): void {
     // Swing in the facing direction; forgiving radius (the enemy is large).
     const sx = this.player.x + this.player.facingX * (PLAYER_ATTACK_RANGE * 0.5);
     const sy = this.player.y + this.player.facingY * (PLAYER_ATTACK_RANGE * 0.5);
@@ -1472,15 +1500,10 @@ export class MainScene extends Phaser.Scene {
   }
 
   /** Energy-gated lunge: spend energy, start the dash burst in the facing direction. */
-  private tryDash(): void {
-    if (this.playerDead || this.dialogue.isOpen() || this.choice.isOpen()) return;
-    if (this.isDashing() || this.time.now < this.dashCooldownUntil) return;
-    if (this.energy.current < DASH_ENERGY_COST) return; // button already shows disabled
-
-    this.energy.damage(DASH_ENERGY_COST);
-    this.lastEnergySpendTime = this.time.now;
-    this.dashCooldownUntil = this.time.now + DASH_COOLDOWN_MS;
-
+  /** The DODGE effect (the former default dash lunge) — now an equippable skill
+   *  action. Energy/cooldown/dead-guards are handled by the skill system. */
+  private doDodge(): void {
+    if (this.isDashing()) return; // already mid-lunge
     // Facing = last movement direction (or last-faced if idle); already unit-length.
     const len = Math.hypot(this.player.facingX, this.player.facingY) || 1;
     this.dashDir = { x: this.player.facingX / len, y: this.player.facingY / len };
@@ -4601,7 +4624,6 @@ export class MainScene extends Phaser.Scene {
     this.energy.full();
     this.lastEnergySpendTime = -1e9;
     this.dashEndsAt = 0;
-    this.dashCooldownUntil = 0;
     this.clearSwarmers();
     this.spawnSwarmPack(this.town.rift.x, this.town.rift.y);
     this.spawnSwarmPack(OREGON_SWARM_SPAWN.x, OREGON_SWARM_SPAWN.y);
