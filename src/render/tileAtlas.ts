@@ -142,6 +142,12 @@ export const TERRAIN_TILE_IMAGES: { key: string; file: string }[] = [
   { key: 'gold_field', file: 'tiles/terrain/Gold_field.png' }, // Gold_field.png → Heaven "Gold Field"
   { key: 'heaven_path', file: 'tiles/terrain/Heaven_path.png' }, // Heaven_path.png → Heaven "Radiant Path"
   { key: 'heaven_void', file: 'tiles/terrain/Heaven_void.png' }, // Heaven_void.png → Heaven "Cloud Edge" (BLOCKS — unchanged)
+  // --- Hell tiles ---
+  { key: 'charred_rock', file: 'tiles/terrain/Charred_rock.png' }, // Charred_rock.png → Hell "Charred Rock"
+  { key: 'ash_ground', file: 'tiles/terrain/Ash_ground.png' }, // Ash_ground.png → Hell "Ash"
+  { key: 'ember_rock', file: 'tiles/terrain/Ember_rock.png' }, // Ember_rock.png → Hell "Ember Rock"
+  { key: 'lava', file: 'tiles/terrain/Lava.png' }, // Lava.png → Hell "Lava" (BLOCKS — unchanged)
+  { key: 'hell_void', file: 'tiles/terrain/Hell_void.png' }, // Hell_void.png → Hell "Chasm" (BLOCKS — unchanged)
 ];
 
 /** Texture cache key under which a terrain's real tile PNG is loaded. */
