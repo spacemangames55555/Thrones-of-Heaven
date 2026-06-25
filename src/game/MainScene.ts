@@ -50,6 +50,8 @@ import { TANK_TUNING } from '../skills/blacksmithTank';
 import { DPS_TUNING } from '../skills/blacksmithDps';
 import { CONTROL_TUNING, COUNTER_ID, IRON_WILL_ID, DOMINANCE_ID, IRON_PYRITE_ID } from '../skills/blacksmithControl';
 import { WIZARD_FIREWIND_TUNING, WIZ_STORM_ID } from '../skills/wizardFireWind';
+import { AlliedSummonManager } from '../summon/AlliedSummonManager';
+import { ICE_GOLEM_CONFIG, ICE_GOLEM_TUNING } from '../summon/summonData';
 import { PlayerPower } from '../player/PlayerPower';
 import { ANGEL_ENCOUNTER } from '../story/angelData';
 import { QuestChain, type QuestEvent } from '../quest/QuestChain';
@@ -251,6 +253,8 @@ export class MainScene extends Phaser.Scene {
   private worldFx!: Phaser.GameObjects.Layer;
   private lastCombatTime = -1e9;
   private playerDead = false;
+  /** Player-allied summons (Ice Golem, etc.) — transient, not serialized. */
+  private summons!: AlliedSummonManager;
 
   // The Power Swap: demonic (default) → holy (at God's judgment). Centralized +
   // serializable; drives the golden ability reflavor + the Holy Bolt's gating.
@@ -583,6 +587,14 @@ export class MainScene extends Phaser.Scene {
       this.spawnSkillRing(x, y, radius, 0xff8a3a);
       this.aoeHitAll(x, y, radius, dmg);
     };
+    // Allied summons (Ice Golem) — player-side tanks. Enemy bolts aimed at a summon hit
+    // it (intercept). New summons are routed past the UI camera + given a terrain collider.
+    this.summons = new AlliedSummonManager(this);
+    this.summons.onSpawn = (s) => {
+      this.physics.add.collider(s.sprite, this.map.layer);
+      this.uiCamera?.ignore(s.objects());
+    };
+    this.projectiles.onSummonHit = (x, y, radius, dmg) => this.resolveEnemyBoltVsSummon(x, y, radius, dmg);
     // Persistent ground hazards (Greed): zones draw into the world-FX layer; a tick
     // applies player damage through the existing contact-damage path.
     this.hazards = new HazardField(this, this.worldFx);
@@ -782,6 +794,7 @@ export class MainScene extends Phaser.Scene {
       this.haltCherubs();
       this.haltBosses();
       this.haltDemons();
+      this.summons.halt();
       this.corruptButton.setVisible(false);
       this.readout.update();
       return;
@@ -806,6 +819,7 @@ export class MainScene extends Phaser.Scene {
       this.haltCherubs();
       this.haltBosses();
       this.haltDemons();
+      this.summons.halt();
       this.readout.update();
       return;
     }
@@ -837,7 +851,8 @@ export class MainScene extends Phaser.Scene {
       // "return to the outpost" completes before the patron auto-offers the next quest)
       if (this.isDashing()) this.talkButton.setVisible(false);
       else this.checkInteractions();
-      this.sasquatch.update(this.player.x, this.player.y, this.time.now);
+      const sqTarget = this.enemyMoveTarget(this.sasquatch.x, this.sasquatch.y); // golem draws aggro
+      this.sasquatch.update(sqTarget.x, sqTarget.y, this.time.now);
       this.updateSwarmers();
       this.updateAngels();
       this.updateTownsfolk(); // prune dead first so the wave manager sees the live count
@@ -857,6 +872,7 @@ export class MainScene extends Phaser.Scene {
     this.updateBosses();
     this.updateDemons();
     this.updateGodJudgment();
+    this.summons.update(this.player.x, this.player.y, this.time.now); // allied tanks follow + prune
     // Control tree: register the always-on auras (Dominance / Iron Pyrite) + the
     // player-incoming WEAKEN, then scale slowed enemies' velocity. These run AFTER
     // every enemy update so the slow overrides the chase velocity just set.
@@ -1427,6 +1443,8 @@ export class MainScene extends Phaser.Scene {
           this.aoeHitAll(this.player.x, this.player.y, c.radius, this.skillDamage(c.damage));
         });
       }
+    } else if (action === 'summon_ice_golem') {
+      this.summonIceGolem(); // allied tank/blocker summon (draws aggro, no attack)
     }
   }
 
@@ -1710,6 +1728,52 @@ export class MainScene extends Phaser.Scene {
     this.showBanner('Sasquatch defeated', 1600);
     this.notifyQuest('sasquatch-defeated');
     this.gainXP(this.sasquatch.xpReward);
+  }
+
+  // --- Allied summons (Ice Golem): enemy retargeting + damage redirection -------
+  //
+  // The golem "draws aggro": at each enemy's update we feed it the golem's position
+  // instead of the player's when an aggro-drawing summon is within range of that enemy
+  // (so it chases/aims at the golem), and the enemy's contact/ranged damage is redirected
+  // to the golem. With no summon up, every enemy targets the player exactly as before.
+
+  /** The point an enemy at (ex,ey) should pursue: a nearby aggro-drawing summon, else the
+   *  player. Generic — call it at any enemy's update to make summons pull aggro. */
+  private enemyMoveTarget(ex: number, ey: number): { x: number; y: number } {
+    const g = this.summons?.aggroSummonNear(ex, ey);
+    return g ? { x: g.x, y: g.y } : { x: this.player.x, y: this.player.y };
+  }
+
+  /** If an aggro-drawing summon is near the attacking enemy at (ex,ey), the hit lands on
+   *  the SUMMON (it soaks) and this returns true; otherwise false (caller damages the player). */
+  private redirectContactToSummon(ex: number, ey: number, amount: number): boolean {
+    const g = this.summons?.aggroSummonNear(ex, ey);
+    if (!g) return false;
+    const dealt = g.takeHit(amount);
+    if (dealt > 0) {
+      this.spawnDamageNumber(g.x, g.y - 30, dealt, '#bfefff');
+      this.lastCombatTime = this.time.now;
+    }
+    return true;
+  }
+
+  /** Enemy-bolt vs allied-summon (ProjectileSystem.onSummonHit): a summon the bolt reached
+   *  intercepts it (soaks the damage). Returns true if a summon was hit (bolt despawns). */
+  private resolveEnemyBoltVsSummon(x: number, y: number, radius: number, damage: number): boolean {
+    const g = this.summons?.summonAt(x, y, radius);
+    if (!g) return false;
+    const dealt = g.takeHit(damage);
+    if (dealt > 0) this.spawnDamageNumber(g.x, g.y - 30, dealt, '#bfefff');
+    return true;
+  }
+
+  /** Summon an Ice Golem near the player (the skill action + the dev button both call this). */
+  private summonIceGolem(): void {
+    const { dx, dy } = this.facingUnit();
+    const g = this.summons.summon(ICE_GOLEM_CONFIG, this.player.x + dx * 40, this.player.y + dy * 40, ICE_GOLEM_TUNING.maxConcurrent);
+    this.spawnSkillRing(g.x, g.y, ICE_GOLEM_TUNING.bodyRadius + 14, 0x8fd8ff);
+    this.showBanner('Ice Golem summoned', 1200);
+    this.lastCombatTime = this.time.now;
   }
 
   /** Iron Pyrite (capstone form): the player's attacks STAGGER (briefly stun) enemies hit. */
@@ -2028,6 +2092,7 @@ export class MainScene extends Phaser.Scene {
 
   private onSasquatchStrike(): void {
     if (this.playerDead) return;
+    if (this.redirectContactToSummon(this.sasquatch.x, this.sasquatch.y, SASQUATCH_DAMAGE)) return; // golem soaks it
     const dealt = this.playerHealth.damage(SASQUATCH_DAMAGE);
     this.player.flash();
     this.spawnDamageNumber(this.player.x, this.player.y - 26, dealt, '#ff6060');
@@ -2057,6 +2122,7 @@ export class MainScene extends Phaser.Scene {
     }
     this.player.setDirection(0, 0);
     this.projectiles.clear(); // drop any bolts still in flight
+    this.summons.clear(); // allied summons don't survive the player's death
     this.lastCombatTime = -1e9;
     this.playerDead = false;
     this.controls.setEnabled(true);
@@ -2272,7 +2338,7 @@ export class MainScene extends Phaser.Scene {
       const a = (Math.PI * 2 * i) / SWARM_PACK_SIZE + Math.random() * 0.5;
       const r = 36 + Math.random() * 34;
       const s = new SpiritSwarmer(this, cx + Math.cos(a) * r, cy + Math.sin(a) * r);
-      s.onContact = () => this.onSwarmerContact();
+      s.onContact = () => this.onSwarmerContact(s);
       this.physics.add.collider(s.sprite, this.map.layer);
       s.setRevealed(this.spirit.isActive());
       this.uiCamera?.ignore(s.sprite); // runtime world object: keep it off the UI camera
@@ -2288,7 +2354,10 @@ export class MainScene extends Phaser.Scene {
       this.swarmersRevealed = sv;
       for (const s of this.swarmers) s.setRevealed(sv);
     }
-    for (const s of this.swarmers) s.update(this.player.x, this.player.y, this.time.now);
+    for (const s of this.swarmers) {
+      const t = this.enemyMoveTarget(s.x, s.y); // chase the Ice Golem if it's drawing aggro
+      s.update(t.x, t.y, this.time.now);
+    }
     if (this.swarmers.some((s) => !s.isAlive)) this.swarmers = this.swarmers.filter((s) => s.isAlive);
   }
 
@@ -2296,8 +2365,9 @@ export class MainScene extends Phaser.Scene {
     for (const s of this.swarmers) s.halt();
   }
 
-  private onSwarmerContact(): void {
+  private onSwarmerContact(s: SpiritSwarmer): void {
     if (this.playerDead) return;
+    if (this.redirectContactToSummon(s.x, s.y, SWARMER_CONTACT_DAMAGE)) return; // golem soaks it
     const dealt = this.playerHealth.damage(SWARMER_CONTACT_DAMAGE);
     this.player.flash();
     this.spawnDamageNumber(this.player.x, this.player.y - 26, dealt, '#c89bff');
@@ -2347,8 +2417,9 @@ export class MainScene extends Phaser.Scene {
   /** Drive each angel with line-of-sight from the scene, then prune the dead. */
   private updateAngels(): void {
     for (const a of this.angels) {
-      const los = this.hasLineOfSight(a.x, a.y, this.player.x, this.player.y);
-      a.update(this.player.x, this.player.y, this.time.now, los);
+      const t = this.enemyMoveTarget(a.x, a.y); // aim/kite the Ice Golem if it's drawing aggro
+      const los = this.hasLineOfSight(a.x, a.y, t.x, t.y);
+      a.update(t.x, t.y, this.time.now, los);
     }
     if (this.angels.some((a) => !a.isAlive)) this.angels = this.angels.filter((a) => a.isAlive);
   }
@@ -3453,6 +3524,7 @@ export class MainScene extends Phaser.Scene {
       this.skillTimed = []; // timed buffs/forms are runtime-only (not persisted)
       this.releaseAllStuns();
       this.clearSpellHazards(); // drop any Wizard Lava patches
+      this.summons.clear(); // summons are transient — never carried across a load
       this.recomputeSkillEffects(); // apply passive maxHP/damage/speed/reduction now
       this.playerHealth.setMax(this.skillAdjustedMaxHP());
       this.playerHealth.current = Phaser.Math.Clamp(s.player.hp, 1, this.playerHealth.max);
@@ -4629,6 +4701,9 @@ export class MainScene extends Phaser.Scene {
     // Remember where we're leaving so a later return lands there by default.
     this.worldPos[this.activeWorld] = { x: this.player.x, y: this.player.y };
 
+    // Allied summons don't travel between worlds — clear them on every world change.
+    this.summons.clear();
+
     // Pause Earth's live enemy bodies while away (so collideWorldBounds can't yank
     // them into the other region); resume them on return.
     if (worldId === WORLD_EARTH) this.resumeEarthBodies();
@@ -5235,6 +5310,7 @@ export class MainScene extends Phaser.Scene {
     this.skillCooldownDur = {};
     this.releaseAllStuns();
     this.clearSpellHazards();
+    this.summons.clear();
     this.skills.hardReset();
     this.progression.reset();
     this.requireStartingSkill(); // no base kit → re-open the forced first-skill pick
@@ -5324,6 +5400,8 @@ export class MainScene extends Phaser.Scene {
       { label: 'Reset Skills', onPress: () => this.devResetSkills() },
       { label: 'Set Class: Wizard', onPress: () => this.devSetClass('wizard') },
       { label: 'Set Class: Blacksmith', onPress: () => this.devSetClass('blacksmith') },
+      { label: 'Summon Ice Golem', onPress: () => this.summonIceGolem() },
+      { label: 'Clear Summons', onPress: () => this.summons.clear() },
       { label: 'Start Portal Defense', onPress: () => this.devStartPortalDefense() },
       { label: 'Stop Portal Defense', onPress: () => this.resetPortalDefense() },
       { label: 'Refill Energy', onPress: () => this.energy.full() },

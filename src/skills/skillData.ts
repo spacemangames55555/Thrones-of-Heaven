@@ -23,6 +23,7 @@ import { TANK_TREE_SKILLS } from './blacksmithTank';
 import { DPS_TREE_SKILLS } from './blacksmithDps';
 import { CONTROL_TREE_SKILLS } from './blacksmithControl';
 import { WIZARD_FIREWIND_SKILLS, WIZ_FIREWIND_TREE } from './wizardFireWind';
+import { ICE_GOLEM_SKILL_ID, ICE_GOLEM_TUNING } from '../summon/summonData';
 
 /** How many active skills the player can equip to on-screen slots. */
 export const LOADOUT_SLOTS = 6;
@@ -84,7 +85,9 @@ export type ActiveActionId =
   | 'wiz_lava'
   | 'wiz_immolation'
   | 'wiz_jet_stream'
-  | 'wiz_tornado';
+  | 'wiz_tornado'
+  // Allied summons (player-side).
+  | 'summon_ice_golem';
 
 /**
  * The five supported EFFECT KINDS. The scene applies them generically:
@@ -145,9 +148,9 @@ export function isEquippableSkill(def: SkillDef): boolean {
   return def.effect.kind !== 'passive';
 }
 
-/** ACTIVE ability ids that deal NO direct damage (pure utility) — excluded from the
- *  "damaging active" classification below. Keep this list tiny + explicit. */
-const NON_DAMAGING_ACTIVE_ACTIONS: ReadonlySet<ActiveActionId> = new Set(['intimidate']);
+/** ACTIVE ability ids that deal NO direct damage (pure utility / summons) — excluded from
+ *  the "damaging active" classification below. Keep this list tiny + explicit. */
+const NON_DAMAGING_ACTIVE_ACTIONS: ReadonlySet<ActiveActionId> = new Set(['intimidate', 'summon_ice_golem']);
 
 /**
  * DAMAGING ACTIVE = an `active`-kind skill whose ability deals damage. This is the
@@ -216,6 +219,18 @@ const WIZARD: ClassSkills = {
   skills: [
     // --- FIRE/WIND DPS TREE (10 damage skills, linear → Elemental Storm). Data in wizardFireWind.ts. ---
     ...WIZARD_FIREWIND_SKILLS,
+    // --- ICE GOLEM (standalone proof of the allied-summon system). Placed in the Ice/Poison
+    //     tree as its single node FOR NOW; the full Ice/Poison tree (next build) keeps this id
+    //     and slots it at the right tier. Summon = a player-allied tank (no direct damage). ---
+    {
+      id: ICE_GOLEM_SKILL_ID,
+      tree: 'wiz_icepoison',
+      name: 'Summon Ice Golem',
+      description: `Activate: summon an Ice Golem ally (${ICE_GOLEM_TUNING.maxHP} HP, ${(ICE_GOLEM_TUNING.durationMs / 1000).toFixed(0)}s) that draws enemy aggro and soaks damage — your meat-shield. It does not attack.`,
+      cost: 1,
+      tier: 0,
+      effect: { kind: 'active', action: 'summon_ice_golem', cooldownMs: ICE_GOLEM_TUNING.summonCooldownMs, energyCost: ICE_GOLEM_TUNING.summonEnergyCost },
+    },
   ],
 };
 
