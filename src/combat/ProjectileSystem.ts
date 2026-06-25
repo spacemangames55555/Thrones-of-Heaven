@@ -89,6 +89,10 @@ export class ProjectileSystem {
 
   /** Called when an ENEMY bolt strikes the player. */
   onPlayerHit?: (damage: number) => void;
+  /** Called for an ENEMY bolt each step: damage a player-ALLIED SUMMON within (x,y,radius);
+   *  return true if one was hit so the bolt impacts/despawns. Lets a summoned tank (Ice
+   *  Golem) intercept enemy fire aimed at it (the mirror of onEnemyHit for player bolts). */
+  onSummonHit?: (x: number, y: number, radius: number, damage: number) => boolean;
   /** Called for a PLAYER bolt each step: damage an enemy within (x,y,radius);
    *  return true if one was hit so the bolt impacts/despawns (like an enemy bolt
    *  hitting the player). The scene owns the enemy lists, so it resolves the hit. */
@@ -138,6 +142,11 @@ export class ProjectileSystem {
       }
       const terr = this.map.terrainAtWorld(b.sprite.x, b.sprite.y);
       if (terr?.blocks) {
+        this.impact(b);
+        continue;
+      }
+      // ENEMY bolt: a player-allied summon (Ice Golem) it was aimed at intercepts it first.
+      if (b.faction === 'enemy' && this.onSummonHit?.(b.sprite.x, b.sprite.y, b.radius, b.damage)) {
         this.impact(b);
         continue;
       }
