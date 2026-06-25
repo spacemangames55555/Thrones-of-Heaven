@@ -8,8 +8,9 @@ export interface SkillBarDef {
   label: string;
 }
 
-const SIZE = 52;
-const GAP = 8;
+const SIZE = 46;
+const GAP = 6;
+const HEADER_H = 32;
 const DEPTH = 1420;
 
 /**
@@ -34,7 +35,7 @@ export class SkillButtonBar {
 
     // Header "open skills" button (always visible).
     this.openBg = scene.add
-      .rectangle(0, 0, SIZE, 34, 0x241433, 0.92)
+      .rectangle(0, 0, SIZE, HEADER_H, 0x241433, 0.92)
       .setStrokeStyle(2, 0xb98aff, 0.95)
       .setScrollFactor(0)
       .setDepth(DEPTH)
@@ -110,12 +111,17 @@ export class SkillButtonBar {
     const insets = getInsets(this.scene);
     const x = w - insets.right - SIZE / 2 - 10;
 
-    // Header sits in the upper-middle right; skill buttons stack below it. The whole
-    // column lives in the free mid-right band (clear of the bottom action cluster).
-    let y = h * 0.3;
+    // The whole column (header + one button per shown skill) is vertically CENTERED
+    // in the free mid-right band, clamped clear of the top HUD and bottom controls.
+    const n = this.visibleIds.length;
+    const total = HEADER_H + (n > 0 ? GAP + n * SIZE + (n - 1) * GAP : 0);
+    const minTop = insets.top + h * 0.16;
+    const maxBottom = h - insets.bottom - h * 0.18; // keep clear of the bottom action cluster
+    let y = Phaser.Math.Clamp(h * 0.5 - total / 2, minTop, Math.max(minTop, maxBottom - total)) + HEADER_H / 2;
+
     this.openBg.setPosition(x, y);
     this.openLabel.setPosition(x, y);
-    y += 34 / 2 + GAP + SIZE / 2;
+    y += HEADER_H / 2 + GAP + SIZE / 2;
     for (const id of this.visibleIds) {
       const b = this.buttons.get(id);
       if (!b) continue;
