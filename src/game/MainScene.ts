@@ -50,6 +50,7 @@ import { TANK_TUNING } from '../skills/blacksmithTank';
 import { DPS_TUNING } from '../skills/blacksmithDps';
 import { CONTROL_TUNING, COUNTER_ID, IRON_WILL_ID, DOMINANCE_ID, IRON_PYRITE_ID } from '../skills/blacksmithControl';
 import { WIZARD_FIREWIND_TUNING, WIZ_STORM_ID } from '../skills/wizardFireWind';
+import { ICEPOISON_TUNING } from '../skills/wizardIcePoison';
 import { AlliedSummonManager } from '../summon/AlliedSummonManager';
 import { ICE_GOLEM_CONFIG, ICE_GOLEM_TUNING } from '../summon/summonData';
 import { PlayerPower } from '../player/PlayerPower';
@@ -316,7 +317,14 @@ export class MainScene extends Phaser.Scene {
   private gustHits = new Set<CombatEnemy>();
   /** Active Wizard "Lava" ground patches: reusable persistent-hazard pattern that damages
    *  ENEMIES standing in them over time (mirrors the boss HazardField, enemy-facing). */
-  private spellHazards: { x: number; y: number; radius: number; tickDamage: number; tickMs: number; nextTickAt: number; expireAt: number; fx: Phaser.GameObjects.Arc }[] = [];
+  private spellHazards: { x: number; y: number; radius: number; tickDamage: number; tickMs: number; nextTickAt: number; expireAt: number; slowFactor: number; weaken: number; fx: Phaser.GameObjects.Arc }[] = [];
+  /** Active per-target DoTs (Toxic Bolt / Plague). Plague carries a shared spread budget so
+   *  the contagion jumps to nearby enemies up to a cap. Reusable damage-over-time primitive. */
+  private dots: { target: CombatEnemy; dmgPerTick: number; tickMs: number; nextTickAt: number; expireAt: number; color: number; spread?: { radius: number; budget: { remaining: number } } }[] = [];
+  /** Timed player-incoming WEAKEN from Ice/Poison effects (Frostbite / Freezing Rain /
+   *  Pestilence) — folded into updateControlEffects, same model as the Blacksmith weaken. */
+  private poisonWeakenUntil = 0;
+  private poisonWeakenFactor = 0;
   private dashEndsAt = 0;
   private dashDir = { x: 0, y: 1 };
   private dashHits = new Set<object>();
@@ -580,7 +588,7 @@ export class MainScene extends Phaser.Scene {
     // UI camera ignores them). Enemy bolts damage the player; impacts spawn a poof.
     this.projectiles = new ProjectileSystem(this, this.map, this.worldFx);
     this.projectiles.onPlayerHit = (dmg) => this.onProjectileHitPlayer(dmg);
-    this.projectiles.onEnemyHit = (x, y, radius, dmg) => this.resolveHolyBoltHit(x, y, radius, dmg);
+    this.projectiles.onEnemyHit = (x, y, radius, dmg, hitSet) => this.resolveHolyBoltHit(x, y, radius, dmg, hitSet);
     this.projectiles.onImpact = (x, y, color) => this.spawnBoltImpact(x, y, color);
     // Splash bolts (Wizard's Combust + storm-empowered bolts) burst into an AoE on impact.
     this.projectiles.onSplash = (x, y, radius, dmg) => {
@@ -595,6 +603,8 @@ export class MainScene extends Phaser.Scene {
       this.uiCamera?.ignore(s.objects());
     };
     this.projectiles.onSummonHit = (x, y, radius, dmg) => this.resolveEnemyBoltVsSummon(x, y, radius, dmg);
+    // Toxic Bolt: a poison field blooms where the bolt lands (per-target DoT in radius).
+    this.projectiles.onImpactDot = (x, y, dot) => this.applyDotInRange(x, y, dot.radius, dot.dmgPerTick, dot.tickMs, dot.durationMs, dot.color);
     // Persistent ground hazards (Greed): zones draw into the world-FX layer; a tick
     // applies player damage through the existing contact-damage path.
     this.hazards = new HazardField(this, this.worldFx);
@@ -878,7 +888,8 @@ export class MainScene extends Phaser.Scene {
     // every enemy update so the slow overrides the chase velocity just set.
     this.updateControlEffects();
     this.applyEnemySlows();
-    this.updateSpellHazards(); // Wizard "Lava" patches tick damage to enemies in them
+    this.updateSpellHazards(); // ground zones (Lava / Black Ice / Freezing Rain / Biohazard / Pestilence)
+    this.updateDots(); // poison DoTs + Plague contagion spread
     this.projectiles.update(delta, this.player.x, this.player.y, PROJECTILE_PLAYER_HIT_RADIUS);
     this.hazards.update(this.time.now, this.player.x, this.player.y, this.playerDead);
     this.pickups.update(this.player.x, this.player.y);
@@ -1154,6 +1165,8 @@ export class MainScene extends Phaser.Scene {
     this.skillCooldownDur = {};
     this.releaseAllStuns();
     this.clearSpellHazards();
+    this.clearDots();
+    this.summons.clear();
     this.requireStartingSkill(); // pick a first skill if this class has none yet
     this.recomputeSkillEffects();
     this.playerHealth.setMax(this.skillAdjustedMaxHP());
@@ -1445,6 +1458,66 @@ export class MainScene extends Phaser.Scene {
       }
     } else if (action === 'summon_ice_golem') {
       this.summonIceGolem(); // allied tank/blocker summon (draws aggro, no attack)
+    } else if (action === 'wiz_icicle') {
+      // Ice/Poison #1 — piercing ice shard (passes through several enemies).
+      const c = ICEPOISON_TUNING.icicle;
+      const { dx, dy } = this.facingUnit();
+      this.projectiles.spawn({ x: px + dx * 18, y: py + dy * 18, dirX: dx, dirY: dy, speed: c.speed, damage: this.skillDamage(c.damage), maxRange: c.range, faction: 'player', color: 0x9fe8ff, radius: c.radius, pierce: c.pierce });
+      this.notifyBossesPlayerAction('ranged');
+    } else if (action === 'wiz_toxic_bolt') {
+      // Ice/Poison #2 — bolt that poisons (DoT field blooms on impact).
+      const c = ICEPOISON_TUNING.toxicBolt;
+      const { dx, dy } = this.facingUnit();
+      this.projectiles.spawn({
+        x: px + dx * 18, y: py + dy * 18, dirX: dx, dirY: dy, speed: c.speed, damage: this.skillDamage(c.impactDamage), maxRange: c.range, faction: 'player', color: 0x9acd32, radius: c.radius,
+        dotOnImpact: { dmgPerTick: this.skillDamage(c.dotDamage), tickMs: c.dotTickMs, durationMs: c.dotDurationMs, radius: c.dotRadius, color: 0x9acd32 },
+      });
+      this.notifyBossesPlayerAction('ranged');
+    } else if (action === 'wiz_black_ice') {
+      // Ice/Poison #3 — slick ground patch ahead: SLOW only, no damage.
+      const c = ICEPOISON_TUNING.blackIce;
+      const { dx, dy } = this.facingUnit();
+      this.spawnSpellHazard(px + dx * c.placeAhead, py + dy * c.placeAhead, c.radius, 0, c.durationMs, c.tickMs, { slowFactor: c.slowFactor, fill: 0x4a6a8f, stroke: 0xbfe6ff });
+    } else if (action === 'wiz_frostbite') {
+      // Ice/Poison #4 — chill a foe ahead: damage + SLOW + WEAKEN.
+      const c = ICEPOISON_TUNING.frostbite;
+      const fx = px + this.player.facingX * c.range * 0.6;
+      const fy = py + this.player.facingY * c.range * 0.6;
+      this.spawnSkillRing(fx, fy, c.range, 0xbfe6ff);
+      this.aoeHitAll(fx, fy, c.range, this.skillDamage(c.damage));
+      this.slowEnemiesInRange(fx, fy, c.range, c.durationMs, c.slowFactor);
+      if (this.combatEnemiesInRange(fx, fy, c.range).length > 0) this.setPoisonWeaken(c.weaken, c.durationMs);
+    } else if (action === 'wiz_sludge') {
+      // Ice/Poison #5 — toxic cone: damage + KNOCKBACK (true wedge).
+      const c = ICEPOISON_TUNING.sludge;
+      const { dx, dy } = this.facingUnit();
+      const half = (c.coneHalfAngleDeg * Math.PI) / 180;
+      this.spawnConeFx(px, py, dx, dy, c.range, half, 0x9acd32);
+      const inWedge = (ex: number, ey: number): boolean => this.inCone(px, py, dx, dy, ex, ey, c.range, half);
+      this.aoeHitAll(px, py, c.range, this.skillDamage(c.damage), inWedge);
+      this.knockbackEnemiesInRange(px, py, c.range, c.knockback, 200, inWedge);
+    } else if (action === 'wiz_freezing_rain') {
+      // Ice/Poison #6 — zone around the player: SLOW + DAMAGE over time.
+      const c = ICEPOISON_TUNING.freezingRain;
+      this.spawnSpellHazard(px, py, c.radius, this.skillDamage(c.tickDamage), c.durationMs, c.tickMs, { slowFactor: c.slowFactor, fill: 0x6aa0d0, stroke: 0xbfe6ff });
+    } else if (action === 'wiz_biohazard') {
+      // Ice/Poison #7 — lob a poison cloud ahead: lingering DoT zone.
+      const c = ICEPOISON_TUNING.biohazard;
+      const { dx, dy } = this.facingUnit();
+      this.spawnSpellHazard(px + dx * c.throwRange, py + dy * c.throwRange, c.radius, this.skillDamage(c.tickDamage), c.durationMs, c.tickMs, { fill: 0x6b8e23, stroke: 0x9acd32 });
+    } else if (action === 'wiz_plague') {
+      // Ice/Poison #8 — infect foes ahead with a CONTAGIOUS DoT that spreads.
+      const c = ICEPOISON_TUNING.plague;
+      const fx = px + this.player.facingX * c.applyRange * 0.6;
+      const fy = py + this.player.facingY * c.applyRange * 0.6;
+      this.spawnSkillRing(fx, fy, c.applyRadius, 0x9acd32);
+      this.applyPlagueInRange(fx, fy, c.applyRadius, this.skillDamage(c.dotDamage), c.dotTickMs, c.dotDurationMs, c.spreadRadius, c.maxSpread);
+    } else if (action === 'wiz_pestilence') {
+      // Ice/Poison #10 — ULTIMATE: a huge field — heavy DoT + SLOW + WEAKEN.
+      const c = ICEPOISON_TUNING.pestilence;
+      this.spawnSkillRing(px, py, c.radius, 0x9acd32);
+      this.spawnSpellHazard(px, py, c.radius, this.skillDamage(c.tickDamage), c.durationMs, c.tickMs, { slowFactor: c.slowFactor, weaken: c.weaken, fill: 0x6b8e23, stroke: 0x9acd32 });
+      this.showBanner('Pestilence!', 1400);
     }
   }
 
@@ -1542,24 +1615,47 @@ export class MainScene extends Phaser.Scene {
     this.lastCombatTime = this.time.now;
   }
 
-  /** Drop a Wizard "Lava" patch: a persistent ground zone that damages enemies standing
-   *  in it each tick for its lifetime (the enemy-facing twin of the boss HazardField). */
-  private spawnSpellHazard(x: number, y: number, radius: number, tickDamage: number, durationMs: number, tickMs: number): void {
+  /**
+   * Drop a persistent ground zone (the enemy-facing twin of the boss HazardField). Each
+   * tick it can DAMAGE (tickDamage), SLOW (opts.slowFactor < 1) and/or WEAKEN (opts.weaken)
+   * enemies inside. Reused by Lava (fire) + the Ice/Poison zones (Black Ice = slow only,
+   * Freezing Rain = slow+damage, Biohazard = poison damage, Pestilence = damage+slow+weaken).
+   */
+  private spawnSpellHazard(
+    x: number,
+    y: number,
+    radius: number,
+    tickDamage: number,
+    durationMs: number,
+    tickMs: number,
+    opts?: { slowFactor?: number; weaken?: number; fill?: number; stroke?: number },
+  ): void {
     const now = this.time.now;
-    const fx = this.add.circle(x, y, radius, 0xff6a1a, 0.28).setStrokeStyle(2, 0xffb020, 0.9).setDepth(6);
+    const fill = opts?.fill ?? 0xff6a1a;
+    const stroke = opts?.stroke ?? 0xffb020;
+    const fx = this.add.circle(x, y, radius, fill, 0.26).setStrokeStyle(2, stroke, 0.9).setDepth(6);
     this.worldFx.add(fx);
-    this.tweens.add({ targets: fx, alpha: { from: 0.4, to: 0.18 }, duration: 380, yoyo: true, repeat: -1 });
-    this.spellHazards.push({ x, y, radius, tickDamage, tickMs, nextTickAt: now + tickMs, expireAt: now + durationMs, fx });
+    this.tweens.add({ targets: fx, alpha: { from: 0.38, to: 0.16 }, duration: 380, yoyo: true, repeat: -1 });
+    this.spellHazards.push({
+      x, y, radius, tickDamage, tickMs,
+      slowFactor: opts?.slowFactor ?? 1,
+      weaken: opts?.weaken ?? 0,
+      nextTickAt: now + tickMs,
+      expireAt: now + durationMs,
+      fx,
+    });
   }
 
-  /** Per-frame: tick + expire the Wizard ground hazards (Lava). Runs after enemy updates. */
+  /** Per-frame: tick (damage/slow/weaken) + expire the ground hazards. Runs after enemy updates. */
   private updateSpellHazards(): void {
     if (this.spellHazards.length === 0) return;
     const now = this.time.now;
     for (const h of this.spellHazards) {
       if (now >= h.nextTickAt) {
         h.nextTickAt = now + h.tickMs;
-        this.aoeHitAll(h.x, h.y, h.radius, h.tickDamage);
+        if (h.tickDamage > 0) this.aoeHitAll(h.x, h.y, h.radius, h.tickDamage);
+        if (h.slowFactor < 1) this.slowEnemiesInRange(h.x, h.y, h.radius, h.tickMs * 1.5, h.slowFactor);
+        if (h.weaken > 0 && this.combatEnemiesInRange(h.x, h.y, h.radius).length > 0) this.setPoisonWeaken(h.weaken, h.tickMs * 1.5);
       }
     }
     if (this.spellHazards.some((h) => now >= h.expireAt)) {
@@ -1573,13 +1669,84 @@ export class MainScene extends Phaser.Scene {
     }
   }
 
-  /** Remove every Wizard ground hazard immediately (dev reset / save load). */
+  /** Remove every ground hazard immediately (dev reset / save load). */
   private clearSpellHazards(): void {
     for (const h of this.spellHazards) {
       this.tweens.killTweensOf(h.fx);
       h.fx.destroy();
     }
     this.spellHazards = [];
+  }
+
+  // --- DoT (damage-over-time) + contagion primitive (Toxic Bolt / Plague) -------
+
+  /** Apply a poison DoT to every live enemy within (x,y,radius) — used by Toxic Bolt's
+   *  impact field. Each gets independent ticks for `durationMs`. */
+  private applyDotInRange(x: number, y: number, radius: number, dmgPerTick: number, tickMs: number, durationMs: number, color: number): void {
+    for (const e of this.combatEnemiesInRange(x, y, radius)) this.addDot(e, dmgPerTick, tickMs, durationMs, color);
+  }
+
+  /** PLAGUE: apply a CONTAGIOUS DoT to enemies near (x,y) — it spreads to nearby enemies
+   *  (sharing one budget so total infections are capped at `maxSpread`). */
+  private applyPlagueInRange(x: number, y: number, radius: number, dmgPerTick: number, tickMs: number, durationMs: number, spreadRadius: number, maxSpread: number): void {
+    const budget = { remaining: maxSpread };
+    for (const e of this.combatEnemiesInRange(x, y, radius)) {
+      this.addDot(e, dmgPerTick, tickMs, durationMs, 0x9acd32, { radius: spreadRadius, budget });
+    }
+  }
+
+  /** Add a DoT to an enemy (skips a duplicate from the same contagion budget). */
+  private addDot(target: CombatEnemy, dmgPerTick: number, tickMs: number, durationMs: number, color: number, spread?: { radius: number; budget: { remaining: number } }): void {
+    if (!target.isAlive) return;
+    if (spread && this.dots.some((d) => d.target === target && d.spread?.budget === spread.budget)) return; // already infected this cast
+    const now = this.time.now;
+    this.dots.push({ target, dmgPerTick, tickMs, nextTickAt: now + tickMs, expireAt: now + durationMs, color, spread });
+  }
+
+  /** Per-frame: tick every DoT (+ spread contagion), then prune finished/dead ones. */
+  private updateDots(): void {
+    if (this.dots.length === 0) return;
+    const now = this.time.now;
+    for (const d of this.dots) {
+      if (!d.target.isAlive || now >= d.expireAt) continue;
+      if (now >= d.nextTickAt) {
+        d.nextTickAt = now + d.tickMs;
+        this.damageOneEnemy(d.target, d.dmgPerTick);
+        // Contagion: an infected enemy spreads the plague to nearby uninfected enemies.
+        if (d.spread && d.spread.budget.remaining > 0 && d.target.isAlive) {
+          for (const e of this.combatEnemiesInRange(d.target.x, d.target.y, d.spread.radius)) {
+            if (d.spread.budget.remaining <= 0) break;
+            if (e === d.target) continue;
+            if (this.dots.some((o) => o.target === e && o.spread?.budget === d.spread!.budget)) continue;
+            d.spread.budget.remaining -= 1;
+            this.addDot(e, d.dmgPerTick, d.tickMs, d.expireAt - now, d.color, d.spread);
+          }
+        }
+      }
+    }
+    if (this.dots.some((d) => !d.target.isAlive || now >= d.expireAt)) {
+      this.dots = this.dots.filter((d) => d.target.isAlive && now < d.expireAt);
+    }
+  }
+
+  /** Damage EXACTLY one enemy with full per-type rewards (reuses aoeHitAll with a predicate
+   *  that matches only this enemy's live position). The reward-correct single-target hit
+   *  behind the DoT ticks — no per-enemy-type plumbing needed. */
+  private damageOneEnemy(e: CombatEnemy, dmg: number): void {
+    this.aoeHitAll(e.x, e.y, 1, dmg, (ex, ey) => ex === e.x && ey === e.y);
+  }
+
+  /** Remove every active DoT + the timed poison weaken (dev reset / save load / death). */
+  private clearDots(): void {
+    this.dots = [];
+    this.poisonWeakenUntil = 0;
+    this.poisonWeakenFactor = 0;
+  }
+
+  /** Set the timed player-incoming WEAKEN from Ice/Poison effects (latest/strongest wins). */
+  private setPoisonWeaken(factor: number, durationMs: number): void {
+    this.poisonWeakenUntil = Math.max(this.poisonWeakenUntil, this.time.now + durationMs);
+    this.poisonWeakenFactor = Math.max(this.poisonWeakenFactor, factor);
   }
 
   /** A translucent cone wedge FX (Dust Devil), fading out (world FX, main camera). */
@@ -1827,9 +1994,10 @@ export class MainScene extends Phaser.Scene {
   }
 
   /** KNOCKBACK: shove enemies within range away from (x,y) by `distance`, with a brief freeze. */
-  private knockbackEnemiesInRange(x: number, y: number, range: number, distance: number, freezeMs = 200): void {
+  private knockbackEnemiesInRange(x: number, y: number, range: number, distance: number, freezeMs = 200, where?: (ex: number, ey: number) => boolean): void {
     const b = this.physics.world.bounds;
     for (const e of this.combatEnemiesInRange(x, y, range)) {
+      if (where && !where(e.x, e.y)) continue; // shape filter (Sludge cone)
       const dx = e.x - x;
       const dy = e.y - y;
       const len = Math.hypot(dx, dy) || 1;
@@ -1935,6 +2103,8 @@ export class MainScene extends Phaser.Scene {
     }
     // Timed Intimidate weaken (set on cast).
     if (this.time.now < this.intimidateWeakenUntil) weaken = Math.max(weaken, this.intimidateWeakenFactor);
+    // Timed Ice/Poison weaken (Frostbite / Freezing Rain / Pestilence).
+    if (this.time.now < this.poisonWeakenUntil) weaken = Math.max(weaken, this.poisonWeakenFactor);
     // Apply: incoming = base × (1 - weaken).
     if (this.playerHealth) this.playerHealth.incomingMultiplier = this.baseIncomingMult * (1 - weaken);
   }
@@ -2123,6 +2293,8 @@ export class MainScene extends Phaser.Scene {
     this.player.setDirection(0, 0);
     this.projectiles.clear(); // drop any bolts still in flight
     this.summons.clear(); // allied summons don't survive the player's death
+    this.clearSpellHazards();
+    this.clearDots();
     this.lastCombatTime = -1e9;
     this.playerDead = false;
     this.controls.setEnabled(true);
@@ -3524,6 +3696,7 @@ export class MainScene extends Phaser.Scene {
       this.skillTimed = []; // timed buffs/forms are runtime-only (not persisted)
       this.releaseAllStuns();
       this.clearSpellHazards(); // drop any Wizard Lava patches
+      this.clearDots(); // drop any poison DoTs
       this.summons.clear(); // summons are transient — never carried across a load
       this.recomputeSkillEffects(); // apply passive maxHP/damage/speed/reduction now
       this.playerHealth.setMax(this.skillAdjustedMaxHP());
@@ -4394,11 +4567,14 @@ export class MainScene extends Phaser.Scene {
    * system each step). Damages the FIRST enemy within (x,y,radius), reusing the
    * existing per-enemy kill handlers; returns true so the bolt impacts/despawns.
    */
-  private resolveHolyBoltHit(x: number, y: number, radius: number, damage: number): boolean {
-    const hit = (sprite: { x: number; y: number }, bodyR: number): boolean =>
-      Phaser.Math.Distance.Between(x, y, sprite.x, sprite.y) <= radius + bodyR;
+  private resolveHolyBoltHit(x: number, y: number, radius: number, damage: number, hitSet?: Set<object>): boolean {
+    // `hit` also enforces pierce dedup: an enemy already in hitSet is skipped so a
+    // piercing bolt (Icicle) passes THROUGH it and on to the next enemy.
+    const hit = (e: object & { x: number; y: number }, bodyR: number): boolean =>
+      !hitSet?.has(e) && Phaser.Math.Distance.Between(x, y, e.x, e.y) <= radius + bodyR;
 
     if (this.sasquatch.isAlive && hit(this.sasquatch, 18)) {
+      hitSet?.add(this.sasquatch);
       const dealt = this.sasquatch.takeHit(damage);
       if (dealt > 0) this.dmgDealtAccum += dealt; // lifesteal accounting
       this.spawnDamageNumber(this.sasquatch.x, this.sasquatch.y - 24, dealt, '#fff0b0');
@@ -4413,6 +4589,7 @@ export class MainScene extends Phaser.Scene {
     if (this.swarmersRevealed) {
       for (const s of this.swarmers) {
         if (s.isAlive && hit(s, 8)) {
+          hitSet?.add(s);
           const dealt = s.takeHit(damage);
           if (dealt > 0) this.dmgDealtAccum += dealt; // lifesteal accounting
           if (dealt > 0) {
@@ -4426,6 +4603,7 @@ export class MainScene extends Phaser.Scene {
     }
     for (const a of this.angels) {
       if (a.isAlive && hit(a, 12)) {
+        hitSet?.add(a);
         const dealt = a.takeHit(damage);
         if (dealt > 0) this.dmgDealtAccum += dealt; // lifesteal accounting
         if (dealt > 0) {
@@ -4438,6 +4616,7 @@ export class MainScene extends Phaser.Scene {
     }
     for (const t of this.townsfolk) {
       if (t.isAlive && hit(t, 10)) {
+        hitSet?.add(t);
         const dealt = t.takeHit(damage);
         if (dealt > 0) this.dmgDealtAccum += dealt; // lifesteal accounting
         if (dealt > 0) {
@@ -4450,6 +4629,7 @@ export class MainScene extends Phaser.Scene {
     }
     for (const g of this.guardians) {
       if (g.isAlive && hit(g, 12)) {
+        hitSet?.add(g);
         const dealt = g.takeHit(damage);
         if (dealt > 0) this.dmgDealtAccum += dealt; // lifesteal accounting
         if (dealt > 0) {
@@ -4462,6 +4642,7 @@ export class MainScene extends Phaser.Scene {
     }
     for (const c of this.cherubs) {
       if (c.isAlive && hit(c, 16)) {
+        hitSet?.add(c);
         const dealt = c.takeHit(damage);
         if (dealt > 0) this.dmgDealtAccum += dealt; // lifesteal accounting
         if (dealt > 0) {
@@ -4474,6 +4655,7 @@ export class MainScene extends Phaser.Scene {
     }
     for (const d of this.demons) {
       if (d.isAlive && hit(d, 12)) {
+        hitSet?.add(d);
         const dealt = d.takeHit(damage);
         if (dealt > 0) this.dmgDealtAccum += dealt; // lifesteal accounting
         if (dealt > 0) {
@@ -4486,6 +4668,7 @@ export class MainScene extends Phaser.Scene {
     }
     for (const b of this.bosses) {
       if (b.isAlive && hit(b, 24)) {
+        hitSet?.add(b);
         const dealt = b.takeHit(damage);
         if (dealt > 0) this.dmgDealtAccum += dealt; // lifesteal accounting
         if (dealt > 0) {
@@ -4701,8 +4884,10 @@ export class MainScene extends Phaser.Scene {
     // Remember where we're leaving so a later return lands there by default.
     this.worldPos[this.activeWorld] = { x: this.player.x, y: this.player.y };
 
-    // Allied summons don't travel between worlds — clear them on every world change.
+    // Allied summons + ground effects don't travel between worlds — clear on every change.
     this.summons.clear();
+    this.clearSpellHazards();
+    this.clearDots();
 
     // Pause Earth's live enemy bodies while away (so collideWorldBounds can't yank
     // them into the other region); resume them on return.
@@ -5310,6 +5495,7 @@ export class MainScene extends Phaser.Scene {
     this.skillCooldownDur = {};
     this.releaseAllStuns();
     this.clearSpellHazards();
+    this.clearDots();
     this.summons.clear();
     this.skills.hardReset();
     this.progression.reset();

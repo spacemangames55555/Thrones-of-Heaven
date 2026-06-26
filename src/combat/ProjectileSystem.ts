@@ -23,6 +23,11 @@ export interface ProjectileSpawn {
    *  Reusable for spells like Combust + storm-empowered bolts. */
   splashRadius?: number;
   splashDamage?: number;
+  /** PIERCE (player bolts): how many distinct enemies the bolt passes through before
+   *  despawning. Default 1 (despawn on first hit). Reusable (Icicle). */
+  pierce?: number;
+  /** Optional poison/DoT applied on impact (player bolts) — reusable for Toxic Bolt. */
+  dotOnImpact?: { dmgPerTick: number; tickMs: number; durationMs: number; radius: number; color: number };
 }
 
 /** One pooled bolt: a glowing sprite plus its flight state. */
@@ -40,6 +45,10 @@ class Bolt {
   color = 0xffe9a8;
   splashRadius = 0;
   splashDamage = 0;
+  pierce = 1;
+  /** Enemies this bolt has already hit (pierce dedup; never re-hits the same one). */
+  readonly hits = new Set<object>();
+  dotOnImpact?: ProjectileSpawn['dotOnImpact'];
 
   constructor(scene: Phaser.Scene, layer: Phaser.GameObjects.Layer) {
     this.sprite = scene.add.image(0, 0, TEXTURE_KEY).setDepth(13).setVisible(false);
@@ -59,6 +68,9 @@ class Bolt {
     this.color = s.color ?? 0xffe9a8;
     this.splashRadius = s.splashRadius ?? 0;
     this.splashDamage = s.splashDamage ?? 0;
+    this.pierce = Math.max(1, s.pierce ?? 1);
+    this.hits.clear();
+    this.dotOnImpact = s.dotOnImpact;
     this.sprite
       .setPosition(s.x, s.y)
       .setTint(this.color)
@@ -93,15 +105,18 @@ export class ProjectileSystem {
    *  return true if one was hit so the bolt impacts/despawns. Lets a summoned tank (Ice
    *  Golem) intercept enemy fire aimed at it (the mirror of onEnemyHit for player bolts). */
   onSummonHit?: (x: number, y: number, radius: number, damage: number) => boolean;
-  /** Called for a PLAYER bolt each step: damage an enemy within (x,y,radius);
-   *  return true if one was hit so the bolt impacts/despawns (like an enemy bolt
-   *  hitting the player). The scene owns the enemy lists, so it resolves the hit. */
-  onEnemyHit?: (x: number, y: number, radius: number, damage: number) => boolean;
+  /** Called for a PLAYER bolt each step: damage an enemy within (x,y,radius) that is NOT
+   *  already in `hitSet` (pierce dedup), adding the one it hits; return true if a NEW enemy
+   *  was hit. The scene owns the enemy lists, so it resolves the hit. */
+  onEnemyHit?: (x: number, y: number, radius: number, damage: number, hitSet?: Set<object>) => boolean;
   /** Optional impact FX hook (e.g. a small poof). */
   onImpact?: (x: number, y: number, color: number) => void;
   /** Called when a SPLASH player bolt despawns (hit/terrain/range) so the scene can apply
    *  an AoE burst at the impact point. Only fired for bolts spawned with splash. */
   onSplash?: (x: number, y: number, radius: number, damage: number) => void;
+  /** Called when a DoT player bolt impacts so the scene can apply a poison field at the
+   *  landing point (Toxic Bolt). Only fired for bolts spawned with dotOnImpact. */
+  onImpactDot?: (x: number, y: number, dot: NonNullable<ProjectileSpawn['dotOnImpact']>) => void;
 
   constructor(scene: Phaser.Scene, map: GameMap, layer: Phaser.GameObjects.Layer) {
     this.scene = scene;
@@ -158,9 +173,11 @@ export class ProjectileSystem {
         this.impact(b);
         continue;
       }
-      // PLAYER bolt: ask the scene to resolve an enemy hit; despawn if it landed.
-      if (b.faction === 'player' && this.onEnemyHit?.(b.sprite.x, b.sprite.y, b.radius, b.damage)) {
-        this.impact(b);
+      // PLAYER bolt: ask the scene to resolve a hit on a NEW enemy (pierce dedup via b.hits).
+      // Each distinct enemy hit consumes one pierce; the bolt despawns when pierce is spent.
+      if (b.faction === 'player' && this.onEnemyHit?.(b.sprite.x, b.sprite.y, b.radius, b.damage, b.hits)) {
+        b.pierce -= 1;
+        if (b.pierce <= 0) this.impact(b);
       }
     }
   }
@@ -175,6 +192,10 @@ export class ProjectileSystem {
     // Splash bolts burst into an AoE where they land (Combust / storm-empowered bolts).
     if (b.faction === 'player' && b.splashRadius > 0 && b.splashDamage > 0) {
       this.onSplash?.(b.sprite.x, b.sprite.y, b.splashRadius, b.splashDamage);
+    }
+    // DoT bolts leave a poison field where they land (Toxic Bolt).
+    if (b.faction === 'player' && b.dotOnImpact) {
+      this.onImpactDot?.(b.sprite.x, b.sprite.y, b.dotOnImpact);
     }
     b.deactivate();
   }
