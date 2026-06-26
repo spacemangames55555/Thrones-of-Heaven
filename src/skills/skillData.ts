@@ -23,7 +23,7 @@ import { TANK_TREE_SKILLS } from './blacksmithTank';
 import { DPS_TREE_SKILLS } from './blacksmithDps';
 import { CONTROL_TREE_SKILLS } from './blacksmithControl';
 import { WIZARD_FIREWIND_SKILLS, WIZ_FIREWIND_TREE } from './wizardFireWind';
-import { ICE_GOLEM_SKILL_ID, ICE_GOLEM_TUNING } from '../summon/summonData';
+import { WIZARD_ICEPOISON_SKILLS, WIZ_ICEPOISON_TREE } from './wizardIcePoison';
 
 /** How many active skills the player can equip to on-screen slots. */
 export const LOADOUT_SLOTS = 6;
@@ -86,6 +86,16 @@ export type ActiveActionId =
   | 'wiz_immolation'
   | 'wiz_jet_stream'
   | 'wiz_tornado'
+  // Wizard — Ice/Poison control tree.
+  | 'wiz_icicle'
+  | 'wiz_toxic_bolt'
+  | 'wiz_black_ice'
+  | 'wiz_frostbite'
+  | 'wiz_sludge'
+  | 'wiz_freezing_rain'
+  | 'wiz_biohazard'
+  | 'wiz_plague'
+  | 'wiz_pestilence'
   // Allied summons (player-side).
   | 'summon_ice_golem';
 
@@ -150,7 +160,7 @@ export function isEquippableSkill(def: SkillDef): boolean {
 
 /** ACTIVE ability ids that deal NO direct damage (pure utility / summons) — excluded from
  *  the "damaging active" classification below. Keep this list tiny + explicit. */
-const NON_DAMAGING_ACTIVE_ACTIONS: ReadonlySet<ActiveActionId> = new Set(['intimidate', 'summon_ice_golem']);
+const NON_DAMAGING_ACTIVE_ACTIONS: ReadonlySet<ActiveActionId> = new Set(['intimidate', 'summon_ice_golem', 'wiz_black_ice']);
 
 /**
  * DAMAGING ACTIVE = an `active`-kind skill whose ability deals damage. This is the
@@ -203,34 +213,23 @@ const BLACKSMITH: ClassSkills = {
 
 // ─── WIZARD (fragile glass-cannon caster) ─────────────────────────────────────
 //
-// First of three trees authored: the FIRE/WIND DPS tree (10 damage skills → the
-// Elemental Storm transformation). The Ice/Poison Control + Ethereal Survival trees
-// arrive in later batches (Control needs an allied-summon system first) — they appear
-// as empty "Coming Soon" tabs for now. Same no-kit rules as the Blacksmith: the first
-// skill point buys the tree's tier-0 damaging active (Fireball), which becomes the
-// starting ability.
+// Two of three trees authored: the FIRE/WIND DPS tree (→ Elemental Storm) and the
+// ICE/POISON CONTROL tree (→ Pestilence ultimate; the Ice Golem lives here as node 9).
+// The Ethereal Survival tree arrives in a later batch (empty "Coming Soon" tab for now).
+// Same no-kit rules as the Blacksmith: the first skill point buys a tree's tier-0
+// damaging active (Fireball for Fire/Wind, Icicle for Ice/Poison).
 const WIZARD: ClassSkills = {
   classId: 'wizard',
   trees: [
     { id: WIZ_FIREWIND_TREE, name: 'Fire/Wind' }, // 10 DPS skills → Elemental Storm (opens on Fireball)
-    { id: 'wiz_icepoison', name: 'Ice/Poison' }, // Control tree — later batch (empty for now)
+    { id: WIZ_ICEPOISON_TREE, name: 'Ice/Poison' }, // 10 control skills → Pestilence (opens on Icicle)
     { id: 'wiz_ethereal', name: 'Ethereal' }, // Survival tree — later batch (empty for now)
   ],
   skills: [
     // --- FIRE/WIND DPS TREE (10 damage skills, linear → Elemental Storm). Data in wizardFireWind.ts. ---
     ...WIZARD_FIREWIND_SKILLS,
-    // --- ICE GOLEM (standalone proof of the allied-summon system). Placed in the Ice/Poison
-    //     tree as its single node FOR NOW; the full Ice/Poison tree (next build) keeps this id
-    //     and slots it at the right tier. Summon = a player-allied tank (no direct damage). ---
-    {
-      id: ICE_GOLEM_SKILL_ID,
-      tree: 'wiz_icepoison',
-      name: 'Summon Ice Golem',
-      description: `Activate: summon an Ice Golem ally (${ICE_GOLEM_TUNING.maxHP} HP, ${(ICE_GOLEM_TUNING.durationMs / 1000).toFixed(0)}s) that draws enemy aggro and soaks damage — your meat-shield. It does not attack.`,
-      cost: 1,
-      tier: 0,
-      effect: { kind: 'active', action: 'summon_ice_golem', cooldownMs: ICE_GOLEM_TUNING.summonCooldownMs, energyCost: ICE_GOLEM_TUNING.summonEnergyCost },
-    },
+    // --- ICE/POISON CONTROL TREE (10 skills, linear → Pestilence; Ice Golem = node 9). Data in wizardIcePoison.ts. ---
+    ...WIZARD_ICEPOISON_SKILLS,
   ],
 };
 
