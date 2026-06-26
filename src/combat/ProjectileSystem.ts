@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import type { GameMap } from '../map/GameMap';
+import { PROJECTILE_SIZE_SCALE } from '../game/settings';
 
 const TEXTURE_KEY = 'holy-bolt';
 
@@ -64,7 +65,9 @@ class Bolt {
     this.maxRange = s.maxRange;
     this.traveled = 0;
     this.faction = s.faction;
-    this.radius = s.radius ?? 7;
+    // PIECE 3: a modest size bump for PLAYER projectiles (visual + hitbox); enemies unchanged.
+    const sizeScale = s.faction === 'player' ? PROJECTILE_SIZE_SCALE : 1;
+    this.radius = (s.radius ?? 7) * sizeScale;
     this.color = s.color ?? 0xffe9a8;
     this.splashRadius = s.splashRadius ?? 0;
     this.splashDamage = s.splashDamage ?? 0;
@@ -75,7 +78,7 @@ class Bolt {
       .setPosition(s.x, s.y)
       .setTint(this.color)
       .setRotation(Math.atan2(this.dirY, this.dirX))
-      .setScale(1)
+      .setScale(sizeScale)
       .setVisible(true);
     this.active = true;
   }
@@ -109,6 +112,11 @@ export class ProjectileSystem {
    *  already in `hitSet` (pierce dedup), adding the one it hits; return true if a NEW enemy
    *  was hit. The scene owns the enemy lists, so it resolves the hit. */
   onEnemyHit?: (x: number, y: number, radius: number, damage: number, hitSet?: Set<object>) => boolean;
+  /** PIECE 2 — light aim-assist for PLAYER bolts: given a bolt's origin + intended
+   *  direction, the scene returns a (possibly) nudged direction snapped toward the nearest
+   *  enemy inside a small cone (or the same direction if none). Applied per bolt at spawn,
+   *  so a spread fans out with each shard seeking a nearby target. NOT lock-on. */
+  onAimAssist?: (x: number, y: number, dirX: number, dirY: number) => { dirX: number; dirY: number };
   /** Optional impact FX hook (e.g. a small poof). */
   onImpact?: (x: number, y: number, color: number) => void;
   /** Called when a SPLASH player bolt despawns (hit/terrain/range) so the scene can apply
@@ -138,7 +146,13 @@ export class ProjectileSystem {
       bolt = new Bolt(this.scene, this.layer);
       this.pool.push(bolt);
     }
-    bolt.launch(s);
+    // PIECE 2: nudge PLAYER bolts toward a nearby enemy in the aim cone (the scene resolves it).
+    if (s.faction === 'player' && this.onAimAssist) {
+      const a = this.onAimAssist(s.x, s.y, s.dirX, s.dirY);
+      bolt.launch({ ...s, dirX: a.dirX, dirY: a.dirY });
+    } else {
+      bolt.launch(s);
+    }
   }
 
   /** Advance every active bolt; resolve terrain / target / range; cull. */

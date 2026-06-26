@@ -1,12 +1,10 @@
 import Phaser from 'phaser';
-import { PLAYER_SPEED_TILES_PER_SEC } from '../game/settings';
-import { TILE_SIZE } from '../render/tileAtlas';
+import { RUN_SPEED } from '../game/settings';
 
 const TEXTURE_KEY = 'player-figure'; // Blacksmith (gold soul/herald) avatar
 const WIZARD_TEXTURE_KEY = 'wizard-figure'; // Wizard (Egyptian sorcerer) avatar
 const WIDTH = 32; // ~1 tile wide
 const HEIGHT = 48; // ~1.5 tiles tall — fixes the "character = one giant block" look
-const SPEED = PLAYER_SPEED_TILES_PER_SEC * TILE_SIZE; // px/sec
 
 /** Pick the avatar texture for a class id (defaults to the Blacksmith figure). */
 function textureForClass(classId: string): string {
@@ -39,21 +37,24 @@ export class Player {
     body.setCircle(r, WIDTH / 2 - r, HEIGHT - r * 2 - 3);
   }
 
-  /** Apply a normalized-ish direction vector (components in [-1, 1]). */
+  /**
+   * Apply a direction vector. RUN-ONLY + INSTANT: any nonzero input is normalized to
+   * unit length, so the player always moves at exactly RUN_SPEED (no analog "walk" from
+   * a half-pushed joystick) and turns on a dime — velocity is set directly each frame, so
+   * there is no acceleration ramp or momentum/sliding. Class/skill move multipliers still
+   * scale RUN_SPEED. Collision is unchanged (the arcade body + colliders still resolve).
+   */
   setDirection(dirX: number, dirY: number): void {
-    let x = dirX;
-    let y = dirY;
-    const len = Math.hypot(x, y);
-    if (len > 1) {
-      x /= len;
-      y /= len;
-    }
+    const len = Math.hypot(dirX, dirY);
+    let x = 0;
+    let y = 0;
     if (len > 0.01) {
-      const f = Math.hypot(x, y);
-      this.facingX = x / f;
-      this.facingY = y / f;
+      x = dirX / len; // normalize ANY movement to full magnitude → one run speed
+      y = dirY / len;
+      this.facingX = x;
+      this.facingY = y;
     }
-    const s = SPEED * this.speedMultiplier;
+    const s = RUN_SPEED * this.speedMultiplier;
     this.sprite.setVelocity(x * s, y * s);
   }
 

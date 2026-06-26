@@ -1,5 +1,19 @@
 import Phaser from 'phaser';
 import { getInsets, UI_MARGIN } from './uiLayout';
+import { DRAG_AIM_THRESHOLD } from '../game/settings';
+
+/** Callbacks the scene wires to the loadout buttons (Piece 4: tap = quick fire, drag = aim). */
+export interface LoadoutHandlers {
+  onOpen: () => void;
+  /** Fire the slot's skill NOW (a tap / quick fire, or a non-aimable activation). */
+  onActivate: (slot: number) => void;
+  /** Is the slot's skill DIRECTIONAL (gets drag-to-aim)? Non-aimable fire on tap only. */
+  isAimable: (slot: number) => boolean;
+  /** Drag passed the threshold → aim mode: update the indicator toward (dirX,dirY) (unit). */
+  onAimMove: (slot: number, dirX: number, dirY: number) => void;
+  /** Released after aiming → fire the slot's skill in the aimed direction. */
+  onAimRelease: (slot: number, dirX: number, dirY: number) => void;
+}
 
 const SIZE = 58;
 const GAP = 8;
@@ -22,9 +36,13 @@ export class LoadoutBar {
   private readonly openBg: Phaser.GameObjects.Rectangle;
   private readonly openLabel: Phaser.GameObjects.Text;
   private equipped: (string | null)[] = new Array(6).fill(null);
+  private readonly handlers: LoadoutHandlers;
+  /** The in-progress press on a slot button (tap vs drag is resolved on release). */
+  private activeDrag: { slot: number; pointerId: number; downX: number; downY: number; aiming: boolean; dirX: number; dirY: number } | null = null;
 
-  constructor(scene: Phaser.Scene, handlers: { onOpen: () => void; onActivate: (slot: number) => void }) {
+  constructor(scene: Phaser.Scene, handlers: LoadoutHandlers) {
     this.scene = scene;
+    this.handlers = handlers;
 
     for (let i = 0; i < 6; i++) {
       const bg = scene.add
@@ -39,9 +57,21 @@ export class LoadoutBar {
         .setOrigin(0.5)
         .setScrollFactor(0)
         .setDepth(DEPTH + 2);
-      bg.on(Phaser.Input.Events.GAMEOBJECT_POINTER_DOWN, () => handlers.onActivate(i));
+      bg.on(Phaser.Input.Events.GAMEOBJECT_POINTER_DOWN, (p: Phaser.Input.Pointer) => this.onButtonDown(i, p));
       this.slots.push({ bg, label, cd });
     }
+
+    // PIECE 4: a press on an AIMABLE slot starts drag tracking; the global move/up resolve
+    // tap (quick fire) vs drag (aim → release). Filtered by pointer id so the joystick (a
+    // different finger) keeps driving movement WHILE the skill button aims.
+    scene.input.on(Phaser.Input.Events.POINTER_MOVE, this.onPointerMove, this);
+    scene.input.on(Phaser.Input.Events.POINTER_UP, this.onPointerUp, this);
+    scene.input.on(Phaser.Input.Events.POINTER_UP_OUTSIDE, this.onPointerUp, this);
+    scene.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      scene.input.off(Phaser.Input.Events.POINTER_MOVE, this.onPointerMove, this);
+      scene.input.off(Phaser.Input.Events.POINTER_UP, this.onPointerUp, this);
+      scene.input.off(Phaser.Input.Events.POINTER_UP_OUTSIDE, this.onPointerUp, this);
+    });
 
     this.openBg = scene.add
       .rectangle(0, 0, SIZE, 28, 0x241433, 0.92)
@@ -59,6 +89,40 @@ export class LoadoutBar {
     scene.scale.on(Phaser.Scale.Events.RESIZE, this.layout, this);
     scene.events.once(Phaser.Scenes.Events.SHUTDOWN, () => scene.scale.off(Phaser.Scale.Events.RESIZE, this.layout, this));
     this.layout();
+  }
+
+  /** A slot button was pressed. Non-aimable → fire immediately (instant feel). Aimable →
+   *  begin tracking this finger; tap vs drag is decided on release. */
+  private onButtonDown(slot: number, pointer: Phaser.Input.Pointer): void {
+    if (this.activeDrag) return; // one aim at a time
+    if (!this.equipped[slot]) return; // empty slot
+    if (!this.handlers.isAimable(slot)) {
+      this.handlers.onActivate(slot);
+      return;
+    }
+    this.activeDrag = { slot, pointerId: pointer.id, downX: pointer.x, downY: pointer.y, aiming: false, dirX: 0, dirY: 0 };
+  }
+
+  private onPointerMove(pointer: Phaser.Input.Pointer): void {
+    const d = this.activeDrag;
+    if (!d || pointer.id !== d.pointerId) return;
+    const dx = pointer.x - d.downX;
+    const dy = pointer.y - d.downY;
+    const dist = Math.hypot(dx, dy);
+    if (dist >= DRAG_AIM_THRESHOLD) {
+      d.aiming = true;
+      d.dirX = dx / dist;
+      d.dirY = dy / dist;
+      this.handlers.onAimMove(d.slot, d.dirX, d.dirY); // screen-space drag = world direction (no camera rotation)
+    }
+  }
+
+  private onPointerUp(pointer: Phaser.Input.Pointer): void {
+    const d = this.activeDrag;
+    if (!d || pointer.id !== d.pointerId) return;
+    this.activeDrag = null;
+    if (d.aiming) this.handlers.onAimRelease(d.slot, d.dirX, d.dirY); // drag → fire aimed
+    else this.handlers.onActivate(d.slot); // tap → quick fire (facing/move dir + aim-assist)
   }
 
   /** Set the equipped skills (6 entries; null = empty) + their button labels. */

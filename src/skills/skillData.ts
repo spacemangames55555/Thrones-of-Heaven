@@ -183,6 +183,25 @@ export function isDamagingActive(def: SkillDef): boolean {
   return def.effect.kind === 'active' && !NON_DAMAGING_ACTIVE_ACTIONS.has(def.effect.action);
 }
 
+/** ACTIVE ability ids that fire AT / AROUND the player (no direction to aim) — self-AoE,
+ *  self-buffs, heals, wards, and summons. Everything else active is DIRECTIONAL. */
+const NON_AIMABLE_ACTIONS: ReadonlySet<ActiveActionId> = new Set<ActiveActionId>([
+  'forge_strike', 'windmill', 'wiz_immolation', 'wiz_tornado', 'shove', 'intimidate',
+  'wiz_freezing_rain', 'wiz_pestilence', 'summon_ice_golem',
+  'eth_mend', 'eth_mana_shield', 'eth_ankh',
+]);
+
+/**
+ * AIMABLE = a directional ACTIVE skill (projectiles, cones, lines, dashes, front strikes,
+ * placed-ahead zones) — these get drag-to-aim on their loadout button (tap = quick fire in
+ * the facing/move direction; drag = aim indicator → release fires in the aimed direction).
+ * Non-aimable skills (self-AoE / buffs / heals / summons, and all non-`active` kinds) just
+ * activate on tap. (Piece 4)
+ */
+export function isAimableSkill(def: SkillDef): boolean {
+  return def.effect.kind === 'active' && !NON_AIMABLE_ACTIONS.has(def.effect.action);
+}
+
 export interface SkillTree {
   readonly id: string;
   readonly name: string;
