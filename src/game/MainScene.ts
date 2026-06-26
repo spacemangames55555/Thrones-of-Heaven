@@ -51,6 +51,7 @@ import { DPS_TUNING } from '../skills/blacksmithDps';
 import { CONTROL_TUNING, COUNTER_ID, IRON_WILL_ID, DOMINANCE_ID, IRON_PYRITE_ID } from '../skills/blacksmithControl';
 import { WIZARD_FIREWIND_TUNING, WIZ_STORM_ID } from '../skills/wizardFireWind';
 import { ICEPOISON_TUNING } from '../skills/wizardIcePoison';
+import { ETHEREAL_TUNING } from '../skills/wizardEthereal';
 import { AlliedSummonManager } from '../summon/AlliedSummonManager';
 import { ICE_GOLEM_CONFIG, ICE_GOLEM_TUNING } from '../summon/summonData';
 import { PlayerPower } from '../player/PlayerPower';
@@ -325,6 +326,9 @@ export class MainScene extends Phaser.Scene {
    *  Pestilence) — folded into updateControlEffects, same model as the Blacksmith weaken. */
   private poisonWeakenUntil = 0;
   private poisonWeakenFactor = 0;
+  /** Ethereal/Survival: Mana Shield expiry, and the Ankh cheat-death armed window. */
+  private shieldUntil = 0;
+  private ankhArmedUntil = 0;
   private dashEndsAt = 0;
   private dashDir = { x: 0, y: 1 };
   private dashHits = new Set<object>();
@@ -619,7 +623,7 @@ export class MainScene extends Phaser.Scene {
     this.skills.activeClass = this.classId; // select this class's trees/unlocks/loadout
     this.progression.onChange = () => this.refreshXpUi();
     this.playerHealth = new Health(this.progression.effectiveMaxHP);
-    this.playerHealth.onDamaged = () => this.onPlayerHurt(); // Counter Attack (Control passive)
+    this.playerHealth.onDamaged = (amt) => this.onPlayerHurt(amt); // Counter Attack + Reflect
     this.energy = new Health(MAX_ENERGY); // energy is a generic clamped pool
     this.sasquatch = new Sasquatch(this, SASQUATCH_SPAWN.x, SASQUATCH_SPAWN.y);
     this.sasquatch.onStrike = () => this.onSasquatchStrike();
@@ -1518,7 +1522,74 @@ export class MainScene extends Phaser.Scene {
       this.spawnSkillRing(px, py, c.radius, 0x9acd32);
       this.spawnSpellHazard(px, py, c.radius, this.skillDamage(c.tickDamage), c.durationMs, c.tickMs, { slowFactor: c.slowFactor, weaken: c.weaken, fill: 0x6b8e23, stroke: 0x9acd32 });
       this.showBanner('Pestilence!', 1400);
+    } else if (action === 'eth_bolt') {
+      // Ethereal #1 — ghostly single-target bolt (the entry damaging active).
+      const c = ETHEREAL_TUNING.etherealBolt;
+      const { dx, dy } = this.facingUnit();
+      this.projectiles.spawn({ x: px + dx * 18, y: py + dy * 18, dirX: dx, dirY: dy, speed: c.speed, damage: this.skillDamage(c.damage), maxRange: c.range, faction: 'player', color: 0xcfc0ff, radius: c.radius });
+      this.notifyBossesPlayerAction('ranged');
+    } else if (action === 'eth_mend') {
+      // Ethereal #2 — instant self-heal.
+      const c = ETHEREAL_TUNING.mend;
+      this.playerHealth.heal(c.healAmount);
+      this.spawnSkillRing(px, py, 60, 0xa8ffd0);
+      this.spawnDamageNumber(px, py - 30, c.healAmount, '#a8ffd0');
+    } else if (action === 'eth_mana_shield') {
+      // Ethereal #4 — raise a damage-absorbing shield pool for a duration.
+      const c = ETHEREAL_TUNING.manaShield;
+      this.playerHealth.shield = c.amount;
+      this.shieldUntil = this.time.now + c.durationMs;
+      this.spawnSkillRing(px, py, 70, 0x8fd8ff);
+      this.showBanner('Mana Shield up', 1100);
+    } else if (action === 'eth_blink') {
+      this.doBlink(); // Ethereal #5 — instant teleport forward (the escape)
+    } else if (action === 'eth_soul_siphon') {
+      // Ethereal #8 — frontal drain: damage foes ahead + heal per enemy struck.
+      const c = ETHEREAL_TUNING.soulSiphon;
+      const fx = px + this.player.facingX * c.range * 0.6;
+      const fy = py + this.player.facingY * c.range * 0.6;
+      this.spawnSkillRing(fx, fy, c.range, 0xcf7aff);
+      const hits = Math.min(c.maxHeals, this.combatEnemiesInRange(fx, fy, c.range).length);
+      this.aoeHitAll(fx, fy, c.range, this.skillDamage(c.damage));
+      if (hits > 0) {
+        this.playerHealth.heal(c.healPerHit * hits);
+        this.spawnDamageNumber(px, py - 30, c.healPerHit * hits, '#cf7aff');
+      }
+    } else if (action === 'eth_ankh') {
+      // Ethereal #10 — ULTIMATE: arm the cheat-death ward (consumed by a lethal blow).
+      const c = ETHEREAL_TUNING.ankh;
+      this.ankhArmedUntil = this.time.now + c.armedMs;
+      this.spawnSkillRing(px, py, 90, 0xffe9a8);
+      this.showBanner('Ankh of Life armed', 1400);
     }
+  }
+
+  /** BLINK (Ethereal #5): instantly teleport forward, stopping short of blocking terrain. */
+  private doBlink(): void {
+    const { dx, dy } = this.facingUnit();
+    const c = ETHEREAL_TUNING.blink;
+    const fromX = this.player.x;
+    const fromY = this.player.y;
+    // Step out along the facing direction, halting just before any blocking tile.
+    let dist: number = c.distance;
+    const step = 12;
+    for (let d = step; d <= c.distance; d += step) {
+      const tx = fromX + dx * d;
+      const ty = fromY + dy * d;
+      if (this.activeMap().terrainAtWorld(tx, ty)?.blocks) {
+        dist = Math.max(0, d - step);
+        break;
+      }
+    }
+    const b = this.physics.world.bounds;
+    const nx = Phaser.Math.Clamp(fromX + dx * dist, b.x + 10, b.x + b.width - 10);
+    const ny = Phaser.Math.Clamp(fromY + dy * dist, b.y + 10, b.y + b.height - 10);
+    // A fading ghost at the origin + a flash at the destination read as the teleport.
+    const ghost = this.add.image(fromX, fromY, this.player.sprite.texture.key).setDepth(9).setAlpha(0.5).setTint(0xbfa8ff);
+    this.worldFx.add(ghost);
+    this.tweens.add({ targets: ghost, alpha: 0, duration: 280, onComplete: () => ghost.destroy() });
+    this.player.sprite.setPosition(nx, ny);
+    this.spawnSkillRing(nx, ny, 50, 0xbfa8ff);
   }
 
   // --- Wizard helpers (Fire/Wind tree): bolts, storm splash, cone/line geometry ---
@@ -1736,11 +1807,15 @@ export class MainScene extends Phaser.Scene {
     this.aoeHitAll(e.x, e.y, 1, dmg, (ex, ey) => ex === e.x && ey === e.y);
   }
 
-  /** Remove every active DoT + the timed poison weaken (dev reset / save load / death). */
+  /** Remove every active DoT + the timed poison weaken + the Ethereal survival state (Mana
+   *  Shield / Ankh ward) — the transient Wizard combat effects. Called on reset/load/death. */
   private clearDots(): void {
     this.dots = [];
     this.poisonWeakenUntil = 0;
     this.poisonWeakenFactor = 0;
+    this.shieldUntil = 0;
+    this.ankhArmedUntil = 0;
+    if (this.playerHealth) this.playerHealth.shield = 0;
   }
 
   /** Set the timed player-incoming WEAKEN from Ice/Poison effects (latest/strongest wins). */
@@ -2063,15 +2138,24 @@ export class MainScene extends Phaser.Scene {
     }
   }
 
-  /** Reactive: the player took damage → Counter Attack (Control passive), if owned + ready. */
-  private onPlayerHurt(): void {
+  /** Reactive: the player took damage → Counter Attack (Control passive) + Reflect (Ethereal
+   *  buff). Both bounce damage to nearby attackers; `amount` is the HP just lost. */
+  private onPlayerHurt(amount: number): void {
     if (this.playerDead) return;
-    if (!this.skills.isUnlocked(COUNTER_ID)) return;
-    if (this.time.now < this.counterReadyAt) return;
-    const c = CONTROL_TUNING.counter;
-    this.counterReadyAt = this.time.now + c.internalCdMs;
-    this.spawnSkillRing(this.player.x, this.player.y, c.range, 0xffcaa0);
-    this.aoeHitAll(this.player.x, this.player.y, c.range, this.skillDamage(c.damage));
+    // REFLECT (Ethereal buff): bounce a fraction of the damage taken back at nearby foes.
+    const reflectPct = this.combinedSkillMods().reflectPct ?? 0;
+    if (reflectPct > 0 && amount > 0) {
+      const r = ETHEREAL_TUNING.reflect.radius;
+      this.spawnSkillRing(this.player.x, this.player.y, r, 0xff9ad0);
+      this.aoeHitAll(this.player.x, this.player.y, r, Math.max(1, Math.round(amount * reflectPct)));
+    }
+    // COUNTER ATTACK (Control passive): an auto-strike on a short internal cooldown.
+    if (this.skills.isUnlocked(COUNTER_ID) && this.time.now >= this.counterReadyAt) {
+      const c = CONTROL_TUNING.counter;
+      this.counterReadyAt = this.time.now + c.internalCdMs;
+      this.spawnSkillRing(this.player.x, this.player.y, c.range, 0xffcaa0);
+      this.aoeHitAll(this.player.x, this.player.y, c.range, this.skillDamage(c.damage));
+    }
   }
 
   /** True while the player ignores crowd control (Iron Will passive or Iron Pyrite form). */
@@ -2124,6 +2208,11 @@ export class MainScene extends Phaser.Scene {
       const before = this.skillTimed.length;
       this.skillTimed = this.skillTimed.filter((t) => this.time.now < t.endsAt);
       if (this.skillTimed.length !== before) this.recomputeSkillEffects(); // a buff/form ended
+    }
+    // Mana Shield (Ethereal): drop the absorb pool when its window lapses.
+    if (this.shieldUntil > 0 && this.time.now >= this.shieldUntil) {
+      this.playerHealth.shield = 0;
+      this.shieldUntil = 0;
     }
     // LIFESTEAL (Bloodlust): heal a fraction of the damage dealt since last frame.
     const lifesteal = this.combinedSkillMods().lifestealPct ?? 0;
@@ -2271,6 +2360,18 @@ export class MainScene extends Phaser.Scene {
   }
 
   private onPlayerDeath(): void {
+    // ANKH (Ethereal ultimate): a lethal blow while the ward holds CHEATS DEATH — revive in
+    // place at a fraction of max HP instead of dying (consumes the ward). Reuses this funnel.
+    if (this.time.now < this.ankhArmedUntil && !this.playerDead) {
+      this.ankhArmedUntil = 0;
+      this.playerHealth.shield = 0;
+      this.playerHealth.current = Math.max(1, Math.round(this.playerHealth.max * ETHEREAL_TUNING.ankh.reviveHpPct));
+      this.player.flash();
+      this.spawnSkillRing(this.player.x, this.player.y, 80, 0xffe9a8);
+      this.showBanner('The Ankh revives you!', 1600);
+      this.lastCombatTime = this.time.now;
+      return;
+    }
     this.playerDead = true;
     this.controls.setEnabled(false);
     this.player.setDirection(0, 0);

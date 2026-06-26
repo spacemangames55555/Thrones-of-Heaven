@@ -15,6 +15,9 @@ export class Health {
   onBlock?: () => void;
   /** Optional hook fired when damage is actually taken (amount removed > 0). */
   onDamaged?: (amount: number) => void;
+  /** Absorb pool (Mana Shield): post-multiplier/block damage drains this BEFORE current
+   *  HP. Default 0 = no shield. The scene tops it up on cast and clears it on expiry. */
+  shield = 0;
 
   constructor(max: number) {
     this.max = max;
@@ -44,6 +47,12 @@ export class Health {
     if (this.blockChance > 0 && Math.random() < Math.min(0.9, this.blockChance)) {
       amt *= 1 - this.blockReduction;
       this.onBlock?.();
+    }
+    // Mana Shield absorbs first (a separate pool in front of HP).
+    if (this.shield > 0) {
+      const absorbed = Math.min(this.shield, amt);
+      this.shield -= absorbed;
+      amt -= absorbed;
     }
     const before = this.current;
     this.current = Math.max(0, this.current - amt);
