@@ -45,7 +45,7 @@ import { HealthBar } from '../combat/HealthBar';
 import { HolyBoltButton } from '../ui/HolyBoltButton';
 import { LoadoutBar } from '../ui/LoadoutBar';
 import { SkillState } from '../skills/SkillState';
-import { classSkills, combineMods, isDamagingActive, type SkillDef, type SkillStatMods, type ActiveActionId, type ClassId } from '../skills/skillData';
+import { classSkills, combineMods, isDamagingActive, isAimableSkill, type SkillDef, type SkillStatMods, type ActiveActionId, type ClassId } from '../skills/skillData';
 import { TANK_TUNING } from '../skills/blacksmithTank';
 import { DPS_TUNING } from '../skills/blacksmithDps';
 import { CONTROL_TUNING, COUNTER_ID, IRON_WILL_ID, DOMINANCE_ID, IRON_PYRITE_ID } from '../skills/blacksmithControl';
@@ -143,6 +143,8 @@ import {
   TRINITY_ENTER_RANGE,
   TRINITY_BREATHER_MS,
   classBaseStats,
+  AIM_ASSIST_CONE_ANGLE,
+  AIM_ASSIST_MAX_RANGE,
 } from './settings';
 import { TOWN_TILES } from '../town/townTiles';
 import { buildTown, type TownFeatures, type DoorFeature } from '../town/TownBuilder';
@@ -329,6 +331,13 @@ export class MainScene extends Phaser.Scene {
   /** Ethereal/Survival: Mana Shield expiry, and the Ankh cheat-death armed window. */
   private shieldUntil = 0;
   private ankhArmedUntil = 0;
+  /** PIECE 2 — light aim-assist (dev-toggleable; cone adjustable at runtime for tuning). */
+  private aimAssistEnabled = true;
+  private aimAssistCone = AIM_ASSIST_CONE_ANGLE;
+  /** PIECE 4 — drag-aim: the current aim direction (while a skill button is being dragged)
+   *  and the world-space indicator arrow drawn from the player toward it. */
+  private aimingDir: { dx: number; dy: number } | null = null;
+  private aimIndicator?: Phaser.GameObjects.Graphics;
   private dashEndsAt = 0;
   private dashDir = { x: 0, y: 1 };
   private dashHits = new Set<object>();
@@ -609,6 +618,8 @@ export class MainScene extends Phaser.Scene {
     this.projectiles.onSummonHit = (x, y, radius, dmg) => this.resolveEnemyBoltVsSummon(x, y, radius, dmg);
     // Toxic Bolt: a poison field blooms where the bolt lands (per-target DoT in radius).
     this.projectiles.onImpactDot = (x, y, dot) => this.applyDotInRange(x, y, dot.radius, dot.dmgPerTick, dot.tickMs, dot.durationMs, dot.color);
+    // PIECE 2: light aim-assist — nudge player bolts toward a nearby enemy in the aim cone.
+    this.projectiles.onAimAssist = (x, y, dx, dy) => this.aimAssist(x, y, dx, dy);
     // Persistent ground hazards (Greed): zones draw into the world-FX layer; a tick
     // applies player damage through the existing contact-damage path.
     this.hazards = new HazardField(this, this.worldFx);
@@ -809,6 +820,8 @@ export class MainScene extends Phaser.Scene {
       this.haltBosses();
       this.haltDemons();
       this.summons.halt();
+      this.aimingDir = null;
+      this.hideAimIndicator();
       this.corruptButton.setVisible(false);
       this.readout.update();
       return;
@@ -834,6 +847,8 @@ export class MainScene extends Phaser.Scene {
       this.haltBosses();
       this.haltDemons();
       this.summons.halt();
+      this.aimingDir = null;
+      this.hideAimIndicator();
       this.readout.update();
       return;
     }
@@ -887,6 +902,7 @@ export class MainScene extends Phaser.Scene {
     this.updateDemons();
     this.updateGodJudgment();
     this.summons.update(this.player.x, this.player.y, this.time.now); // allied tanks follow + prune
+    this.updateAimIndicator(); // PIECE 4: world-space aim arrow while a skill button is dragged
     // Control tree: register the always-on auras (Dominance / Iron Pyrite) + the
     // player-incoming WEAKEN, then scale slowed enemies' velocity. These run AFTER
     // every enemy update so the slow overrides the chase velocity just set.
@@ -1065,7 +1081,10 @@ export class MainScene extends Phaser.Scene {
     // replaces the old fixed Attack/Dash buttons in the bottom-right.
     this.skillBar = new LoadoutBar(this, {
       onOpen: () => this.openSkillTree(),
-      onActivate: (slot) => this.activateLoadoutSlot(slot),
+      onActivate: (slot) => this.activateLoadoutSlot(slot), // tap = quick fire (facing + aim-assist)
+      isAimable: (slot) => this.isSlotAimable(slot),
+      onAimMove: (_slot, dx, dy) => { this.aimingDir = { dx, dy }; }, // drag → show the indicator (drawn each frame)
+      onAimRelease: (slot, dx, dy) => this.fireAimedSlot(slot, dx, dy),
     });
     // Re-apply effects + refresh the bar whenever points/unlocks/loadout change. The
     // starting loadout (forced first-skill pick vs. floor) is decided in
@@ -1177,6 +1196,23 @@ export class MainScene extends Phaser.Scene {
     this.playerHealth.full();
     this.refreshLoadoutBar();
     this.showBanner(`Class: ${classId}`, 1400);
+  }
+
+  /** DEV: toggle the light aim-assist on/off (Piece 2) for isolating the feel. */
+  private devToggleAimAssist(): void {
+    this.aimAssistEnabled = !this.aimAssistEnabled;
+    this.showBanner(`Aim-Assist: ${this.aimAssistEnabled ? 'ON' : 'OFF'}`, 1200);
+  }
+
+  /** DEV: cycle the aim-assist cone width (Piece 2 forgiveness dial) for tuning. */
+  private devCycleAimCone(): void {
+    const presets = [8, 18, 30, 45]; // degrees
+    const cur = Math.round((this.aimAssistCone * 180) / Math.PI);
+    const idx = presets.findIndex((p) => p >= cur);
+    const next = presets[(idx + 1) % presets.length];
+    this.aimAssistCone = (next * Math.PI) / 180;
+    this.aimAssistEnabled = true;
+    this.showBanner(`Aim Cone: ${next}°`, 1200);
   }
 
   /** The live melee damage (level-derived × skill multiplier from passives + buffs/forms). */
@@ -1598,6 +1634,86 @@ export class MainScene extends Phaser.Scene {
   private facingUnit(): { dx: number; dy: number } {
     const len = Math.hypot(this.player.facingX, this.player.facingY) || 1;
     return { dx: this.player.facingX / len, dy: this.player.facingY / len };
+  }
+
+  /**
+   * PIECE 2 — LIGHT AIM-ASSIST (not lock-on). Given a player bolt's origin + intended
+   * direction, snap it toward the NEAREST live enemy whose bearing is within the
+   * forgiveness cone (and within range); otherwise fire straight (aim at nothing → miss).
+   * Allied summons aren't in combatEnemies(), so the golem is never targeted.
+   */
+  private aimAssist(x: number, y: number, dirX: number, dirY: number): { dirX: number; dirY: number } {
+    if (!this.aimAssistEnabled) return { dirX, dirY };
+    const baseAng = Math.atan2(dirY, dirX);
+    let best: CombatEnemy | null = null;
+    let bestDist = Infinity;
+    for (const e of this.combatEnemies()) {
+      const ex = e.x - x;
+      const ey = e.y - y;
+      const dist = Math.hypot(ex, ey);
+      if (dist < 1 || dist > AIM_ASSIST_MAX_RANGE) continue;
+      const diff = Math.abs(Phaser.Math.Angle.Wrap(Math.atan2(ey, ex) - baseAng));
+      if (diff <= this.aimAssistCone && dist < bestDist) {
+        best = e;
+        bestDist = dist;
+      }
+    }
+    if (!best) return { dirX, dirY }; // nothing in the cone → no nudge (you can miss)
+    const a = Math.atan2(best.y - y, best.x - x);
+    return { dirX: Math.cos(a), dirY: Math.sin(a) };
+  }
+
+  // --- PIECE 4: drag-from-skill-button aiming -----------------------------------
+
+  /** Is the skill in loadout `slot` directional (gets drag-to-aim)? */
+  private isSlotAimable(slot: number): boolean {
+    const id = this.skills.loadout()[slot];
+    if (!id) return false;
+    const def = classSkills(this.skills.activeClass).skills.find((s) => s.id === id);
+    return !!def && isAimableSkill(def);
+  }
+
+  /** Fire a drag-aimed slot: point the player in the aimed direction, then activate (the
+   *  handlers read facing; projectiles additionally pass through aim-assist). */
+  private fireAimedSlot(slot: number, dx: number, dy: number): void {
+    this.player.facingX = dx;
+    this.player.facingY = dy;
+    this.aimingDir = null;
+    this.hideAimIndicator();
+    this.activateLoadoutSlot(slot);
+  }
+
+  /** Per-frame: draw the world-space aim arrow from the player while a skill is being
+   *  dragged (so it tracks the player as they move with the joystick), else hide it. */
+  private updateAimIndicator(): void {
+    if (!this.aimingDir) {
+      this.hideAimIndicator();
+      return;
+    }
+    if (!this.aimIndicator) {
+      this.aimIndicator = this.add.graphics().setDepth(14);
+      this.worldFx.add(this.aimIndicator);
+      this.uiCamera?.ignore(this.aimIndicator); // world-space only (main camera)
+    }
+    const g = this.aimIndicator;
+    g.clear();
+    g.setVisible(true);
+    const px = this.player.x;
+    const py = this.player.y;
+    const { dx, dy } = this.aimingDir;
+    const len = 130;
+    const ex = px + dx * len;
+    const ey = py + dy * len;
+    g.lineStyle(4, 0x66e0ff, 0.85);
+    g.lineBetween(px, py, ex, ey);
+    const a = Math.atan2(dy, dx);
+    const ah = 16;
+    g.lineBetween(ex, ey, ex - Math.cos(a - 0.42) * ah, ey - Math.sin(a - 0.42) * ah);
+    g.lineBetween(ex, ey, ex - Math.cos(a + 0.42) * ah, ey - Math.sin(a + 0.42) * ah);
+  }
+
+  private hideAimIndicator(): void {
+    if (this.aimIndicator?.visible) this.aimIndicator.setVisible(false);
   }
 
   /** True while the Elemental Storm transformation is active (bolts gain splash). */
@@ -5689,6 +5805,8 @@ export class MainScene extends Phaser.Scene {
       { label: 'Set Class: Blacksmith', onPress: () => this.devSetClass('blacksmith') },
       { label: 'Summon Ice Golem', onPress: () => this.summonIceGolem() },
       { label: 'Clear Summons', onPress: () => this.summons.clear() },
+      { label: 'Toggle Aim-Assist', onPress: () => this.devToggleAimAssist() },
+      { label: 'Cycle Aim Cone', onPress: () => this.devCycleAimCone() },
       { label: 'Start Portal Defense', onPress: () => this.devStartPortalDefense() },
       { label: 'Stop Portal Defense', onPress: () => this.resetPortalDefense() },
       { label: 'Refill Energy', onPress: () => this.energy.full() },

@@ -6,12 +6,41 @@
  */
 
 /**
- * Player walking speed, expressed in TILES PER SECOND (stable across tile-size
- * changes; the actual px/s = this × tile size). At 8 tiles/s, crossing the full
- * 800-tile state west↔east takes ~1.7 minutes of straight walking, more with
- * detours around water and mountains — a real trek without being tedious.
+ * Player run speed, expressed in TILES PER SECOND (stable across tile-size changes;
+ * the actual px/s = this × tile size). At 8 tiles/s, crossing the full 800-tile state
+ * west↔east takes ~1.7 minutes of straight running.
  */
 export const PLAYER_SPEED_TILES_PER_SEC = 8;
+/** Tile size in px (mirrors render/tileAtlas TILE_SIZE; inlined to keep settings free of
+ *  Phaser-importing modules). */
+const TILE_PX = 32;
+
+// ─── COMBAT FEEL PASS — four independent, individually-tunable knobs ────────────
+//
+// 1) RUN_SPEED            — the single run speed (px/sec). Movement is run-only with
+//    instant direction changes (no walk, no momentum). Class/skill move multipliers
+//    still apply RELATIVE to this. (Piece 1)
+// 2) AIM-ASSIST           — light cone snap toward the nearest enemy when firing a
+//    player projectile (NOT lock-on). Set the cone to 0 (or the dev toggle) to disable.
+// 3) PROJECTILE_SIZE_SCALE— a small visual+hitbox bump for PLAYER projectiles. 1 = off.
+// 4) DRAG_AIM_THRESHOLD   — px of drag from a skill button that turns a tap (quick fire)
+//    into an aim (drag → indicator → release fires aimed). Huge value = drag-aim off.
+
+/** PIECE 1 — the one player run speed, in px/sec (run-only; instant turns). */
+export const RUN_SPEED = PLAYER_SPEED_TILES_PER_SEC * TILE_PX;
+
+/** PIECE 2 — half-angle (radians) of the aim-assist forgiveness cone around the aim
+ *  direction. Small = skillful, larger = forgiving. ~18° default. */
+export const AIM_ASSIST_CONE_ANGLE = (18 * Math.PI) / 180;
+/** PIECE 2 — only assist toward enemies within this distance (px) of the player. */
+export const AIM_ASSIST_MAX_RANGE = 460;
+
+/** PIECE 3 — modest size bump for PLAYER projectiles (visual + hitbox). 1 = unchanged. */
+export const PROJECTILE_SIZE_SCALE = 1.25;
+
+/** PIECE 4 — drag distance (px) from a skill button that distinguishes a TAP (quick
+ *  fire) from a DRAG (aim mode). */
+export const DRAG_AIM_THRESHOLD = 18;
 
 /**
  * Main camera zoom at startup / the default gameplay framing. At 1.1 the 32px
