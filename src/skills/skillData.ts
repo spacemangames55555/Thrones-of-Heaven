@@ -24,6 +24,7 @@ import { DPS_TREE_SKILLS } from './blacksmithDps';
 import { CONTROL_TREE_SKILLS } from './blacksmithControl';
 import { WIZARD_FIREWIND_SKILLS, WIZ_FIREWIND_TREE } from './wizardFireWind';
 import { WIZARD_ICEPOISON_SKILLS, WIZ_ICEPOISON_TREE } from './wizardIcePoison';
+import { WIZARD_ETHEREAL_SKILLS, WIZ_ETHEREAL_TREE } from './wizardEthereal';
 
 /** How many active skills the player can equip to on-screen slots. */
 export const LOADOUT_SLOTS = 6;
@@ -56,6 +57,8 @@ export interface SkillStatMods {
   basicHitCount?: number;
   /** LIFESTEAL: heal this fraction of damage the player deals. Summed. */
   lifestealPct?: number;
+  /** REFLECT: fraction of incoming damage bounced back to nearby attackers (Reflect buff). Summed. */
+  reflectPct?: number;
 }
 
 /** Ids dispatched by the scene's ACTIVE-ability handler. New actives add an id + a case. */
@@ -96,6 +99,13 @@ export type ActiveActionId =
   | 'wiz_biohazard'
   | 'wiz_plague'
   | 'wiz_pestilence'
+  // Wizard — Ethereal/Survival tree.
+  | 'eth_bolt'
+  | 'eth_mend'
+  | 'eth_mana_shield'
+  | 'eth_blink'
+  | 'eth_soul_siphon'
+  | 'eth_ankh'
   // Allied summons (player-side).
   | 'summon_ice_golem';
 
@@ -160,7 +170,7 @@ export function isEquippableSkill(def: SkillDef): boolean {
 
 /** ACTIVE ability ids that deal NO direct damage (pure utility / summons) — excluded from
  *  the "damaging active" classification below. Keep this list tiny + explicit. */
-const NON_DAMAGING_ACTIVE_ACTIONS: ReadonlySet<ActiveActionId> = new Set(['intimidate', 'summon_ice_golem', 'wiz_black_ice']);
+const NON_DAMAGING_ACTIVE_ACTIONS: ReadonlySet<ActiveActionId> = new Set(['intimidate', 'summon_ice_golem', 'wiz_black_ice', 'eth_mend', 'eth_mana_shield', 'eth_blink', 'eth_ankh']);
 
 /**
  * DAMAGING ACTIVE = an `active`-kind skill whose ability deals damage. This is the
@@ -213,23 +223,24 @@ const BLACKSMITH: ClassSkills = {
 
 // ─── WIZARD (fragile glass-cannon caster) ─────────────────────────────────────
 //
-// Two of three trees authored: the FIRE/WIND DPS tree (→ Elemental Storm) and the
-// ICE/POISON CONTROL tree (→ Pestilence ultimate; the Ice Golem lives here as node 9).
-// The Ethereal Survival tree arrives in a later batch (empty "Coming Soon" tab for now).
-// Same no-kit rules as the Blacksmith: the first skill point buys a tree's tier-0
-// damaging active (Fireball for Fire/Wind, Icicle for Ice/Poison).
+// All THREE Wizard trees authored: FIRE/WIND DPS (→ Elemental Storm), ICE/POISON CONTROL
+// (→ Pestilence; the Ice Golem lives here as node 9), and ETHEREAL/SURVIVAL (→ the Ankh
+// cheat-death ultimate). Same no-kit rules as the Blacksmith: the first skill point buys a
+// tree's tier-0 damaging active (Fireball / Icicle / Ethereal Bolt).
 const WIZARD: ClassSkills = {
   classId: 'wizard',
   trees: [
     { id: WIZ_FIREWIND_TREE, name: 'Fire/Wind' }, // 10 DPS skills → Elemental Storm (opens on Fireball)
     { id: WIZ_ICEPOISON_TREE, name: 'Ice/Poison' }, // 10 control skills → Pestilence (opens on Icicle)
-    { id: 'wiz_ethereal', name: 'Ethereal' }, // Survival tree — later batch (empty for now)
+    { id: WIZ_ETHEREAL_TREE, name: 'Ethereal' }, // 10 survival skills → Ankh (opens on Ethereal Bolt)
   ],
   skills: [
     // --- FIRE/WIND DPS TREE (10 damage skills, linear → Elemental Storm). Data in wizardFireWind.ts. ---
     ...WIZARD_FIREWIND_SKILLS,
     // --- ICE/POISON CONTROL TREE (10 skills, linear → Pestilence; Ice Golem = node 9). Data in wizardIcePoison.ts. ---
     ...WIZARD_ICEPOISON_SKILLS,
+    // --- ETHEREAL/SURVIVAL TREE (10 skills, linear → Ankh ultimate). Data in wizardEthereal.ts. ---
+    ...WIZARD_ETHEREAL_SKILLS,
   ],
 };
 
@@ -261,6 +272,7 @@ export function combineMods(mods: readonly SkillStatMods[]): SkillStatMods {
     attackSpeedMult: 0,
     basicHitCount: 0, // 0 = none specified; consumers use max(1, value)
     lifestealPct: 0,
+    reflectPct: 0,
   };
   for (const m of mods) {
     out.flatMaxHP += m.flatMaxHP ?? 0;
@@ -274,6 +286,7 @@ export function combineMods(mods: readonly SkillStatMods[]): SkillStatMods {
     out.attackSpeedMult += m.attackSpeedMult ?? 0;
     out.basicHitCount = Math.max(out.basicHitCount, m.basicHitCount ?? 0); // highest multi-hit wins
     out.lifestealPct += m.lifestealPct ?? 0;
+    out.reflectPct += m.reflectPct ?? 0;
   }
   return out;
 }
