@@ -1,11 +1,13 @@
 import { TownTileId } from './townTiles';
 
 /**
- * Authored layout for the Seattle town. It is stamped onto the overworld next
- * to the Seattle city marker (see {@link TownDef.anchorCity} + offset), so the
+ * Authored layout for the HOME town — Enumclaw, the foothills settlement SE of
+ * Seattle where a New Game now begins. It is stamped onto the overworld next to
+ * the Enumclaw city marker (see {@link TownDef.anchorCity} + offset), so the
  * town re-derives at its correct spot at any map scale — no hard-coded tile
  * coordinates — and stays a seamless part of the open world (no walls, no
- * loading screen).
+ * loading screen). (Seattle still exists as its own city marker, reserved for a
+ * later batch — this layout simply anchors to Enumclaw now.)
  *
  * Each row is a string of single-character cells (all rows must be `width`
  * long). Characters map to tiles via {@link TOWN_LEGEND}; a few also mark
@@ -24,8 +26,8 @@ export interface TownDef {
   rows: string[];
 }
 
-export const SEATTLE_TOWN: TownDef = {
-  anchorCity: 'Seattle',
+export const ENUMCLAW_TOWN: TownDef = {
+  anchorCity: 'Enumclaw',
   offset: { tx: 2, ty: -9 },
   rows: [
     '.....BBB..==..BBB..t..',

@@ -54,7 +54,9 @@ export class Townsfolk {
     const body = this.sprite.body as Phaser.Physics.Arcade.Body;
     body.setSize(18, 22);
     this.sprite.setCollideWorldBounds(true);
-    this.health = new Health(TOWNSFOLK_MAX_HP);
+    // Per-variant HP (Act I wolves/sea lion/raiders tune their own pools); the
+    // shared TOWNSFOLK_MAX_HP is the default for variants that omit it.
+    this.health = new Health(cfg.maxHP ?? TOWNSFOLK_MAX_HP);
   }
 
   /** Set a fixed target point (e.g. the portal), or null to target the player. */

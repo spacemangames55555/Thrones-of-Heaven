@@ -1145,16 +1145,62 @@ export const TOWNSFOLK_AGGRO_RANGE = 340;
 /** XP awarded for killing one townsfolk. */
 export const TOWNSFOLK_XP_REWARD = 12;
 
+// --- Act I (Enumclaw opening) enemy tuning + locations ---------------------
+//
+// The four grounded opening quests' enemies + objective-marker positions. All
+// reuse the Townsfolk melee AI via the variants below. Positions are world px on
+// verified-WALKABLE tiles around Enumclaw (Olympia/Tacoma sit on the Sound, so
+// their encounters use the nearest walkable shore/urban tile). Quest TEXT lives
+// in questData.ts; group sizes + tuning live here.
+//
+// >>> ACT I COMBAT TUNING. The WOLVES are the first fight under the no-kit model,
+//     so a 3-wolf pack (~15 HP each ≈ the old Sasquatch's 44 total) must fall to
+//     ANY single starting damaging skill at level 1 — keep them forgiving,
+//     exactly as SASQUATCH_MAX_HP was tuned. <<<
+
+/** WOLVES (Quest 2) — the new FIRST combat. Low HP so one starting skill clears the pack. */
+export const WOLF_MAX_HP = 15;
+export const WOLF_PLAYER_DAMAGE = 5;
+export const WOLVES_COUNT = 3;
+/** SEA LION (Quest 3) — a single tougher brute. */
+export const SEALION_MAX_HP = 40;
+export const SEALION_PLAYER_DAMAGE = 10;
+/** RAIDERS (Quest 4) — a few organized humans (the player has more skills by now). */
+export const RAIDER_MAX_HP = 28;
+export const RAIDER_PLAYER_DAMAGE = 8;
+export const RAIDERS_COUNT = 3;
+
+/** Olympia delivery point (Q1) — nearest walkable urban tile to the Sound-bound city. */
+export const OLYMPIA_POSITION = { x: 8240, y: 9008 };
+/** The foothills tree line E of Enumclaw (Q2 wolves). */
+export const TREE_LINE_POSITION = { x: 11216, y: 6288 };
+/** The Tacoma shore (Q3 sea lion) — walkable urban edge beside the Sound. */
+export const TACOMA_BEACH_POSITION = { x: 9008, y: 6928 };
+/** Snoqualmie Pass, E/NE in the foothills (Q4 raiders). */
+export const SNOQUALMIE_PASS_POSITION = { x: 12816, y: 5616 };
+/** Proximity (px) that completes the grain delivery when talking to the Olympia recipient. */
+export const ACT1_DELIVERY_RANGE = 90;
+
 /**
  * Townsfolk VARIANTS — a reskin layer over the one Townsfolk class (same melee
- * behavior, different tint + XP). The descent arc uses 'guardsman' and 'farmer';
- * 'townsperson' is the portal-defense default. Edit a tint/XP to retune a look.
+ * behavior, different tint + per-variant HP / contact damage / XP). The descent
+ * arc uses 'guardsman' and 'farmer'; 'townsperson' is the portal-defense default;
+ * the Act I opening adds 'wolf' (a low-HP pack — the new FIRST combat), 'sealion'
+ * (a single brute), and 'raider' (a few tougher humans). `maxHP`/`playerDamage`
+ * default to the shared TOWNSFOLK_* values when omitted. Edit a tint/HP/XP here.
  */
-export type TownsfolkVariant = 'townsperson' | 'guardsman' | 'farmer';
-export const TOWNSFOLK_VARIANTS: Record<TownsfolkVariant, { color: number; xpReward: number }> = {
+export type TownsfolkVariant = 'townsperson' | 'guardsman' | 'farmer' | 'wolf' | 'sealion' | 'raider';
+export const TOWNSFOLK_VARIANTS: Record<
+  TownsfolkVariant,
+  { color: number; xpReward: number; maxHP?: number; playerDamage?: number }
+> = {
   townsperson: { color: 0xffffff, xpReward: TOWNSFOLK_XP_REWARD }, // no tint (default brown)
   guardsman: { color: 0x9fb6e6, xpReward: 16 }, // steel-blue
   farmer: { color: 0xbfe089, xpReward: 13 }, // straw-green
+  // --- Act I (Enumclaw opening) ---
+  wolf: { color: 0x8a8f99, xpReward: 12, maxHP: WOLF_MAX_HP, playerDamage: WOLF_PLAYER_DAMAGE }, // grey pack
+  sealion: { color: 0x6b5a44, xpReward: 28, maxHP: SEALION_MAX_HP, playerDamage: SEALION_PLAYER_DAMAGE }, // dark brown brute
+  raider: { color: 0xc06a5a, xpReward: 20, maxHP: RAIDER_MAX_HP, playerDamage: RAIDER_PLAYER_DAMAGE }, // rust-red brigand
 };
 
 // --- The wave sequence ---

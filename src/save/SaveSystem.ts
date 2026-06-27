@@ -1,4 +1,20 @@
-import { SAVE_KEY, type SaveData } from './SaveData';
+import { SAVE_KEY, SAVE_VERSION, ACT1_QUEST_IDS, type SaveData } from './SaveData';
+
+/**
+ * Migrate an older save in place to the current SAVE_VERSION. Each step is
+ * forward-only and idempotent. v2→v3 added the Act I (Enumclaw) opening in front
+ * of the chain: a pre-v3 player is already past the opening, so mark the four Act
+ * I quests COMPLETE (keeping prerequisites satisfied and the chain unlocked).
+ */
+function migrate(data: SaveData): SaveData {
+  if (data.saveVersion < 3) {
+    const completed = new Set(data.quests?.completed ?? []);
+    for (const id of ACT1_QUEST_IDS) completed.add(id);
+    if (data.quests) data.quests.completed = [...completed];
+  }
+  data.saveVersion = SAVE_VERSION;
+  return data;
+}
 
 /**
  * The single-slot localStorage SAVE/LOAD core. Every call is wrapped in try/catch
@@ -23,8 +39,7 @@ export const SaveSystem = {
       if (!raw) return null;
       const data = JSON.parse(raw) as SaveData;
       if (!data || typeof data.saveVersion !== 'number' || !data.player || !data.world) return null;
-      // (Future: migrate older data.saveVersion here before returning.)
-      return data;
+      return data.saveVersion < SAVE_VERSION ? migrate(data) : data;
     } catch {
       return null;
     }

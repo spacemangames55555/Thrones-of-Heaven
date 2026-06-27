@@ -60,6 +60,11 @@ import { QuestChain, type QuestEvent } from '../quest/QuestChain';
 import {
   QUEST_REGISTRY,
   THE_CORRUPTION_AT_THE_GATES,
+  ACT1_HONEST_DAYS_WORK,
+  ACT1_WOLVES_TREE_LINE,
+  ACT1_SHALLOWS,
+  ACT1_THE_PASS,
+  OLYMPIA_DELIVERY_LINES,
   PATRON_IDLE_LINES,
   TARGET_WORLD,
   SEVEN_SINS_QUEST_ID,
@@ -102,7 +107,14 @@ import {
   PORTAL_POSITION,
   TOWNSFOLK_PORTAL_DAMAGE,
   TOWNSFOLK_PLAYER_DAMAGE,
+  TOWNSFOLK_VARIANTS,
   type TownsfolkVariant,
+  WOLVES_COUNT,
+  RAIDERS_COUNT,
+  OLYMPIA_POSITION,
+  TREE_LINE_POSITION,
+  TACOMA_BEACH_POSITION,
+  SNOQUALMIE_PASS_POSITION,
   DARK_OUTPOST_POSITION,
   OREGON_CITY_POSITION,
   FARM_FIELD_POSITION,
@@ -157,8 +169,10 @@ const DOOR_TRIGGER = 20; // < one tile (32) so returning one tile out doesn't re
 const NPC_AUTO_RANGE = 44; // ~1.4 tiles — auto-open dialogue on contact
 const NPC_TALK_RANGE = 80; // ~2.5 tiles — show the Talk button
 
-// The lone Sasquatch sits in dense forest, 26 tiles north of the Seattle spawn.
-const SASQUATCH_SPAWN = { x: 9872, y: 4464 };
+// The lone Sasquatch sits in dense forest, 26 tiles north of the HOME-town spawn.
+// Derived from the town spawn at create() time so it tracks wherever home is
+// (now Enumclaw), instead of a hard-coded Seattle-relative pixel.
+const SASQUATCH_SPAWN_TILES_NORTH = 26;
 
 // Oregon spirit-swarm seed: a pack in the Willamette Valley just south of
 // Portland (city tile 376,409). World px of tile (382,425). Fightable only with
@@ -237,6 +251,10 @@ export class MainScene extends Phaser.Scene {
   private readout!: DebugReadout;
   private town!: TownFeatures;
   private npc!: Npc;
+  // Act I (Enumclaw opening) quest-givers + the Olympia grain recipient. Givers
+  // plug into the same data-driven questGivers pipeline as the corruption NPC.
+  private act1Givers: Npc[] = [];
+  private olympiaNpc!: Npc;
   // Portland (Oregon) — a second town reusing the same systems, flavor only.
   private portland!: TownFeatures;
   private portlandNpc!: Npc;
@@ -495,8 +513,11 @@ export class MainScene extends Phaser.Scene {
   // The single stored+displayed alignment title (its text() IS the stored value).
   private titleText!: Phaser.GameObjects.Text;
 
-  // The Descent arc: the per-objective world setup + completion watcher. arcEnemies
-  // are the live spawns for the current objective; arcMode picks the completion test.
+  // The Descent arc + the Act I (Enumclaw) opening both reuse the same per-objective
+  // world setup + completion watcher. arcEnemies are the live spawns for the current
+  // objective; arcMode picks the completion test. ACT1_IDS are the grounded openers
+  // (no corruption gate); DESCENT_IDS the corrupted arc.
+  private readonly ACT1_IDS = new Set(['honest-days-work', 'wolves-tree-line', 'shallows', 'the-pass']);
   private readonly DESCENT_IDS = new Set(['descent-1', 'descent-2', 'descent-3', 'descent-4']);
   private arcEnemies: (Townsfolk | AngelEnemy)[] = [];
   private arcMode: 'defeat' | 'plunder' | 'reach' | 'pickup' | 'none' = 'none';
@@ -560,7 +581,10 @@ export class MainScene extends Phaser.Scene {
     this.cameras.main.setBackgroundColor('#0b1a2b');
 
     // City labels for everywhere except the real walkable towns.
-    new CityMarkers(this, this.map, ['Seattle', 'Portland']);
+    // Exclude the cities that have a real stamped town (Enumclaw = home, Portland);
+    // everywhere else — including Seattle, preserved as a separate city for a later
+    // batch — gets a generic labeled marker.
+    new CityMarkers(this, this.map, ['Enumclaw', 'Portland']);
 
     // Stamp the town onto the overworld and read back its feature positions.
     this.town = buildTown(this.map);
@@ -582,6 +606,23 @@ export class MainScene extends Phaser.Scene {
       ...THE_CORRUPTION_AT_THE_GATES.npcInactiveLines,
     ]);
     this.physics.add.collider(this.player.sprite, this.npc.sprite);
+
+    // Act I (Enumclaw opening) quest-givers — Marta, Hollis, BranDen, Edda — set
+    // around the home plaza, each a plain Npc whose per-state dialogue comes from
+    // its QuestDef via the questGivers pipeline. Placed at small tile offsets from
+    // spawn so they sit on walkable town ground. The Olympia recipient (grain
+    // delivery) lives far SW at OLYMPIA_POSITION and is handled specially on talk.
+    const sp = this.town.spawn;
+    const ts = this.map.tileSize;
+    this.act1Givers = [
+      new Npc(this, sp.x - ts * 3, sp.y - ts * 2, [...ACT1_HONEST_DAYS_WORK.npcInactiveLines]), // Marta
+      new Npc(this, sp.x + ts * 3, sp.y - ts * 2, [...ACT1_WOLVES_TREE_LINE.npcInactiveLines]), // Hollis
+      new Npc(this, sp.x - ts * 3, sp.y + ts * 2, [...ACT1_SHALLOWS.npcInactiveLines]), // BranDen
+      new Npc(this, sp.x + ts * 3, sp.y + ts * 2, [...ACT1_THE_PASS.npcInactiveLines]), // Edda
+    ];
+    for (const g of this.act1Givers) this.physics.add.collider(this.player.sprite, g.sprite);
+    this.olympiaNpc = new Npc(this, OLYMPIA_POSITION.x, OLYMPIA_POSITION.y, [...OLYMPIA_DELIVERY_LINES]);
+    this.physics.add.collider(this.player.sprite, this.olympiaNpc.sprite);
 
     // Portland's quest-giver-style NPC — flavor dialogue only (no quest wired).
     this.portlandNpc = new Npc(this, this.portland.npc.x, this.portland.npc.y, [...PORTLAND_NPC_LINES]);
@@ -636,7 +677,13 @@ export class MainScene extends Phaser.Scene {
     this.playerHealth = new Health(this.progression.effectiveMaxHP);
     this.playerHealth.onDamaged = (amt) => this.onPlayerHurt(amt); // Counter Attack + Reflect
     this.energy = new Health(MAX_ENERGY); // energy is a generic clamped pool
-    this.sasquatch = new Sasquatch(this, SASQUATCH_SPAWN.x, SASQUATCH_SPAWN.y);
+    // Derive the Sasquatch's lair from the home-town spawn (26 tiles north), so it
+    // tracks Enumclaw rather than the old hard-coded Seattle-relative pixel.
+    this.sasquatch = new Sasquatch(
+      this,
+      this.town.spawn.x,
+      this.town.spawn.y - SASQUATCH_SPAWN_TILES_NORTH * this.map.tileSize,
+    );
     this.sasquatch.onStrike = () => this.onSasquatchStrike();
     this.physics.add.collider(this.sasquatch.sprite, this.map.layer);
     this.physics.add.collider(this.player.sprite, this.sasquatch.sprite);
@@ -670,18 +717,26 @@ export class MainScene extends Phaser.Scene {
     this.chain.onChange = () => this.refreshQuestUi();
     this.chain.onEvent = (e) => this.handleQuestEvent(e);
     this.oregonSpirit = this.spirit.entities.find((e) => e.id === OREGON_SPIRIT_ID);
-    // Quest-givers: the Seattle NPC gives the opening quest; the Oregon spirit is
-    // the dark PATRON who gives the whole descent arc — reachable only with Spirit
-    // Vision on AND only offered while the player is corrupted (requiresCorruption).
+    // Quest-givers: the four Act I NPCs give the Enumclaw opening (one quest each,
+    // unlocked in order by prerequisite); the home NPC gives the corruption beat
+    // (now gated on Act I's 'the-pass'); the Oregon spirit is the dark PATRON who
+    // gives the whole descent arc — reachable only with Spirit Vision on AND only
+    // offered while corrupted (requiresCorruption). The pre-accept arrow points at
+    // whichever giver's quest is currently available (one at a time).
     // (The Portland NPC is no longer a giver; talking to it shows its flavor lines.)
-    this.questGivers = [
-      {
-        entity: this.npc,
-        pos: () => ({ x: this.npc.sprite.x, y: this.npc.sprite.y }),
-        questIds: ['corruption-at-the-gates'],
-        idleLines: [],
-      },
-    ];
+    const act1QuestIds = ['honest-days-work', 'wolves-tree-line', 'shallows', 'the-pass'];
+    this.questGivers = this.act1Givers.map((giver, i) => ({
+      entity: giver,
+      pos: () => ({ x: giver.sprite.x, y: giver.sprite.y }),
+      questIds: [act1QuestIds[i]],
+      idleLines: [],
+    }));
+    this.questGivers.push({
+      entity: this.npc,
+      pos: () => ({ x: this.npc.sprite.x, y: this.npc.sprite.y }),
+      questIds: ['corruption-at-the-gates'],
+      idleLines: [],
+    });
     if (this.oregonSpirit) {
       const patron = this.oregonSpirit;
       this.questGivers.push({
@@ -4119,7 +4174,7 @@ export class MainScene extends Phaser.Scene {
     const t = new Townsfolk(this, x, y, variant);
     t.setTarget(target);
     if (target) t.onHitPortal = () => this.damagePortal(TOWNSFOLK_PORTAL_DAMAGE);
-    t.onHitPlayer = () => this.onTownsfolkHitPlayer();
+    t.onHitPlayer = () => this.onTownsfolkHitPlayer(t);
     this.physics.add.collider(t.sprite, this.map.layer);
     this.uiCamera?.ignore(t.sprite); // runtime world object: keep off the UI camera
     this.townsfolk.push(t);
@@ -4150,10 +4205,12 @@ export class MainScene extends Phaser.Scene {
     if (this.portal.isDestroyed) this.portalDefense.notifyPortalDestroyed();
   }
 
-  /** A townsfolk struck the player (intercepted / adjacent). */
-  private onTownsfolkHitPlayer(): void {
+  /** A townsfolk struck the player (intercepted / adjacent). Per-variant damage so
+   *  Act I wolves/sea lion/raiders hit for their own tuned amount. */
+  private onTownsfolkHitPlayer(t?: Townsfolk): void {
     if (this.playerDead) return;
-    const dealt = this.playerHealth.damage(TOWNSFOLK_PLAYER_DAMAGE);
+    const dmg = (t && TOWNSFOLK_VARIANTS[t.variant].playerDamage) || TOWNSFOLK_PLAYER_DAMAGE;
+    const dealt = this.playerHealth.damage(dmg);
     this.player.flash();
     this.spawnDamageNumber(this.player.x, this.player.y - 26, dealt, '#ff9a6a');
     this.lastCombatTime = this.time.now;
@@ -5236,16 +5293,39 @@ export class MainScene extends Phaser.Scene {
     void diamond;
   }
 
-  private isDescentActive(): boolean {
-    const id = this.chain.activeQuest?.id;
-    return id !== undefined && this.DESCENT_IDS.has(id);
+  /** True if `id` is an arc quest (Act I or descent) that uses the per-objective watcher. */
+  private isArcQuest(id?: string): boolean {
+    return id !== undefined && (this.ACT1_IDS.has(id) || this.DESCENT_IDS.has(id));
   }
 
-  /** Set up the world for the active descent objective (spawn enemies / pickup, pick the watcher). */
+  /** True while an arc quest (Act I or descent) is the active quest. */
+  private isArcActive(): boolean {
+    return this.isArcQuest(this.chain.activeQuest?.id);
+  }
+
+  /** Set up the world for the active arc objective (spawn enemies / pickup, pick the watcher). */
   private beginArcObjective(): void {
     this.clearArcObjective(); // clear any leftover arc spawns first
     const trig = this.chain.activeTrigger;
     switch (trig) {
+      // --- Act I (Enumclaw opening) ---
+      case 'grain-delivered':
+        // Delivery is handled by the Olympia recipient NPC on talk; nothing to spawn.
+        this.arcMode = 'none';
+        break;
+      case 'wolves-defeated':
+        this.spawnArcTownsfolk('wolf', TREE_LINE_POSITION, WOLVES_COUNT);
+        this.arcMode = 'defeat';
+        break;
+      case 'sealion-defeated':
+        this.spawnArcTownsfolk('sealion', TACOMA_BEACH_POSITION, 1);
+        this.arcMode = 'defeat';
+        break;
+      case 'raiders-defeated':
+        this.spawnArcTownsfolk('raider', SNOQUALMIE_PASS_POSITION, RAIDERS_COUNT);
+        this.arcMode = 'defeat';
+        break;
+      // --- The Descent arc ---
       case 'guardsmen-defeated':
         this.spawnArcTownsfolk('guardsman', OREGON_CITY_POSITION, DESCENT_GUARDSMEN_COUNT);
         this.arcMode = 'defeat';
@@ -5289,7 +5369,7 @@ export class MainScene extends Phaser.Scene {
 
   /** Watch for the active descent objective's completion each frame. */
   private updateArc(): void {
-    if (!this.isDescentActive()) return;
+    if (!this.isArcActive()) return;
     const trig = this.chain.activeTrigger;
     if (!trig) return;
     if (this.arcMode === 'defeat') {
@@ -5439,7 +5519,7 @@ export class MainScene extends Phaser.Scene {
    * imperceptible — no Talk prompt, no auto-dialogue).
    */
   private checkInteractions(): void {
-    const candidates: Interactable[] = [this.npc, this.portlandNpc];
+    const candidates: Interactable[] = [this.npc, this.portlandNpc, this.olympiaNpc, ...this.act1Givers];
     if (this.spirit.isActive()) candidates.push(...this.spirit.entities);
 
     let nearest: Interactable | null = null;
@@ -5475,6 +5555,22 @@ export class MainScene extends Phaser.Scene {
     this.talkButton.setVisible(false);
     this.controls.setEnabled(false);
     this.player.setDirection(0, 0);
+
+    // The Olympia grain recipient (Quest 1): if the delivery objective is active,
+    // play the delivery lines and complete it; otherwise a short flavor line.
+    if (target === this.olympiaNpc) {
+      if (this.chain.activeTrigger === 'grain-delivered') {
+        this.dialogue.open([...OLYMPIA_DELIVERY_LINES], () => {
+          this.notifyQuest('grain-delivered');
+          this.reenableControls = true;
+        });
+      } else {
+        this.dialogue.open(['Olympian: Safe travels, friend. The road’s kinder than it used to be.'], () => {
+          this.reenableControls = true;
+        });
+      }
+      return;
+    }
 
     // A quest-giver (NPC or the spirit patron) speaks per the chain's state.
     const giver = this.questGivers.find((g) => g.entity === target);
@@ -5543,7 +5639,7 @@ export class MainScene extends Phaser.Scene {
       case 'started': {
         // No-soft-lock: if the opening beast was already slain, respawn it.
         if (e.questId === 'corruption-at-the-gates' && !this.sasquatch.isAlive) this.sasquatch.reset();
-        if (this.DESCENT_IDS.has(e.questId)) this.beginArcObjective(); // set up objective 0
+        if (this.isArcQuest(e.questId)) this.beginArcObjective(); // set up objective 0 (Act I + descent)
         // Auto-activating climax quests have no NPC: show their start narration as a
         // banner (a beat after any preceding completion banner reads).
         const startDef = this.chain.get(e.questId);
@@ -5555,14 +5651,14 @@ export class MainScene extends Phaser.Scene {
         break;
       }
       case 'objective-complete':
-        // For descent quests, set up the NEXT objective's world state (the chain
-        // has already advanced; if that was the last objective, activeObjectiveDef
-        // is undefined and quest-complete follows).
-        if (this.DESCENT_IDS.has(e.questId) && this.chain.activeObjectiveDef) this.beginArcObjective();
+        // For arc quests (Act I + descent), set up the NEXT objective's world state
+        // (the chain has already advanced; if that was the last objective,
+        // activeObjectiveDef is undefined and quest-complete follows).
+        if (this.isArcQuest(e.questId) && this.chain.activeObjectiveDef) this.beginArcObjective();
         this.refreshQuestUi();
         break;
       case 'quest-complete':
-        if (this.DESCENT_IDS.has(e.questId)) this.clearArcObjective();
+        if (this.isArcQuest(e.questId)) this.clearArcObjective();
         this.grantQuestReward(e.questId);
         this.refreshQuestUi();
         break;
@@ -5909,9 +6005,9 @@ export class MainScene extends Phaser.Scene {
     }
   }
 
-  /** A live "(N left)" / "(Holy Power x/y)" suffix for descent-arc objectives. */
+  /** A live "(N left)" / "(Holy Power x/y)" suffix for arc objectives (Act I + descent). */
   private arcProgressSuffix(): string {
-    if (!this.isDescentActive()) return '';
+    if (!this.isArcActive()) return '';
     if (this.arcMode === 'defeat') {
       const left = this.arcEnemies.filter((e) => e.isAlive).length;
       return `  (${left} left)`;
@@ -6025,6 +6121,15 @@ export class MainScene extends Phaser.Scene {
   /** Resolve a quest objective's TargetKind to a world position for the marker. */
   private resolveTarget(target: TargetKind): { x: number; y: number; label: string } | null {
     switch (target) {
+      // --- Act I (Enumclaw opening) locations ---
+      case 'olympia':
+        return { x: OLYMPIA_POSITION.x, y: OLYMPIA_POSITION.y, label: '' };
+      case 'tree-line':
+        return { x: TREE_LINE_POSITION.x, y: TREE_LINE_POSITION.y, label: '' };
+      case 'tacoma-beach':
+        return { x: TACOMA_BEACH_POSITION.x, y: TACOMA_BEACH_POSITION.y, label: '' };
+      case 'snoqualmie-pass':
+        return { x: SNOQUALMIE_PASS_POSITION.x, y: SNOQUALMIE_PASS_POSITION.y, label: '' };
       case 'sasquatch':
         return this.sasquatch.isAlive ? { x: this.sasquatch.x, y: this.sasquatch.y, label: '' } : null;
       case 'rift':
