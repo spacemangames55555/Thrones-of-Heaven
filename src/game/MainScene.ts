@@ -55,7 +55,8 @@ import { ETHEREAL_TUNING } from '../skills/wizardEthereal';
 import { AlliedSummonManager } from '../summon/AlliedSummonManager';
 import { ICE_GOLEM_CONFIG, ICE_GOLEM_TUNING } from '../summon/summonData';
 import { PlayerPower } from '../player/PlayerPower';
-import { ANGEL_ENCOUNTER } from '../story/angelData';
+import { ANGEL_ENCOUNTER, RIFT_CORRUPTION_LINES } from '../story/angelData';
+import { URIEL_SCENE } from '../story/urielData';
 import { QuestChain, type QuestEvent } from '../quest/QuestChain';
 import {
   QUEST_REGISTRY,
@@ -64,6 +65,9 @@ import {
   ACT1_WOLVES_TREE_LINE,
   ACT1_SHALLOWS,
   ACT1_THE_PASS,
+  ACT2_AFFLICTED_DOGS,
+  ACT2_THE_BLIGHT,
+  ACT2_WHITE_PASS,
   OLYMPIA_DELIVERY_LINES,
   PATRON_IDLE_LINES,
   TARGET_WORLD,
@@ -115,6 +119,13 @@ import {
   TREE_LINE_POSITION,
   TACOMA_BEACH_POSITION,
   SNOQUALMIE_PASS_POSITION,
+  DOGS_COUNT,
+  WHITEPASS_DEMONS_COUNT,
+  PELLS_FARM_POSITION,
+  CORRUPTED_GROVE_POSITION,
+  WHITEPASS_FARM_POSITION,
+  GROVE_BURN_RANGE,
+  ENCOUNTER_NARRATION_RANGE,
   DARK_OUTPOST_POSITION,
   OREGON_CITY_POSITION,
   FARM_FIELD_POSITION,
@@ -254,6 +265,7 @@ export class MainScene extends Phaser.Scene {
   // Act I (Enumclaw opening) quest-givers + the Olympia grain recipient. Givers
   // plug into the same data-driven questGivers pipeline as the corruption NPC.
   private act1Givers: Npc[] = [];
+  private act2Givers: Npc[] = [];
   private olympiaNpc!: Npc;
   // Portland (Oregon) — a second town reusing the same systems, flavor only.
   private portland!: TownFeatures;
@@ -387,6 +399,8 @@ export class MainScene extends Phaser.Scene {
   private guardians: FlamingSword[] = [];
   private guardianPhase: 'dormant' | 'fighting' | 'defeated' | 'corrupting' | 'corrupted' = 'dormant';
   private corruptButton!: TouchButton;
+  /** Act II Q6: the proximity "Burn the Grove" action button (reuses the corrupt-button pattern). */
+  private burnButton!: TouchButton;
 
   // Multi-world (Earth <-> Heaven). The active world is centralized, serializable
   // state; each world's map lives in its own coordinate region (one rendered at a
@@ -518,13 +532,26 @@ export class MainScene extends Phaser.Scene {
   // objective; arcMode picks the completion test. ACT1_IDS are the grounded openers
   // (no corruption gate); DESCENT_IDS the corrupted arc.
   private readonly ACT1_IDS = new Set(['honest-days-work', 'wolves-tree-line', 'shallows', 'the-pass']);
+  private readonly ACT2_IDS = new Set(['whats-gotten-into-them', 'the-blight', 'the-thing-at-white-pass']);
   private readonly DESCENT_IDS = new Set(['descent-1', 'descent-2', 'descent-3', 'descent-4']);
-  private arcEnemies: (Townsfolk | AngelEnemy)[] = [];
-  private arcMode: 'defeat' | 'plunder' | 'reach' | 'pickup' | 'none' = 'none';
+  private arcEnemies: (Townsfolk | AngelEnemy | Demon)[] = [];
+  private arcMode: 'defeat' | 'plunder' | 'reach' | 'pickup' | 'burn' | 'none' = 'none';
   private arcReach: { x: number; y: number } | null = null;
   private arcShipmentPos: { x: number; y: number } | null = null;
   private arcHolyBaseline = 0;
   private arcHolyRequired = 0;
+  // The active objective's "on arriving" scripted narration (Act II): the lines +
+  // the target position + a one-shot guard so it plays once on first approach.
+  private arcEncounterNarration: readonly string[] | null = null;
+  private arcEncounterPos: { x: number; y: number } | null = null;
+  private arcEncounterShown = false;
+
+  // Uriel's arrival (Act II finale, scripted in MainScene). `urielPending` is armed
+  // when Q7 completes; the scene fires when the player next returns to the Enumclaw
+  // square. `urielArrived` is the one-shot (serialized) guard, and ALSO gates the old
+  // corruption beat's offer so it can't begin before Uriel. NEITHER grants power.
+  private urielPending = false;
+  private urielArrived = false;
 
   // Interaction targets (the real NPC and, when Spirit Vision is on, spirits).
   private talkTarget: Interactable | null = null; // in range now (drives Talk button)
@@ -623,6 +650,16 @@ export class MainScene extends Phaser.Scene {
     for (const g of this.act1Givers) this.physics.add.collider(this.player.sprite, g.sprite);
     this.olympiaNpc = new Npc(this, OLYMPIA_POSITION.x, OLYMPIA_POSITION.y, [...OLYMPIA_DELIVERY_LINES]);
     this.physics.add.collider(this.player.sprite, this.olympiaNpc.sprite);
+
+    // Act II (corruption escalation) quest-givers — Pell, Sable, Joren — folk who
+    // come to the square seeking help. Same data-driven questGivers pipeline; set a
+    // little further out around the plaza so they don't overlap the Act I givers.
+    this.act2Givers = [
+      new Npc(this, sp.x - ts * 5, sp.y, [...ACT2_AFFLICTED_DOGS.npcInactiveLines]), // Old Pell
+      new Npc(this, sp.x + ts * 5, sp.y, [...ACT2_THE_BLIGHT.npcInactiveLines]), // Sable
+      new Npc(this, sp.x, sp.y - ts * 4, [...ACT2_WHITE_PASS.npcInactiveLines]), // Joren
+    ];
+    for (const g of this.act2Givers) this.physics.add.collider(this.player.sprite, g.sprite);
 
     // Portland's quest-giver-style NPC — flavor dialogue only (no quest wired).
     this.portlandNpc = new Npc(this, this.portland.npc.x, this.portland.npc.y, [...PORTLAND_NPC_LINES]);
@@ -731,6 +768,16 @@ export class MainScene extends Phaser.Scene {
       questIds: [act1QuestIds[i]],
       idleLines: [],
     }));
+    const act2QuestIds = ['whats-gotten-into-them', 'the-blight', 'the-thing-at-white-pass'];
+    for (let i = 0; i < this.act2Givers.length; i++) {
+      const giver = this.act2Givers[i];
+      this.questGivers.push({
+        entity: giver,
+        pos: () => ({ x: giver.sprite.x, y: giver.sprite.y }),
+        questIds: [act2QuestIds[i]],
+        idleLines: [],
+      });
+    }
     this.questGivers.push({
       entity: this.npc,
       pos: () => ({ x: this.npc.sprite.x, y: this.npc.sprite.y }),
@@ -778,6 +825,9 @@ export class MainScene extends Phaser.Scene {
     // The defeat-gated portal-corruption button (bottom-centre, like Talk; the
     // outpost has no NPC so the two never contend). Hidden until both swords die.
     this.corruptButton = new TouchButton(this, 'Corrupt the Portal', () => this.tryCorruptPortal());
+    // Act II Q6: the proximity "Burn the Grove" action (same bottom-centre slot as
+    // Talk/Corrupt; they never contend — the grove has no NPC). Hidden until in range.
+    this.burnButton = new TouchButton(this, 'Burn the Grove', () => this.tryBurnGrove());
     this.zoomControls = new ZoomControls(this, cam, this.map.pixelWidth, this.map.pixelHeight);
     this.readout = new DebugReadout(this, this.map, this.player);
     // Spirit Vision tint is UI (created after the world snapshot so it lands in
@@ -930,7 +980,8 @@ export class MainScene extends Phaser.Scene {
     if (this.activeWorld === WORLD_EARTH) {
       this.checkDoors();
       this.checkQuestProximity();
-      this.checkAngelEncounter();
+      this.checkRiftCorruption(); // suppressed-angel corruption grant at the rift
+      this.checkUrielArrival(); // Act II finale: scripted Uriel scene back in the square
       this.updateArc(); // descent-arc completion watcher (before interactions so a
       // "return to the outpost" completes before the patron auto-offers the next quest)
       if (this.isDashing()) this.talkButton.setVisible(false);
@@ -3938,6 +3989,8 @@ export class MainScene extends Phaser.Scene {
         power: this.power.state,
         spiritVision: this.spirit.isActive(),
         angelEncounterFired: this.angelEncounterFired,
+        urielArrived: this.urielArrived,
+        urielPending: this.urielPending,
         title: this.currentTitle,
       },
       quests: this.chain.toJSON(),
@@ -3976,9 +4029,11 @@ export class MainScene extends Phaser.Scene {
       this.energy.current = Phaser.Math.Clamp(s.player.energy, 0, this.energy.max);
       this.holyPower.load({ holyPower: s.player.holyPower });
 
-      // Narrative path + Spirit Vision + the angel-choice flag.
+      // Narrative path + Spirit Vision + the angel-choice flag + Uriel's arrival.
       this.angelEncounterFired = !!s.player.angelEncounterFired;
       if (this.angelEncounterFired) this.angel.dismiss();
+      this.urielArrived = !!s.player.urielArrived;
+      this.urielPending = !!s.player.urielPending && !this.urielArrived;
       this.setPlayerPath(s.player.path); // 'corrupted' turns Spirit Vision on
       this.spirit.setSpiritVision(s.player.spiritVision); // then honor the exact saved flag
       this.awardTitle(s.player.title);
@@ -5293,9 +5348,9 @@ export class MainScene extends Phaser.Scene {
     void diamond;
   }
 
-  /** True if `id` is an arc quest (Act I or descent) that uses the per-objective watcher. */
+  /** True if `id` is an arc quest (Act I, Act II, or descent) using the per-objective watcher. */
   private isArcQuest(id?: string): boolean {
-    return id !== undefined && (this.ACT1_IDS.has(id) || this.DESCENT_IDS.has(id));
+    return id !== undefined && (this.ACT1_IDS.has(id) || this.ACT2_IDS.has(id) || this.DESCENT_IDS.has(id));
   }
 
   /** True while an arc quest (Act I or descent) is the active quest. */
@@ -5323,6 +5378,20 @@ export class MainScene extends Phaser.Scene {
         break;
       case 'raiders-defeated':
         this.spawnArcTownsfolk('raider', SNOQUALMIE_PASS_POSITION, RAIDERS_COUNT);
+        this.arcMode = 'defeat';
+        break;
+      // --- Act II (corruption escalation) ---
+      case 'dogs-defeated':
+        this.spawnArcTownsfolk('dog', PELLS_FARM_POSITION, DOGS_COUNT);
+        this.arcMode = 'defeat';
+        break;
+      case 'grove-burned':
+        // No enemies — a "Burn the Grove" action button appears near the grove.
+        this.arcMode = 'burn';
+        this.arcReach = { ...CORRUPTED_GROVE_POSITION };
+        break;
+      case 'whitepass-demons-defeated':
+        this.spawnArcDemons(WHITEPASS_FARM_POSITION, WHITEPASS_DEMONS_COUNT);
         this.arcMode = 'defeat';
         break;
       // --- The Descent arc ---
@@ -5358,6 +5427,12 @@ export class MainScene extends Phaser.Scene {
       default:
         this.arcMode = 'none';
     }
+    // Arm the active objective's one-shot "on arriving" scripted narration (Act II),
+    // if any — it plays once when the player first nears the objective's target.
+    const obj = this.chain.activeObjectiveDef;
+    this.arcEncounterNarration = obj?.encounterNarration ?? null;
+    this.arcEncounterPos = obj?.target ? this.resolveTarget(obj.target) : null;
+    this.arcEncounterShown = false;
     this.refreshQuestUi();
   }
 
@@ -5367,11 +5442,16 @@ export class MainScene extends Phaser.Scene {
     this.arcHolyRequired = required;
   }
 
-  /** Watch for the active descent objective's completion each frame. */
+  /** Watch for the active arc objective's completion each frame (Act I / Act II / descent). */
   private updateArc(): void {
+    // The Q6 burn button only ever shows from the burn branch below; default it off
+    // each frame (also covers leaving burn mode / the early return).
+    if (this.arcMode !== 'burn') this.burnButton.setVisible(false);
     if (!this.isArcActive()) return;
     const trig = this.chain.activeTrigger;
     if (!trig) return;
+    // Act II: play the one-shot "on arriving" scripted narration on first approach.
+    this.maybeShowEncounterNarration();
     if (this.arcMode === 'defeat') {
       if (this.arcEnemies.length > 0 && this.arcEnemies.every((e) => !e.isAlive)) this.notifyQuest(trig);
     } else if (this.arcMode === 'plunder') {
@@ -5382,9 +5462,48 @@ export class MainScene extends Phaser.Scene {
       if (Phaser.Math.Distance.Between(this.player.x, this.player.y, this.arcReach.x, this.arcReach.y) <= REACH_OUTPOST_RANGE) {
         this.notifyQuest(trig);
       }
+    } else if (this.arcMode === 'burn' && this.arcReach) {
+      // Q6: show the "Burn the Grove" action button while in range (the player taps it).
+      const near = Phaser.Math.Distance.Between(this.player.x, this.player.y, this.arcReach.x, this.arcReach.y) <= GROVE_BURN_RANGE;
+      this.burnButton.setVisible(near && !this.dialogue.isOpen());
     }
     // Keep the tracker's live "(N left)" / "(Holy Power x/y)" suffix current.
     if (this.arcMode === 'defeat' || this.arcMode === 'plunder') this.refreshQuestUi();
+  }
+
+  /** Show the active objective's scripted "on arriving" narration once, on first approach. */
+  private maybeShowEncounterNarration(): void {
+    if (this.arcEncounterShown || !this.arcEncounterNarration || !this.arcEncounterPos) return;
+    if (this.dialogue.isOpen() || this.choice.isOpen()) return;
+    const d = Phaser.Math.Distance.Between(this.player.x, this.player.y, this.arcEncounterPos.x, this.arcEncounterPos.y);
+    if (d > ENCOUNTER_NARRATION_RANGE) return;
+    this.arcEncounterShown = true;
+    // A freeze-and-read cutscene beat (let the first-demon sight breathe).
+    this.controls.setEnabled(false);
+    this.player.setDirection(0, 0);
+    this.dialogue.open([...this.arcEncounterNarration], () => {
+      this.reenableControls = true;
+    });
+  }
+
+  /** Q6 button/proximity: burn the corrupted grove if currently allowed (in range, Q6 active). */
+  private tryBurnGrove(): void {
+    if (this.arcMode !== 'burn' || !this.arcReach) return;
+    if (this.chain.activeTrigger !== 'grove-burned') return;
+    const near = Phaser.Math.Distance.Between(this.player.x, this.player.y, this.arcReach.x, this.arcReach.y) <= GROVE_BURN_RANGE;
+    if (!near) return;
+    this.burnButton.setVisible(false);
+    this.notifyQuest('grove-burned'); // completes Q6 → reward banner (the burn scene text)
+  }
+
+  /** Spawn `n` Hell Demons at a point on the ACTIVE (Earth) map for an arc objective. */
+  private spawnArcDemons(center: { x: number; y: number }, n: number): void {
+    for (let i = 0; i < n; i++) {
+      const a = (Math.PI * 2 * i) / n + Math.random() * 0.5;
+      const r = 50 + Math.random() * 40;
+      const d = this.spawnDemon(center.x + Math.cos(a) * r, center.y + Math.sin(a) * r, this.map.layer);
+      this.arcEnemies.push(d);
+    }
   }
 
   private spawnArcTownsfolk(variant: TownsfolkVariant, center: { x: number; y: number }, n: number): void {
@@ -5407,14 +5526,19 @@ export class MainScene extends Phaser.Scene {
 
   /** Clear the current objective's arc enemies + watcher state (not the holy-power motes). */
   private clearArcObjective(): void {
-    const set = new Set<Townsfolk | AngelEnemy>(this.arcEnemies);
+    const set = new Set<Townsfolk | AngelEnemy | Demon>(this.arcEnemies);
     for (const e of this.arcEnemies) if (e.isAlive) e.destroy();
     this.townsfolk = this.townsfolk.filter((t) => !set.has(t));
     this.angels = this.angels.filter((x) => !set.has(x));
+    this.demons = this.demons.filter((d) => !set.has(d)); // Act II Q7 reuses Hell Demons on Earth
     this.arcEnemies = [];
     this.arcMode = 'none';
     this.arcReach = null;
     this.arcShipmentPos = null;
+    this.arcEncounterNarration = null;
+    this.arcEncounterPos = null;
+    this.arcEncounterShown = false;
+    this.burnButton?.setVisible(false);
   }
 
   /** DEV: force the corrupted path (Spirit Vision on) so the descent arc is testable. */
@@ -5519,7 +5643,7 @@ export class MainScene extends Phaser.Scene {
    * imperceptible — no Talk prompt, no auto-dialogue).
    */
   private checkInteractions(): void {
-    const candidates: Interactable[] = [this.npc, this.portlandNpc, this.olympiaNpc, ...this.act1Givers];
+    const candidates: Interactable[] = [this.npc, this.portlandNpc, this.olympiaNpc, ...this.act1Givers, ...this.act2Givers];
     if (this.spirit.isActive()) candidates.push(...this.spirit.entities);
 
     let nearest: Interactable | null = null;
@@ -5588,7 +5712,11 @@ export class MainScene extends Phaser.Scene {
   /** The quest this giver may OFFER right now (available + corruption gate met), or null. */
   private offerableQuest(giver: { questIds: string[]; requiresCorruption?: boolean }): QuestDef | null {
     if (giver.requiresCorruption && this.playerPath !== 'corrupted') return null;
-    return this.chain.firstAvailable(giver.questIds);
+    const offer = this.chain.firstAvailable(giver.questIds);
+    // The old corruption beat must wait for Uriel's arrival (Act II finale) — don't
+    // offer it (and don't point the pre-accept arrow at its giver) until then.
+    if (offer?.id === 'corruption-at-the-gates' && !this.urielArrived) return null;
+    return offer;
   }
 
   /**
@@ -5660,6 +5788,12 @@ export class MainScene extends Phaser.Scene {
       case 'quest-complete':
         if (this.isArcQuest(e.questId)) this.clearArcObjective();
         this.grantQuestReward(e.questId);
+        // Act II finale: completing Q7 arms URIEL'S ARRIVAL, which fires when the
+        // player returns to the Enumclaw square (and gates the old corruption beat).
+        if (e.questId === 'the-thing-at-white-pass' && !this.urielArrived) {
+          this.urielPending = true;
+          this.time.delayedCall(1500, () => this.showBanner('Return to Enumclaw — something is calling you home.', 3600));
+        }
         this.refreshQuestUi();
         break;
       case 'unlocked': {
@@ -5708,64 +5842,96 @@ export class MainScene extends Phaser.Scene {
     for (const e of this.spirit.entities) e.setPath(path);
   }
 
-  private checkAngelEncounter(): void {
+  /**
+   * SUPPRESSED-ANGEL corruption beat (Batch 2). The on-screen angel + Accept/Refuse
+   * choice are GONE so Uriel isn't duplicated as a second angel. The mechanical
+   * outcome is fully PRESERVED: when the player reaches the rift on the corruption
+   * quest's final objective, the corruption grant fires — setPlayerPath('corrupted')
+   * + Spirit Vision ON — and the quest completes (notifyQuest('angel-refused')), so
+   * descent-1..4 + the whole endgame proceed exactly as before.
+   *
+   * Gated on `activeTrigger === 'angel-refused'` so it can ONLY happen during the
+   * corruption quest's last objective — the player can wander past the rift all
+   * through Acts I–II without triggering it early.
+   */
+  private checkRiftCorruption(): void {
     if (this.angelEncounterFired || this.playerPath !== 'neutral') return;
-    const d = Phaser.Math.Distance.Between(
-      this.player.x,
-      this.player.y,
-      this.town.rift.x,
-      this.town.rift.y,
-    );
-    if (d <= ANGEL_ENCOUNTER.triggerRange) this.startAngelEncounter();
+    if (this.chain.activeTrigger !== 'angel-refused') return;
+    const d = Phaser.Math.Distance.Between(this.player.x, this.player.y, this.town.rift.x, this.town.rift.y);
+    if (d <= ANGEL_ENCOUNTER.triggerRange) this.startRiftCorruption();
   }
 
-  private startAngelEncounter(): void {
-    this.angelEncounterFired = true;
-    this.angel.manifest();
+  /** Play the short, understated rift beat (NO angel), then grant corruption. */
+  private startRiftCorruption(): void {
+    this.angelEncounterFired = true; // reuse the existing one-shot (serialized) guard
     this.talkButton.setVisible(false);
     this.controls.setEnabled(false);
     this.player.setDirection(0, 0);
-    // Angel speaks via the existing dialogue; the choice follows the last line.
-    this.dialogue.open(ANGEL_ENCOUNTER.lines, () => this.presentAngelChoice());
+    this.dialogue.open([...RIFT_CORRUPTION_LINES], () => this.grantRiftCorruption());
   }
 
-  private presentAngelChoice(): void {
-    // Within the opening quest (objective "Face what stirs at the rift"), only
-    // refusing advances the story: tapping Accept plays a placeholder line and
-    // re-opens the choice. Outside the quest, the standalone two-branch logic is
-    // untouched.
-    const forced = this.chain.activeTrigger === 'angel-refused';
-    this.choice.open(ANGEL_ENCOUNTER.prompt, [
-      {
-        label: ANGEL_ENCOUNTER.acceptLabel,
-        onSelect: () => (forced ? this.onForcedAccept() : this.onAcceptLight()),
-      },
-      { label: ANGEL_ENCOUNTER.refuseLabel, onSelect: () => this.onRefuse() },
-    ]);
-  }
-
-  /** Quest-forced encounter: Accept can't take hold — show a line, re-offer the choice. */
-  private onForcedAccept(): void {
-    const lines = this.chain.activeQuest?.forcedAcceptLines ?? ['...'];
-    this.dialogue.open([...lines], () => this.presentAngelChoice());
-  }
-
-  private onAcceptLight(): void {
-    this.setPlayerPath('righteous'); // Spirit Vision stays OFF
-    this.angel.dismiss();
-    // Righteous stub: a short acknowledgment, then back to normal play.
-    this.dialogue.open(ANGEL_ENCOUNTER.righteousAck, () => {
-      this.reenableControls = true;
-    });
-  }
-
-  private onRefuse(): void {
+  /** The PRESERVED mechanical outcome: corruption + Spirit Vision, then complete the quest. */
+  private grantRiftCorruption(): void {
     this.setPlayerPath('corrupted'); // turns Spirit Vision ON permanently
-    this.angel.dismiss();
     this.spirit.fadeTintIn(1000); // the "sight opens" moment
-    this.reenableControls = true; // resume play; the wraith is now visible
-    // Within the quest this completes the final objective ("Face what stirs").
-    this.notifyQuest('angel-refused');
+    this.reenableControls = true;
+    this.notifyQuest('angel-refused'); // completes the corruption quest → descent unlocks
+  }
+
+  // --- URIEL'S ARRIVAL (Act II finale) --------------------------------------
+  //
+  // Armed when Q7 completes (handleQuestEvent). The scene fires when the player
+  // returns to the Enumclaw square, reusing the scripted-dialogue/cutscene pattern
+  // (like startGodJudgment). It is NARRATIVE ONLY — it grants no power and never
+  // touches playerPath / Spirit Vision. `urielArrived` also gates the old corruption
+  // beat's offer (offerableQuest), so the rift beat can't begin before Uriel.
+
+  /** When Q7 is done and the player is back in the Enumclaw square, play Uriel's scene. */
+  private checkUrielArrival(): void {
+    if (!this.urielPending || this.urielArrived) return;
+    if (this.dialogue.isOpen() || this.choice.isOpen() || !this.controls.isEnabled()) return;
+    const d = Phaser.Math.Distance.Between(this.player.x, this.player.y, this.town.spawn.x, this.town.spawn.y);
+    if (d <= URIEL_SCENE.triggerRange) this.playUrielScene();
+  }
+
+  /** The scripted Uriel cutscene: intro narration → Uriel's lines → outro, then resume. */
+  private playUrielScene(): void {
+    this.urielPending = false;
+    this.urielArrived = true;
+    this.talkButton.setVisible(false);
+    this.controls.setEnabled(false);
+    this.player.setDirection(0, 0);
+    // A placeholder radiant figure in the square (reuses the existing 'angel-divine'
+    // art — created by the Angel entity at boot — so no new art; understated).
+    const fx = this.spawnUrielFigure();
+    // intro narration → Uriel speaks → outro → dismiss + resume.
+    this.dialogue.open([...URIEL_SCENE.intro], () =>
+      this.dialogue.open([...URIEL_SCENE.lines], () =>
+        this.dialogue.open([...URIEL_SCENE.outro], () => {
+          fx.dismiss();
+          this.reenableControls = true;
+          this.autosave(); // a meaningful beat: Uriel has come, the old beat now opens
+        }),
+      ),
+    );
+  }
+
+  /** A soft radiant figure + halo above the town square; returns a dismiss handle. */
+  private spawnUrielFigure(): { dismiss: () => void } {
+    const x = this.town.spawn.x;
+    const y = this.town.spawn.y - this.map.tileSize * 1.5;
+    const glow = this.add.circle(x, y, 40, 0xfff3c0, 0).setDepth(7);
+    const figure = this.add.sprite(x, y, 'angel-divine').setDepth(9).setAlpha(0);
+    this.worldFx.add(glow);
+    this.worldFx.add(figure);
+    this.tweens.add({ targets: glow, alpha: 0.55, scale: 1.5, duration: 700, ease: 'Quad.out' });
+    this.tweens.add({ targets: figure, alpha: 1, y: y - 6, duration: 700, ease: 'Quad.out' });
+    this.tweens.add({ targets: glow, scale: { from: 1.5, to: 1.9 }, duration: 1400, yoyo: true, repeat: -1, ease: 'Sine.inOut' });
+    return {
+      dismiss: () => {
+        this.tweens.add({ targets: [glow, figure], alpha: 0, scale: 0.6, duration: 600, ease: 'Quad.in', onComplete: () => { glow.destroy(); figure.destroy(); } });
+      },
+    };
   }
 
   /**
@@ -5780,6 +5946,8 @@ export class MainScene extends Phaser.Scene {
     this.awardTitle(null);
     this.angelEncounterFired = false;
     this.angel.dismiss();
+    this.urielArrived = false;
+    this.urielPending = false;
     this.setPlayerPath('neutral');
     this.spirit.setSpiritVision(false); // 'neutral' alone doesn't turn it off
     this.sasquatch.reset();
@@ -6108,6 +6276,10 @@ export class MainScene extends Phaser.Scene {
     // Givers live on Earth, so this only applies on Earth (auto-activating climax
     // quests have no giver and need no pre-accept pointer).
     if (this.activeWorld !== WORLD_EARTH) return null;
+    // Act II finale: between Q7 and Uriel's arrival, point the player back to the square.
+    if (this.urielPending && !this.urielArrived) {
+      return { x: this.town.spawn.x, y: this.town.spawn.y, label: 'Return to Enumclaw' };
+    }
     for (const g of this.questGivers) {
       const offer = this.offerableQuest(g);
       if (offer) {
@@ -6130,6 +6302,13 @@ export class MainScene extends Phaser.Scene {
         return { x: TACOMA_BEACH_POSITION.x, y: TACOMA_BEACH_POSITION.y, label: '' };
       case 'snoqualmie-pass':
         return { x: SNOQUALMIE_PASS_POSITION.x, y: SNOQUALMIE_PASS_POSITION.y, label: '' };
+      // --- Act II (corruption escalation) locations ---
+      case 'pells-farm':
+        return { x: PELLS_FARM_POSITION.x, y: PELLS_FARM_POSITION.y, label: '' };
+      case 'corrupted-grove':
+        return { x: CORRUPTED_GROVE_POSITION.x, y: CORRUPTED_GROVE_POSITION.y, label: '' };
+      case 'whitepass-farm':
+        return { x: WHITEPASS_FARM_POSITION.x, y: WHITEPASS_FARM_POSITION.y, label: '' };
       case 'sasquatch':
         return this.sasquatch.isAlive ? { x: this.sasquatch.x, y: this.sasquatch.y, label: '' } : null;
       case 'rift':

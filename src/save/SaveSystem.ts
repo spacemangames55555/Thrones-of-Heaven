@@ -1,17 +1,25 @@
-import { SAVE_KEY, SAVE_VERSION, ACT1_QUEST_IDS, type SaveData } from './SaveData';
+import { SAVE_KEY, SAVE_VERSION, ACT1_QUEST_IDS, ACT2_QUEST_IDS, type SaveData } from './SaveData';
 
 /**
  * Migrate an older save in place to the current SAVE_VERSION. Each step is
- * forward-only and idempotent. v2→v3 added the Act I (Enumclaw) opening in front
- * of the chain: a pre-v3 player is already past the opening, so mark the four Act
- * I quests COMPLETE (keeping prerequisites satisfied and the chain unlocked).
+ * forward-only, cumulative, and idempotent.
+ *  • v2→v3 added the Act I (Enumclaw) opening in front of the chain.
+ *  • v3→v4 added the Act II (corruption escalation) quests + Uriel's arrival.
+ * In both cases a pre-migration player is already past that content, so the new
+ * quests are marked COMPLETE (prerequisites stay satisfied → no soft-lock), and
+ * Uriel is flagged as already arrived so his scene never replays.
  */
 function migrate(data: SaveData): SaveData {
-  if (data.saveVersion < 3) {
-    const completed = new Set(data.quests?.completed ?? []);
-    for (const id of ACT1_QUEST_IDS) completed.add(id);
-    if (data.quests) data.quests.completed = [...completed];
+  const completed = new Set(data.quests?.completed ?? []);
+  if (data.saveVersion < 3) for (const id of ACT1_QUEST_IDS) completed.add(id);
+  if (data.saveVersion < 4) {
+    for (const id of ACT2_QUEST_IDS) completed.add(id);
+    if (data.player) {
+      data.player.urielArrived = true;
+      data.player.urielPending = false;
+    }
   }
+  if (data.quests) data.quests.completed = [...completed];
   data.saveVersion = SAVE_VERSION;
   return data;
 }

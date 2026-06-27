@@ -1181,15 +1181,40 @@ export const SNOQUALMIE_PASS_POSITION = { x: 12816, y: 5616 };
 /** Proximity (px) that completes the grain delivery when talking to the Olympia recipient. */
 export const ACT1_DELIVERY_RANGE = 90;
 
+// --- Act II (corruption escalation) enemy tuning + locations ---------------
+//
+// Q5 rabid dogs reuse the Townsfolk melee AI ('dog' variant); Q7's demonic
+// raiders reuse the existing Hell DEMON entity (no new art) — DEMON tuning lives
+// in its own block. Positions are world px on verified-walkable tiles near
+// Enumclaw. Quest TEXT lives in questData.ts.
+
+/** RABID DOGS (Quest 5) — a small afflicted pack; beatable at the player's level. */
+export const DOG_MAX_HP = 26;
+export const DOG_PLAYER_DAMAGE = 7;
+export const DOGS_COUNT = 3;
+/** WHITE PASS DEMONS (Quest 7) — how many Hell Demons spawn at the farm. */
+export const WHITEPASS_DEMONS_COUNT = 3;
+
+/** Old Pell's farm, SW of Enumclaw (Q5 dogs). */
+export const PELLS_FARM_POSITION = { x: 9872, y: 6480 };
+/** The corrupted grove on the eastern forest slope (Q6 burn). */
+export const CORRUPTED_GROVE_POSITION = { x: 11088, y: 6576 };
+/** The White Pass farm, SE toward the pass (Q7 demons). */
+export const WHITEPASS_FARM_POSITION = { x: 12816, y: 8336 };
+/** Proximity (px) at which the "Burn the Grove" action button shows / the burn fires. */
+export const GROVE_BURN_RANGE = 110;
+/** Proximity (px) at which an objective's "on arriving" encounter narration plays. */
+export const ENCOUNTER_NARRATION_RANGE = 200;
+
 /**
  * Townsfolk VARIANTS — a reskin layer over the one Townsfolk class (same melee
  * behavior, different tint + per-variant HP / contact damage / XP). The descent
  * arc uses 'guardsman' and 'farmer'; 'townsperson' is the portal-defense default;
  * the Act I opening adds 'wolf' (a low-HP pack — the new FIRST combat), 'sealion'
- * (a single brute), and 'raider' (a few tougher humans). `maxHP`/`playerDamage`
- * default to the shared TOWNSFOLK_* values when omitted. Edit a tint/HP/XP here.
+ * (a single brute), and 'raider'; Act II adds 'dog' (afflicted pack). `maxHP`/
+ * `playerDamage` default to the shared TOWNSFOLK_* values when omitted.
  */
-export type TownsfolkVariant = 'townsperson' | 'guardsman' | 'farmer' | 'wolf' | 'sealion' | 'raider';
+export type TownsfolkVariant = 'townsperson' | 'guardsman' | 'farmer' | 'wolf' | 'sealion' | 'raider' | 'dog';
 export const TOWNSFOLK_VARIANTS: Record<
   TownsfolkVariant,
   { color: number; xpReward: number; maxHP?: number; playerDamage?: number }
@@ -1197,6 +1222,7 @@ export const TOWNSFOLK_VARIANTS: Record<
   townsperson: { color: 0xffffff, xpReward: TOWNSFOLK_XP_REWARD }, // no tint (default brown)
   guardsman: { color: 0x9fb6e6, xpReward: 16 }, // steel-blue
   farmer: { color: 0xbfe089, xpReward: 13 }, // straw-green
+  dog: { color: 0x6a6f78, xpReward: 14, maxHP: DOG_MAX_HP, playerDamage: DOG_PLAYER_DAMAGE }, // afflicted grey
   // --- Act I (Enumclaw opening) ---
   wolf: { color: 0x8a8f99, xpReward: 12, maxHP: WOLF_MAX_HP, playerDamage: WOLF_PLAYER_DAMAGE }, // grey pack
   sealion: { color: 0x6b5a44, xpReward: 28, maxHP: SEALION_MAX_HP, playerDamage: SEALION_PLAYER_DAMAGE }, // dark brown brute
