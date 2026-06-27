@@ -1,11 +1,12 @@
-import { SAVE_KEY, SAVE_VERSION, ACT1_QUEST_IDS, ACT2_QUEST_IDS, type SaveData } from './SaveData';
+import { SAVE_KEY, SAVE_VERSION, ACT1_QUEST_IDS, ACT2_QUEST_IDS, INV_QUEST_IDS, type SaveData } from './SaveData';
 
 /**
  * Migrate an older save in place to the current SAVE_VERSION. Each step is
  * forward-only, cumulative, and idempotent.
  *  • v2→v3 added the Act I (Enumclaw) opening in front of the chain.
  *  • v3→v4 added the Act II (corruption escalation) quests + Uriel's arrival.
- * In both cases a pre-migration player is already past that content, so the new
+ *  • v4→v5 added the Investigation arc (Quests 8–12) before the old corruption beat.
+ * In every case a pre-migration player is already past that content, so the new
  * quests are marked COMPLETE (prerequisites stay satisfied → no soft-lock), and
  * Uriel is flagged as already arrived so his scene never replays.
  */
@@ -19,6 +20,7 @@ function migrate(data: SaveData): SaveData {
       data.player.urielPending = false;
     }
   }
+  if (data.saveVersion < 5) for (const id of INV_QUEST_IDS) completed.add(id);
   if (data.quests) data.quests.completed = [...completed];
   data.saveVersion = SAVE_VERSION;
   return data;

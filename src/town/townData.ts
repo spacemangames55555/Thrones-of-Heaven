@@ -93,6 +93,33 @@ export const PORTLAND_TOWN: TownDef = {
 };
 
 /**
+ * SEATTLE — the DRUID TREE-HOUSE CITY (Quests 10–11). Built from the same town
+ * system, but dressed as a forest settlement: dense trees ('t'), elevated tree-
+ * house dwellings ('B'), timbered walkways ('=' roads), and a central grove plaza
+ * ('o'/'s'). A road crosses the full width so the player can walk in from either
+ * side; the plaza connects to it. No rift, no inn — Rowan + Alder (the Druids) are
+ * placed near the plaza in MainScene. Anchored to the existing Seattle city marker,
+ * so Seattle stays the same city in the same place — just visibly the Druid capital.
+ */
+export const SEATTLE_DRUID_TOWN: TownDef = {
+  anchorCity: 'Seattle',
+  offset: { tx: -7, ty: -5 },
+  rows: [
+    'tt.t.t.t.t.t.tt',
+    't.BBB.t.BBB.t.t',
+    't.BBB.t.BBB.t.t',
+    't...t...t...t..',
+    't.t.ooooo.t.t.t',
+    '====oosoo======',
+    't.t.ooooo.t.t.t',
+    't...t...t...t..',
+    't.BBB.t.BBB.t.t',
+    't.BBB.t.BBB.t.t',
+    'tt.t.t.t.t.t.tt',
+  ],
+};
+
+/**
  * >>> EDIT THE PORTLAND NPC'S DIALOGUE HERE. <<<
  * Placeholder flavor: the Oregon townsfolk hint that the rift's corruption has
  * begun seeping south — foreshadowing the descent corridor. No quest is wired to

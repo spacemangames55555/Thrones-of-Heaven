@@ -5,7 +5,7 @@ import type { PlayerPath } from '../story/playerPath';
 import type { SkillSaveState } from '../skills/SkillState';
 
 /** Bump when the SaveData shape changes; SaveSystem.read can then migrate old saves. */
-export const SAVE_VERSION = 4;
+export const SAVE_VERSION = 5;
 
 /**
  * Act I (Enumclaw opening) quest ids — inserted at the FRONT of the chain, with the
@@ -24,6 +24,20 @@ export const ACT1_QUEST_IDS = ['honest-days-work', 'wolves-tree-line', 'shallows
  * replaying Uriel's scene for a returning player.
  */
 export const ACT2_QUEST_IDS = ['whats-gotten-into-them', 'the-blight', 'the-thing-at-white-pass'];
+
+/**
+ * Investigation-arc quest ids (Quests 8–12) — inserted between Act II and the old
+ * corruption beat (now gated on the last of them, 'the-exile-of-longview'). A pre-v5
+ * save predates this arc, so the v4→v5 migration marks all five COMPLETE so the
+ * chain stays unlocked (no soft-lock) and the new givers don't re-offer.
+ */
+export const INV_QUEST_IDS = [
+  'word-to-yakima',
+  'the-iron-road',
+  'the-northern-farms',
+  'what-the-dark-ones-carry',
+  'the-exile-of-longview',
+];
 /** The single localStorage slot key. */
 export const SAVE_KEY = 'toh_save';
 
