@@ -88,6 +88,11 @@ export class Controls {
     if (!enabled) this.resetJoystick();
   }
 
+  /** Whether movement input is currently active (false while frozen for a cutscene). */
+  isEnabled(): boolean {
+    return this.enabled;
+  }
+
   /** Current movement vector, components in [-1, 1]. */
   getDirection(): Direction {
     if (!this.enabled) return { x: 0, y: 0 };

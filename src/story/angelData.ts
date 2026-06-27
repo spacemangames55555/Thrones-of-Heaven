@@ -30,3 +30,18 @@ export const ANGEL_ENCOUNTER = {
     'Angel: Then the path of light is yours. Walk it well — we will speak again.',
   ],
 };
+
+/**
+ * SUPPRESSED-ANGEL placeholder (Batch 2): the on-screen angel manifestation +
+ * Accept/Refuse choice are suppressed so Uriel isn't duplicated as a second angel.
+ * The corruption grant is preserved — it now fires at the rift with these short,
+ * understated lines instead of the angel scene. This is a temporary seam; Batch 4
+ * replaces the whole beat with the proper rift/lie/choice scene.
+ *
+ * >>> EDIT THE PLACEHOLDER RIFT-CORRUPTION LINES HERE. <<<
+ */
+export const RIFT_CORRUPTION_LINES = [
+  'At the eastern edge of town the ground is black and violet, and the rift breathes a cold that has nothing to do with weather.',
+  'You step close, and it reaches back — not with hands, but with knowing. Something on the far side has been waiting for someone exactly like you.',
+  'The cold pours into your eyes and does not leave. When you blink, the world is the same — and utterly changed. You can see them now. The things that move between things. There is no closing your eyes to it again.',
+];

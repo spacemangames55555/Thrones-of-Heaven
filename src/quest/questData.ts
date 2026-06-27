@@ -23,6 +23,10 @@ export type ObjectiveTrigger =
   | 'wolves-defeated'
   | 'sealion-defeated'
   | 'raiders-defeated'
+  // Act II — the corruption escalation (still pre-corruption for the player):
+  | 'dogs-defeated'
+  | 'grove-burned'
+  | 'whitepass-demons-defeated'
   | 'sasquatch-defeated'
   | 'rift-reached'
   | 'angel-refused'
@@ -56,6 +60,10 @@ export type TargetKind =
   | 'tree-line'
   | 'tacoma-beach'
   | 'snoqualmie-pass'
+  // Act II — corruption-escalation locations (all on Earth, near Enumclaw):
+  | 'pells-farm'
+  | 'corrupted-grove'
+  | 'whitepass-farm'
   | 'sasquatch'
   | 'rift'
   | 'npc'
@@ -85,6 +93,9 @@ export const TARGET_WORLD: Record<TargetKind, WorldId> = {
   'tree-line': WORLD_EARTH,
   'tacoma-beach': WORLD_EARTH,
   'snoqualmie-pass': WORLD_EARTH,
+  'pells-farm': WORLD_EARTH,
+  'corrupted-grove': WORLD_EARTH,
+  'whitepass-farm': WORLD_EARTH,
   sasquatch: WORLD_EARTH,
   rift: WORLD_EARTH,
   npc: WORLD_EARTH,
@@ -109,6 +120,12 @@ export interface ObjectiveDef {
   readonly trigger: ObjectiveTrigger;
   /** Optional world thing the on-screen marker / edge arrow points to. */
   readonly target: TargetKind | null;
+  /**
+   * Optional scripted narration shown ONCE (as a freeze-and-read dialogue) the
+   * first time the player reaches this objective's target — the "on confronting /
+   * on arriving" beat (e.g. Act II's first-demon-sight). Purely narrative.
+   */
+  readonly encounterNarration?: readonly string[];
 }
 
 /** The reward block granted when a quest's final objective completes. */
@@ -297,10 +314,146 @@ export const ACT1_THE_PASS: QuestDef = {
 };
 
 /**
+ * ============================================================================
+ * ACT II — THE CORRUPTION ESCALATION (Quests 5–7). Three quests where the wrong-
+ * ness in the valley turns from "bad season" to undeniable: afflicted dogs on a
+ * blighted circle of ground → a spreading corrupted grove the player burns out →
+ * the first sight of the dark ones (demons) at White Pass. STILL pre-corruption —
+ * the player is good throughout; NONE of these call setPlayerPath. After Quest 7
+ * completes, URIEL'S ARRIVAL scripted scene plays (MainScene), then the old
+ * corruption beat follows (its prerequisite now points at Quest 7).
+ *
+ * Q7's demonic raiders REUSE the existing Hell `Demon` entity (no new art).
+ * Givers (Pell/Sable/Joren) are placed in MainScene; enemy tuning + objective
+ * positions live in settings.ts. The "on confronting / on arriving" scene text is
+ * each objective's `encounterNarration`; the "on defeating / on burning" text is
+ * the reward banner.
+ *
+ * >>> EDIT ACT II TEXT HERE. <<<
+ * ============================================================================
+ */
+
+/** QUEST 5 — "What's Gotten Into Them" (giver: OLD PELL, a farmer near Enumclaw; COMBAT: rabid dogs). */
+export const ACT2_AFFLICTED_DOGS: QuestDef = {
+  id: 'whats-gotten-into-them',
+  title: 'What’s Gotten Into Them',
+  prerequisites: ['the-pass'],
+  objectives: [
+    {
+      text: 'Deal with Pell’s afflicted dogs',
+      trigger: 'dogs-defeated',
+      target: 'pells-farm',
+      encounterNarration: [
+        'The dogs move wrong — too stiff, too deliberate, heads low. Their eyes catch the light strangely, clouded and dim, with no flicker of recognition in them. Whatever these were, they aren’t anymore.',
+      ],
+    },
+  ],
+  npcInactiveLines: [
+    'Pell: Thank God you came. I didn’t know who else— you’re the one who helps, aren’t you? The one folks trust. I need that now. I need somebody.',
+    'Pell: My dogs. My own dogs, that I raised from pups. Something’s wrong with them. Three days ago they started... changing. Won’t eat. Won’t sleep. Just pace, and stare, and growl at nothing.',
+    'Pell: This morning they turned on the livestock. Tore into them. I called their names and they looked at me like — like they didn’t know me. Like there was nothing of them left behind their eyes.',
+    'Pell: I keep telling myself it’s the madness. Rabies. That’s got to be it, right? But I’ve seen rabid animals before, and this... this isn’t that. I don’t have a word for what this is.',
+    'Pell: Please. Put them down if you have to. I can’t do it myself — I can’t even look at them. Just make it stop.',
+  ],
+  npcActiveLines: ['Pell: They’re out in the far pastures. God forgive me, just make it quick for them.'],
+  npcCompleteLines: [
+    'Pell: It’s over? They’re... at peace now? Good. That’s good. They deserved better than whatever that was.',
+    'Pell: Here. Take whatever I’ve got, it’s the least— no, I insist. You didn’t just put down some sick animals. You did something I couldn’t, and I won’t forget it.',
+    'Pell: But tell me true. You saw them up close. That wasn’t rabies, was it? That was something else. Something wrong.',
+    'Pell: ...I’ve farmed this land forty years. I’ve never been afraid of it before. I am now.',
+  ],
+  preAcceptHint: 'Seek Old Pell at his farm near Enumclaw',
+  reward: {
+    healToFull: true,
+    xp: QUEST_XP_REWARD,
+    banner: 'It’s done. In the sudden quiet, you notice the ground where they paced is sickly and grey, the grass withered in a rough circle — as though something had soured the very earth beneath them.',
+    note: 'Something is wrong with this land.',
+  },
+};
+
+/** QUEST 6 — "The Blight" (giver: SABLE, a forester; OBJECTIVE: burn the corrupted grove). */
+export const ACT2_THE_BLIGHT: QuestDef = {
+  id: 'the-blight',
+  title: 'The Blight',
+  prerequisites: ['whats-gotten-into-them'],
+  objectives: [
+    {
+      text: 'Burn the corrupted grove',
+      trigger: 'grove-burned',
+      target: 'corrupted-grove',
+      encounterNarration: [
+        'The forest dies around you as you enter — green giving way to grey, the trees bent into shapes that wood should not hold, dark sap bleeding from their bark. The silence is total and wrong. The very air feels thin, as if something here is slowly draining the life out of the world itself.',
+      ],
+    },
+  ],
+  npcInactiveLines: [
+    'Sable: You’re the one Pell sent word about — said you helped him when those dogs turned. Then maybe you’ll believe me, because nobody else does.',
+    'Sable: There’s a stretch of the woods up the eastern slope that’s gone wrong. I’ve cut timber there my whole life. Now the trees are... I don’t know how to say it. Twisted. Grey. Weeping something dark from the bark. The air around them is cold and still — no birds, no insects, nothing living.',
+    'Sable: I put my hand to one and it was wrong, like touching something that’s been dead a long while but still standing. I ran. I’m not ashamed to say it.',
+    'Sable: And it’s spreading. The patch is bigger than it was a week ago. Whatever this is, it’s creeping outward, tree by tree, toward the farms. Toward town.',
+    'Sable: I’ve brought oil and a torch. Burn it out — all of it — before it reaches us. Some things you can’t reason with. You can only put them to the fire.',
+  ],
+  npcActiveLines: ['Sable: The blight’s up the eastern slope. Burn it — all of it — before it spreads further.'],
+  npcCompleteLines: [
+    'Sable: It’s burning. Good. I can feel the difference from here — the air’s gone right again. You did what I couldn’t make myself do.',
+    'Sable: Take this, with my thanks. I’d have given more if it’d make that feeling go away.',
+    'Sable: But I have to ask, because it’s been clawing at me — what could do that? Make the land itself sicken and die? That’s not blight, not rot, not anything that grows in nature. Something brought that here.',
+    'Sable: ...And if it’s spreading, then somewhere out there is wherever it’s spreading from. I don’t envy whoever has to find that.',
+  ],
+  preAcceptHint: 'Seek Sable the forester at the forest’s edge',
+  reward: {
+    healToFull: true,
+    xp: QUEST_XP_REWARD,
+    banner: 'The fire takes quickly, hungrily, as though the blighted wood wants to burn. As the grove goes up, the unnatural cold breaks, and for the first time the air moves freely again. Whatever was rooted here, the flames are taking it.',
+  },
+};
+
+/** QUEST 7 — "The Thing at White Pass" (giver: JOREN, a fled farmhand; COMBAT: demonic raiders / Demons). */
+export const ACT2_WHITE_PASS: QuestDef = {
+  id: 'the-thing-at-white-pass',
+  title: 'The Thing at White Pass',
+  prerequisites: ['the-blight'],
+  objectives: [
+    {
+      text: 'Reach the farm near White Pass and drive off the raiders',
+      trigger: 'whitepass-demons-defeated',
+      target: 'whitepass-farm',
+      encounterNarration: [
+        'You see them, and your mind refuses them.',
+        'They move through the steading like a wrongness given shape — tall, dark, their forms bending in ways a living body cannot. No skin, no face you could name, only a hollow darkness that seems to drink the light around it. Where they tread, the grass blackens and curls. The cold rolls off them in waves. Every animal instinct you have screams the same word: this does not belong here.',
+        'You have never seen anything like them. Nothing has. They are not of this world.',
+      ],
+    },
+  ],
+  npcInactiveLines: [
+    'Joren: You — you’re the one who handles the bad things, the one everyone talks about. Please. Please. My family’s farm, near White Pass — it’s being torn apart, and the things doing it, they’re not— they’re not people—',
+    'Joren: I can’t even— I don’t have words. They walk like men but they’re wrong. Dark. Wrong-shaped. Where they step, the ground dies. One looked at me and I felt my blood go to ice and I ran, I left them, God forgive me, I ran—',
+    'Joren: My father’s still there. My sisters. If they’re even still— please, you have to go. You’re the only one who might. I’ll show you the way, just— hurry. Hurry.',
+  ],
+  npcActiveLines: ['Joren: The farm’s southeast, near White Pass. Please — hurry. My family’s still there.'],
+  npcCompleteLines: [
+    'Joren: You— you’re alive. They’re alive. I didn’t dare hope— thank you, thank you, I’ll never be able to—',
+    'Joren: But what were those things? You saw them. You fought them. I’m not mad — they were real, weren’t they? Real and wrong and here.',
+    'Joren: I have to tell the town. Everyone has to know. Things like that, walking our land, killing— we can’t pretend this is wolves and bad seasons anymore. This is something else. Something bigger.',
+    'Joren: ...Somebody has to know what to do about this. God help us, I hope somebody does.',
+  ],
+  preAcceptHint: 'Seek Joren the farmhand on the road',
+  reward: {
+    healToFull: true,
+    xp: QUEST_XP_REWARD,
+    banner: 'The last of them lets out a sound — not a death-cry, but something colder, almost like laughter — and dissolves into a smear of dark that the earth seems to swallow. They leave no bodies. Only the dead ground, and the silence, and the certainty that there are more of them somewhere.',
+    note: 'The corruption has a face.',
+  },
+};
+
+/**
  * THE OPENING CORRUPTION QUEST (formerly Quest 1). Its content is UNCHANGED; only
- * its prerequisite now points at Act I's final quest ('the-pass'), so the rift
- * beat follows the grounded opening. Plays as before: home-town NPC → Sasquatch →
- * rift → forced refuse → reward → the descent/climax/endgame downstream.
+ * its prerequisite now points at Act II's final quest ('the-thing-at-white-pass'),
+ * so the rift beat follows the grounded opening + Uriel's arrival. The on-screen
+ * ANGEL scene is SUPPRESSED in MainScene (Uriel is the game's only angel now), but
+ * the mechanical outcome is preserved: the corruption grant (setPlayerPath
+ * 'corrupted' + Spirit Vision) and quest completion still fire at the rift, so the
+ * descent/climax/endgame downstream are unchanged.
  *
  * >>> EDIT THE OPENING QUEST'S TEXT HERE (title, objective lines, the giver's
  *     three dialogue states, completion banner + title). <<<
@@ -308,7 +461,7 @@ export const ACT1_THE_PASS: QuestDef = {
 export const THE_CORRUPTION_AT_THE_GATES: QuestDef = {
   id: 'corruption-at-the-gates',
   title: 'The Corruption at the Gates',
-  prerequisites: ['the-pass'],
+  prerequisites: ['the-thing-at-white-pass'],
 
   objectives: [
     { text: 'Defeat the corrupted beast', trigger: 'sasquatch-defeated', target: 'sasquatch' },
@@ -593,7 +746,11 @@ export const QUEST_REGISTRY: readonly QuestDef[] = [
   ACT1_WOLVES_TREE_LINE,
   ACT1_SHALLOWS,
   ACT1_THE_PASS,
-  // The existing arc, unchanged downstream (corruption beat now gated on 'the-pass').
+  // Act II — the corruption escalation (then Uriel's arrival, in MainScene).
+  ACT2_AFFLICTED_DOGS,
+  ACT2_THE_BLIGHT,
+  ACT2_WHITE_PASS,
+  // The existing arc, unchanged downstream (corruption beat now gated on Q7).
   THE_CORRUPTION_AT_THE_GATES,
   DESCENT_1,
   DESCENT_2,
