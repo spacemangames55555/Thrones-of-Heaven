@@ -5,7 +5,16 @@ import type { PlayerPath } from '../story/playerPath';
 import type { SkillSaveState } from '../skills/SkillState';
 
 /** Bump when the SaveData shape changes; SaveSystem.read can then migrate old saves. */
-export const SAVE_VERSION = 2;
+export const SAVE_VERSION = 3;
+
+/**
+ * Act I (Enumclaw opening) quest ids — inserted at the FRONT of the chain in this
+ * batch, with the old opening ('corruption-at-the-gates') now gated on the last of
+ * them ('the-pass'). A pre-v3 save predates Act I, so its player is already past
+ * the opening: the v2→v3 migration marks all four COMPLETE so the chain stays
+ * unlocked (no soft-lock) and the Act I givers don't re-offer to a returning player.
+ */
+export const ACT1_QUEST_IDS = ['honest-days-work', 'wolves-tree-line', 'shallows', 'the-pass'];
 /** The single localStorage slot key. */
 export const SAVE_KEY = 'toh_save';
 

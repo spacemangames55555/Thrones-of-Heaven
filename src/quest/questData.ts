@@ -18,6 +18,11 @@ import { WORLD_EARTH, WORLD_HEAVEN, WORLD_HELL, type WorldId } from '../world/wo
  * happens; a quest objective only advances if the fired trigger matches its own.
  */
 export type ObjectiveTrigger =
+  // Act I — the grounded Enumclaw opening (pre-corruption):
+  | 'grain-delivered'
+  | 'wolves-defeated'
+  | 'sealion-defeated'
+  | 'raiders-defeated'
   | 'sasquatch-defeated'
   | 'rift-reached'
   | 'angel-refused'
@@ -46,6 +51,11 @@ export type ObjectiveTrigger =
 
 /** Which world thing the objective marker points at (resolved to a position by the scene). */
 export type TargetKind =
+  // Act I — Enumclaw opening locations (all on Earth, near the home town):
+  | 'olympia'
+  | 'tree-line'
+  | 'tacoma-beach'
+  | 'snoqualmie-pass'
   | 'sasquatch'
   | 'rift'
   | 'npc'
@@ -71,6 +81,10 @@ export type TargetKind =
  * world here. All Descent/opening targets are on Earth; the Climax adds Heaven.
  */
 export const TARGET_WORLD: Record<TargetKind, WorldId> = {
+  olympia: WORLD_EARTH,
+  'tree-line': WORLD_EARTH,
+  'tacoma-beach': WORLD_EARTH,
+  'snoqualmie-pass': WORLD_EARTH,
   sasquatch: WORLD_EARTH,
   rift: WORLD_EARTH,
   npc: WORLD_EARTH,
@@ -148,8 +162,145 @@ export interface QuestDef {
 }
 
 /**
- * QUEST 1 — THE OPENING QUEST. No prerequisites (available from the start). Plays
- * exactly as before: Seattle NPC → Sasquatch → rift → forced refuse → reward.
+ * ============================================================================
+ * ACT I — THE ENUMCLAW OPENING (Quests 1–4). Four grounded, PRE-corruption
+ * quests at the FRONT of the chain: an honest delivery, then three escalating
+ * "help the valley" fights (wolves → sea lion → raiders). They set NO alignment
+ * (no playerPath change) — Act I is the calm before the rift. After Quest 4 the
+ * chain bridges into the EXISTING corruption beat (THE_CORRUPTION_AT_THE_GATES,
+ * whose prerequisites now point at Quest 4) and everything downstream is
+ * unchanged. Givers (Marta/Hollis/BranDen/Edda) + the Olympia recipient are
+ * placed in MainScene; enemy tuning + objective positions live in settings.ts.
+ *
+ * >>> EDIT ACT I TEXT HERE: each quest's `title`, objective `text`, the giver's
+ *     three dialogue states, and the reward banner. The Olympia delivery lines
+ *     are OLYMPIA_DELIVERY_LINES below. <<<
+ * ============================================================================
+ */
+
+/** [Q1] Spoken by the Olympia recipient when the grain is delivered (fires 'grain-delivered'). */
+export const OLYMPIA_DELIVERY_LINES = [
+  'Olympian: From Marta’s mill, all the way from Enumclaw? Bless her. And bless you for carrying it — that’s a long road.',
+  'Olympian: We’ll eat well this winter because of this. You tell her it arrived safe, and you tell her Olympia says thank you.',
+  'Olympian: ...You’ve got a good way about you, traveler. Folks could use more of that around here.',
+];
+
+/** QUEST 1 — "An Honest Day's Work" (giver: MARTA, a miller in Enumclaw; no combat). */
+export const ACT1_HONEST_DAYS_WORK: QuestDef = {
+  id: 'honest-days-work',
+  title: 'An Honest Day’s Work',
+  prerequisites: [],
+  objectives: [{ text: 'Deliver Marta’s grain to Olympia', trigger: 'grain-delivered', target: 'olympia' }],
+  npcInactiveLines: [
+    'Marta: Oh — you’re up early. Good. I was hoping someone with young legs would come by.',
+    'Marta: I’ve got sacks of grain that need to be down in Olympia by week’s end, and my back’s not what it was. The folks down there are counting on it — winter stores, you understand. Half the valley eats from what comes through this mill.',
+    'Marta: It’s a fair walk south and west. Think you can get it there in one piece? I’d be in your debt — and I don’t forget a kindness.',
+  ],
+  npcActiveLines: ['Marta: Olympia’s south and west. Those winter stores won’t carry themselves.'],
+  npcCompleteLines: [
+    'Marta: Already back? And it got there safe? Ha — I knew I picked right.',
+    'Marta: Here, take this for your trouble. It isn’t much, but it’s honest.',
+    'Marta: You keep showing up like this and people are going to start remembering your name. That’s worth more than coin, in a place like this.',
+  ],
+  preAcceptHint: 'Seek Marta the miller in Enumclaw',
+  reward: {
+    healToFull: true,
+    xp: QUEST_XP_REWARD,
+    banner: 'People are starting to remember your name.',
+  },
+};
+
+/** QUEST 2 — "Wolves at the Tree Line" (giver: HOLLIS, a cattle farmer; COMBAT: wolves — first fight). */
+export const ACT1_WOLVES_TREE_LINE: QuestDef = {
+  id: 'wolves-tree-line',
+  title: 'Wolves at the Tree Line',
+  prerequisites: ['honest-days-work'],
+  objectives: [
+    { text: 'Drive the wolf pack back from Hollis’s pasture', trigger: 'wolves-defeated', target: 'tree-line' },
+  ],
+  npcInactiveLines: [
+    'Hollis: You’re the one who ran Marta’s grain down to Olympia, aren’t you? Word travels. Listen — I need help, and I need it before nightfall.',
+    'Hollis: Wolves. A whole pack’s come down out of the high country, bolder than I’ve ever seen them. They took two of my cattle in as many nights, right out of the lower pasture. My herd’s all I’ve got.',
+    'Hollis: I’m no fighter, and I can’t sit out there with a lantern every night. Could you go up to the tree line and drive them back? Put the fear into them — make them think twice about coming down here again.',
+    'Hollis: Please. If I lose much more, I lose everything.',
+  ],
+  npcActiveLines: ['Hollis: They’re up at the tree line, east of the pasture. Drive them off before dark.'],
+  npcCompleteLines: [
+    'Hollis: You did it — I can see them up there, keeping their distance. They won’t come down so easy now.',
+    'Hollis: I don’t have much, but take this. My herd’s safe because of you, and I won’t forget it.',
+    'Hollis: You know... a few years back, nobody’d have come when I asked. People keep to themselves these days. But you came. That means something.',
+  ],
+  preAcceptHint: 'Seek Hollis the cattle farmer in Enumclaw',
+  reward: {
+    healToFull: true,
+    xp: QUEST_XP_REWARD,
+    banner: 'The pack scatters into the dark of the treeline, melting back toward the high country. For now, the pasture is quiet.',
+  },
+};
+
+/** QUEST 3 — "Something in the Shallows" (giver: BranDen, a fisherman; COMBAT: sea lion). */
+export const ACT1_SHALLOWS: QuestDef = {
+  id: 'shallows',
+  title: 'Something in the Shallows',
+  prerequisites: ['wolves-tree-line'],
+  objectives: [{ text: 'Drive off the aggressive sea lion', trigger: 'sealion-defeated', target: 'tacoma-beach' }],
+  npcInactiveLines: [
+    'BranDen: You’re that one from Enumclaw — the one folks keep talking about. Didn’t think I’d be glad to see a stranger, but here we are.',
+    'BranDen: There’s a bull sea lion that’s taken over the beach here in Tacoma. Big one. That’s not strange by itself — but it’s aggressive, lunging at anyone who comes near the water. It put a gash in young Tomas’s leg this morning. Children play down here.',
+    'BranDen: I’ve never seen one act like this. They keep to themselves, mostly. This one’s like something’s gotten into it.',
+    'BranDen: Folks can’t fish, can’t even walk the shore. Could you drive it off? Before someone’s hurt worse than a scraped leg?',
+  ],
+  npcActiveLines: ['BranDen: It’s still out there on the Tacoma sand, lunging at anyone who comes near. Be careful.'],
+  npcCompleteLines: [
+    'BranDen: It’s gone. The children can come back down. You’ve no idea what that’s worth to us.',
+    'BranDen: Here — fresh catch and a little coin. Take it, you’ve earned it twice over.',
+    'BranDen: Still bothers me, though. The way it acted. Animals don’t just turn like that, not without a reason.',
+    'BranDen: ...Ah, listen to me. Probably just a bad season. Thank you, truly.',
+  ],
+  preAcceptHint: 'Seek BranDen the fisherman in Enumclaw',
+  reward: {
+    healToFull: true,
+    xp: QUEST_XP_REWARD,
+    banner: 'The bull sea lion drags itself back into the grey water and vanishes beneath the waves. The beach falls quiet, save for the tide.',
+  },
+};
+
+/** QUEST 4 — "The Pass" (giver: EDDA, a trade-caravan organizer; COMBAT: raiders). Bridges into the old beat. */
+export const ACT1_THE_PASS: QuestDef = {
+  id: 'the-pass',
+  title: 'The Pass',
+  prerequisites: ['shallows'],
+  objectives: [
+    { text: 'Drive the raiders off Snoqualmie Pass and reopen the trade route', trigger: 'raiders-defeated', target: 'snoqualmie-pass' },
+  ],
+  npcInactiveLines: [
+    'Edda: You’re the one who’s been helping folks up and down the valley. Good — because this is bigger than one farm, and I need someone who can handle it.',
+    'Edda: The trade road over Snoqualmie Pass is how everything moves — grain, tools, medicine, all of it. Without that route, half these towns wither.',
+    'Edda: There’s a group come over from the east side. They’ve set themselves up on the Pass and they’re turning back our caravans — taking what they want, demanding the road as theirs. Said the next wagon through pays a “toll” or doesn’t pass at all.',
+    'Edda: These aren’t desperate folk looking for scraps. They’re organized, and they mean to hold it. If they choke the Pass, we all suffer for it come winter.',
+    'Edda: Go up there and break their hold. Make it clear the road stays open — for everyone.',
+  ],
+  npcActiveLines: ['Edda: They’ve blockaded the Pass, east in the mountains. The caravans can’t move till they’re gone.'],
+  npcCompleteLines: [
+    'Edda: The caravans are already moving again. You’ve kept this whole valley fed and supplied, and most of them will never even know your name.',
+    'Edda: But I’ll know it. And the ones who matter will.',
+    'Edda: Take this — it’s more than the others could offer, and you’ve earned every bit. We needed someone who’d stand up for all of us. Turns out that someone was you.',
+    'Edda: ...Strange times, though. Folks getting bolder, hungrier, meaner. Feels like something’s stirring people up. Let’s hope it passes.',
+  ],
+  preAcceptHint: 'Seek Edda the caravan organizer in Enumclaw',
+  reward: {
+    healToFull: true,
+    xp: QUEST_XP_REWARD,
+    banner: 'The last of them abandon their makeshift blockade and retreat down the eastern slope. The Pass is open again — the road belongs to no one, and to everyone.',
+    note: 'The whole valley knows your name now.',
+  },
+};
+
+/**
+ * THE OPENING CORRUPTION QUEST (formerly Quest 1). Its content is UNCHANGED; only
+ * its prerequisite now points at Act I's final quest ('the-pass'), so the rift
+ * beat follows the grounded opening. Plays as before: home-town NPC → Sasquatch →
+ * rift → forced refuse → reward → the descent/climax/endgame downstream.
  *
  * >>> EDIT THE OPENING QUEST'S TEXT HERE (title, objective lines, the giver's
  *     three dialogue states, completion banner + title). <<<
@@ -157,7 +308,7 @@ export interface QuestDef {
 export const THE_CORRUPTION_AT_THE_GATES: QuestDef = {
   id: 'corruption-at-the-gates',
   title: 'The Corruption at the Gates',
-  prerequisites: [],
+  prerequisites: ['the-pass'],
 
   objectives: [
     { text: 'Defeat the corrupted beast', trigger: 'sasquatch-defeated', target: 'sasquatch' },
@@ -437,6 +588,12 @@ export const QUEST_7_THE_SEVEN_SINS: QuestDef = {
  *  the objective needs a brand-new completion condition or marker target.)
  */
 export const QUEST_REGISTRY: readonly QuestDef[] = [
+  // Act I — the Enumclaw opening (front of the chain).
+  ACT1_HONEST_DAYS_WORK,
+  ACT1_WOLVES_TREE_LINE,
+  ACT1_SHALLOWS,
+  ACT1_THE_PASS,
+  // The existing arc, unchanged downstream (corruption beat now gated on 'the-pass').
   THE_CORRUPTION_AT_THE_GATES,
   DESCENT_1,
   DESCENT_2,

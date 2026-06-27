@@ -1,5 +1,5 @@
 import type { GameMap } from '../map/GameMap';
-import { SEATTLE_TOWN, TOWN_LEGEND, type TownDef } from './townData';
+import { ENUMCLAW_TOWN, TOWN_LEGEND, type TownDef } from './townData';
 
 export interface DoorFeature {
   /** Door tile center, in world pixels. */
@@ -26,7 +26,7 @@ export interface TownFeatures {
  * terrain was there) and returns the world positions of its interactive
  * features. Adding another town later is pure data: a new {@link TownDef}.
  */
-export function buildTown(map: GameMap, town: TownDef = SEATTLE_TOWN): TownFeatures {
+export function buildTown(map: GameMap, town: TownDef = ENUMCLAW_TOWN): TownFeatures {
   const { rows } = town;
   const width = rows[0].length;
 
