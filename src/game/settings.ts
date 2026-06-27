@@ -1206,6 +1206,39 @@ export const GROVE_BURN_RANGE = 110;
 /** Proximity (px) at which an objective's "on arriving" encounter narration plays. */
 export const ENCOUNTER_NARRATION_RANGE = 200;
 
+// --- Investigation arc (Quests 8–12) demon encounters + locations ----------
+//
+// All combat REUSES the Hell Demon entity (no new art); counts are starting
+// points (tune in playtest). Positions are world px on verified-walkable tiles
+// across the territory. Ambush waypoints sit along each escort route; the player
+// triggers them by passing within AMBUSH_TRIGGER_RANGE. Quest TEXT lives in
+// questData.ts; the Seattle Druid look is a TownDef (townData.ts).
+
+/** Demon group sizes per objective. */
+export const YAKIMA_DEMONS_COUNT = 4; // Q8 defend Yakima
+export const BELLINGHAM_DEMONS_COUNT = 3; // Q10 northern farms
+export const CASCADES_DEMONS_COUNT = 4; // Q11 the gathering in the high country
+export const AMBUSH_DEMONS_COUNT = 2; // each en-route ambush group (Q9 ×3, Q12 ×1)
+
+/** Investigation-arc objective-marker positions (world px). */
+export const YAKIMA_POSITION = { x: 15344, y: 9904 };
+export const LAKE_CHELAN_POSITION = { x: 16592, y: 5680 };
+export const BELLINGHAM_FARMS_POSITION = { x: 9680, y: 1648 };
+export const CASCADES_POSITION = { x: 13776, y: 6736 };
+export const SEATTLE_POSITION = { x: 9488, y: 5296 }; // fallback; the 'seattle' target resolves to Alder live
+export const LONGVIEW_POSITION = { x: 10256, y: 11536 };
+
+/** Q9 escort ambush waypoints (Yakima → Lake Chelan), in route order. */
+export const Q9_AMBUSHES = [
+  { x: 15718, y: 8636 },
+  { x: 16030, y: 7580 },
+  { x: 16342, y: 6524 },
+];
+/** Q12 escort ambush waypoint (toward Longview). */
+export const Q12_AMBUSHES = [{ x: 9872, y: 8416 }];
+/** Proximity (px) at which an en-route ambush group spawns. */
+export const AMBUSH_TRIGGER_RANGE = 300;
+
 /**
  * Townsfolk VARIANTS — a reskin layer over the one Townsfolk class (same melee
  * behavior, different tint + per-variant HP / contact damage / XP). The descent

@@ -68,6 +68,15 @@ import {
   ACT2_AFFLICTED_DOGS,
   ACT2_THE_BLIGHT,
   ACT2_WHITE_PASS,
+  INV_WORD_TO_YAKIMA,
+  INV_IRON_ROAD,
+  INV_NORTHERN_FARMS,
+  GRETA_LINES,
+  ALDER_EXAM_LINES,
+  MIRE_VERDICT_LINES,
+  SEATTLE_INTRO_LINES,
+  Q9_AMBUSH_LINES,
+  Q12_AMBUSH_LINES,
   OLYMPIA_DELIVERY_LINES,
   PATRON_IDLE_LINES,
   TARGET_WORLD,
@@ -126,6 +135,18 @@ import {
   WHITEPASS_FARM_POSITION,
   GROVE_BURN_RANGE,
   ENCOUNTER_NARRATION_RANGE,
+  YAKIMA_DEMONS_COUNT,
+  BELLINGHAM_DEMONS_COUNT,
+  CASCADES_DEMONS_COUNT,
+  AMBUSH_DEMONS_COUNT,
+  YAKIMA_POSITION,
+  LAKE_CHELAN_POSITION,
+  BELLINGHAM_FARMS_POSITION,
+  CASCADES_POSITION,
+  LONGVIEW_POSITION,
+  Q9_AMBUSHES,
+  Q12_AMBUSHES,
+  AMBUSH_TRIGGER_RANGE,
   DARK_OUTPOST_POSITION,
   OREGON_CITY_POSITION,
   FARM_FIELD_POSITION,
@@ -171,7 +192,7 @@ import {
 } from './settings';
 import { TOWN_TILES } from '../town/townTiles';
 import { buildTown, type TownFeatures, type DoorFeature } from '../town/TownBuilder';
-import { PORTLAND_TOWN, PORTLAND_NPC_LINES } from '../town/townData';
+import { PORTLAND_TOWN, PORTLAND_NPC_LINES, SEATTLE_DRUID_TOWN } from '../town/townData';
 import type { WashingtonMap } from '../map/mapTypes';
 import washingtonMap from '../map/washington.map.json';
 
@@ -267,6 +288,18 @@ export class MainScene extends Phaser.Scene {
   private act1Givers: Npc[] = [];
   private act2Givers: Npc[] = [];
   private olympiaNpc!: Npc;
+  // Investigation arc (Quests 8–12) NPCs: Yakima givers (Wend/Halvard), the Seattle
+  // Druids (Rowan giver + Alder the vessel-examiner), Bellingham's Greta, Longview's
+  // Mire. `deliverNpcs` are recipient NPCs that COMPLETE an objective when talked to
+  // while its trigger is active (Olympia grain, Alder's exam, Mire's verdict).
+  private invGivers: Npc[] = [];
+  private deliverNpcs: { npc: Npc; trigger: ObjectiveTrigger; lines: string[]; idle: string }[] = [];
+  // Seattle — the Druid tree-house city (Quests 10–11). Its forest/tree-house tiles
+  // are stamped from a TownDef; Rowan + Alder stand by its plaza.
+  private seattle!: TownFeatures;
+  private seattleIntroShown = false;
+  private alderNpc!: Npc; // Seattle Druid — the 'seattle' marker target (Q11 obj2)
+  private mireNpc!: Npc; // Longview exile — the 'longview' marker target (Q12)
   // Portland (Oregon) — a second town reusing the same systems, flavor only.
   private portland!: TownFeatures;
   private portlandNpc!: Npc;
@@ -533,7 +566,10 @@ export class MainScene extends Phaser.Scene {
   // (no corruption gate); DESCENT_IDS the corrupted arc.
   private readonly ACT1_IDS = new Set(['honest-days-work', 'wolves-tree-line', 'shallows', 'the-pass']);
   private readonly ACT2_IDS = new Set(['whats-gotten-into-them', 'the-blight', 'the-thing-at-white-pass']);
+  private readonly INV_IDS = new Set(['word-to-yakima', 'the-iron-road', 'the-northern-farms', 'what-the-dark-ones-carry', 'the-exile-of-longview']);
   private readonly DESCENT_IDS = new Set(['descent-1', 'descent-2', 'descent-3', 'descent-4']);
+  // En-route ambush groups (Q9/Q12): each spawns a demon pack on first approach.
+  private arcAmbushes: { x: number; y: number; lines: string[]; spawned: boolean }[] = [];
   private arcEnemies: (Townsfolk | AngelEnemy | Demon)[] = [];
   private arcMode: 'defeat' | 'plunder' | 'reach' | 'pickup' | 'burn' | 'none' = 'none';
   private arcReach: { x: number; y: number } | null = null;
@@ -607,11 +643,10 @@ export class MainScene extends Phaser.Scene {
     this.cameras.main.setBounds(0, 0, this.map.pixelWidth, this.map.pixelHeight);
     this.cameras.main.setBackgroundColor('#0b1a2b');
 
-    // City labels for everywhere except the real walkable towns.
-    // Exclude the cities that have a real stamped town (Enumclaw = home, Portland);
-    // everywhere else — including Seattle, preserved as a separate city for a later
-    // batch — gets a generic labeled marker.
-    new CityMarkers(this, this.map, ['Enumclaw', 'Portland']);
+    // City labels for everywhere except the real walkable towns. Exclude the cities
+    // that have a real stamped town (Enumclaw = home, Portland, and now Seattle =
+    // the Druid tree-house city); everywhere else gets a generic labeled marker.
+    new CityMarkers(this, this.map, ['Enumclaw', 'Portland', 'Seattle']);
 
     // Stamp the town onto the overworld and read back its feature positions.
     this.town = buildTown(this.map);
@@ -621,6 +656,11 @@ export class MainScene extends Phaser.Scene {
     // (no rift). Built before the world snapshot so its tiles + NPC are world.
     this.portland = buildTown(this.map, PORTLAND_TOWN);
     this.addTownLabel(this.portland.label);
+
+    // Seattle — the DRUID TREE-HOUSE CITY (Quests 10–11): forest + tree-house tiles
+    // stamped at the existing Seattle marker. Rowan + Alder are placed by its plaza.
+    this.seattle = buildTown(this.map, SEATTLE_DRUID_TOWN);
+    this.addTownLabel(this.seattle.label);
 
     // Spawn the player in the town square.
     this.player = new Player(this, this.town.spawn.x, this.town.spawn.y, this.classId);
@@ -660,6 +700,27 @@ export class MainScene extends Phaser.Scene {
       new Npc(this, sp.x, sp.y - ts * 4, [...ACT2_WHITE_PASS.npcInactiveLines]), // Joren
     ];
     for (const g of this.act2Givers) this.physics.add.collider(this.player.sprite, g.sprite);
+
+    // Investigation arc (Quests 8–12) NPCs, placed across the territory at their
+    // locations. Wend + Halvard are Yakima givers (Q8/Q9); Rowan is the Seattle Druid
+    // giver (Q10); Greta (Bellingham), Alder (Seattle), Mire (Longview) are DELIVER
+    // recipients that complete an objective on talk. Q11/Q12 auto-activate (no giver).
+    const wend = new Npc(this, YAKIMA_POSITION.x - ts * 2, YAKIMA_POSITION.y, [...INV_WORD_TO_YAKIMA.npcInactiveLines]);
+    const halvard = new Npc(this, YAKIMA_POSITION.x + ts * 2, YAKIMA_POSITION.y, [...INV_IRON_ROAD.npcInactiveLines]);
+    const sea = this.seattle.spawn;
+    const rowan = new Npc(this, sea.x - ts * 2, sea.y, [...INV_NORTHERN_FARMS.npcInactiveLines]);
+    this.alderNpc = new Npc(this, sea.x + ts * 2, sea.y, [...ALDER_EXAM_LINES]);
+    this.mireNpc = new Npc(this, LONGVIEW_POSITION.x, LONGVIEW_POSITION.y, [...MIRE_VERDICT_LINES]);
+    const greta = new Npc(this, BELLINGHAM_FARMS_POSITION.x, BELLINGHAM_FARMS_POSITION.y, [...GRETA_LINES]);
+    this.invGivers = [wend, halvard, rowan];
+    for (const g of [...this.invGivers, this.alderNpc, this.mireNpc, greta]) this.physics.add.collider(this.player.sprite, g.sprite);
+    // Recipient NPCs (talk while the trigger is active → completes the objective).
+    this.deliverNpcs = [
+      { npc: this.olympiaNpc, trigger: 'grain-delivered', lines: [...OLYMPIA_DELIVERY_LINES], idle: 'Olympian: Safe travels, friend. The road’s kinder than it used to be.' },
+      { npc: greta, trigger: 'bellingham-thanked', lines: [...GRETA_LINES], idle: 'Greta: The fields are ours again, thanks to you. Safe travels.' },
+      { npc: this.alderNpc, trigger: 'contraption-examined', lines: [...ALDER_EXAM_LINES], idle: 'Alder: The roots are uneasy of late. Walk carefully, friend.' },
+      { npc: this.mireNpc, trigger: 'mire-verdict', lines: [...MIRE_VERDICT_LINES], idle: 'Mire: I’ve said my piece. Leave an old exile to the quiet.' },
+    ];
 
     // Portland's quest-giver-style NPC — flavor dialogue only (no quest wired).
     this.portlandNpc = new Npc(this, this.portland.npc.x, this.portland.npc.y, [...PORTLAND_NPC_LINES]);
@@ -775,6 +836,17 @@ export class MainScene extends Phaser.Scene {
         entity: giver,
         pos: () => ({ x: giver.sprite.x, y: giver.sprite.y }),
         questIds: [act2QuestIds[i]],
+        idleLines: [],
+      });
+    }
+    // Investigation arc givers: Wend→Q8, Halvard→Q9, Rowan→Q10 (Q11/Q12 auto-activate).
+    const invQuestIds = ['word-to-yakima', 'the-iron-road', 'the-northern-farms'];
+    for (let i = 0; i < this.invGivers.length; i++) {
+      const giver = this.invGivers[i];
+      this.questGivers.push({
+        entity: giver,
+        pos: () => ({ x: giver.sprite.x, y: giver.sprite.y }),
+        questIds: [invQuestIds[i]],
         idleLines: [],
       });
     }
@@ -982,6 +1054,7 @@ export class MainScene extends Phaser.Scene {
       this.checkQuestProximity();
       this.checkRiftCorruption(); // suppressed-angel corruption grant at the rift
       this.checkUrielArrival(); // Act II finale: scripted Uriel scene back in the square
+      this.checkSeattleIntro(); // first time in the Druid city: a one-shot intro narration
       this.updateArc(); // descent-arc completion watcher (before interactions so a
       // "return to the outpost" completes before the patron auto-offers the next quest)
       if (this.isDashing()) this.talkButton.setVisible(false);
@@ -5348,9 +5421,12 @@ export class MainScene extends Phaser.Scene {
     void diamond;
   }
 
-  /** True if `id` is an arc quest (Act I, Act II, or descent) using the per-objective watcher. */
+  /** True if `id` is an arc quest (Act I/II, Investigation, or descent) using the per-objective watcher. */
   private isArcQuest(id?: string): boolean {
-    return id !== undefined && (this.ACT1_IDS.has(id) || this.ACT2_IDS.has(id) || this.DESCENT_IDS.has(id));
+    return (
+      id !== undefined &&
+      (this.ACT1_IDS.has(id) || this.ACT2_IDS.has(id) || this.INV_IDS.has(id) || this.DESCENT_IDS.has(id))
+    );
   }
 
   /** True while an arc quest (Act I or descent) is the active quest. */
@@ -5393,6 +5469,39 @@ export class MainScene extends Phaser.Scene {
       case 'whitepass-demons-defeated':
         this.spawnArcDemons(WHITEPASS_FARM_POSITION, WHITEPASS_DEMONS_COUNT);
         this.arcMode = 'defeat';
+        break;
+      // --- The Investigation arc (Quests 8–12) ---
+      case 'yakima-defended':
+        this.spawnArcDemons(YAKIMA_POSITION, YAKIMA_DEMONS_COUNT);
+        this.arcMode = 'defeat';
+        break;
+      case 'shipment-delivered':
+        // Escort to Lake Chelan with three en-route ambushes (reach to complete).
+        this.arcMode = 'reach';
+        this.arcReach = { ...LAKE_CHELAN_POSITION };
+        this.arcAmbushes = Q9_AMBUSHES.map((p, i) => ({ x: p.x, y: p.y, lines: [Q9_AMBUSH_LINES[i] ?? Q9_AMBUSH_LINES[0]], spawned: false }));
+        break;
+      case 'bellingham-cleared':
+        this.spawnArcDemons(BELLINGHAM_FARMS_POSITION, BELLINGHAM_DEMONS_COUNT);
+        this.arcMode = 'defeat';
+        break;
+      case 'bellingham-thanked':
+        this.arcMode = 'none'; // deliver: talk to Greta at Bellingham
+        break;
+      case 'contraption-taken':
+        this.spawnArcDemons(CASCADES_POSITION, CASCADES_DEMONS_COUNT);
+        this.arcMode = 'defeat';
+        break;
+      case 'contraption-examined':
+        this.arcMode = 'none'; // deliver: bring the vessel to Alder in Seattle
+        break;
+      case 'longview-reached':
+        this.arcMode = 'reach';
+        this.arcReach = { ...LONGVIEW_POSITION };
+        this.arcAmbushes = Q12_AMBUSHES.map((p, i) => ({ x: p.x, y: p.y, lines: [Q12_AMBUSH_LINES[i] ?? Q12_AMBUSH_LINES[0]], spawned: false }));
+        break;
+      case 'mire-verdict':
+        this.arcMode = 'none'; // deliver: Mire's verdict in Longview
         break;
       // --- The Descent arc ---
       case 'guardsmen-defeated':
@@ -5452,6 +5561,8 @@ export class MainScene extends Phaser.Scene {
     if (!trig) return;
     // Act II: play the one-shot "on arriving" scripted narration on first approach.
     this.maybeShowEncounterNarration();
+    // Investigation arc: spawn en-route ambush groups as the player passes each waypoint.
+    this.maybeSpawnAmbush();
     if (this.arcMode === 'defeat') {
       if (this.arcEnemies.length > 0 && this.arcEnemies.every((e) => !e.isAlive)) this.notifyQuest(trig);
     } else if (this.arcMode === 'plunder') {
@@ -5484,6 +5595,20 @@ export class MainScene extends Phaser.Scene {
     this.dialogue.open([...this.arcEncounterNarration], () => {
       this.reenableControls = true;
     });
+  }
+
+  /** Investigation escorts (Q9/Q12): spawn each en-route ambush group as the player nears it.
+   *  The demons are added to arcEnemies, but reaching the destination still completes the
+   *  objective (the player may fight or run past), per the escort spec. */
+  private maybeSpawnAmbush(): void {
+    if (this.arcAmbushes.length === 0) return;
+    for (const amb of this.arcAmbushes) {
+      if (amb.spawned) continue;
+      if (Phaser.Math.Distance.Between(this.player.x, this.player.y, amb.x, amb.y) > AMBUSH_TRIGGER_RANGE) continue;
+      amb.spawned = true;
+      this.spawnArcDemons({ x: amb.x, y: amb.y }, AMBUSH_DEMONS_COUNT);
+      this.showBanner(amb.lines[0], 3200);
+    }
   }
 
   /** Q6 button/proximity: burn the corrupted grove if currently allowed (in range, Q6 active). */
@@ -5538,6 +5663,7 @@ export class MainScene extends Phaser.Scene {
     this.arcEncounterNarration = null;
     this.arcEncounterPos = null;
     this.arcEncounterShown = false;
+    this.arcAmbushes = [];
     this.burnButton?.setVisible(false);
   }
 
@@ -5574,6 +5700,15 @@ export class MainScene extends Phaser.Scene {
     this.player.sprite.setPosition(this.portland.spawn.x, this.portland.spawn.y);
     this.player.setDirection(0, 0);
     this.cameras.main.centerOn(this.portland.spawn.x, this.portland.spawn.y);
+  }
+
+  /** DEV: jump to a world position on the active (Earth) map — testing the investigation arc. */
+  private devTeleportTo(p: { x: number; y: number }): void {
+    if (this.activeWorld !== WORLD_EARTH) return;
+    this.cancelDash();
+    this.player.sprite.setPosition(p.x, p.y);
+    this.player.setDirection(0, 0);
+    this.cameras.main.centerOn(p.x, p.y);
   }
 
   private spawnDamageNumber(x: number, y: number, amount: number, color: string): void {
@@ -5643,7 +5778,14 @@ export class MainScene extends Phaser.Scene {
    * imperceptible — no Talk prompt, no auto-dialogue).
    */
   private checkInteractions(): void {
-    const candidates: Interactable[] = [this.npc, this.portlandNpc, this.olympiaNpc, ...this.act1Givers, ...this.act2Givers];
+    const candidates: Interactable[] = [
+      this.npc,
+      this.portlandNpc,
+      ...this.act1Givers,
+      ...this.act2Givers,
+      ...this.invGivers,
+      ...this.deliverNpcs.map((d) => d.npc), // Olympia / Greta / Alder / Mire recipients
+    ];
     if (this.spirit.isActive()) candidates.push(...this.spirit.entities);
 
     let nearest: Interactable | null = null;
@@ -5680,16 +5822,18 @@ export class MainScene extends Phaser.Scene {
     this.controls.setEnabled(false);
     this.player.setDirection(0, 0);
 
-    // The Olympia grain recipient (Quest 1): if the delivery objective is active,
-    // play the delivery lines and complete it; otherwise a short flavor line.
-    if (target === this.olympiaNpc) {
-      if (this.chain.activeTrigger === 'grain-delivered') {
-        this.dialogue.open([...OLYMPIA_DELIVERY_LINES], () => {
-          this.notifyQuest('grain-delivered');
+    // A DELIVER/RECIPIENT NPC (Olympia grain, Alder's vessel exam, Mire's verdict):
+    // if its objective trigger is active, play the lines and complete it; otherwise a
+    // short flavor line. Reusable registry (built in create()).
+    const deliver = this.deliverNpcs.find((d) => d.npc === target);
+    if (deliver) {
+      if (this.chain.activeTrigger === deliver.trigger) {
+        this.dialogue.open([...deliver.lines], () => {
+          this.notifyQuest(deliver.trigger);
           this.reenableControls = true;
         });
       } else {
-        this.dialogue.open(['Olympian: Safe travels, friend. The road’s kinder than it used to be.'], () => {
+        this.dialogue.open([deliver.idle], () => {
           this.reenableControls = true;
         });
       }
@@ -5778,13 +5922,24 @@ export class MainScene extends Phaser.Scene {
         this.refreshQuestUi();
         break;
       }
-      case 'objective-complete':
-        // For arc quests (Act I + descent), set up the NEXT objective's world state
-        // (the chain has already advanced; if that was the last objective,
-        // activeObjectiveDef is undefined and quest-complete follows).
+      case 'objective-complete': {
+        // For arc quests, set up the NEXT objective's world state (the chain has
+        // already advanced; if that was the last objective, activeObjectiveDef is
+        // undefined and quest-complete follows).
         if (this.isArcQuest(e.questId) && this.chain.activeObjectiveDef) this.beginArcObjective();
+        // Mid-quest scripted beat: the just-COMPLETED objective's completeNarration
+        // (e.g. the vessel dropping in the Cascades), shown as a freeze-read dialogue.
+        const done = this.chain.get(e.questId)?.objectives[e.index];
+        if (done?.completeNarration && this.chain.activeObjectiveDef) {
+          this.controls.setEnabled(false);
+          this.player.setDirection(0, 0);
+          this.dialogue.open([...done.completeNarration], () => {
+            this.reenableControls = true;
+          });
+        }
         this.refreshQuestUi();
         break;
+      }
       case 'quest-complete':
         if (this.isArcQuest(e.questId)) this.clearArcObjective();
         this.grantQuestReward(e.questId);
@@ -5892,6 +6047,20 @@ export class MainScene extends Phaser.Scene {
     if (this.dialogue.isOpen() || this.choice.isOpen() || !this.controls.isEnabled()) return;
     const d = Phaser.Math.Distance.Between(this.player.x, this.player.y, this.town.spawn.x, this.town.spawn.y);
     if (d <= URIEL_SCENE.triggerRange) this.playUrielScene();
+  }
+
+  /** One-shot scene-setting narration the first time the player reaches the Druid city. */
+  private checkSeattleIntro(): void {
+    if (this.seattleIntroShown) return;
+    if (this.dialogue.isOpen() || this.choice.isOpen() || !this.controls.isEnabled()) return;
+    const d = Phaser.Math.Distance.Between(this.player.x, this.player.y, this.seattle.spawn.x, this.seattle.spawn.y);
+    if (d > URIEL_SCENE.triggerRange) return;
+    this.seattleIntroShown = true;
+    this.controls.setEnabled(false);
+    this.player.setDirection(0, 0);
+    this.dialogue.open([...SEATTLE_INTRO_LINES], () => {
+      this.reenableControls = true;
+    });
   }
 
   /** The scripted Uriel cutscene: intro narration → Uriel's lines → outro, then resume. */
@@ -6075,6 +6244,13 @@ export class MainScene extends Phaser.Scene {
       { label: 'Stop Portal Defense', onPress: () => this.resetPortalDefense() },
       { label: 'Refill Energy', onPress: () => this.energy.full() },
       { label: 'Teleport to Oregon', onPress: () => this.devTeleportToOregon() },
+      // Investigation arc (Quests 8–12) teleports — playtest the new locations on mobile.
+      { label: 'Teleport to Seattle (Druids)', onPress: () => this.devTeleportTo(this.seattle.spawn) },
+      { label: 'Teleport to Yakima', onPress: () => this.devTeleportTo(YAKIMA_POSITION) },
+      { label: 'Teleport to Lake Chelan', onPress: () => this.devTeleportTo(LAKE_CHELAN_POSITION) },
+      { label: 'Teleport to Bellingham', onPress: () => this.devTeleportTo(BELLINGHAM_FARMS_POSITION) },
+      { label: 'Teleport to Cascades', onPress: () => this.devTeleportTo(CASCADES_POSITION) },
+      { label: 'Teleport to Longview', onPress: () => this.devTeleportTo(LONGVIEW_POSITION) },
       { label: 'Force Corrupt', onPress: () => this.devForceCorrupt() },
       { label: 'Teleport to Dark Outpost', onPress: () => this.devTeleportToOutpost() },
       { label: 'Teleport to Holy Outpost', onPress: () => this.devTeleportToHolyOutpost() },
@@ -6309,6 +6485,21 @@ export class MainScene extends Phaser.Scene {
         return { x: CORRUPTED_GROVE_POSITION.x, y: CORRUPTED_GROVE_POSITION.y, label: '' };
       case 'whitepass-farm':
         return { x: WHITEPASS_FARM_POSITION.x, y: WHITEPASS_FARM_POSITION.y, label: '' };
+      // --- Investigation arc locations ---
+      case 'yakima':
+        return { x: YAKIMA_POSITION.x, y: YAKIMA_POSITION.y, label: '' };
+      case 'lake-chelan':
+        return { x: LAKE_CHELAN_POSITION.x, y: LAKE_CHELAN_POSITION.y, label: '' };
+      case 'bellingham':
+        return { x: BELLINGHAM_FARMS_POSITION.x, y: BELLINGHAM_FARMS_POSITION.y, label: '' };
+      case 'cascades':
+        return { x: CASCADES_POSITION.x, y: CASCADES_POSITION.y, label: '' };
+      case 'seattle':
+        // Q11 obj2 points at Alder (the vessel-examiner) in the Druid city.
+        return { x: this.alderNpc.sprite.x, y: this.alderNpc.sprite.y, label: '' };
+      case 'longview':
+        // Q12 points at Mire (reach + verdict are at the same Longview spot).
+        return { x: this.mireNpc.sprite.x, y: this.mireNpc.sprite.y, label: '' };
       case 'sasquatch':
         return this.sasquatch.isAlive ? { x: this.sasquatch.x, y: this.sasquatch.y, label: '' } : null;
       case 'rift':

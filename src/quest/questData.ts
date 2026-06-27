@@ -27,6 +27,15 @@ export type ObjectiveTrigger =
   | 'dogs-defeated'
   | 'grove-burned'
   | 'whitepass-demons-defeated'
+  // The Investigation arc (Quests 8–12, still pre-corruption):
+  | 'yakima-defended'
+  | 'shipment-delivered'
+  | 'bellingham-cleared'
+  | 'bellingham-thanked'
+  | 'contraption-taken'
+  | 'contraption-examined'
+  | 'longview-reached'
+  | 'mire-verdict'
   | 'sasquatch-defeated'
   | 'rift-reached'
   | 'angel-refused'
@@ -64,6 +73,13 @@ export type TargetKind =
   | 'pells-farm'
   | 'corrupted-grove'
   | 'whitepass-farm'
+  // The Investigation arc locations (all on Earth, across the territory):
+  | 'yakima'
+  | 'lake-chelan'
+  | 'bellingham'
+  | 'cascades'
+  | 'seattle'
+  | 'longview'
   | 'sasquatch'
   | 'rift'
   | 'npc'
@@ -96,6 +112,12 @@ export const TARGET_WORLD: Record<TargetKind, WorldId> = {
   'pells-farm': WORLD_EARTH,
   'corrupted-grove': WORLD_EARTH,
   'whitepass-farm': WORLD_EARTH,
+  yakima: WORLD_EARTH,
+  'lake-chelan': WORLD_EARTH,
+  bellingham: WORLD_EARTH,
+  cascades: WORLD_EARTH,
+  seattle: WORLD_EARTH,
+  longview: WORLD_EARTH,
   sasquatch: WORLD_EARTH,
   rift: WORLD_EARTH,
   npc: WORLD_EARTH,
@@ -126,6 +148,12 @@ export interface ObjectiveDef {
    * on arriving" beat (e.g. Act II's first-demon-sight). Purely narrative.
    */
   readonly encounterNarration?: readonly string[];
+  /**
+   * Optional scripted narration shown when THIS objective completes but the quest
+   * is NOT yet done (a mid-quest beat, e.g. the vessel dropping in the Cascades).
+   * For final objectives, use the reward banner instead.
+   */
+  readonly completeNarration?: readonly string[];
 }
 
 /** The reward block granted when a quest's final objective completes. */
@@ -447,13 +475,218 @@ export const ACT2_WHITE_PASS: QuestDef = {
 };
 
 /**
+ * ============================================================================
+ * THE INVESTIGATION ARC (Quests 8–12). After Uriel's charge, the player follows
+ * the dark ones' trail across the territory — defending Yakima, escorting iron the
+ * demons covet, reaching the Druid city of Seattle, capturing the strange vessel
+ * they are building, and carrying it to an exile scholar for a verdict. STILL pre-
+ * corruption (no setPlayerPath). Q11 + Q12 each have TWO objectives (a fight/travel
+ * leg, then a DELIVER-to-NPC leg) and are AUTO-ACTIVATE so they flow straight on
+ * from the prior quest (their `npcInactiveLines` show as a short start banner).
+ *
+ * Givers/recipients are placed in MainScene; enemy/ambush tuning + objective
+ * positions live in settings.ts. Combat REUSES the Hell Demon entity (no new art).
+ * The Alder/Mire verdict text + Seattle intro narration are the *_LINES exports.
+ * >>> EDIT INVESTIGATION-ARC TEXT HERE. <<<
+ * ============================================================================
+ */
+
+/** [Q9] Brief scene text shown as each en-route ambush group strikes (in order). */
+export const Q9_AMBUSH_LINES = [
+  'They come out of the rocks — fast, silent, reaching for the cargo before they even reach you.',
+  'More of them. They’re not trying to kill you. They’re trying to get past you, to the iron.',
+  'The last of them throw themselves at the wagon with a desperation almost worse than rage. They want this metal badly.',
+];
+/** [Q12] Scene text shown as the southern-road ambush strikes. */
+export const Q12_AMBUSH_LINES = [
+  'They come for you on the southern road — not to raid, but to retrieve. They fling themselves at the vessel you carry, frantic to take back the thing you stole from them. They fail. But their desperation tells you plainly: whatever this is, they need it badly.',
+];
+
+/** [Q10 framing] Shown ONCE when the player first enters the Druid city of Seattle. */
+export const SEATTLE_INTRO_LINES = [
+  'Seattle is unlike anywhere else in the territory — a city grown into the forest itself, timbered walkways strung between ancient trees, homes nestled high in the branches. The Druids who keep this place have long memories. And right now, they are worried.',
+];
+
+/** [Q10 obj2] Greta, a Bellingham farmer, after the dark ones are driven off (fires 'bellingham-thanked'). */
+export const GRETA_LINES = [
+  'Greta: You came up from Seattle? Bless the Druids for sending someone — and bless you for coming. We’ve been trapped three days, watching them trample everything we’ve grown.',
+  'Greta: Take what we can spare. It’s not the season’s best, not with them about. But it’s yours, with our thanks.',
+  'Greta: I’ll tell you what chills me, though — they’ve come this far north. All the way to the edge of everything. Whatever’s drawing them, it’s not one valley’s trouble anymore. It’s all of us.',
+];
+
+/** [Q11 obj2] Alder examines the captured vessel in Seattle (fires 'contraption-examined'). */
+export const ALDER_EXAM_LINES = [
+  'Alder: Where did you— no. Don’t tell me yet. Let me look.',
+  'Alder: Sixty years I’ve studied the old things, the deep things. The roots remember much, and I remember what they tell me. And this... I have never seen its like. It is no craft I know — not human, not natural.',
+  'Alder: But I can tell you this much, and I wish I could not: it is made to hold something. To capture, and to contain. There is a hunger built into it — whatever it was meant to carry, this vessel was made to take it and never let go.',
+  'Alder: I cannot say what. But it is wrong, root and branch. You must not let them make more of these — and you must learn what it is for.',
+  'Alder: ...There is one who might know. South, in Longview. A scholar who walked away from us long ago — difficult, and not glad to be found. But there is little that one does not understand. Take it to them. Quickly.',
+];
+
+/** [Q12 obj2] Mire, the exile scholar in Longview, gives the verdict (fires 'mire-verdict'). */
+export const MIRE_VERDICT_LINES = [
+  'Mire: I know who sent you. I can smell the order on you — all that reverence for the roots. I left that behind. So whatever you’ve come for, make it quick.',
+  'Mire: ...Where did you get that. No. Give it here. Carefully.',
+  'Mire: Alder was right to be afraid, and Alder is rarely right about anything. This is a container — that much is plain in its making. Built to draw something in and seal it away. Elegant, in a horrible way. Whoever forged this understood capture better than any craftsman I’ve known.',
+  'Mire: But what it’s meant to hold — that, I cannot tell you. There’s no residue, no trace, nothing yet caught inside it. It is empty, and waiting. Made for a purpose not yet served.',
+  'Mire: What I can tell you is that they will build more. A thing made this carefully is made to be used — and used at scale. Whatever they intend to fill these with, they intend to fill many.',
+  'Mire: ...You want my honest counsel? Stop them before the first one is ever filled. Because I suspect that once you see what goes inside, it will already be too late.',
+];
+
+/** QUEST 8 — "Word to Yakima" (giver: WEND, a granary-keeper; COMBAT: demon raiders). */
+export const INV_WORD_TO_YAKIMA: QuestDef = {
+  id: 'word-to-yakima',
+  title: 'Word to Yakima',
+  prerequisites: ['the-thing-at-white-pass'],
+  objectives: [{ text: 'Defend Yakima from the demon raiders', trigger: 'yakima-defended', target: 'yakima' }],
+  npcInactiveLines: [
+    'Wend: You’ve come over the pass? Long road. What’s the news from the west that couldn’t wait?',
+    'Wend: ...Demons. You expect me to— no. No, I can see it in your face. You’re not the type to spook over nothing.',
+    'Wend: If what you say is true, then we need to ready ourselves. Spread the word — let folks hear it from someone who’s seen th—',
+    'Wend: ...No. No. They’re here. They followed you, or they were already coming — God, it doesn’t matter. Help us! Don’t let them take Yakima!',
+  ],
+  npcActiveLines: ['Wend: They’re in the streets! Drive them out — don’t let them take Yakima!'],
+  npcCompleteLines: [
+    'Wend: We’d have been overrun. We didn’t even know to be afraid until they were on us.',
+    'Wend: Take this, and take our thanks. And know that Yakima believes you now — every word. We’ll spread it ourselves, to anyone who’ll listen.',
+    'Wend: But it’s not lost on me — they came right as you did. Like they’re not just raiding. Like they’re moving toward something. You feel it too, don’t you?',
+  ],
+  preAcceptHint: 'Carry Uriel’s warning east to Wend in Yakima',
+  reward: {
+    healToFull: true,
+    xp: QUEST_XP_REWARD,
+    banner: 'The dark ones dissolve into the dead ground they made, and Yakima stands — shaken, but whole. The townsfolk who doubted you an hour ago now look at you the way the western valley does: like the only thing standing between them and the dark.',
+  },
+};
+
+/** QUEST 9 — "The Iron Road" (giver: HALVARD, a freight-master; COMBAT: 3 ambushes en route). */
+export const INV_IRON_ROAD: QuestDef = {
+  id: 'the-iron-road',
+  title: 'The Iron Road',
+  prerequisites: ['word-to-yakima'],
+  objectives: [
+    { text: 'Escort the metal shipment from Yakima to Lake Chelan', trigger: 'shipment-delivered', target: 'lake-chelan' },
+  ],
+  npcInactiveLines: [
+    'Halvard: You’re the one who held the line here? Then you’re exactly who I need. I’ve got a shipment that has to reach Lake Chelan, north of here, and I can’t promise it’ll arrive.',
+    'Halvard: It’s metal — tools, fittings, worked iron. And here’s what’s got me spooked: the dark ones have been hitting metal shipments. Specifically. Three caravans this month, all carrying iron, all ambushed. They leave the grain, leave the cloth — they want the metal.',
+    'Halvard: Why a pack of dead things wants iron, I couldn’t tell you. But they do, and they’ll come for this one. Ride with it. Get it to Chelan in one piece. Expect trouble on the road. More than once, if the pattern holds.',
+  ],
+  npcActiveLines: ['Halvard: Get the iron to Lake Chelan, north. Expect ambushes — more than once.'],
+  npcCompleteLines: [
+    'Halvard: It’s here. All of it. After three tries I half expected to be scraping this caravan off the road.',
+    'Halvard: You’ve got my thanks and then some. But I’ll tell you what I told myself the whole ride: this isn’t normal. Dead things don’t covet. They don’t single out iron and chase it across the territory.',
+    'Halvard: They’re gathering. Building toward something — has to be. I just wish I knew what a demon needs with a wagonload of worked metal. Whatever it is, I don’t think it’s good for any of us.',
+  ],
+  preAcceptHint: 'Seek Halvard the freight-master in Yakima',
+  reward: {
+    healToFull: true,
+    xp: QUEST_XP_REWARD,
+    banner: 'The shipment reaches Lake Chelan intact — every bar of iron the dark ones tried so hard to take.',
+    note: 'The dark ones are gathering something.',
+  },
+};
+
+/** QUEST 10 — "The Northern Farms" (giver: ROWAN, a Seattle Druid; COMBAT: demon raiders at Bellingham). */
+export const INV_NORTHERN_FARMS: QuestDef = {
+  id: 'the-northern-farms',
+  title: 'The Northern Farms',
+  prerequisites: ['the-iron-road'],
+  objectives: [
+    {
+      text: 'Travel north to the Bellingham farms and drive off the dark ones',
+      trigger: 'bellingham-cleared',
+      target: 'bellingham',
+      encounterNarration: [
+        'The northern farms lie too quiet. Then you see why — the dark ones move among the fields, and the farmers are pinned helpless in their own homes.',
+      ],
+    },
+    { text: 'Speak with the Bellingham farmers', trigger: 'bellingham-thanked', target: 'bellingham' },
+  ],
+  npcInactiveLines: [
+    'Rowan: You carry the look of the one they’re talking about — the western valley’s protector. Good. We’ve need of clear eyes and a steady hand.',
+    'Rowan: Our grain stores run thin. The shipments from the north — the Bellingham farms — have slowed to nothing. No word, no wagons. In gentler times I’d blame the weather. But these are not gentle times.',
+    'Rowan: If the dark ones have reached the northern farms, the people there are in danger — and so is every mouth this city feeds come winter. Go north. See that they’re safe. And if the dark ones are among them, do what you do.',
+    'Rowan: I’d grow this whole forest into a wall if it would keep them out. But some threats you cannot root away. They need someone like you.',
+  ],
+  npcActiveLines: ['Rowan: The Bellingham farms are far north. If the dark ones are there, the farmers can’t hold alone.'],
+  npcCompleteLines: [
+    'Rowan: Word came ahead of you — the northern farms still stand, because of you. The roots carry good news quickly, when there is any to carry.',
+  ],
+  preAcceptHint: 'Seek Rowan the Druid in Seattle',
+  reward: {
+    healToFull: true,
+    xp: QUEST_XP_REWARD,
+    banner: 'The dark ones are driven from the northern fields. The Bellingham farmers come out blinking into the light, their homes — and the city’s winter stores — saved.',
+  },
+};
+
+/** QUEST 11 — "What the Dark Ones Carry" (AUTO; COMBAT: Cascades demons → bring the vessel to ALDER in Seattle). */
+export const INV_WHAT_THEY_CARRY: QuestDef = {
+  id: 'what-the-dark-ones-carry',
+  title: 'What the Dark Ones Carry',
+  prerequisites: ['the-northern-farms'],
+  autoActivate: true,
+  objectives: [
+    {
+      text: 'Find where the dark ones gather in the Cascades and take what they carry',
+      trigger: 'contraption-taken',
+      target: 'cascades',
+      encounterNarration: [
+        'High in the mountains, you find them — a knot of the dark ones gathered around something they carry between them. They turn as one when they sense you.',
+      ],
+      completeNarration: [
+        'The last of them falls, and what they carried clatters to the stone: a strange vessel — part iron, part something else, etched with marks that hurt to look at. It hums faintly, cold in your hands. This is what the metal was for. This is what they’ve been building toward. You don’t understand it. But you know someone who might.',
+      ],
+    },
+    { text: 'Bring the vessel to Alder in Seattle', trigger: 'contraption-examined', target: 'seattle' },
+  ],
+  // AUTO-ACTIVATE start banner (the search framing).
+  npcInactiveLines: [
+    'The pattern is undeniable now. The dark ones gather — metal, materials, all of it moving somewhere up into the high country. Find where, and you may learn what they’re building.',
+  ],
+  npcActiveLines: [],
+  npcCompleteLines: [],
+  preAcceptHint: '',
+  reward: {
+    healToFull: true,
+    xp: QUEST_XP_REWARD,
+    banner: 'A vessel made to capture something.',
+  },
+};
+
+/** QUEST 12 — "The Exile of Longview" (AUTO; COMBAT: ambush en route → MIRE's verdict in Longview). */
+export const INV_EXILE_OF_LONGVIEW: QuestDef = {
+  id: 'the-exile-of-longview',
+  title: 'The Exile of Longview',
+  prerequisites: ['what-the-dark-ones-carry'],
+  autoActivate: true,
+  objectives: [
+    { text: 'Carry the vessel south to Longview', trigger: 'longview-reached', target: 'longview' },
+    { text: 'Bring the vessel to Mire for a verdict', trigger: 'mire-verdict', target: 'longview' },
+  ],
+  // AUTO-ACTIVATE start banner (the road framing).
+  npcInactiveLines: [
+    'Longview lies far to the south, near the great river. Alder’s warning rides with you: the scholar there is difficult, and the dark ones still hunt the roads. They will not want this vessel to reach anyone who can understand it.',
+  ],
+  npcActiveLines: [],
+  npcCompleteLines: [],
+  preAcceptHint: '',
+  reward: {
+    healToFull: true,
+    xp: QUEST_XP_REWARD,
+    banner: 'A container. Empty, and waiting.',
+  },
+};
+
+/**
  * THE OPENING CORRUPTION QUEST (formerly Quest 1). Its content is UNCHANGED; only
- * its prerequisite now points at Act II's final quest ('the-thing-at-white-pass'),
- * so the rift beat follows the grounded opening + Uriel's arrival. The on-screen
- * ANGEL scene is SUPPRESSED in MainScene (Uriel is the game's only angel now), but
- * the mechanical outcome is preserved: the corruption grant (setPlayerPath
- * 'corrupted' + Spirit Vision) and quest completion still fire at the rift, so the
- * descent/climax/endgame downstream are unchanged.
+ * its prerequisite now points at the Investigation arc's final quest ('the-exile-of-
+ * longview'), so the rift beat follows the whole grounded opening + Uriel + the
+ * investigation. The on-screen ANGEL scene is SUPPRESSED in MainScene (Uriel is the
+ * game's only angel now), but the mechanical outcome is preserved: the corruption
+ * grant (setPlayerPath 'corrupted' + Spirit Vision) and quest completion still fire
+ * at the rift, so the descent/climax/endgame downstream are unchanged.
  *
  * >>> EDIT THE OPENING QUEST'S TEXT HERE (title, objective lines, the giver's
  *     three dialogue states, completion banner + title). <<<
@@ -461,7 +694,7 @@ export const ACT2_WHITE_PASS: QuestDef = {
 export const THE_CORRUPTION_AT_THE_GATES: QuestDef = {
   id: 'corruption-at-the-gates',
   title: 'The Corruption at the Gates',
-  prerequisites: ['the-thing-at-white-pass'],
+  prerequisites: ['the-exile-of-longview'],
 
   objectives: [
     { text: 'Defeat the corrupted beast', trigger: 'sasquatch-defeated', target: 'sasquatch' },
@@ -750,7 +983,13 @@ export const QUEST_REGISTRY: readonly QuestDef[] = [
   ACT2_AFFLICTED_DOGS,
   ACT2_THE_BLIGHT,
   ACT2_WHITE_PASS,
-  // The existing arc, unchanged downstream (corruption beat now gated on Q7).
+  // The Investigation arc (Quests 8–12).
+  INV_WORD_TO_YAKIMA,
+  INV_IRON_ROAD,
+  INV_NORTHERN_FARMS,
+  INV_WHAT_THEY_CARRY,
+  INV_EXILE_OF_LONGVIEW,
+  // The existing arc, unchanged downstream (corruption beat now gated on Q12).
   THE_CORRUPTION_AT_THE_GATES,
   DESCENT_1,
   DESCENT_2,
