@@ -40,6 +40,21 @@ export const AGGRO_TIER = {
 /** The player's implicit aggro weight — any drawing summon in range outranks the player. */
 export const PLAYER_AGGRO_PRIORITY = 1;
 
+/**
+ * AGGRO RE-EVALUATION CADENCE. Enemies re-pick their target on this interval (ms) rather
+ * than once at spawn, so summoning a Monster/skeleton near foes already chasing the player
+ * REDIRECTS them within one interval, and they fall back down the tiers when a higher ally
+ * dies/leaves. Cheap: a per-enemy timer, not a per-frame scan. Lower = snappier but more work.
+ */
+export const AGGRO_REEVAL_INTERVAL_MS = 400;
+/**
+ * STICKINESS margin (px) added to a target's aggro radius when deciding whether to KEEP it.
+ * An enemy only abandons its current ally-target for one of STRICTLY HIGHER priority (or when
+ * the current leaves range + margin / dies) — it never flips between equal-priority targets
+ * just because another crept marginally nearer. Prevents per-interval thrashing.
+ */
+export const AGGRO_STICKY_MARGIN = 48;
+
 /** One allied-summon TYPE, as data. New summons = a new config (+ a texture in AlliedSummon). */
 export interface AlliedSummonConfig {
   /** Stable type key (also the texture key + the save/debug label). */
