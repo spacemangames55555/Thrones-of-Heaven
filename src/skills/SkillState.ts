@@ -2,7 +2,7 @@ import {
   classSkills,
   combineMods,
   isEquippableSkill,
-  isDamagingActive,
+  isStarterSkill,
   LOADOUT_SLOTS,
   type ClassId,
   type SkillDef,
@@ -65,11 +65,22 @@ export class SkillState {
     return [...this.setFor(classId)];
   }
 
-  /** Can the active class unlock this skill right now? (points + prereq + not already owned) */
+  /** The unlocked option id of a branch group (or null if none chosen yet). */
+  ownedBranchOption(group: string, classId: ClassId = this.activeClass): string | null {
+    const owned = this.setFor(classId);
+    const opt = classSkills(classId).skills.find((s) => s.branch?.group === group && owned.has(s.id));
+    return opt?.id ?? null;
+  }
+
+  /** Can the active class unlock this skill right now? (points + prereq + branch rules) */
   canUnlock(def: SkillDef): UnlockResult {
     if (this.isUnlocked(def.id)) return { ok: false, reason: 'Already unlocked' };
     if (this.unspentPoints < def.cost) return { ok: false, reason: `Needs ${def.cost} point${def.cost > 1 ? 's' : ''}` };
     if (def.prereq && !this.isUnlocked(def.prereq)) return { ok: false, reason: 'Requires the previous skill' };
+    // BRANCH waypoint: a node past the branch needs one of the group's options chosen.
+    if (def.prereqGroup && !this.ownedBranchOption(def.prereqGroup)) return { ok: false, reason: 'Choose a branch option first' };
+    // BRANCH exclusivity: can't own two options of the same group (reset to switch).
+    if (def.branch && this.ownedBranchOption(def.branch.group)) return { ok: false, reason: 'Another option chosen (Reset to change)' };
     return { ok: true };
   }
 
@@ -97,24 +108,25 @@ export class SkillState {
     return classSkills(this.activeClass).skills.filter((d) => this.isUnlocked(d.id) && isEquippableSkill(d));
   }
 
-  /** Unlocked DAMAGING-ACTIVE skills (in tree/tier order) — the player's real offense. */
+  /** Unlocked STARTER skills (damaging actives OR attacking summons), in tree/tier order —
+   *  the player's real offense (what the no-kit flow + anti-soft-lock floor count). */
   unlockedDamagingActives(classId: ClassId = this.activeClass): SkillDef[] {
-    return classSkills(classId).skills.filter((d) => this.isUnlocked(d.id, classId) && isDamagingActive(d));
+    return classSkills(classId).skills.filter((d) => this.isUnlocked(d.id, classId) && isStarterSkill(d));
   }
 
   /**
-   * True when the player owns NO damaging active (a brand-new character, or an old save
-   * that only had the now-removed free kit). The New-Game forced-first-skill flow must
-   * run before play so the player is never left unable to attack.
+   * True when the player owns NO starter skill (no damaging active AND no attacking summon) —
+   * a brand-new character, or an old save with only the now-removed free kit. The New-Game
+   * forced-first-skill flow must run before play so the player is never left unable to act.
    */
   needsFirstSkill(classId: ClassId = this.activeClass): boolean {
     return this.unlockedDamagingActives(classId).length === 0;
   }
 
-  /** Is this equipped id a DAMAGING ACTIVE (counts toward the anti-soft-lock floor)? */
+  /** Is this equipped id a STARTER skill (counts toward the anti-soft-lock floor)? */
   private isDamagingActiveId(id: string): boolean {
     const d = this.def(id);
-    return !!d && isDamagingActive(d);
+    return !!d && isStarterSkill(d);
   }
 
   // --- LOADOUT (the 6 equip slots; the player's entire active kit) --------------

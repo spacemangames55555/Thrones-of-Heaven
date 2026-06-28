@@ -45,11 +45,20 @@ import { HealthBar } from '../combat/HealthBar';
 import { HolyBoltButton } from '../ui/HolyBoltButton';
 import { LoadoutBar } from '../ui/LoadoutBar';
 import { SkillState } from '../skills/SkillState';
-import { classSkills, combineMods, isDamagingActive, isAimableSkill, type SkillDef, type SkillStatMods, type SkillEffect, type ActiveActionId, type ClassId } from '../skills/skillData';
+import { classSkills, combineMods, isStarterSkill, isAimableSkill, isEquippableSkill, type SkillDef, type SkillStatMods, type SkillEffect, type ActiveActionId, type ClassId } from '../skills/skillData';
 import { TANK_TUNING } from '../skills/blacksmithTank';
 import { DPS_TUNING } from '../skills/blacksmithDps';
 import { CONTROL_TUNING, COUNTER_ID, IRON_WILL_ID, DOMINANCE_ID, IRON_PYRITE_ID } from '../skills/blacksmithControl';
 import { MARROW_TUNING, MARROWNAUT_ID, OSTEO_AURA_ID } from '../skills/necromancerMarrow';
+import {
+  SUMMONS_TREE,
+  SUMMONS_TUNING,
+  UNYIELDING_BEAST_ID,
+  NECROTIC_PRESENCE_ID,
+  BLOOD_SKELETON_ID,
+  MARROW_SKELETON_ID,
+  TENTACLES_ID,
+} from '../skills/necromancerSummons';
 import { WIZARD_FIREWIND_TUNING, WIZ_STORM_ID } from '../skills/wizardFireWind';
 import { ICEPOISON_TUNING } from '../skills/wizardIcePoison';
 import { ETHEREAL_TUNING } from '../skills/wizardEthereal';
@@ -810,6 +819,9 @@ export class MainScene extends Phaser.Scene {
       },
       attack: (x, y, range, damage) => this.aoeHitAll(x, y, range, damage),
     };
+    // PASSIVE summon auras from the Necromancer's Summons tree (Necrotic Presence, Unyielding
+    // Beast, the chosen branch passive, Tentacles) — per-summon-type, applied every frame.
+    this.summons.passiveModsFor = (s) => this.summonPassiveMods(s);
     this.projectiles.onSummonHit = (x, y, radius, dmg) => this.resolveEnemyBoltVsSummon(x, y, radius, dmg);
     // Toxic Bolt: a poison field blooms where the bolt lands (per-target DoT in radius).
     this.projectiles.onImpactDot = (x, y, dot) => this.applyDotInRange(x, y, dot.radius, dot.dmgPerTick, dot.tickMs, dot.durationMs, dot.color);
@@ -1348,7 +1360,7 @@ export class MainScene extends Phaser.Scene {
    *  and unfreeze the game. Rejects anything that isn't a valid damaging-active opener. */
   completeFirstSkill(id: string): boolean {
     const def = classSkills(this.skills.activeClass).skills.find((s) => s.id === id);
-    if (!def || !isDamagingActive(def)) return false;
+    if (!def || !isStarterSkill(def)) return false;
     if (!this.skills.isUnlocked(id) && !this.skills.unlock(def)) return false; // spend the point
     this.skills.equip(0, id); // the chosen skill lands on loadout slot 1 (index 0)
     this.pendingFirstSkill = false;
@@ -1410,18 +1422,43 @@ export class MainScene extends Phaser.Scene {
     this.requireStartingSkill(); // floor respects: never leaves the player unable to attack
   }
 
-  /** DEV: equip a (freeUnlock) primitive TEST skill into the last loadout slot for quick
-   *  mobile testing. Only works as the Necromancer (the test skills are his). */
-  private devEquipTestSkill(id: string): void {
+  /** DEV: unlock the Necromancer's whole SUMMONS tree (picking Blood Skeleton at the node-6
+   *  branch) + equip its 6 actives, for quick mobile testing. */
+  private devUnlockSummons(): void {
     if (this.skills.activeClass !== 'necromancer') {
       this.showBanner('Set Class: Necromancer first', 1200);
       return;
     }
-    const slot = id === 'necro_test_beam' ? 4 : 5;
-    if (this.skills.equip(slot, id)) {
-      this.refreshLoadoutBar();
-      this.showBanner('Equipped (slot ' + (slot + 1) + ')', 1000);
+    this.skills.awardPoints(20);
+    const nodes = classSkills('necromancer')
+      .skills.filter((s) => s.tree === SUMMONS_TREE)
+      .sort((a, b) => a.tier - b.tier);
+    for (const def of nodes) {
+      if (def.id === MARROW_SKELETON_ID) continue; // pick Blood Skeleton at the branch
+      this.skills.unlock(def);
     }
+    // Equip the actives (skip passives) into the 6 slots for instant testing.
+    const actives = nodes.filter((d) => isEquippableSkill(d));
+    actives.forEach((d, i) => {
+      if (i < 6) this.skills.equip(i, d.id);
+    });
+    this.refreshLoadoutBar();
+    this.recomputeSkillEffects();
+    this.showBanner('Summons tree unlocked (Blood)', 1400);
+  }
+
+  /** PLAYER-FACING RESET (Skill Tree screen): refund all spent points + clear every unlock for
+   *  the CURRENT character (all trees) — frees any branch choice — then keep the anti-soft-lock
+   *  floor (re-prompt the forced first skill if the loadout is now empty) and persist. */
+  resetSkillTrees(): void {
+    this.skillTimed = [];
+    this.skillCooldownUntil = {};
+    this.skillCooldownDur = {};
+    this.releaseAllStuns();
+    this.cancelChannelSilent();
+    this.skills.reset(); // refunds points, clears unlocks (frees branch), prunes loadout
+    this.requireStartingSkill(); // re-open the forced first pick if no starter remains
+    this.writeSave(); // persist the reset state
   }
 
   /** DEV: switch the active class (avatar + base stats + that class's trees/loadout). If
@@ -1772,11 +1809,15 @@ export class MainScene extends Phaser.Scene {
     } else if (action === 'summon_ice_golem') {
       this.summonIceGolem(); // allied tank/blocker summon (draws aggro, no attack)
     } else if (action === 'summon_skeleton') {
-      this.summonSkeleton(); // TEST: attacking minion (Summon foundation)
+      this.summonSkeleton(); // Summons #1 — attacking skeleton (entry/starter)
     } else if (action === 'summon_dark_matter') {
-      this.summonDarkMatterMonster(); // TEST: tanky attacker + aggro magnet
+      this.summonDarkMatterMonster(); // Summons #2 — Dark Matter Monster (tank + attacker)
     } else if (action === 'buff_summons') {
-      this.buffSummons(); // TEST: pet-targeted damage + toughness buff
+      this.buffSummons(); // dev-only pet buff (damage + toughness)
+    } else if (action === 'necro_dark_matter_burst') {
+      this.summonDarkMatterBurst(); // Summons #5 — timed +summon-damage
+    } else if (action === 'necro_army') {
+      this.summonArmyOfTheDead(); // Summons #10 capstone — swarm + empower
     } else if (action === 'wiz_icicle') {
       // Ice/Poison #1 — piercing ice shard (passes through several enemies).
       const c = ICEPOISON_TUNING.icicle;
@@ -2721,6 +2762,72 @@ export class MainScene extends Phaser.Scene {
     this.summons.addBuff(SUMMON_BUFF_TUNING.bulwark, this.time.now);
     this.spawnSkillRing(this.player.x, this.player.y, 80, 0xb78bff);
     this.showBanner('Summons empowered', 1200);
+  }
+
+  /**
+   * PASSIVE summon auras from the unlocked Summons-tree passives, computed PER SUMMON TYPE
+   * (the manager calls this each frame and combines it with the timed pet buffs). Necrotic
+   * Presence hits all summons; Unyielding Beast + Tentacles hit the Monster; the chosen
+   * branch passive (Blood / Marrow Skeleton) hits skeletons.
+   */
+  private summonPassiveMods(s: AlliedSummon): { damageBonus: number; hpBonus: number; drBonus: number; aggroRadiusMult: number; attackRangeMult: number } {
+    let damageBonus = 0;
+    let hpBonus = 0;
+    let drBonus = 0;
+    let aggroRadiusMult = 1;
+    let attackRangeMult = 1;
+    if (this.classId !== 'necromancer') return { damageBonus, hpBonus, drBonus, aggroRadiusMult, attackRangeMult };
+    const has = (id: string) => this.skills.isUnlocked(id);
+    const key = s.config.key;
+    // Necrotic Presence — ALL summons: +damage +HP.
+    if (has(NECROTIC_PRESENCE_ID)) {
+      damageBonus += SUMMONS_TUNING.necroticPresence.damageBonus;
+      hpBonus += SUMMONS_TUNING.necroticPresence.hpBonus;
+    }
+    if (key === 'dark_matter_monster') {
+      // Unyielding Beast — the Monster (pet): +life +defense.
+      if (has(UNYIELDING_BEAST_ID)) {
+        hpBonus += SUMMONS_TUNING.unyieldingBeast.hpBonus;
+        drBonus += SUMMONS_TUNING.unyieldingBeast.drBonus;
+      }
+      // Tentacles — the Monster: bigger swing (cleave more).
+      if (has(TENTACLES_ID)) attackRangeMult *= SUMMONS_TUNING.tentacles.attackRangeMult;
+    }
+    if (key === 'skeleton') {
+      // Branch A — Blood Skeleton: +skeleton damage.
+      if (has(BLOOD_SKELETON_ID)) damageBonus += SUMMONS_TUNING.bloodSkeleton.damageBonus;
+      // Branch B — Marrow Skeleton: wider aggro pull + tankier (stays below the Monster's tier).
+      if (has(MARROW_SKELETON_ID)) {
+        aggroRadiusMult *= SUMMONS_TUNING.marrowSkeleton.aggroRadiusMult;
+        drBonus += SUMMONS_TUNING.marrowSkeleton.drBonus;
+        hpBonus += SUMMONS_TUNING.marrowSkeleton.hpBonus;
+      }
+    }
+    return { damageBonus, hpBonus, drBonus, aggroRadiusMult, attackRangeMult };
+  }
+
+  /** DARK MATTER (Summons #5): a timed +summon-damage burst (reuses pet buffs). */
+  private summonDarkMatterBurst(): void {
+    const c = SUMMONS_TUNING.darkMatter;
+    this.summons.addBuff({ id: 'necro_dark_matter_burst', damageBonus: c.damageBonus, durationMs: c.durationMs }, this.time.now);
+    this.spawnSkillRing(this.player.x, this.player.y, 90, 0x9a6cff);
+    this.showBanner('Dark Matter surges through your summons', 1300);
+  }
+
+  /** ARMY OF THE DEAD (Summons #10 capstone): raise a temporary skeleton swarm AND empower
+   *  every active summon (+damage/+HP) for a window. Reuses the foundation + pet buffs. */
+  private summonArmyOfTheDead(): void {
+    const c = SUMMONS_TUNING.army;
+    const cap = SKELETON_TUNING.maxConcurrent + c.skeletons; // allow the burst beyond the normal cap
+    for (let i = 0; i < c.skeletons; i++) {
+      const a = (i / c.skeletons) * Math.PI * 2;
+      const r = 40 + Math.random() * 40;
+      this.summons.summon(SKELETON_CONFIG, this.player.x + Math.cos(a) * r, this.player.y + Math.sin(a) * r, cap, c.swarmLifespanMs);
+    }
+    this.summons.addBuff({ id: 'necro_army_empower', damageBonus: c.empowerDamage, hpBonus: c.empowerHP, durationMs: c.empowerDurationMs }, this.time.now);
+    this.spawnSkillRing(this.player.x, this.player.y, 130, 0x9a6cff);
+    this.showBanner('ARMY OF THE DEAD rises!', 1600);
+    this.lastCombatTime = this.time.now;
   }
 
   /** Iron Pyrite (capstone form): the player's attacks STAGGER (briefly stun) enemies hit. */
@@ -6788,8 +6895,8 @@ export class MainScene extends Phaser.Scene {
       { label: 'Summon Dark Matter Monster', onPress: () => this.summonDarkMatterMonster() },
       { label: 'Buff Summons', onPress: () => this.buffSummons() },
       { label: 'Clear Summons', onPress: () => this.summons.clear() },
-      { label: 'Equip Test Beam', onPress: () => this.devEquipTestSkill('necro_test_beam') },
-      { label: 'Equip Test Decay', onPress: () => this.devEquipTestSkill('necro_test_decay') },
+      { label: 'Unlock Summons Tree', onPress: () => this.devUnlockSummons() },
+      { label: 'Reset Skill Trees', onPress: () => this.resetSkillTrees() },
       { label: 'Toggle Aim-Assist', onPress: () => this.devToggleAimAssist() },
       { label: 'Cycle Aim Cone', onPress: () => this.devCycleAimCone() },
       { label: 'Start Portal Defense', onPress: () => this.devStartPortalDefense() },

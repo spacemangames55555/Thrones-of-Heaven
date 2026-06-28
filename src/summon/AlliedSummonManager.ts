@@ -26,6 +26,13 @@ export class AlliedSummonManager {
   onSpawn?: (summon: AlliedSummon) => void;
   /** Fired when a summon expires/dies/is cleared (for any extra cleanup the scene wants). */
   onExpire?: (summon: AlliedSummon) => void;
+  /**
+   * PASSIVE summon auras (per-summon-type), supplied by the scene from the Necromancer's
+   * unlocked passive skills (Necrotic Presence, Unyielding Beast, the chosen branch passive,
+   * Tentacles). Combined with the timed buffs each frame. Returns additive bonuses + radius/
+   * reach multipliers for the given summon.
+   */
+  passiveModsFor?: (summon: AlliedSummon) => { damageBonus?: number; hpBonus?: number; drBonus?: number; aggroRadiusMult?: number; attackRangeMult?: number };
 
   constructor(scene: Phaser.Scene) {
     this.scene = scene;
@@ -44,13 +51,13 @@ export class AlliedSummonManager {
    * summon of that type is recycled (re-casting refreshes rather than stacking). Returns
    * the new summon.
    */
-  summon(config: AlliedSummonConfig, x: number, y: number, maxConcurrent: number): AlliedSummon {
+  summon(config: AlliedSummonConfig, x: number, y: number, maxConcurrent: number, durationMsOverride?: number): AlliedSummon {
     const sameType = this.summons.filter((s) => s.config.key === config.key);
     while (sameType.length >= Math.max(1, maxConcurrent)) {
       const oldest = sameType.shift()!;
       this.remove(oldest);
     }
-    const s = new AlliedSummon(this.scene, x, y, config, `summon_${config.key}_${this.nextId++}`);
+    const s = new AlliedSummon(this.scene, x, y, config, `summon_${config.key}_${this.nextId++}`, durationMsOverride);
     this.summons.push(s);
     this.applyBuffsTo(s); // a unit summoned WHILE a buff is active gets it immediately
     this.onSpawn?.(s);
@@ -82,8 +89,12 @@ export class AlliedSummonManager {
   }
 
   private applyBuffsTo(s: AlliedSummon): void {
-    const a = this.aggregateBuffs();
-    s.applyBuffs(a.damageBonus, a.drBonus, a.hpMult);
+    const a = this.aggregateBuffs(); // timed buffs (uniform across summons)
+    const p = this.passiveModsFor?.(s) ?? {}; // per-type passive auras from unlocked skills
+    const damageBonus = a.damageBonus + (p.damageBonus ?? 0);
+    const drBonus = Math.min(0.9, a.drBonus + (p.drBonus ?? 0));
+    const hpMult = a.hpMult + (p.hpBonus ?? 0); // a.hpMult = 1 + Σtimed; add passive hpBonus
+    s.applyBuffs(damageBonus, drBonus, hpMult, p.aggroRadiusMult ?? 1, p.attackRangeMult ?? 1);
   }
   private applyBuffsToAll(): void {
     for (const s of this.summons) if (s.isAlive) this.applyBuffsTo(s);

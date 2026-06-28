@@ -26,8 +26,7 @@ import { WIZARD_FIREWIND_SKILLS, WIZ_FIREWIND_TREE } from './wizardFireWind';
 import { WIZARD_ICEPOISON_SKILLS, WIZ_ICEPOISON_TREE } from './wizardIcePoison';
 import { WIZARD_ETHEREAL_SKILLS, WIZ_ETHEREAL_TREE } from './wizardEthereal';
 import { MARROW_TREE_SKILLS, MARROW_TREE } from './necromancerMarrow';
-import { SUMMON_TEST_SKILLS, SUMMON_TEST_TREE } from './necromancerSummonTest';
-import { PRIMITIVE_TEST_SKILLS, PRIMITIVE_TEST_TREE } from './necromancerPrimitiveTest';
+import { SUMMONS_TREE_SKILLS, SUMMONS_TREE } from './necromancerSummons';
 
 /** How many active skills the player can equip to on-screen slots. */
 export const LOADOUT_SLOTS = 6;
@@ -118,10 +117,12 @@ export type ActiveActionId =
   | 'necro_grasp'
   // Allied summons (player-side).
   | 'summon_ice_golem'
-  // Necromancer summon FOUNDATION — temporary test actives (replaced by the real Summons tree).
+  // Necromancer SUMMONS tree (+ foundation): summon/empower actives.
   | 'summon_skeleton'
   | 'summon_dark_matter'
-  | 'buff_summons';
+  | 'buff_summons'
+  | 'necro_dark_matter_burst' // timed +summon-damage burst (Dark Matter, node 5)
+  | 'necro_army'; // capstone: raise a skeleton swarm + empower all summons (Army of the Dead)
 
 /**
  * The five supported EFFECT KINDS. The scene applies them generically:
@@ -218,6 +219,16 @@ export interface SkillDef {
   readonly freeUnlock?: boolean;
   /** A default "basic" skill (the folded-in basic attack / dodge). */
   readonly basic?: boolean;
+  /**
+   * EITHER/OR BRANCH (generic). When set, this skill is ONE mutually-exclusive option of a
+   * branch group: unlocking it LOCKS every other option sharing the same `branch.group`
+   * (the player can own only one of the group). Reset Skill Trees frees the choice. Options
+   * in a group share the same `tier` (the UI draws them as one split node).
+   */
+  readonly branch?: { group: string };
+  /** Requires that ANY option of this branch group is already unlocked (a post-branch
+   *  waypoint, e.g. node 7 after the node-6 branch). Complements the single `prereq`. */
+  readonly prereqGroup?: string;
 }
 
 /** EQUIPPABLE = goes into a loadout slot + gets an on-screen button (everything that
@@ -228,7 +239,7 @@ export function isEquippableSkill(def: SkillDef): boolean {
 
 /** ACTIVE ability ids that deal NO direct damage (pure utility / summons) — excluded from
  *  the "damaging active" classification below. Keep this list tiny + explicit. */
-const NON_DAMAGING_ACTIVE_ACTIONS: ReadonlySet<ActiveActionId> = new Set(['intimidate', 'summon_ice_golem', 'summon_skeleton', 'summon_dark_matter', 'buff_summons', 'wiz_black_ice', 'eth_mend', 'eth_mana_shield', 'eth_blink', 'eth_ankh']);
+const NON_DAMAGING_ACTIVE_ACTIONS: ReadonlySet<ActiveActionId> = new Set(['intimidate', 'summon_ice_golem', 'summon_skeleton', 'summon_dark_matter', 'buff_summons', 'necro_dark_matter_burst', 'necro_army', 'wiz_black_ice', 'eth_mend', 'eth_mana_shield', 'eth_blink', 'eth_ankh']);
 
 /**
  * DAMAGING ACTIVE = an `active`-kind skill whose ability deals damage. This is the
@@ -241,12 +252,27 @@ export function isDamagingActive(def: SkillDef): boolean {
   return def.effect.kind === 'active' && !NON_DAMAGING_ACTIVE_ACTIONS.has(def.effect.action);
 }
 
+/** Active summon abilities that produce an ATTACKING summon — these are how a no-direct-
+ *  damage build still kills things, so they count as a valid STARTER offense (below). */
+const ATTACKING_SUMMON_ACTIONS: ReadonlySet<ActiveActionId> = new Set<ActiveActionId>(['summon_skeleton', 'necro_army']);
+
+/**
+ * STARTER skill = a valid "first ability" under the no-kit model and what the anti-soft-lock
+ * floor keeps equipped: a DAMAGING ACTIVE, OR an attacking-summon active (the summoned unit
+ * is the player's offense). This lets the Necromancer's Summons tree open on Summon Skeleton
+ * (the skeleton defeats the Sasquatch) without a direct-damage attack.
+ */
+export function isStarterSkill(def: SkillDef): boolean {
+  if (isDamagingActive(def)) return true;
+  return def.effect.kind === 'active' && ATTACKING_SUMMON_ACTIONS.has(def.effect.action);
+}
+
 /** ACTIVE ability ids that fire AT / AROUND the player (no direction to aim) — self-AoE,
  *  self-buffs, heals, wards, and summons. Everything else active is DIRECTIONAL. */
 const NON_AIMABLE_ACTIONS: ReadonlySet<ActiveActionId> = new Set<ActiveActionId>([
   'forge_strike', 'windmill', 'wiz_immolation', 'wiz_tornado', 'shove', 'intimidate',
   'wiz_freezing_rain', 'wiz_pestilence', 'summon_ice_golem',
-  'summon_skeleton', 'summon_dark_matter', 'buff_summons', // summon foundation: tap-to-fire
+  'summon_skeleton', 'summon_dark_matter', 'buff_summons', 'necro_dark_matter_burst', 'necro_army', // summons: tap-to-fire
   'eth_mend', 'eth_mana_shield', 'eth_ankh',
   'necro_bone_nova', // self-centered shockwave (Bone Dart/Punch/Stake/Wrecking/Grasp are directional)
 ]);
@@ -332,18 +358,14 @@ const NECROMANCER: ClassSkills = {
   classId: 'necromancer',
   trees: [
     { id: MARROW_TREE, name: 'Marrow' }, // 10 tank/solo skills → Grasp of Death (opens on Bone Dart)
-    { id: SUMMON_TEST_TREE, name: 'Summons (TEST)' }, // TEMP scaffolding for the summon foundation
-    { id: PRIMITIVE_TEST_TREE, name: 'Primitives (TEST)' }, // TEMP scaffolding for channel + stacking-DoT
+    { id: SUMMONS_TREE, name: 'Summons' }, // 10 summon/pet skills (node-6 branch) → Army of the Dead
   ],
   skills: [
     // --- MARROW TREE (10 skills, linear → Grasp of Death). Data in necromancerMarrow.ts. ---
     ...MARROW_TREE_SKILLS,
-    // --- SUMMON FOUNDATION TEST SKILLS (temporary; freeUnlock; replaced by the real Summons
-    //     tree later). None is a damaging active, so Bone Dart stays the only first-skill opener. ---
-    ...SUMMON_TEST_SKILLS,
-    // --- PRIMITIVE TEST SKILLS (temporary; freeUnlock): Test Beam (channel) + Test Decay
-    //     (stacking DoT). Prove the two new primitives; not damaging actives → no opener. ---
-    ...PRIMITIVE_TEST_SKILLS,
+    // --- SUMMONS TREE (10 skills, linear with a node-6 either/or branch → Army of the Dead).
+    //     Data in necromancerSummons.ts. Opens on Summon Skeleton (a valid no-kit first skill). ---
+    ...SUMMONS_TREE_SKILLS,
   ],
 };
 

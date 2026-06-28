@@ -11,6 +11,8 @@ export interface SkillHost {
   equipSkill(slot: number, id: string): boolean;
   /** Clear a loadout slot. */
   unequipSlot(slot: number): void;
+  /** PLAYER RESPEC: refund points + clear all unlocks for the current character (frees branch). */
+  resetSkillTrees(): void;
 }
 
 /**
@@ -61,6 +63,8 @@ export class SkillTreeScene extends Phaser.Scene {
       .setOrigin(0.5, 0)
       .setDepth(21);
     this.makeButton(w - 42, this.topInset() + 22, 60, 34, '✕', 0x4a1d1d, 0xff7a5a, () => this.close()).setDepth(21);
+    // PLAYER-FACING RESPEC: reset all of this character's trees (refund + clear unlocks).
+    this.makeButton(54, this.topInset() + 22, 92, 34, '⟲ Reset', 0x3a2a12, 0xffb86a, () => this.confirmReset()).setDepth(21);
 
     this.activeTree = 0;
     this.redraw(); // draws the tabs (depth 22) + the node list (depth 5)
@@ -129,10 +133,55 @@ export class SkillTreeScene extends Phaser.Scene {
       c.add(this.add.text(cx, y + 20, '(no skills yet — coming soon)', { fontFamily: 'system-ui, sans-serif', fontSize: '13px', color: '#7a8aa0' }).setOrigin(0.5, 0));
     }
     const stride = 50;
+    const drawnBranch = new Set<string>();
     for (const def of nodes) {
+      // EITHER/OR BRANCH: render all options of a group as ONE split node (skip the rest).
+      if (def.branch) {
+        if (drawnBranch.has(def.branch.group)) continue;
+        drawnBranch.add(def.branch.group);
+        const options = nodes.filter((s) => s.branch?.group === def.branch!.group);
+        c.add(this.makeSplitNode(cx, y, options));
+        y += stride;
+        continue;
+      }
       c.add(this.makeNode(cx, y, def));
       y += stride;
     }
+  }
+
+  /** A node split into N halves (the either/or branch): each half is one mutually-exclusive
+   *  option showing its name + state (chosen ★ / locked-out / available). Tapping opens its
+   *  popup (Unlock or the locked-out reason). */
+  private makeSplitNode(cx: number, y: number, options: SkillDef[]): Phaser.GameObjects.GameObject[] {
+    const w = this.scale.width;
+    const nodeW = Math.min(380, w - 24);
+    const st = this.skills();
+    const out: Phaser.GameObjects.GameObject[] = [];
+    const gap = 6;
+    const halfW = (nodeW - gap * (options.length - 1)) / options.length;
+    const x0 = cx - nodeW / 2;
+    // A faint "CHOOSE ONE" caption above the split row.
+    out.push(this.add.text(cx, y - 1, 'CHOOSE ONE', { fontFamily: 'system-ui, sans-serif', fontSize: '9px', color: '#ffb86a', fontStyle: 'bold' }).setOrigin(0.5, 0));
+    options.forEach((def, i) => {
+      const chosen = st.isUnlocked(def.id);
+      const lockedOut = !chosen && !!st.ownedBranchOption(def.branch!.group); // sibling owned
+      const can = st.canUnlock(def);
+      const hx = x0 + i * (halfW + gap) + halfW / 2;
+      const fill = chosen ? 0x33300f : lockedOut ? 0x241317 : can.ok ? 0x13294a : 0x1a1d24;
+      const stroke = chosen ? 0xffd24a : lockedOut ? 0x7a3a3a : can.ok ? 0x49a6ff : 0x3a4150;
+      const bg = this.add
+        .rectangle(hx, y + 10, halfW, 42, fill, 0.98)
+        .setOrigin(0.5, 0)
+        .setStrokeStyle(chosen ? 3 : 2, stroke, 1)
+        .setInteractive({ useHandCursor: true });
+      const title = `${chosen ? '★ ' : ''}${def.name.split(' ')[0]}`;
+      out.push(this.add.text(hx, y + 16, title, { fontFamily: 'system-ui, sans-serif', fontSize: '13px', color: chosen ? '#ffe9a8' : lockedOut ? '#9a6a6a' : '#eaf2ff', fontStyle: 'bold', align: 'center', wordWrap: { width: halfW - 8 } }).setOrigin(0.5, 0));
+      const tag = chosen ? 'chosen' : lockedOut ? 'locked out' : `${def.cost} pt`;
+      out.push(this.add.text(hx, y + 34, tag, { fontFamily: 'system-ui, sans-serif', fontSize: '10px', color: chosen ? '#a8ffb0' : lockedOut ? '#a86a6a' : can.ok ? '#9fd0ff' : '#7a8aa0', fontStyle: 'bold' }).setOrigin(0.5, 0));
+      bg.on(Phaser.Input.Events.GAMEOBJECT_POINTER_DOWN, () => this.openPopup(def.id));
+      out.push(bg);
+    });
+    return out;
   }
 
   /** One node row: color-coded by state; tapping opens its detail/equip popup. */
@@ -164,11 +213,36 @@ export class SkillTreeScene extends Phaser.Scene {
   }
 
   private kindLabel(def: SkillDef): string {
-    const map: Record<string, string> = { passive: 'Passive', active: 'Active', buff: 'Buff', debuff: 'Debuff', transformation: 'Transformation' };
-    let s = map[def.effect.kind];
-    // Only flag the prereq when it's NOT yet met (don't nag once it's owned).
+    const map: Record<string, string> = { passive: 'Passive', active: 'Active', buff: 'Buff', debuff: 'Debuff', transformation: 'Transformation', channel: 'Channel', stacking_dot: 'Stacking DoT' };
+    let s = map[def.effect.kind] ?? def.effect.kind;
+    // Only flag an unmet gate (don't nag once it's owned).
     if (def.prereq && !this.skills().isUnlocked(def.prereq)) s += ' · needs previous';
+    else if (def.prereqGroup && !this.skills().ownedBranchOption(def.prereqGroup)) s += ' · needs a branch choice';
     return s;
+  }
+
+  /** Confirm the destructive player-facing reset, then run it + close (so the forced first-
+   *  skill picker can re-open if the reset emptied the player's offense). */
+  private confirmReset(): void {
+    this.closePopup();
+    const w = this.scale.width;
+    const h = this.scale.height;
+    const cx = w / 2;
+    const cy = h / 2;
+    const c = this.add.container(0, 0).setDepth(120);
+    this.popup = c;
+    c.add(this.add.rectangle(cx, cy, w, h, 0x05060a, 0.78).setInteractive().on(Phaser.Input.Events.GAMEOBJECT_POINTER_DOWN, () => this.closePopup()));
+    const panelW = Math.min(340, w - 28);
+    c.add(this.add.rectangle(cx, cy, panelW, 200, 0x1a1220, 0.99).setStrokeStyle(2, 0xffb86a, 0.9));
+    c.add(this.add.text(cx, cy - 80, 'Reset Skill Trees?', { fontFamily: 'system-ui, sans-serif', fontSize: '18px', color: '#ffd24a', fontStyle: 'bold' }).setOrigin(0.5));
+    c.add(this.add.text(cx, cy - 44, 'Refunds ALL skill points and clears every unlocked skill for this character (all trees). Frees your branch choice. You re-spend from scratch.', { fontFamily: 'system-ui, sans-serif', fontSize: '12px', color: '#cdd9ec', align: 'center', wordWrap: { width: panelW - 28 } }).setOrigin(0.5, 0));
+    c.add(this.makeButton(cx - 78, cy + 64, 132, 40, 'Reset', 0x5a1d1d, 0xff7a5a, () => this.doReset()));
+    c.add(this.makeButton(cx + 78, cy + 64, 132, 40, 'Cancel', 0x33373d, 0x8a93a6, () => this.closePopup()));
+  }
+
+  private doReset(): void {
+    this.host().resetSkillTrees();
+    this.close(); // resume MainScene; if the reset emptied offense, it re-opens the first-skill picker
   }
 
   // --- The tap-to-open node modal (details + Unlock / Equip-to-slot) ------------

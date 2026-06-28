@@ -45,10 +45,14 @@ export class AlliedSummon {
   // appliedHpMult tracks the max-HP scaling currently baked in so it can be re-scaled/reverted.
   private damageBonus = 0;
   private appliedHpMult = 1;
+  /** Aggro-pull radius multiplier (Marrow Skeleton widens it) + melee reach multiplier
+   *  (Tentacles makes the Monster cleave farther). 1 = unmodified. */
+  private aggroRadiusMult = 1;
+  private attackRangeMult = 1;
   /** Next time (ms) this attacker may swing again. */
   private attackReadyAt = 0;
 
-  constructor(scene: Phaser.Scene, x: number, y: number, config: AlliedSummonConfig, id: string) {
+  constructor(scene: Phaser.Scene, x: number, y: number, config: AlliedSummonConfig, id: string, durationMsOverride?: number) {
     this.id = id;
     this.config = config;
     AlliedSummon.ensureTexture(scene, config);
@@ -63,7 +67,7 @@ export class AlliedSummon {
     this.bar = new HealthBar(scene, 56, 7, 9, 0x6fd0ff); // fixed icy-blue fill (it's an ally)
     this.bar.setRatio(1);
     this.bar.setVisible(true);
-    this.expireAt = scene.time.now + config.durationMs;
+    this.expireAt = scene.time.now + (durationMsOverride ?? config.durationMs);
     this.floatBar();
   }
 
@@ -77,7 +81,7 @@ export class AlliedSummon {
     return !this.dead;
   }
   get aggroRadius(): number {
-    return this.config.aggroRadius;
+    return this.config.aggroRadius * this.aggroRadiusMult;
   }
   get drawsAggro(): boolean {
     return this.config.drawsAggro && !this.dead;
@@ -149,7 +153,7 @@ export class AlliedSummon {
     const enemy = ctx?.nearestEnemy(this.sprite.x, this.sprite.y, seek) ?? null;
     // Hunt the enemy only while we haven't strayed too far from the player; otherwise return.
     if (enemy && this.distanceTo(playerX, playerY) <= leash) {
-      const reach = this.config.attackRange ?? 48;
+      const reach = (this.config.attackRange ?? 48) * this.attackRangeMult; // Tentacles widens the cleave
       if (enemy.dist <= reach) {
         body.velocity.set(0, 0); // in range: plant + swing
         this.sprite.setFlipX(enemy.x < this.sprite.x);
@@ -188,9 +192,11 @@ export class AlliedSummon {
    * multiplier; max-HP scaling is re-applied only when the multiplier actually changes (and
    * reverted, current clamped, when a buff lapses) so it works for current + new summons.
    */
-  applyBuffs(damageBonus: number, drBonus: number, hpMult: number): void {
+  applyBuffs(damageBonus: number, drBonus: number, hpMult: number, aggroRadiusMult = 1, attackRangeMult = 1): void {
     if (this.dead) return;
     this.damageBonus = damageBonus;
+    this.aggroRadiusMult = aggroRadiusMult;
+    this.attackRangeMult = attackRangeMult;
     this.health.incomingMultiplier = Math.max(0.1, 1 - drBonus); // take (1-dr)x damage
     if (Math.abs(hpMult - this.appliedHpMult) > 1e-4) {
       const factor = hpMult / this.appliedHpMult;
