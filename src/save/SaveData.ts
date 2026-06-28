@@ -5,7 +5,7 @@ import type { PlayerPath } from '../story/playerPath';
 import type { SkillSaveState } from '../skills/SkillState';
 
 /** Bump when the SaveData shape changes; SaveSystem.read can then migrate old saves. */
-export const SAVE_VERSION = 5;
+export const SAVE_VERSION = 6;
 
 /**
  * Act I (Enumclaw opening) quest ids — inserted at the FRONT of the chain, with the
@@ -38,6 +38,17 @@ export const INV_QUEST_IDS = [
   'what-the-dark-ones-carry',
   'the-exile-of-longview',
 ];
+
+/**
+ * The retired opening beat (Batch 4): 'corruption-at-the-gates' is removed from the
+ * chain; the corruption grant now lives in Quest 13's rift scene ('the-source').
+ * v5→v6 migration: a save that already COMPLETED the old beat is corrupted/mid-
+ * descent — mark 'the-source' complete so descent-1 (now gated on it) stays
+ * unlocked; a save still ACTIVE on the old beat has its (now-nonexistent) active
+ * quest cleared so the chain advances to the rift finale instead of locking.
+ */
+export const RETIRED_CORRUPTION_ID = 'corruption-at-the-gates';
+export const RIFT_FINALE_ID = 'the-source';
 /** The single localStorage slot key. */
 export const SAVE_KEY = 'toh_save';
 

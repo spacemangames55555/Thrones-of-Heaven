@@ -1239,6 +1239,40 @@ export const Q12_AMBUSHES = [{ x: 9872, y: 8416 }];
 /** Proximity (px) at which an en-route ambush group spawns. */
 export const AMBUSH_TRIGGER_RANGE = 300;
 
+// --- Batch 4 finale: Quest 13 + the RIFT SCENE (Semyaza) -------------------
+//
+// Q13 sends the player to the source — a rift in the N-Oregon high country, east
+// of Mt. Hood (distinct from the descent's Dark Outpost). Reaching it begins the
+// scripted rift scene: a SIMPLE Semyaza boss (reuses the boss framework) that
+// HALTS near death (it is never killed by the player) to trigger the lie/choice,
+// where the corruption grant now lives. Tune in playtest.
+
+/** The N-Oregon rift (Q13 target + rift-scene site), world px on a walkable foothill. */
+export const OREGON_RIFT_POSITION = { x: 13392, y: 13712 };
+/** Proximity (px) at which reaching the rift BEGINS the rift scene. */
+export const RIFT_SCENE_RANGE = 120;
+/** Semyaza is HALTED (the lie cutscene fires) when his HP first drops to this ratio. */
+export const SEMYAZA_LIE_THRESHOLD = 0.2;
+/** Semyaza boss tuning (single phase; the SCENE matters more than the fight). */
+export const SEMYAZA = {
+  maxHP: 360,
+  moveTilesPerSec: 4.2,
+  meleeRange: 60,
+  meleeDamage: 12,
+  preferredRange: 240,
+  projectileRange: 460,
+  projectileDamage: 10,
+  projectileSpeed: 300,
+  boltsPerVolley: 2,
+  meleeCooldownMs: 1100,
+  fireCooldownMs: 1500,
+  leashRange: 900,
+  activationRange: 240,
+  scale: 2.2,
+  color: 0x6a5a8a, // ashen violet — a ruined, lightless thing (placeholder tint)
+  xpReward: 220,
+};
+
 /**
  * Townsfolk VARIANTS — a reskin layer over the one Townsfolk class (same melee
  * behavior, different tint + per-variant HP / contact damage / XP). The descent

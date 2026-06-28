@@ -1,4 +1,4 @@
-import { MICHAEL } from '../game/settings';
+import { MICHAEL, SEMYAZA, OREGON_RIFT_POSITION } from '../game/settings';
 import { MICHAEL_SANCTUM } from '../map/heavenWorld';
 import type { BossDef } from './bossTypes';
 
@@ -91,4 +91,37 @@ export const TEST_BOSS_DEF: BossDef = {
   holyPowerDrop: 0,
 };
 
-export const ALL_BOSS_DEFS: readonly BossDef[] = [MICHAEL_DEF, TEST_BOSS_DEF];
+/**
+ * SEMYAZA — the rift-scene boss (Batch 4 finale). A deliberately SIMPLE, single-
+ * phase Earth boss (melee + a small volley) reusing the framework; the SCENE around
+ * it carries the weight. The scene HALTS him near death (SEMYAZA_LIE_THRESHOLD) for
+ * the lie/choice and despawns him when the player takes the Light — he is never
+ * killed by normal damage (MainScene clamps his HP at the threshold). Placeholder
+ * art: the 'test-boss' sprite, tinted ashen violet.
+ */
+export const SEMYAZA_DEF: BossDef = {
+  id: 'semyaza',
+  name: 'Semyaza',
+  world: 'earth',
+  placement: OREGON_RIFT_POSITION,
+  sprite: { key: 'test-boss', scale: SEMYAZA.scale, tint: SEMYAZA.color },
+  maxHP: SEMYAZA.maxHP,
+  moveTilesPerSec: SEMYAZA.moveTilesPerSec,
+  meleeRange: SEMYAZA.meleeRange,
+  preferredRange: SEMYAZA.preferredRange,
+  leashRange: SEMYAZA.leashRange,
+  activationRange: SEMYAZA.activationRange,
+  phases: [
+    {
+      fromRatio: 1,
+      attacks: [
+        { kind: 'melee', damage: SEMYAZA.meleeDamage, cooldownMs: SEMYAZA.meleeCooldownMs, range: SEMYAZA.meleeRange },
+        { kind: 'volley', damage: SEMYAZA.projectileDamage, cooldownMs: SEMYAZA.fireCooldownMs, range: SEMYAZA.projectileRange, bolts: SEMYAZA.boltsPerVolley, spread: 0.18, speed: SEMYAZA.projectileSpeed },
+      ],
+    },
+  ],
+  xpReward: SEMYAZA.xpReward,
+  holyPowerDrop: 0,
+};
+
+export const ALL_BOSS_DEFS: readonly BossDef[] = [MICHAEL_DEF, TEST_BOSS_DEF, SEMYAZA_DEF];

@@ -24,7 +24,7 @@ import { HellPortal } from '../entities/HellPortal';
 import { Demon } from '../entities/Demon';
 import { Boss } from '../boss/Boss';
 import type { BossDef, BossHooks } from '../boss/bossTypes';
-import { MICHAEL_DEF, TEST_BOSS_DEF } from '../boss/bossData';
+import { MICHAEL_DEF, TEST_BOSS_DEF, SEMYAZA_DEF } from '../boss/bossData';
 import { SIN_DEFS } from '../boss/sinsData';
 import { SinGauntlet } from '../boss/SinGauntlet';
 import { DRAGON_DEF, BEAST_DEF, SATAN_DEF } from '../boss/trinityData';
@@ -55,12 +55,11 @@ import { ETHEREAL_TUNING } from '../skills/wizardEthereal';
 import { AlliedSummonManager } from '../summon/AlliedSummonManager';
 import { ICE_GOLEM_CONFIG, ICE_GOLEM_TUNING } from '../summon/summonData';
 import { PlayerPower } from '../player/PlayerPower';
-import { ANGEL_ENCOUNTER, RIFT_CORRUPTION_LINES } from '../story/angelData';
 import { URIEL_SCENE } from '../story/urielData';
+import { URIEL_SENDOFF_LINES, RIFT_SCENE } from '../story/riftSceneData';
 import { QuestChain, type QuestEvent } from '../quest/QuestChain';
 import {
   QUEST_REGISTRY,
-  THE_CORRUPTION_AT_THE_GATES,
   ACT1_HONEST_DAYS_WORK,
   ACT1_WOLVES_TREE_LINE,
   ACT1_SHALLOWS,
@@ -147,6 +146,9 @@ import {
   Q9_AMBUSHES,
   Q12_AMBUSHES,
   AMBUSH_TRIGGER_RANGE,
+  OREGON_RIFT_POSITION,
+  RIFT_SCENE_RANGE,
+  SEMYAZA_LIE_THRESHOLD,
   DARK_OUTPOST_POSITION,
   OREGON_CITY_POSITION,
   FARM_FIELD_POSITION,
@@ -589,6 +591,15 @@ export class MainScene extends Phaser.Scene {
   private urielPending = false;
   private urielArrived = false;
 
+  // The RIFT SCENE (Batch 4 finale): the real corruption beat. `semyaza` is the
+  // scene boss (clamped at SEMYAZA_LIE_THRESHOLD so the player never kills him);
+  // `riftSceneStarted` guards the one-shot start; `riftLieFired` halts his combat
+  // once the lie cutscene begins. The corruption grant fires in the scene (take
+  // the Light). These are session/scene flags; completion is the chain quest state.
+  private semyaza?: Boss;
+  private riftSceneStarted = false;
+  private riftLieFired = false;
+
   // Interaction targets (the real NPC and, when Spirit Vision is on, spirits).
   private talkTarget: Interactable | null = null; // in range now (drives Talk button)
   private guardTarget: Interactable | null = null; // already auto-talked; wait to leave range
@@ -666,11 +677,12 @@ export class MainScene extends Phaser.Scene {
     this.player = new Player(this, this.town.spawn.x, this.town.spawn.y, this.classId);
     this.earthCollider = this.physics.add.collider(this.player.sprite, this.map.layer);
 
-    // Quest-giver NPC in the plaza. Its dialogue is chosen per quest-state at
-    // talk time (see openDialogueWith); the lines passed here are the inactive
-    // set as a sensible default.
+    // A plain Enumclaw townsperson in the plaza (flavor only). The old opening
+    // quest ('corruption-at-the-gates') is RETIRED — the corruption beat now lives
+    // in the rift scene — so this NPC no longer gives a quest; it just speaks.
     this.npc = new Npc(this, this.town.npc.x, this.town.npc.y, [
-      ...THE_CORRUPTION_AT_THE_GATES.npcInactiveLines,
+      'Townsperson: You’re the one who keeps the valley standing. Folk sleep easier knowing you’re about.',
+      'Townsperson: Strange times, though. Cold in the air that shouldn’t be there. Be careful out east.',
     ]);
     this.physics.add.collider(this.player.sprite, this.npc.sprite);
 
@@ -850,12 +862,8 @@ export class MainScene extends Phaser.Scene {
         idleLines: [],
       });
     }
-    this.questGivers.push({
-      entity: this.npc,
-      pos: () => ({ x: this.npc.sprite.x, y: this.npc.sprite.y }),
-      questIds: ['corruption-at-the-gates'],
-      idleLines: [],
-    });
+    // (The home townsperson is no longer a quest-giver — the old corruption beat is
+    //  retired; the corruption grant now happens in the rift scene.)
     if (this.oregonSpirit) {
       const patron = this.oregonSpirit;
       this.questGivers.push({
@@ -1051,10 +1059,9 @@ export class MainScene extends Phaser.Scene {
     // HUD, regen and projectiles are world-agnostic and run for both.
     if (this.activeWorld === WORLD_EARTH) {
       this.checkDoors();
-      this.checkQuestProximity();
-      this.checkRiftCorruption(); // suppressed-angel corruption grant at the rift
       this.checkUrielArrival(); // Act II finale: scripted Uriel scene back in the square
       this.checkSeattleIntro(); // first time in the Druid city: a one-shot intro narration
+      this.checkRiftSceneStart(); // FINALE: reaching the N-Oregon rift begins the rift scene
       this.updateArc(); // descent-arc completion watcher (before interactions so a
       // "return to the outpost" completes before the patron auto-offers the next quest)
       if (this.isDashing()) this.talkButton.setVisible(false);
@@ -3316,6 +3323,12 @@ export class MainScene extends Phaser.Scene {
   /** Drive every framework boss: proximity activation, behavior, then the boss bar. */
   private updateBosses(): void {
     for (const b of this.bosses) {
+      // Rift scene: once the lie cutscene starts, Semyaza is frozen (no AI/attacks)
+      // until he fades — the scene drives him, not the combat loop.
+      if (this.riftLieFired && b === this.semyaza) {
+        b.halt();
+        continue;
+      }
       if (!b.isActive && b.isAlive && b.distanceTo(this.player.x, this.player.y) <= b.def.activationRange) b.activate();
       b.update(this.player.x, this.player.y, this.time.now);
     }
@@ -3336,11 +3349,21 @@ export class MainScene extends Phaser.Scene {
     for (const b of this.bosses) {
       if (!b.isAlive) continue;
       if (b.distanceTo(x, y) <= range + 24 && (!where || where(b.x, b.y))) {
-        const dealt = b.takeHit(damage);
+        // SEMYAZA (rift scene): the player must NEVER kill him — his HP is clamped at
+        // SEMYAZA_LIE_THRESHOLD, and reaching it HALTS the fight into the lie cutscene.
+        let dmg = damage;
+        if (b === this.semyaza && !this.riftLieFired) {
+          const floor = b.health.max * SEMYAZA_LIE_THRESHOLD;
+          dmg = Math.max(0, Math.min(damage, b.health.current - floor));
+        }
+        const dealt = dmg > 0 ? b.takeHit(dmg) : 0;
         if (dealt > 0) this.dmgDealtAccum += dealt; // lifesteal accounting
         if (dealt > 0) {
           this.spawnDamageNumber(b.x, b.y - 40, dealt, '#ffffff');
           this.lastCombatTime = this.time.now;
+        }
+        if (b === this.semyaza && !this.riftLieFired && b.health.current <= b.health.max * SEMYAZA_LIE_THRESHOLD + 0.5) {
+          this.startRiftLie();
         }
       }
     }
@@ -5702,6 +5725,24 @@ export class MainScene extends Phaser.Scene {
     this.cameras.main.centerOn(this.portland.spawn.x, this.portland.spawn.y);
   }
 
+  /** DEV: fast-forward the chain to Quest 13 (active) and teleport to the rift, so the
+   *  finale rift scene can be tested on mobile without a full playthrough. */
+  private devJumpToRift(): void {
+    const upTo = [
+      'honest-days-work', 'wolves-tree-line', 'shallows', 'the-pass',
+      'whats-gotten-into-them', 'the-blight', 'the-thing-at-white-pass',
+      'word-to-yakima', 'the-iron-road', 'the-northern-farms',
+      'what-the-dark-ones-carry', 'the-exile-of-longview',
+    ];
+    this.urielArrived = true;
+    this.riftSceneStarted = false;
+    this.riftLieFired = false;
+    if (this.semyaza) { this.semyaza.destroy(); this.semyaza = undefined; }
+    this.chain.load({ completed: upTo, activeId: 'the-source', activeObjective: 0 });
+    this.refreshQuestUi();
+    this.devTeleportTo(OREGON_RIFT_POSITION);
+  }
+
   /** DEV: jump to a world position on the active (Earth) map — testing the investigation arc. */
   private devTeleportTo(p: { x: number; y: number }): void {
     if (this.activeWorld !== WORLD_EARTH) return;
@@ -5856,11 +5897,7 @@ export class MainScene extends Phaser.Scene {
   /** The quest this giver may OFFER right now (available + corruption gate met), or null. */
   private offerableQuest(giver: { questIds: string[]; requiresCorruption?: boolean }): QuestDef | null {
     if (giver.requiresCorruption && this.playerPath !== 'corrupted') return null;
-    const offer = this.chain.firstAvailable(giver.questIds);
-    // The old corruption beat must wait for Uriel's arrival (Act II finale) — don't
-    // offer it (and don't point the pre-accept arrow at its giver) until then.
-    if (offer?.id === 'corruption-at-the-gates' && !this.urielArrived) return null;
-    return offer;
+    return this.chain.firstAvailable(giver.questIds);
   }
 
   /**
@@ -5909,9 +5946,9 @@ export class MainScene extends Phaser.Scene {
   private handleQuestEvent(e: QuestEvent): void {
     switch (e.type) {
       case 'started': {
-        // No-soft-lock: if the opening beast was already slain, respawn it.
-        if (e.questId === 'corruption-at-the-gates' && !this.sasquatch.isAlive) this.sasquatch.reset();
         if (this.isArcQuest(e.questId)) this.beginArcObjective(); // set up objective 0 (Act I + descent)
+        // Quest 13 (finale): Uriel's scripted send-off plays on start (pre-warning).
+        if (e.questId === 'the-source') this.playUrielSendoff();
         // Auto-activating climax quests have no NPC: show their start narration as a
         // banner (a beat after any preceding completion banner reads).
         const startDef = this.chain.get(e.questId);
@@ -5997,42 +6034,6 @@ export class MainScene extends Phaser.Scene {
     for (const e of this.spirit.entities) e.setPath(path);
   }
 
-  /**
-   * SUPPRESSED-ANGEL corruption beat (Batch 2). The on-screen angel + Accept/Refuse
-   * choice are GONE so Uriel isn't duplicated as a second angel. The mechanical
-   * outcome is fully PRESERVED: when the player reaches the rift on the corruption
-   * quest's final objective, the corruption grant fires — setPlayerPath('corrupted')
-   * + Spirit Vision ON — and the quest completes (notifyQuest('angel-refused')), so
-   * descent-1..4 + the whole endgame proceed exactly as before.
-   *
-   * Gated on `activeTrigger === 'angel-refused'` so it can ONLY happen during the
-   * corruption quest's last objective — the player can wander past the rift all
-   * through Acts I–II without triggering it early.
-   */
-  private checkRiftCorruption(): void {
-    if (this.angelEncounterFired || this.playerPath !== 'neutral') return;
-    if (this.chain.activeTrigger !== 'angel-refused') return;
-    const d = Phaser.Math.Distance.Between(this.player.x, this.player.y, this.town.rift.x, this.town.rift.y);
-    if (d <= ANGEL_ENCOUNTER.triggerRange) this.startRiftCorruption();
-  }
-
-  /** Play the short, understated rift beat (NO angel), then grant corruption. */
-  private startRiftCorruption(): void {
-    this.angelEncounterFired = true; // reuse the existing one-shot (serialized) guard
-    this.talkButton.setVisible(false);
-    this.controls.setEnabled(false);
-    this.player.setDirection(0, 0);
-    this.dialogue.open([...RIFT_CORRUPTION_LINES], () => this.grantRiftCorruption());
-  }
-
-  /** The PRESERVED mechanical outcome: corruption + Spirit Vision, then complete the quest. */
-  private grantRiftCorruption(): void {
-    this.setPlayerPath('corrupted'); // turns Spirit Vision ON permanently
-    this.spirit.fadeTintIn(1000); // the "sight opens" moment
-    this.reenableControls = true;
-    this.notifyQuest('angel-refused'); // completes the corruption quest → descent unlocks
-  }
-
   // --- URIEL'S ARRIVAL (Act II finale) --------------------------------------
   //
   // Armed when Q7 completes (handleQuestEvent). The scene fires when the player
@@ -6072,7 +6073,7 @@ export class MainScene extends Phaser.Scene {
     this.player.setDirection(0, 0);
     // A placeholder radiant figure in the square (reuses the existing 'angel-divine'
     // art — created by the Angel entity at boot — so no new art; understated).
-    const fx = this.spawnUrielFigure();
+    const fx = this.spawnUrielFigure(this.town.spawn.x, this.town.spawn.y - this.map.tileSize * 1.5);
     // intro narration → Uriel speaks → outro → dismiss + resume.
     this.dialogue.open([...URIEL_SCENE.intro], () =>
       this.dialogue.open([...URIEL_SCENE.lines], () =>
@@ -6085,10 +6086,9 @@ export class MainScene extends Phaser.Scene {
     );
   }
 
-  /** A soft radiant figure + halo above the town square; returns a dismiss handle. */
-  private spawnUrielFigure(): { dismiss: () => void } {
-    const x = this.town.spawn.x;
-    const y = this.town.spawn.y - this.map.tileSize * 1.5;
+  /** A soft radiant figure + halo at (x,y); returns a dismiss handle. Reused by the
+   *  Uriel arrival, the Q13 send-off, and the rift scene (no new art). */
+  private spawnUrielFigure(x: number, y: number): { dismiss: () => void } {
     const glow = this.add.circle(x, y, 40, 0xfff3c0, 0).setDepth(7);
     const figure = this.add.sprite(x, y, 'angel-divine').setDepth(9).setAlpha(0);
     this.worldFx.add(glow);
@@ -6101,6 +6101,117 @@ export class MainScene extends Phaser.Scene {
         this.tweens.add({ targets: [glow, figure], alpha: 0, scale: 0.6, duration: 600, ease: 'Quad.in', onComplete: () => { glow.destroy(); figure.destroy(); } });
       },
     };
+  }
+
+  // --- QUEST 13 + THE RIFT SCENE (Batch 4 finale) ---------------------------
+  //
+  // The REAL corruption beat (replaces the retired Sasquatch/angel placeholder).
+  // Q13 'the-source' auto-activates after Q12; on start, Uriel gives a pre-warning
+  // send-off (below). The objective arrow points at the N-Oregon rift; reaching it
+  // begins the scripted scene: approach → Semyaza (clamped near death) → the lie →
+  // Uriel's counter → Semyaza's offer → THE CHOICE (the player's first line) → take
+  // the Light (setPlayerPath('corrupted') + Spirit Vision) → Uriel's judgment +
+  // vanish → Azazel's arrival → close → completes Q13 (descent-1 then unlocks).
+
+  /** Q13 start: Uriel's scripted send-off, pre-warning the player about the deception. */
+  private playUrielSendoff(): void {
+    this.talkButton.setVisible(false);
+    this.controls.setEnabled(false);
+    this.player.setDirection(0, 0);
+    const fx = this.spawnUrielFigure(this.player.x, this.player.y - this.map.tileSize * 1.5);
+    this.dialogue.open([...URIEL_SENDOFF_LINES], () => {
+      fx.dismiss();
+      this.reenableControls = true;
+      this.autosave();
+    });
+  }
+
+  /** FINALE: reaching the N-Oregon rift while on Q13 BEGINS the rift scene (one-shot). */
+  private checkRiftSceneStart(): void {
+    if (this.riftSceneStarted) return;
+    if (this.chain.activeQuest?.id !== 'the-source' || this.chain.activeTrigger !== 'reached-the-rift') return;
+    if (this.dialogue.isOpen() || this.choice.isOpen() || !this.controls.isEnabled()) return;
+    const d = Phaser.Math.Distance.Between(this.player.x, this.player.y, OREGON_RIFT_POSITION.x, OREGON_RIFT_POSITION.y);
+    if (d <= RIFT_SCENE_RANGE) this.startRiftScene();
+  }
+
+  /** (a) Approach narration, then spawn Semyaza and hand the player the fight. */
+  private startRiftScene(): void {
+    this.riftSceneStarted = true;
+    this.talkButton.setVisible(false);
+    this.controls.setEnabled(false);
+    this.player.setDirection(0, 0);
+    this.dialogue.open([...RIFT_SCENE.approach], () => this.riftSpawnSemyaza());
+  }
+
+  /** (b) Spawn + activate Semyaza on Earth; release controls so the player fights. */
+  private riftSpawnSemyaza(): void {
+    this.semyaza = this.spawnBoss(SEMYAZA_DEF, OREGON_RIFT_POSITION.x, OREGON_RIFT_POSITION.y - 40, this.map.layer);
+    this.semyaza.activate();
+    this.showBanner(RIFT_SCENE.fightBanner, 2200);
+    this.reenableControls = true;
+  }
+
+  /** (c–f) Semyaza is HALTED near death → the lie → counter → offer → THE CHOICE →
+   *  the player's first line → take the Light (corruption grant) → judgment → Azazel. */
+  private startRiftLie(): void {
+    if (this.riftLieFired) return;
+    this.riftLieFired = true;
+    this.controls.setEnabled(false);
+    this.player.setDirection(0, 0);
+    this.semyaza?.halt();
+    // Uriel manifests at the rift for the counter + judgment (dismissed when he vanishes).
+    const uriel = this.spawnUrielFigure(this.player.x + 90, this.player.y - this.map.tileSize * 1.5);
+
+    const close = (): void => {
+      this.dialogue.open([...RIFT_SCENE.close], () => {
+        this.reenableControls = true;
+        this.notifyQuest('reached-the-rift'); // completes Quest 13 → descent-1 (Azazel) unlocks
+        this.autosave(); // CRITICAL beat: the player is now corrupted; persist it
+      });
+    };
+    const azazel = (): void => this.dialogue.open([...RIFT_SCENE.azazel], close);
+    const judgment = (): void =>
+      this.dialogue.open([...RIFT_SCENE.urielJudgment], () => {
+        uriel.dismiss(); // Uriel vanishes — simply gone
+        azazel();
+      });
+    const takeLight = (): void => {
+      // === THE CORRUPTION GRANT (now lives ONLY here) =========================
+      this.setPlayerPath('corrupted'); // playerPath = 'corrupted' + Spirit Vision ON
+      this.spirit.fadeTintIn(1200); // the "sight opens" moment
+      this.awardTitle('The Forsaken');
+      // =======================================================================
+      this.fadeOutSemyaza(); // Semyaza smiles and fades, spent
+      this.dialogue.open([...RIFT_SCENE.takeLight], judgment);
+    };
+    const playerLine = (): void => this.dialogue.open([...RIFT_SCENE.playerLine], takeLight);
+    const presentChoice = (): void =>
+      this.choice.open(RIFT_SCENE.choicePrompt, [{ label: RIFT_SCENE.choiceTake, onSelect: playerLine }]);
+
+    // lie → Uriel's counter → Semyaza's offer → the choice.
+    this.dialogue.open([...RIFT_SCENE.lie], () =>
+      this.dialogue.open([...RIFT_SCENE.urielCounter], () =>
+        this.dialogue.open([...RIFT_SCENE.offer], presentChoice),
+      ),
+    );
+  }
+
+  /** Semyaza fades out (spent) and is removed; updateBosses prunes the dead boss. */
+  private fadeOutSemyaza(): void {
+    const b = this.semyaza;
+    if (!b) return;
+    const body = b.sprite.body as Phaser.Physics.Arcade.Body;
+    body.enable = false;
+    this.tweens.add({
+      targets: b.sprite,
+      alpha: 0,
+      scale: b.def.sprite.scale * 1.4,
+      duration: 900,
+      ease: 'Quad.out',
+      onComplete: () => b.destroy(),
+    });
+    this.semyaza = undefined;
   }
 
   /**
@@ -6121,6 +6232,10 @@ export class MainScene extends Phaser.Scene {
     this.spirit.setSpiritVision(false); // 'neutral' alone doesn't turn it off
     this.sasquatch.reset();
     this.clearArcObjective(); // clear any descent-arc spawns + watcher state
+    // Rift scene (finale): clear its one-shots + despawn Semyaza so it can replay.
+    this.riftSceneStarted = false;
+    this.riftLieFired = false;
+    if (this.semyaza) { this.semyaza.destroy(); this.semyaza = undefined; }
     this.guardTarget = null;
     this.refreshQuestUi();
   }
@@ -6251,6 +6366,8 @@ export class MainScene extends Phaser.Scene {
       { label: 'Teleport to Bellingham', onPress: () => this.devTeleportTo(BELLINGHAM_FARMS_POSITION) },
       { label: 'Teleport to Cascades', onPress: () => this.devTeleportTo(CASCADES_POSITION) },
       { label: 'Teleport to Longview', onPress: () => this.devTeleportTo(LONGVIEW_POSITION) },
+      { label: 'Teleport to Oregon Rift', onPress: () => this.devTeleportTo(OREGON_RIFT_POSITION) },
+      { label: 'Jump to Rift Scene (Q13)', onPress: () => this.devJumpToRift() },
       { label: 'Force Corrupt', onPress: () => this.devForceCorrupt() },
       { label: 'Teleport to Dark Outpost', onPress: () => this.devTeleportToOutpost() },
       { label: 'Teleport to Holy Outpost', onPress: () => this.devTeleportToHolyOutpost() },
@@ -6309,27 +6426,9 @@ export class MainScene extends Phaser.Scene {
   /**
    * Feed a world event to the active quest. The chain advances only if the
    * trigger matches its current objective, emitting events that drive the reward.
-   * Still handles the no-soft-lock case: reaching the angel objective while
-   * already corrupted auto-completes it (the angel will not manifest again).
    */
   private notifyQuest(trigger: ObjectiveTrigger): void {
-    const result = this.chain.notify(trigger);
-    if (!result.advanced || result.questCompleted) return;
-    if (this.chain.activeTrigger === 'angel-refused' && this.playerPath === 'corrupted') {
-      this.notifyQuest('angel-refused');
-    }
-  }
-
-  /** The opening quest's OBJ 2 completes on rift proximity (independent of the angel). */
-  private checkQuestProximity(): void {
-    if (this.chain.activeTrigger !== 'rift-reached') return;
-    const d = Phaser.Math.Distance.Between(
-      this.player.x,
-      this.player.y,
-      this.town.rift.x,
-      this.town.rift.y,
-    );
-    if (d <= ANGEL_ENCOUNTER.triggerRange) this.notifyQuest('rift-reached');
+    this.chain.notify(trigger);
   }
 
   /** Store and display the single alignment-title string on the HUD. */
@@ -6500,6 +6599,9 @@ export class MainScene extends Phaser.Scene {
       case 'longview':
         // Q12 points at Mire (reach + verdict are at the same Longview spot).
         return { x: this.mireNpc.sprite.x, y: this.mireNpc.sprite.y, label: '' };
+      case 'oregon-rift':
+        // Q13 — the source, in the N-Oregon high country (reaching it begins the rift scene).
+        return { x: OREGON_RIFT_POSITION.x, y: OREGON_RIFT_POSITION.y, label: '' };
       case 'sasquatch':
         return this.sasquatch.isAlive ? { x: this.sasquatch.x, y: this.sasquatch.y, label: '' } : null;
       case 'rift':
