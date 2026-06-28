@@ -58,16 +58,16 @@ export const SPIRIT_ENTITIES: SpiritEntityData[] = [
     x: 12048,
     y: 13456,
     color: 0x8cd0ff,
-    name: 'Hollow Pilgrim',
+    name: 'Azazel',
     lines: [
-      'Hollow Pilgrim: You followed it south. Few do. Fewer still can see me to know they have.',
-      'Hollow Pilgrim: The rift at Seattle was only the wound. This — Oregon — is the long throat beneath it.',
-      'Hollow Pilgrim: Keep descending and the world thins to spirit. This is the road the marked are meant to walk.',
-      'Hollow Pilgrim: I am only the first marker on it. What waits further down has been waiting a very long time.',
+      'Azazel: You followed it south. Few do. Fewer still can see me to know they have.',
+      'Azazel: The rift at Seattle was only the wound. This — Oregon — is the long throat beneath it.',
+      'Azazel: Keep descending and the world thins to spirit. This is the road the marked are meant to walk.',
+      'Azazel: I am only the first marker on it. What waits further down has been waiting a very long time.',
     ],
     corruptedLines: [
-      'Hollow Pilgrim: Marked already — good. Then you feel it too, the pull downward.',
-      'Hollow Pilgrim: Walk on when you are ready. The descent does not open for the living, only for the claimed.',
+      'Azazel: Marked already — good. Then you feel it too, the pull downward.',
+      'Azazel: Walk on when you are ready. The descent does not open for the living, only for the claimed.',
     ],
   },
 ];

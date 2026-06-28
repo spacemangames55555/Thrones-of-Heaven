@@ -1,4 +1,13 @@
-import { SAVE_KEY, SAVE_VERSION, ACT1_QUEST_IDS, ACT2_QUEST_IDS, INV_QUEST_IDS, type SaveData } from './SaveData';
+import {
+  SAVE_KEY,
+  SAVE_VERSION,
+  ACT1_QUEST_IDS,
+  ACT2_QUEST_IDS,
+  INV_QUEST_IDS,
+  RETIRED_CORRUPTION_ID,
+  RIFT_FINALE_ID,
+  type SaveData,
+} from './SaveData';
 
 /**
  * Migrate an older save in place to the current SAVE_VERSION. Each step is
@@ -6,9 +15,11 @@ import { SAVE_KEY, SAVE_VERSION, ACT1_QUEST_IDS, ACT2_QUEST_IDS, INV_QUEST_IDS, 
  *  • v2→v3 added the Act I (Enumclaw) opening in front of the chain.
  *  • v3→v4 added the Act II (corruption escalation) quests + Uriel's arrival.
  *  • v4→v5 added the Investigation arc (Quests 8–12) before the old corruption beat.
- * In every case a pre-migration player is already past that content, so the new
- * quests are marked COMPLETE (prerequisites stay satisfied → no soft-lock), and
- * Uriel is flagged as already arrived so his scene never replays.
+ *  • v5→v6 RETIRED the old corruption beat: the grant moved to Quest 13's rift scene.
+ * In every additive case a pre-migration player is already past that content, so the
+ * new quests are marked COMPLETE (prerequisites stay satisfied → no soft-lock), and
+ * Uriel is flagged as already arrived so his scene never replays. v6 also keeps the
+ * critical path intact across the removed quest id (see RETIRED_CORRUPTION_ID).
  */
 function migrate(data: SaveData): SaveData {
   const completed = new Set(data.quests?.completed ?? []);
@@ -21,6 +32,17 @@ function migrate(data: SaveData): SaveData {
     }
   }
   if (data.saveVersion < 5) for (const id of INV_QUEST_IDS) completed.add(id);
+  if (data.saveVersion < 6) {
+    // (a) Already past the old beat (corrupted / mid-descent): mark the rift-finale
+    //     quest complete so descent-1 (now gated on 'the-source') stays unlocked.
+    if (completed.has(RETIRED_CORRUPTION_ID)) completed.add(RIFT_FINALE_ID);
+    // (b) Still ON the old beat: its quest no longer exists — clear the stale active
+    //     id so the chain advances to the rift finale instead of pointing at nothing.
+    if (data.quests && data.quests.activeId === RETIRED_CORRUPTION_ID) {
+      data.quests.activeId = null;
+      data.quests.activeObjective = 0;
+    }
+  }
   if (data.quests) data.quests.completed = [...completed];
   data.saveVersion = SAVE_VERSION;
   return data;
