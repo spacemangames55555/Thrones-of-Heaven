@@ -34,8 +34,11 @@ export const MARROW_TUNING = {
   boneNova: { damage: 24, radius: 165, knockback: 90, tauntMs: 3000, cooldownMs: 7000, energyCost: 16 },
   /** 4) CALCIFY — passive: +armor (damage reduction) and +max HP. */
   calcify: { damageReduction: 0.12, maxHPMult: 0.15 },
-  /** 5) MARROWNAUT — transformation: encase in a bone-suit (big DR + HP + larger form). */
-  marrownaut: { durationMs: 12000, damageReduction: 0.45, maxHPMult: 0.5, scale: 1.5, cooldownMs: 30000, energyCost: 25, tint: 0xe8e2d0 },
+  /** 5) MARROWNAUT — transformation: encase in a bone-suit (big DR + HP + larger form).
+   *  Timing: 30s form duration + 30s cooldown. The cooldown is measured from ACTIVATION
+   *  (see MainScene.activateSkill), so it clears exactly as the 30s form ends → ~0s
+   *  downtime (re-castable right when the bone-suit wears off). */
+  marrownaut: { durationMs: 30000, damageReduction: 0.45, maxHPMult: 0.5, scale: 1.5, cooldownMs: 30000, energyCost: 25, tint: 0xe8e2d0 },
   /** 6) STAKE — root one enemy in place (movement-immobilize; it can still act). */
   stake: { damage: 14, rootMs: 7000, range: 84, cooldownMs: 10000, energyCost: 12 },
   /** 7) OSTEO AURA — passive aura: nearby enemies have LOWERED DEFENSE (take more damage). */
