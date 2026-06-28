@@ -59,6 +59,7 @@ import {
   MARROW_SKELETON_ID,
   TENTACLES_ID,
 } from '../skills/necromancerSummons';
+import { DM_TUNING, BLIGHT_ID } from '../skills/necromancerDarkMatter';
 import { WIZARD_FIREWIND_TUNING, WIZ_STORM_ID } from '../skills/wizardFireWind';
 import { ICEPOISON_TUNING } from '../skills/wizardIcePoison';
 import { ETHEREAL_TUNING } from '../skills/wizardEthereal';
@@ -402,6 +403,13 @@ export class MainScene extends Phaser.Scene {
   private tauntUntil = 0;
   /** OSTEO AURA: player-damage multiplier vs enemies whose defense the aura has lowered (1 = off). */
   private osteoDamageMult = 1;
+  // --- Necromancer (Dark Matter) transient state ---
+  /** TAINTED DARK MATTER defence-down: a timed damage-amplification window (reuses the Osteo
+   *  damage-mult mechanic). While now < darkVulnUntil, the player's damage ×= darkVulnMult. */
+  private darkVulnUntil = 0;
+  private darkVulnMult = 1;
+  /** BLIGHT passive aura: next damage-tick time (the aura slows every frame, ticks on cadence). */
+  private blightNextTickAt = 0;
 
   // Progression / leveling. Level-derived maxHP + damage feed the combat above.
   private progression!: PlayerProgression;
@@ -1818,6 +1826,56 @@ export class MainScene extends Phaser.Scene {
       this.summonDarkMatterBurst(); // Summons #5 — timed +summon-damage
     } else if (action === 'necro_army') {
       this.summonArmyOfTheDead(); // Summons #10 capstone — swarm + empower
+    } else if (action === 'necro_dm_blip') {
+      // Dark Matter #1 — fast cheap bolt (the spammable basic; entry damaging active).
+      const c = DM_TUNING.blip;
+      const { dx, dy } = this.facingUnit();
+      this.projectiles.spawn({ x: px + dx * 18, y: py + dy * 18, dirX: dx, dirY: dy, speed: c.speed, damage: this.skillDamage(c.damage), maxRange: c.range, faction: 'player', color: 0xb98bff, radius: c.radius });
+      this.notifyBossesPlayerAction('ranged');
+    } else if (action === 'necro_dm_bomb') {
+      // Dark Matter #2 — lobbed bolt: direct hit + splash AoE on impact (reuses splash).
+      const c = DM_TUNING.bomb;
+      const { dx, dy } = this.facingUnit();
+      this.projectiles.spawn({ x: px + dx * 18, y: py + dy * 18, dirX: dx, dirY: dy, speed: c.speed, damage: this.skillDamage(c.directDamage), maxRange: c.range, faction: 'player', color: 0x7a3fb0, radius: c.radius, splashRadius: c.splashRadius, splashDamage: this.skillDamage(c.splashDamage) });
+      this.notifyBossesPlayerAction('ranged');
+    } else if (action === 'necro_dm_tainted') {
+      // Dark Matter #3 — bolt + DEFENSE-DOWN window (reuses the Osteo damage-amp mechanic, timed).
+      const c = DM_TUNING.tainted;
+      const { dx, dy } = this.facingUnit();
+      this.projectiles.spawn({ x: px + dx * 18, y: py + dy * 18, dirX: dx, dirY: dy, speed: c.speed, damage: this.skillDamage(c.damage), maxRange: c.range, faction: 'player', color: 0x9a5cff, radius: c.radius });
+      this.darkVulnUntil = this.time.now + c.debuffMs;
+      this.darkVulnMult = 1 + c.defenseReduction;
+      this.showBanner('Defenses tainted', 900);
+      this.notifyBossesPlayerAction('ranged');
+    } else if (action === 'necro_dm_hex') {
+      // Dark Matter #4 — debuff: SLOW + WEAKEN the nearest foe's area (reuses slow + weaken).
+      const c = DM_TUNING.hex;
+      const target = this.nearestEnemy(px, py, c.range);
+      if (target) {
+        this.slowEnemiesInRange(target.x, target.y, c.radius, c.durationMs, c.slowFactor);
+        this.setPoisonWeaken(c.weaken, c.durationMs); // weaken = enemy damage dealt down (timed window)
+        if (c.damage > 0) this.aoeHitAll(target.x, target.y, c.radius, this.skillDamage(c.damage));
+        this.spawnSkillRing(target.x, target.y, c.radius, 0x6a3fb0);
+      } else {
+        this.showBanner('No target in range', 800);
+      }
+    } else if (action === 'necro_dm_abyssal') {
+      // Dark Matter #5 — cone of dark energy in front (reuses the cone pattern).
+      const c = DM_TUNING.abyssal;
+      const { dx, dy } = this.facingUnit();
+      const half = (c.coneHalfAngleDeg * Math.PI) / 180;
+      this.spawnConeFx(px, py, dx, dy, c.range, half, 0x9a5cff);
+      this.aoeHitAll(px, py, c.range, this.skillDamage(c.damage), (ex, ey) => this.inCone(px, py, dx, dy, ex, ey, c.range, half));
+    } else if (action === 'necro_dm_rift') {
+      // Dark Matter #6 — ranged AoE at a spot ahead (reuses the placed-AoE pattern).
+      const c = DM_TUNING.rift;
+      const { dx, dy } = this.facingUnit();
+      const cxr = px + dx * c.range;
+      const cyr = py + dy * c.range;
+      this.spawnSkillRing(cxr, cyr, c.radius, 0x7a3fb0);
+      this.aoeHitAll(cxr, cyr, c.radius, this.skillDamage(c.damage));
+    } else if (action === 'necro_dm_singularity') {
+      this.castSingularity(); // Dark Matter #10 capstone — pull + heavy AoE over time
     } else if (action === 'wiz_icicle') {
       // Ice/Poison #1 — piercing ice shard (passes through several enemies).
       const c = ICEPOISON_TUNING.icicle;
@@ -2830,6 +2888,40 @@ export class MainScene extends Phaser.Scene {
     this.lastCombatTime = this.time.now;
   }
 
+  /** SINGULARITY (Dark Matter #10 capstone): a black-hole at a spot ahead that, over its
+   *  life, PULLS nearby enemies toward its center AND deals heavy AoE damage each pulse.
+   *  Reuses the placed-AoE pattern + a PULL (reverse of knockbackEnemiesInRange). */
+  private castSingularity(): void {
+    const c = DM_TUNING.singularity;
+    const { dx, dy } = this.facingUnit();
+    const cx = this.player.x + dx * c.placeAhead;
+    const cy = this.player.y + dy * c.placeAhead;
+    const step = c.durationMs / c.pulses;
+    for (let i = 0; i < c.pulses; i++) {
+      this.time.delayedCall(i * step, () => {
+        if (this.playerDead) return;
+        this.spawnSkillRing(cx, cy, c.radius * (1 - (i / c.pulses) * 0.35), 0x6a3fb0); // collapsing rings
+        this.pullEnemiesInRange(cx, cy, c.radius, c.pullStrength);
+        this.aoeHitAll(cx, cy, c.radius, this.skillDamage(c.damagePerTick));
+      });
+    }
+    this.showBanner('SINGULARITY', 1400);
+    this.lastCombatTime = this.time.now;
+  }
+
+  /** PULL (reverse-knockback): drag enemies in range TOWARD (x,y) by up to `strength` px
+   *  (capped so they never overshoot the center). The mirror of knockbackEnemiesInRange. */
+  private pullEnemiesInRange(x: number, y: number, range: number, strength: number): void {
+    for (const e of this.combatEnemiesInRange(x, y, range)) {
+      const dx = x - e.x;
+      const dy = y - e.y;
+      const len = Math.hypot(dx, dy);
+      if (len < 2) continue;
+      const stepLen = Math.min(len - 1, strength);
+      e.sprite.setPosition(e.x + (dx / len) * stepLen, e.y + (dy / len) * stepLen);
+    }
+  }
+
   /** Iron Pyrite (capstone form): the player's attacks STAGGER (briefly stun) enemies hit. */
   private applyStaggerIfActive(x: number, y: number, range: number): void {
     if (this.skillTimed.some((t) => t.id === IRON_PYRITE_ID)) {
@@ -2908,6 +3000,8 @@ export class MainScene extends Phaser.Scene {
     this.counterReadyAt = 0;
     this.chargeActive = false;
     this.chargeHits.clear();
+    this.darkVulnUntil = 0; // Dark Matter: drop the Tainted defence-down window
+    this.darkVulnMult = 1;
     if (this.playerHealth) this.playerHealth.incomingMultiplier = this.baseIncomingMult;
   }
 
@@ -3010,7 +3104,21 @@ export class MainScene extends Phaser.Scene {
       const o = MARROW_TUNING.osteoAura;
       if (this.combatEnemiesInRange(this.player.x, this.player.y, o.radius).length > 0) osteo = 1 + o.defenseReduction;
     }
+    // TAINTED DARK MATTER defence-down: a timed damage-amp window stacks onto Osteo.
+    if (this.time.now < this.darkVulnUntil) osteo *= this.darkVulnMult;
     this.osteoDamageMult = osteo;
+    // BLIGHT (Dark Matter passive aura): while unlocked, SLOW + (on cadence) DAMAGE nearby foes.
+    if (this.skills.isUnlocked(BLIGHT_ID)) {
+      const b = DM_TUNING.blight;
+      this.slowEnemiesInRange(this.player.x, this.player.y, b.radius, 250, b.slowFactor);
+      if (this.time.now >= this.blightNextTickAt) {
+        this.blightNextTickAt = this.time.now + b.tickMs;
+        if (this.combatEnemiesInRange(this.player.x, this.player.y, b.radius).length > 0) {
+          this.spawnSkillRing(this.player.x, this.player.y, b.radius, 0x6a3fb0);
+          this.aoeHitAll(this.player.x, this.player.y, b.radius, this.skillDamage(b.dmgPerTick));
+        }
+      }
+    }
   }
 
   /** Start a timed BUFF / TRANSFORMATION: add its stats (+ optional tint / aura) until it expires. */
