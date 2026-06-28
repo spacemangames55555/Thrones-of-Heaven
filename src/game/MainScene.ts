@@ -49,6 +49,7 @@ import { classSkills, combineMods, isDamagingActive, isAimableSkill, type SkillD
 import { TANK_TUNING } from '../skills/blacksmithTank';
 import { DPS_TUNING } from '../skills/blacksmithDps';
 import { CONTROL_TUNING, COUNTER_ID, IRON_WILL_ID, DOMINANCE_ID, IRON_PYRITE_ID } from '../skills/blacksmithControl';
+import { MARROW_TUNING, MARROWNAUT_ID, OSTEO_AURA_ID } from '../skills/necromancerMarrow';
 import { WIZARD_FIREWIND_TUNING, WIZ_STORM_ID } from '../skills/wizardFireWind';
 import { ICEPOISON_TUNING } from '../skills/wizardIcePoison';
 import { ETHEREAL_TUNING } from '../skills/wizardEthereal';
@@ -364,6 +365,14 @@ export class MainScene extends Phaser.Scene {
   /** True while a Charge rush is in progress (reuses the dash movement, like Plow). */
   private chargeActive = false;
   private chargeHits = new Set<CombatEnemy>();
+  /** Charge tuning for the current rush (Blacksmith Charge by default; Necro Wrecking Ball
+   *  overrides it). {distance, damage, knockdownMs}. */
+  private chargeCfg: { distance: number; damage: number; knockdownMs: number } = CONTROL_TUNING.charge;
+  // --- Necromancer (Marrow) primitives ---
+  /** TAUNT: while now < tauntUntil, every enemy targets the PLAYER (overrides summon aggro). */
+  private tauntUntil = 0;
+  /** OSTEO AURA: player-damage multiplier vs enemies whose defense the aura has lowered (1 = off). */
+  private osteoDamageMult = 1;
 
   // Progression / leveling. Level-derived maxHP + damage feed the combat above.
   private progression!: PlayerProgression;
@@ -1403,7 +1412,7 @@ export class MainScene extends Phaser.Scene {
 
   /** The live melee damage (level-derived × skill multiplier from passives + buffs/forms). */
   private playerDamage(): number {
-    return Math.round(this.progression.effectiveDamage * this.skillDamageMult);
+    return Math.round(this.progression.effectiveDamage * this.skillDamageMult * this.osteoDamageMult);
   }
 
   /** Level-derived max HP adjusted by skill passive/timed maxHP mods. */
@@ -1452,6 +1461,10 @@ export class MainScene extends Phaser.Scene {
     if (this.player) {
       if (form) this.player.sprite.setTint(form.tint!).setTintMode(Phaser.TintModes.MULTIPLY);
       else this.player.sprite.clearTint();
+      // MARROWNAUT (Necromancer): the bone-suit is a far LARGER form — scale the avatar
+      // up while it's active, revert otherwise (the only form with a size change).
+      const marrownaut = this.skillTimed.some((t) => t.id === MARROWNAUT_ID);
+      this.player.sprite.setScale(marrownaut ? MARROW_TUNING.marrownaut.scale : 1);
     }
     // Refresh the loadout bar: the 6 equipped skills + their labels.
     this.refreshLoadoutBar();
@@ -1783,7 +1796,94 @@ export class MainScene extends Phaser.Scene {
       this.ankhArmedUntil = this.time.now + c.armedMs;
       this.spawnSkillRing(px, py, 90, 0xffe9a8);
       this.showBanner('Ankh of Life armed', 1400);
+    } else if (action === 'necro_bone_dart') {
+      // Marrow #1 — ranged single-target bone shot (the entry damaging active).
+      const c = MARROW_TUNING.boneDart;
+      const { dx, dy } = this.facingUnit();
+      this.projectiles.spawn({ x: px + dx * 18, y: py + dy * 18, dirX: dx, dirY: dy, speed: c.speed, damage: this.skillDamage(c.damage), maxRange: c.range, faction: 'player', color: 0xe9e4d6, radius: c.radius });
+      this.notifyBossesPlayerAction('ranged');
+    } else if (action === 'necro_spiked_punch') {
+      // Marrow #2 — bone-fist melee in front + TAUNT the struck foe(s) onto the player.
+      const c = MARROW_TUNING.spikedPunch;
+      const fx = px + this.player.facingX * c.range * 0.6;
+      const fy = py + this.player.facingY * c.range * 0.6;
+      this.spawnSkillRing(fx, fy, c.range, 0xd9d2c2);
+      this.aoeHitAll(fx, fy, c.range, this.skillDamage(c.damage));
+      this.tauntEnemiesInRange(fx, fy, c.range, c.tauntMs);
+    } else if (action === 'necro_bone_nova') {
+      // Marrow #3 — shockwave around the player: damage + knockback + brief taunt.
+      const c = MARROW_TUNING.boneNova;
+      this.spawnSkillRing(px, py, c.radius, 0xe9e4d6);
+      this.aoeHitAll(px, py, c.radius, this.skillDamage(c.damage));
+      this.knockbackEnemiesInRange(px, py, c.radius, c.knockback, 160);
+      this.tauntEnemiesInRange(px, py, c.radius, c.tauntMs);
+    } else if (action === 'necro_stake') {
+      // Marrow #6 — drive a stake through the nearest foe in front: ROOT (movement-lock).
+      const c = MARROW_TUNING.stake;
+      const fx = px + this.player.facingX * c.range * 0.6;
+      const fy = py + this.player.facingY * c.range * 0.6;
+      if (c.damage > 0) this.aoeHitAll(fx, fy, c.range, this.skillDamage(c.damage));
+      this.rootNearestEnemy(fx, fy, c.range, c.rootMs);
+    } else if (action === 'necro_wrecking_ball') {
+      // Marrow #9 — charge into a crowd: damage + KNOCKDOWN along the path (reuses Charge).
+      this.startCharge(MARROW_TUNING.wreckingBall);
+    } else if (action === 'necro_grasp') {
+      // Marrow #10 — capstone lifesteal: drain the nearest foe in front; heal a portion.
+      const c = MARROW_TUNING.graspOfDeath;
+      const fx = px + this.player.facingX * c.range * 0.6;
+      const fy = py + this.player.facingY * c.range * 0.6;
+      this.spawnSkillRing(fx, fy, c.range, 0x9a6cff);
+      const target = this.nearestEnemy(fx, fy, c.range);
+      if (target) {
+        const dealt = target.takeHit(this.skillDamage(c.damage));
+        if (dealt > 0) {
+          this.dmgDealtAccum += dealt;
+          this.spawnDamageNumber(target.x, target.y - 24, dealt, '#c8a8ff');
+          const heal = Math.round(dealt * c.healPct);
+          if (heal > 0 && this.playerHealth.current < this.playerHealth.max) {
+            this.playerHealth.heal(heal);
+            this.spawnDamageNumber(px, py - 30, heal, '#a8ffd0');
+          }
+        }
+      }
     }
+  }
+
+  /** TAUNT (reusable): draw nearby enemies' aggro onto the PLAYER for `ms` (overrides
+   *  summon aggro via enemyMoveTarget) + a brief marker over each taunted foe. The
+   *  taunt is global-while-active (most impactful once allied summons exist). */
+  private tauntEnemiesInRange(x: number, y: number, range: number, ms: number): void {
+    const hit = this.combatEnemiesInRange(x, y, range);
+    if (hit.length === 0) return;
+    this.tauntUntil = Math.max(this.tauntUntil, this.time.now + ms);
+    for (const e of hit) {
+      const mark = this.add.text(e.x, e.y - 30, '!', { fontFamily: 'system-ui, sans-serif', fontSize: '16px', color: '#ff6a6a', fontStyle: 'bold' }).setOrigin(0.5).setDepth(14);
+      this.worldFx.add(mark);
+      this.tweens.add({ targets: mark, y: e.y - 44, alpha: 0, duration: 700, onComplete: () => mark.destroy() });
+    }
+  }
+
+  /** The nearest live enemy within `range` of (x,y), or null. */
+  private nearestEnemy(x: number, y: number, range: number): CombatEnemy | null {
+    let best: CombatEnemy | null = null;
+    let bestD = range;
+    for (const e of this.combatEnemiesInRange(x, y, range)) {
+      const d = Phaser.Math.Distance.Between(x, y, e.x, e.y);
+      if (d <= bestD) { bestD = d; best = e; }
+    }
+    return best;
+  }
+
+  /** ROOT (reusable; extends the stun freeze): immobilize the single nearest enemy in
+   *  range for `ms` — it can't move but may still act. A bone-stake spike marks it. */
+  private rootNearestEnemy(x: number, y: number, range: number, ms: number): void {
+    const e = this.nearestEnemy(x, y, range);
+    if (!e) return;
+    this.stunnedEnemies.set(e, this.time.now + ms);
+    this.freezeEnemyBody(e, true);
+    const spike = this.add.text(e.x, e.y - 28, '⊤', { fontFamily: 'system-ui, sans-serif', fontSize: '18px', color: '#d9d2c2', fontStyle: 'bold' }).setOrigin(0.5).setDepth(14);
+    this.worldFx.add(spike);
+    this.tweens.add({ targets: spike, alpha: 0, duration: ms, onComplete: () => spike.destroy() });
   }
 
   /** BLINK (Ethereal #5): instantly teleport forward, stopping short of blocking terrain. */
@@ -2159,18 +2259,18 @@ export class MainScene extends Phaser.Scene {
 
   /** CHARGE (Control #1): a forward rush reusing the dash movement; enemies in the
    *  path are damaged + KNOCKED DOWN (a brief stun). Independent of the dodge cooldown. */
-  private startCharge(): void {
-    const c = CONTROL_TUNING.charge;
+  private startCharge(cfg: { distance: number; damage: number; knockdownMs: number } = CONTROL_TUNING.charge): void {
+    this.chargeCfg = cfg;
     const len = Math.hypot(this.player.facingX, this.player.facingY) || 1;
     this.dashDir = { x: this.player.facingX / len, y: this.player.facingY / len };
-    this.dashEndsAt = this.time.now + (c.distance / DASH_SPEED) * 1000;
+    this.dashEndsAt = this.time.now + (cfg.distance / DASH_SPEED) * 1000;
     this.chargeHits.clear();
     this.chargeActive = true;
   }
 
   /** CHARGE per-frame: damage + knock down each enemy in the path once. */
   private chargeTick(): void {
-    const c = CONTROL_TUNING.charge;
+    const c = this.chargeCfg;
     const px = this.player.x;
     const py = this.player.y;
     const r = DASH_HIT_RADIUS + 16;
@@ -2188,7 +2288,7 @@ export class MainScene extends Phaser.Scene {
   /** A skill's base damage scaled by the player's damage multiplier (Berserker's Edge,
    *  Crazed, Prism Quartz) so active abilities scale with offensive passives + buffs. */
   private skillDamage(base: number): number {
-    return Math.round(base * this.skillDamageMult);
+    return Math.round(base * this.skillDamageMult * this.osteoDamageMult);
   }
 
   /** A quick expanding ring FX for a skill activation (world FX, main camera). */
@@ -2284,6 +2384,8 @@ export class MainScene extends Phaser.Scene {
   /** The point an enemy at (ex,ey) should pursue: a nearby aggro-drawing summon, else the
    *  player. Generic — call it at any enemy's update to make summons pull aggro. */
   private enemyMoveTarget(ex: number, ey: number): { x: number; y: number } {
+    // Necromancer TAUNT: while active, enemies focus the player (override summon aggro).
+    if (this.time.now < this.tauntUntil) return { x: this.player.x, y: this.player.y };
     const g = this.summons?.aggroSummonNear(ex, ey);
     return g ? { x: g.x, y: g.y } : { x: this.player.x, y: this.player.y };
   }
@@ -2493,6 +2595,14 @@ export class MainScene extends Phaser.Scene {
     if (this.time.now < this.poisonWeakenUntil) weaken = Math.max(weaken, this.poisonWeakenFactor);
     // Apply: incoming = base × (1 - weaken).
     if (this.playerHealth) this.playerHealth.incomingMultiplier = this.baseIncomingMult * (1 - weaken);
+    // OSTEO AURA (Necromancer): while unlocked and foes crowd you, their lowered defense
+    // makes your strikes bite deeper — a player-damage amplifier (read by skillDamage/playerDamage).
+    let osteo = 1;
+    if (this.skills.isUnlocked(OSTEO_AURA_ID)) {
+      const o = MARROW_TUNING.osteoAura;
+      if (this.combatEnemiesInRange(this.player.x, this.player.y, o.radius).length > 0) osteo = 1 + o.defenseReduction;
+    }
+    this.osteoDamageMult = osteo;
   }
 
   /** Start a timed BUFF / TRANSFORMATION: add its stats (+ optional tint / aura) until it expires. */
@@ -6351,6 +6461,7 @@ export class MainScene extends Phaser.Scene {
       { label: 'Reset Skills', onPress: () => this.devResetSkills() },
       { label: 'Set Class: Wizard', onPress: () => this.devSetClass('wizard') },
       { label: 'Set Class: Blacksmith', onPress: () => this.devSetClass('blacksmith') },
+      { label: 'Set Class: Necromancer', onPress: () => this.devSetClass('necromancer') },
       { label: 'Summon Ice Golem', onPress: () => this.summonIceGolem() },
       { label: 'Clear Summons', onPress: () => this.summons.clear() },
       { label: 'Toggle Aim-Assist', onPress: () => this.devToggleAimAssist() },

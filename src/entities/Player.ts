@@ -3,12 +3,15 @@ import { RUN_SPEED } from '../game/settings';
 
 const TEXTURE_KEY = 'player-figure'; // Blacksmith (gold soul/herald) avatar
 const WIZARD_TEXTURE_KEY = 'wizard-figure'; // Wizard (Egyptian sorcerer) avatar
+const NECRO_TEXTURE_KEY = 'necro-figure'; // Necromancer (Slavic death-sorcerer) avatar
 const WIDTH = 32; // ~1 tile wide
 const HEIGHT = 48; // ~1.5 tiles tall — fixes the "character = one giant block" look
 
 /** Pick the avatar texture for a class id (defaults to the Blacksmith figure). */
 function textureForClass(classId: string): string {
-  return classId === 'wizard' ? WIZARD_TEXTURE_KEY : TEXTURE_KEY;
+  if (classId === 'wizard') return WIZARD_TEXTURE_KEY;
+  if (classId === 'necromancer') return NECRO_TEXTURE_KEY;
+  return TEXTURE_KEY;
 }
 
 /**
@@ -25,6 +28,7 @@ export class Player {
   constructor(scene: Phaser.Scene, x: number, y: number, classId: string = 'blacksmith') {
     Player.ensureTexture(scene);
     Player.ensureWizardTexture(scene);
+    Player.ensureNecroTexture(scene);
 
     this.sprite = scene.physics.add.sprite(x, y, textureForClass(classId));
     this.sprite.setCollideWorldBounds(true);
@@ -148,6 +152,42 @@ export class Player {
     g.fillStyle(0xff7a2a, 1);
     g.fillCircle(w - 6, 11, 3);
     g.generateTexture(WIZARD_TEXTURE_KEY, w, h);
+    g.destroy();
+  }
+
+  /** The Necromancer avatar — a NW-Russia / Slavic death-sorcerer: charcoal-black
+   *  hooded robe with ash-grey trim, a pale skull face in the cowl, and a small
+   *  bone wand. Same footprint as the other figures (class-agnostic body). */
+  private static ensureNecroTexture(scene: Phaser.Scene): void {
+    if (scene.textures.exists(NECRO_TEXTURE_KEY)) return;
+    const w = WIDTH;
+    const h = HEIGHT;
+    const g = scene.make.graphics({ x: 0, y: 0 }, false);
+    // Dark outline + charcoal robe body (a vertical caster capsule).
+    g.fillStyle(0x06060a, 1);
+    g.fillRoundedRect(4, 8, w - 8, h - 10, 9);
+    g.fillStyle(0x24242c, 1); // charcoal-black robe
+    g.fillRoundedRect(6, 10, w - 12, h - 14, 7);
+    // Ash-grey trim down the center + a bone clasp.
+    g.fillStyle(0x8a8f99, 1);
+    g.fillRect(w / 2 - 1, 18, 2, h - 24);
+    g.fillStyle(0xd9d2c2, 1); // pale bone clasp
+    g.fillCircle(w / 2, 20, 2.2);
+    // Black hood drape framing a pale skull face.
+    g.fillStyle(0x06060a, 1);
+    g.fillRoundedRect(w / 2 - 9, 5, 18, 14, 5);
+    g.fillStyle(0xe9e4d6, 1); // pale skull
+    g.fillCircle(w / 2, 13, 5.5);
+    g.fillStyle(0x06060a, 1); // hollow eye sockets
+    g.fillCircle(w / 2 - 2.2, 12, 1.5);
+    g.fillCircle(w / 2 + 2.2, 12, 1.5);
+    g.fillRect(w / 2 - 0.7, 14, 1.4, 2.5); // nasal cavity
+    // A small bone wand with a cold violet tip on the right.
+    g.fillStyle(0xd9d2c2, 1);
+    g.fillRect(w - 7, 12, 2, h - 20);
+    g.fillStyle(0x9a6cff, 1);
+    g.fillCircle(w - 6, 11, 3);
+    g.generateTexture(NECRO_TEXTURE_KEY, w, h);
     g.destroy();
   }
 }

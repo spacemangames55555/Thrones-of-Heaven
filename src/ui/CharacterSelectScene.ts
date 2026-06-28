@@ -10,19 +10,19 @@ interface ClassOption {
   comingSoon?: boolean;
 }
 
-/** The selectable classes (Necromancer is a later batch → "Coming Soon"). */
+/** The selectable classes (all three are now playable). */
 const CLASS_OPTIONS: ClassOption[] = [
   { id: 'blacksmith', name: 'Blacksmith', blurb: 'Tanky bruiser. High HP, melee + shield skills across three Crystal trees.', fill: 0x5a3a12, stroke: 0xffd24a },
   { id: 'wizard', name: 'Wizard', blurb: 'Fragile glass-cannon caster. Low HP, fast, devastating Fire/Wind spells.', fill: 0x21347a, stroke: 0x6aa6ff },
-  { id: 'necromancer', name: 'Necromancer', blurb: 'Commands the dead. Coming soon.', fill: 0x2a2433, stroke: 0x5a4a6a, comingSoon: true },
+  { id: 'necromancer', name: 'Necromancer', blurb: 'Slavic death-sorcerer. In-between durability; bone strikes, taunts, a root, and the Marrownaut bone-suit across the Marrow tree.', fill: 0x2a2433, stroke: 0x9a6cff },
 ];
 
 /**
  * CHARACTER SELECT (mobile, its own scene → own camera, fixed + unzoomed). Shown after
  * "New Game" on the Title screen. Picking a playable class launches MainScene with that
- * class; under the no-kit model the run then opens on the forced first-skill pick. The
- * Necromancer is shown but disabled ("Coming Soon"). The save slot was already cleared
- * by the Title screen's overwrite confirm before we got here.
+ * class; under the no-kit model the run then opens on the forced first-skill pick. All
+ * three classes (Blacksmith, Wizard, Necromancer) are selectable. The save slot was
+ * already cleared by the Title screen's overwrite confirm before we got here.
  */
 export class CharacterSelectScene extends Phaser.Scene {
   constructor() {
