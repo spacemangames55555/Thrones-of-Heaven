@@ -307,15 +307,15 @@ export class MainScene extends Phaser.Scene {
   private readout!: DebugReadout;
   private town!: TownFeatures;
   private npc!: Npc;
-  // Act I (Enumclaw opening) quest-givers + the Olympia grain recipient. Givers
+  // Act I (Enumclaw opening) quest-givers + the Olympia water-pump recipient (Della). Givers
   // plug into the same data-driven questGivers pipeline as the corruption NPC.
   private act1Givers: Npc[] = [];
   private act2Givers: Npc[] = [];
-  private olympiaNpc!: Npc;
+  private olympiaNpc!: Npc; // DELLA — the Olympia woman who receives Marta's water pump (Q1); reusable for the Act IV callback
   // Investigation arc (Quests 8–12) NPCs: Yakima givers (Wend/Halvard), the Seattle
   // Druids (Rowan giver + Alder the vessel-examiner), Bellingham's Greta, Longview's
   // Mire. `deliverNpcs` are recipient NPCs that COMPLETE an objective when talked to
-  // while its trigger is active (Olympia grain, Alder's exam, Mire's verdict).
+  // while its trigger is active (Della's water pump, Alder's exam, Mire's verdict).
   private invGivers: Npc[] = [];
   private deliverNpcs: { npc: Npc; trigger: ObjectiveTrigger; lines: string[]; idle: string }[] = [];
   // Seattle — the Druid tree-house city (Quests 10–11). Its forest/tree-house tiles
@@ -741,8 +741,10 @@ export class MainScene extends Phaser.Scene {
     // Act I (Enumclaw opening) quest-givers — Marta, Hollis, BranDen, Edda — set
     // around the home plaza, each a plain Npc whose per-state dialogue comes from
     // its QuestDef via the questGivers pipeline. Placed at small tile offsets from
-    // spawn so they sit on walkable town ground. The Olympia recipient (grain
-    // delivery) lives far SW at OLYMPIA_POSITION and is handled specially on talk.
+    // spawn so they sit on walkable town ground. The Olympia recipient — DELLA, the
+    // named woman who receives Marta's WATER PUMP (Q1) — lives far SW at OLYMPIA_POSITION
+    // as a reusable NPC (this.olympiaNpc) so a later Act IV quest can send the player BACK
+    // to her + the same pump (the callback). Handled specially on talk (deliverNpcs).
     const sp = this.town.spawn;
     const ts = this.map.tileSize;
     this.act1Givers = [
@@ -780,7 +782,7 @@ export class MainScene extends Phaser.Scene {
     for (const g of [...this.invGivers, this.alderNpc, this.mireNpc, greta]) this.physics.add.collider(this.player.sprite, g.sprite);
     // Recipient NPCs (talk while the trigger is active → completes the objective).
     this.deliverNpcs = [
-      { npc: this.olympiaNpc, trigger: 'grain-delivered', lines: [...OLYMPIA_DELIVERY_LINES], idle: 'Olympian: Safe travels, friend. The road’s kinder than it used to be.' },
+      { npc: this.olympiaNpc, trigger: 'pump-delivered', lines: [...OLYMPIA_DELIVERY_LINES], idle: 'Della: The garden’s drinking deep again, thanks to you. Safe travels, friend — and don’t be a stranger.' },
       { npc: greta, trigger: 'bellingham-thanked', lines: [...GRETA_LINES], idle: 'Greta: The fields are ours again, thanks to you. Safe travels.' },
       { npc: this.alderNpc, trigger: 'contraption-examined', lines: [...ALDER_EXAM_LINES], idle: 'Alder: The roots are uneasy of late. Walk carefully, friend.' },
       { npc: this.mireNpc, trigger: 'mire-verdict', lines: [...MIRE_VERDICT_LINES], idle: 'Mire: I’ve said my piece. Leave an old exile to the quiet.' },
@@ -1375,6 +1377,18 @@ export class MainScene extends Phaser.Scene {
     this.recomputeSkillEffects();
     this.autosave();
     return true;
+  }
+
+  /** DEV: spawn one Townsfolk-variant enemy (Act IV reskins) next to the player to eyeball it. */
+  private devSpawnTownsfolkVariant(variant: TownsfolkVariant): void {
+    this.spawnTownsfolk(this.player.x + 80, this.player.y, null, variant); // null target → hunts the player
+    this.showBanner(`Spawned: ${variant}`, 1000);
+  }
+
+  /** DEV: spawn one Angel-variant enemy (Act IV variants) near the player to eyeball it. */
+  private devSpawnAngelVariant(key: AngelVariantKey): void {
+    this.spawnAngel(key, this.player.x + 110, this.player.y);
+    this.showBanner(`Spawned: ${key} angel`, 1000);
   }
 
   /** Activate the skill equipped in loadout `slot` (no-op for an empty slot). */
@@ -6109,8 +6123,8 @@ export class MainScene extends Phaser.Scene {
     const trig = this.chain.activeTrigger;
     switch (trig) {
       // --- Act I (Enumclaw opening) ---
-      case 'grain-delivered':
-        // Delivery is handled by the Olympia recipient NPC on talk; nothing to spawn.
+      case 'pump-delivered':
+        // Delivery is handled by Della (the Olympia recipient NPC) on talk; nothing to spawn.
         this.arcMode = 'none';
         break;
       case 'wolves-defeated':
@@ -6509,7 +6523,7 @@ export class MainScene extends Phaser.Scene {
     this.controls.setEnabled(false);
     this.player.setDirection(0, 0);
 
-    // A DELIVER/RECIPIENT NPC (Olympia grain, Alder's vessel exam, Mire's verdict):
+    // A DELIVER/RECIPIENT NPC (Della's water pump, Alder's vessel exam, Mire's verdict):
     // if its objective trigger is active, play the lines and complete it; otherwise a
     // short flavor line. Reusable registry (built in create()).
     const deliver = this.deliverNpcs.find((d) => d.npc === target);
@@ -7005,6 +7019,16 @@ export class MainScene extends Phaser.Scene {
       { label: 'Clear Summons', onPress: () => this.summons.clear() },
       { label: 'Unlock Summons Tree', onPress: () => this.devUnlockSummons() },
       { label: 'Reset Skill Trees', onPress: () => this.resetSkillTrees() },
+      // Act IV enemy variants — spawn one next to the player to eyeball look/stats.
+      { label: 'Spawn Lesser Angel', onPress: () => this.devSpawnAngelVariant('lesser') },
+      { label: 'Spawn Warden Angel', onPress: () => this.devSpawnAngelVariant('warden') },
+      { label: 'Spawn Herald Angel', onPress: () => this.devSpawnAngelVariant('herald') },
+      { label: 'Spawn City Guard', onPress: () => this.devSpawnTownsfolkVariant('cityguard') },
+      { label: 'Spawn Caravan Guard', onPress: () => this.devSpawnTownsfolkVariant('caravanguard') },
+      { label: 'Spawn Defender', onPress: () => this.devSpawnTownsfolkVariant('defender') },
+      { label: 'Spawn Bear', onPress: () => this.devSpawnTownsfolkVariant('bear') },
+      { label: 'Spawn Eagle', onPress: () => this.devSpawnTownsfolkVariant('eagle') },
+      { label: 'Spawn Crab', onPress: () => this.devSpawnTownsfolkVariant('crab') },
       { label: 'Toggle Aim-Assist', onPress: () => this.devToggleAimAssist() },
       { label: 'Cycle Aim Cone', onPress: () => this.devCycleAimCone() },
       { label: 'Start Portal Defense', onPress: () => this.devStartPortalDefense() },

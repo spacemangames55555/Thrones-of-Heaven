@@ -22,7 +22,7 @@ export const URIEL_SCENE = {
   lines: [
     'Uriel: Do not be afraid. I am Uriel. I am sent to you.',
     'Uriel: The dark ones you have seen are no sickness, no madness of nature. They are the dead. They feed on the Light — the life of all things — and what they take does not return. Left unchecked, they will hollow this valley until nothing living remains.',
-    'Uriel: But you stood against them when others fled. I have watched you — since you carried grain to the hungry, since you turned back the wolf and the raider. And I have chosen you.',
+    'Uriel: But you stood against them when others fled. I have watched you — since you bore a neighbor’s burden down a long road, since you turned back the wolf and the raider. And I have chosen you.',
     'Uriel: Find where the dark ones fester, and burn it out at the root. I will guide your hand. Heed me, and your home may yet be saved. Turn away, and Enumclaw will be the first of many to fall. The choice is yours.',
     'Uriel: Go. You are not alone in this. You never were.',
   ],
