@@ -27,6 +27,7 @@ import { WIZARD_ICEPOISON_SKILLS, WIZ_ICEPOISON_TREE } from './wizardIcePoison';
 import { WIZARD_ETHEREAL_SKILLS, WIZ_ETHEREAL_TREE } from './wizardEthereal';
 import { MARROW_TREE_SKILLS, MARROW_TREE } from './necromancerMarrow';
 import { SUMMON_TEST_SKILLS, SUMMON_TEST_TREE } from './necromancerSummonTest';
+import { PRIMITIVE_TEST_SKILLS, PRIMITIVE_TEST_TREE } from './necromancerPrimitiveTest';
 
 /** How many active skills the player can equip to on-screen slots. */
 export const LOADOUT_SLOTS = 6;
@@ -146,11 +147,55 @@ export type SkillEffect =
       /** Optional radiant aura while transformed: damage per pulse + its radius. */
       auraDamage?: number;
       auraRadius?: number;
+    }
+  /**
+   * CHANNELED BEAM (tap-to-channel, auto-lock NEAREST enemy, interrupt-on-act). On a single
+   * tap it locks the nearest enemy within `range`, beams for `durationMs` (or until that
+   * enemy dies), dealing `damagePerTick` every `tickMs`. MOVING or activating ANY skill
+   * interrupts it; the cooldown then runs (× `interruptCooldownFraction` for an interrupt,
+   * default 1 = full). Optional `resourcePerSec` trickles energy back while channeling.
+   * (Reused later by Death Channel / Dark Energy Beam.)
+   */
+  | {
+      kind: 'channel';
+      cooldownMs: number;
+      range: number;
+      durationMs: number;
+      damagePerTick: number;
+      tickMs: number;
+      energyCost?: number;
+      resourcePerSec?: number;
+      interruptCooldownFraction?: number;
+    }
+  /**
+   * STACKING DoT. On activation, applies one DoT STACK to the nearest enemy within `range`;
+   * re-casting ADDS another stack (each with its own `durationMs`), up to `maxStacks` (at the
+   * cap the oldest stack's duration refreshes). Total damage = the SUM of active stacks
+   * (every stack ticks `dmgPerTick` every `tickMs`). Built on — and additive to — the existing
+   * non-stacking DoT system. (Reused later by Entropy Cascade / Internal Collapse.)
+   */
+  | {
+      kind: 'stacking_dot';
+      cooldownMs: number;
+      range: number;
+      dmgPerTick: number;
+      tickMs: number;
+      durationMs: number;
+      maxStacks: number;
+      energyCost?: number;
+      color?: number;
     };
 
 /** True for the activatable kinds (they get an on-screen skill button). */
 export function isActivatable(e: SkillEffect): boolean {
-  return e.kind === 'active' || e.kind === 'buff' || e.kind === 'debuff' || e.kind === 'transformation';
+  return (
+    e.kind === 'active' ||
+    e.kind === 'buff' ||
+    e.kind === 'debuff' ||
+    e.kind === 'transformation' ||
+    e.kind === 'channel' ||
+    e.kind === 'stacking_dot'
+  );
 }
 
 export interface SkillDef {
@@ -288,6 +333,7 @@ const NECROMANCER: ClassSkills = {
   trees: [
     { id: MARROW_TREE, name: 'Marrow' }, // 10 tank/solo skills → Grasp of Death (opens on Bone Dart)
     { id: SUMMON_TEST_TREE, name: 'Summons (TEST)' }, // TEMP scaffolding for the summon foundation
+    { id: PRIMITIVE_TEST_TREE, name: 'Primitives (TEST)' }, // TEMP scaffolding for channel + stacking-DoT
   ],
   skills: [
     // --- MARROW TREE (10 skills, linear → Grasp of Death). Data in necromancerMarrow.ts. ---
@@ -295,6 +341,9 @@ const NECROMANCER: ClassSkills = {
     // --- SUMMON FOUNDATION TEST SKILLS (temporary; freeUnlock; replaced by the real Summons
     //     tree later). None is a damaging active, so Bone Dart stays the only first-skill opener. ---
     ...SUMMON_TEST_SKILLS,
+    // --- PRIMITIVE TEST SKILLS (temporary; freeUnlock): Test Beam (channel) + Test Decay
+    //     (stacking DoT). Prove the two new primitives; not damaging actives → no opener. ---
+    ...PRIMITIVE_TEST_SKILLS,
   ],
 };
 
