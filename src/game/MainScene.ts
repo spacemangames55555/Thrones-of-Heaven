@@ -45,7 +45,7 @@ import { HealthBar } from '../combat/HealthBar';
 import { HolyBoltButton } from '../ui/HolyBoltButton';
 import { LoadoutBar } from '../ui/LoadoutBar';
 import { SkillState } from '../skills/SkillState';
-import { classSkills, combineMods, isDamagingActive, isAimableSkill, type SkillDef, type SkillStatMods, type ActiveActionId, type ClassId } from '../skills/skillData';
+import { classSkills, combineMods, isDamagingActive, isAimableSkill, type SkillDef, type SkillStatMods, type SkillEffect, type ActiveActionId, type ClassId } from '../skills/skillData';
 import { TANK_TUNING } from '../skills/blacksmithTank';
 import { DPS_TUNING } from '../skills/blacksmithDps';
 import { CONTROL_TUNING, COUNTER_ID, IRON_WILL_ID, DOMINANCE_ID, IRON_PYRITE_ID } from '../skills/blacksmithControl';
@@ -417,7 +417,13 @@ export class MainScene extends Phaser.Scene {
   private spellHazards: { x: number; y: number; radius: number; tickDamage: number; tickMs: number; nextTickAt: number; expireAt: number; slowFactor: number; weaken: number; fx: Phaser.GameObjects.Arc }[] = [];
   /** Active per-target DoTs (Toxic Bolt / Plague). Plague carries a shared spread budget so
    *  the contagion jumps to nearby enemies up to a cap. Reusable damage-over-time primitive. */
-  private dots: { target: CombatEnemy; dmgPerTick: number; tickMs: number; nextTickAt: number; expireAt: number; color: number; spread?: { radius: number; budget: { remaining: number } } }[] = [];
+  private dots: { target: CombatEnemy; dmgPerTick: number; tickMs: number; nextTickAt: number; expireAt: number; color: number; spread?: { radius: number; budget: { remaining: number } }; stackKey?: string }[] = [];
+  /**
+   * CHANNELED-BEAM state (the channel primitive). Transient: a single active channel locks
+   * one enemy, ticks damage, optionally trickles energy, and is cancelled by movement / any
+   * other skill / target death / duration. Not serialized (cleared on reset/load/death).
+   */
+  private channel: { skillId: string; target: CombatEnemy; endsAt: number; nextTickAt: number; tickMs: number; dmgPerTick: number; resourcePerSec: number; cooldownMs: number; interruptFraction: number; resourceAccum: number; beam: Phaser.GameObjects.Graphics } | null = null;
   /** Timed player-incoming WEAKEN from Ice/Poison effects (Frostbite / Freezing Rain /
    *  Pestilence) — folded into updateControlEffects, same model as the Blacksmith weaken. */
   private poisonWeakenUntil = 0;
@@ -1088,6 +1094,9 @@ export class MainScene extends Phaser.Scene {
       if (this.time.now >= this.dashEndsAt) this.endDash();
     } else {
       const dir = this.controls.getDirection();
+      // CHANNEL INTERRUPT-ON-MOVE: any joystick input cancels an active channel (then the
+      // player moves normally). The channel keeps you stationary only because moving ends it.
+      if (this.channel && (dir.x !== 0 || dir.y !== 0)) this.endChannel(true);
       this.player.setDirection(dir.x, dir.y);
     }
 
@@ -1133,7 +1142,8 @@ export class MainScene extends Phaser.Scene {
     this.updateControlEffects();
     this.applyEnemySlows();
     this.updateSpellHazards(); // ground zones (Lava / Black Ice / Freezing Rain / Biohazard / Pestilence)
-    this.updateDots(); // poison DoTs + Plague contagion spread
+    this.updateDots(); // poison DoTs + Plague contagion spread + stacking DoTs
+    this.updateChannel(delta); // channeled beam: tick damage + energy trickle + redraw
     this.projectiles.update(delta, this.player.x, this.player.y, PROJECTILE_PLAYER_HIT_RADIUS);
     this.hazards.update(this.time.now, this.player.x, this.player.y, this.playerDead);
     this.pickups.update(this.player.x, this.player.y);
@@ -1400,6 +1410,20 @@ export class MainScene extends Phaser.Scene {
     this.requireStartingSkill(); // floor respects: never leaves the player unable to attack
   }
 
+  /** DEV: equip a (freeUnlock) primitive TEST skill into the last loadout slot for quick
+   *  mobile testing. Only works as the Necromancer (the test skills are his). */
+  private devEquipTestSkill(id: string): void {
+    if (this.skills.activeClass !== 'necromancer') {
+      this.showBanner('Set Class: Necromancer first', 1200);
+      return;
+    }
+    const slot = id === 'necro_test_beam' ? 4 : 5;
+    if (this.skills.equip(slot, id)) {
+      this.refreshLoadoutBar();
+      this.showBanner('Equipped (slot ' + (slot + 1) + ')', 1000);
+    }
+  }
+
   /** DEV: switch the active class (avatar + base stats + that class's trees/loadout). If
    *  the new class owns no damaging active yet, the forced first-skill pick re-opens. */
   private devSetClass(classId: ClassId): void {
@@ -1519,9 +1543,22 @@ export class MainScene extends Phaser.Scene {
     if (!def || !this.skills.isUnlocked(id)) return;
     const e = def.effect;
     if (e.kind === 'passive') return;
+    // CHANNEL INTERRUPT: pressing ANY skill cancels an active channel first (→ its cooldown).
+    // Tapping the channel's OWN button again just stops it (a clean toggle), no restart.
+    if (this.channel) {
+      const wasSame = this.channel.skillId === id;
+      this.endChannel(true);
+      if (wasSame) return;
+    }
     if (this.time.now < (this.skillCooldownUntil[id] ?? 0)) return; // on cooldown
     const energyCost = 'energyCost' in e ? e.energyCost ?? 0 : 0;
     if (energyCost > 0 && this.energy.current < energyCost) return; // not enough energy
+    // CHANNEL: defer the cooldown to channel END, and only start if a target is in range
+    // (so a whiffed tap costs nothing). Handles its own energy spend.
+    if (e.kind === 'channel') {
+      this.tryStartChannel(id, e);
+      return;
+    }
     // Commit: spend energy + start the cooldown, then fire the effect.
     if (energyCost > 0) {
       this.energy.damage(energyCost);
@@ -1541,6 +1578,14 @@ export class MainScene extends Phaser.Scene {
       this.showBanner(`${this.skillButtonLabel(def)} active!`, 1400);
     } else if (e.kind === 'debuff') {
       this.runDebuffSkill(e.radius);
+    } else if (e.kind === 'stacking_dot') {
+      // STACKING DoT: add one stack to the nearest enemy in range (re-cast to stack).
+      const target = this.nearestEnemy(this.player.x, this.player.y, e.range);
+      if (target) {
+        this.addStackingDot(target, id, this.skillDamage(e.dmgPerTick), e.tickMs, e.durationMs, e.maxStacks, e.color ?? 0x9a6cff);
+      } else {
+        this.showBanner('No target in range', 800);
+      }
     }
   }
 
@@ -2211,6 +2256,41 @@ export class MainScene extends Phaser.Scene {
     this.dots.push({ target, dmgPerTick, tickMs, nextTickAt: now + tickMs, expireAt: now + durationMs, color, spread });
   }
 
+  /**
+   * STACKING-DoT PRIMITIVE (generic; reusable by any stacking-DoT skill). Adds ONE stack of a
+   * DoT keyed by `stackKey` to `target`. Model: each application pushes an INDEPENDENT stack
+   * with its OWN duration, and EVERY stack ticks — so total damage = the sum of active stacks.
+   * Capped at `maxStacks` per (target, stackKey): at the cap, the OLDEST stack's duration
+   * refreshes instead of adding a new one. Built on the same `dots` array as the existing
+   * non-stacking DoTs (which carry no stackKey and are untouched).
+   */
+  private addStackingDot(target: CombatEnemy, stackKey: string, dmgPerTick: number, tickMs: number, durationMs: number, maxStacks: number, color: number): void {
+    if (!target.isAlive) return;
+    const now = this.time.now;
+    const stacks = this.dots.filter((d) => d.target === target && d.stackKey === stackKey);
+    if (stacks.length >= Math.max(1, maxStacks)) {
+      // At the cap: refresh the soonest-to-expire stack (keeps the cloud alive, no growth).
+      let oldest = stacks[0];
+      for (const d of stacks) if (d.expireAt < oldest.expireAt) oldest = d;
+      oldest.expireAt = now + durationMs;
+    } else {
+      this.dots.push({ target, dmgPerTick, tickMs, nextTickAt: now + tickMs, expireAt: now + durationMs, color, stackKey });
+    }
+    const count = this.dots.filter((d) => d.target === target && d.stackKey === stackKey).length;
+    this.spawnStackIndicator(target, count, color);
+  }
+
+  /** A small floating "xN" stack indicator over an enemy each time a stacking DoT is applied. */
+  private spawnStackIndicator(target: CombatEnemy, count: number, color: number): void {
+    const hex = '#' + (color & 0xffffff).toString(16).padStart(6, '0');
+    const t = this.add
+      .text(target.x, target.y - 38, `☠×${count}`, { fontFamily: 'system-ui, sans-serif', fontSize: '14px', color: hex, fontStyle: 'bold' })
+      .setOrigin(0.5)
+      .setDepth(15);
+    this.worldFx.add(t);
+    this.tweens.add({ targets: t, y: target.y - 56, alpha: 0, duration: 800, onComplete: () => t.destroy() });
+  }
+
   /** Per-frame: tick every DoT (+ spread contagion), then prune finished/dead ones. */
   private updateDots(): void {
     if (this.dots.length === 0) return;
@@ -2253,6 +2333,122 @@ export class MainScene extends Phaser.Scene {
     this.shieldUntil = 0;
     this.ankhArmedUntil = 0;
     if (this.playerHealth) this.playerHealth.shield = 0;
+    this.cancelChannelSilent(); // a transient channel never survives a reset/load/death/world swap
+  }
+
+  // --- CHANNELED-BEAM PRIMITIVE -------------------------------------------------
+  //
+  // tap → lock the NEAREST enemy in range → beam for durationMs (or until it dies) → tick
+  // damage + optional energy/sec → cooldown on end. Interrupted by MOVING (any joystick
+  // input) or activating ANY skill (both handled at their source: the move read + activateSkill).
+
+  /** Begin a channel on the nearest enemy in range. Whiffs free (no cost) if nothing is in
+   *  range; else spends the energy and locks on. Cooldown is deferred until the channel ENDS. */
+  private tryStartChannel(id: string, e: Extract<SkillEffect, { kind: 'channel' }>): void {
+    const target = this.nearestEnemy(this.player.x, this.player.y, e.range);
+    if (!target) {
+      this.showBanner('No target in range', 800);
+      return;
+    }
+    if (e.energyCost && e.energyCost > 0) {
+      this.energy.damage(e.energyCost);
+      this.lastEnergySpendTime = this.time.now;
+    }
+    const now = this.time.now;
+    const beam = this.add.graphics().setDepth(11);
+    this.worldFx.add(beam);
+    this.channel = {
+      skillId: id,
+      target,
+      endsAt: now + e.durationMs,
+      nextTickAt: now + e.tickMs,
+      tickMs: e.tickMs,
+      dmgPerTick: e.damagePerTick,
+      resourcePerSec: e.resourcePerSec ?? 0,
+      cooldownMs: e.cooldownMs,
+      interruptFraction: e.interruptCooldownFraction ?? 1,
+      resourceAccum: 0,
+      beam,
+    };
+    this.drawChannelBeam();
+    this.showBanner('Channeling…', 700);
+    this.lastCombatTime = now;
+  }
+
+  /** Per-frame: tick the channel's damage + energy trickle + redraw the beam; end on target
+   *  death or duration. (Movement / other-skill interrupts are handled at their call sites.) */
+  private updateChannel(delta: number): void {
+    const c = this.channel;
+    if (!c) return;
+    const now = this.time.now;
+    // A dialogue/choice opening or the player dying interrupts the channel (clean end).
+    if (this.playerDead || this.dialogue.isOpen() || this.choice.isOpen()) {
+      this.endChannel(true);
+      return;
+    }
+    if (!c.target.isAlive || now >= c.endsAt) {
+      this.endChannel(false); // natural completion (target died or duration elapsed)
+      return;
+    }
+    if (now >= c.nextTickAt) {
+      c.nextTickAt = now + c.tickMs;
+      this.damageOneEnemy(c.target, this.skillDamage(c.dmgPerTick));
+      if (!c.target.isAlive) {
+        this.endChannel(false);
+        return;
+      }
+    }
+    // Optional resource gain (energy/sec) — accrue fractionally, deposit whole points.
+    if (c.resourcePerSec > 0 && this.energy.current < this.energy.max) {
+      c.resourceAccum += (c.resourcePerSec * delta) / 1000;
+      const whole = Math.floor(c.resourceAccum);
+      if (whole > 0) {
+        this.energy.heal(whole);
+        c.resourceAccum -= whole;
+      }
+    }
+    this.drawChannelBeam();
+  }
+
+  /** Draw the beam from the player to the locked target (a glowing violet stream + a node). */
+  private drawChannelBeam(): void {
+    const c = this.channel;
+    if (!c) return;
+    const g = c.beam;
+    const px = this.player.x;
+    const py = this.player.y - 18;
+    const tx = c.target.x;
+    const ty = c.target.y;
+    const pulse = 0.6 + 0.4 * Math.sin(this.time.now / 60);
+    g.clear();
+    g.lineStyle(7, 0x4a2a7a, 0.5); // outer glow
+    g.lineBetween(px, py, tx, ty);
+    g.lineStyle(3, 0x9a6cff, 0.95); // bright core
+    g.lineBetween(px, py, tx, ty);
+    g.fillStyle(0xd9c7ff, pulse);
+    g.fillCircle(tx, ty, 6); // impact node on the target
+    g.fillStyle(0x9a6cff, 0.9);
+    g.fillCircle(px, py, 4); // origin node at the caster
+  }
+
+  /** End the channel and start its cooldown. `interrupted` (move / other-skill / early stop)
+   *  applies the interrupt cooldown fraction (default 1 = full); natural end uses full. */
+  private endChannel(interrupted: boolean): void {
+    const c = this.channel;
+    if (!c) return;
+    c.beam.destroy();
+    this.channel = null;
+    const cd = c.cooldownMs * (interrupted ? c.interruptFraction : 1);
+    this.skillCooldownUntil[c.skillId] = this.time.now + cd;
+    this.skillCooldownDur[c.skillId] = cd;
+    if (interrupted) this.showBanner('Channel interrupted', 800);
+  }
+
+  /** Drop a channel with NO cooldown (reset / load / death / world change). */
+  private cancelChannelSilent(): void {
+    if (!this.channel) return;
+    this.channel.beam.destroy();
+    this.channel = null;
   }
 
   /** Set the timed player-incoming WEAKEN from Ice/Poison effects (latest/strongest wins). */
@@ -6592,6 +6788,8 @@ export class MainScene extends Phaser.Scene {
       { label: 'Summon Dark Matter Monster', onPress: () => this.summonDarkMatterMonster() },
       { label: 'Buff Summons', onPress: () => this.buffSummons() },
       { label: 'Clear Summons', onPress: () => this.summons.clear() },
+      { label: 'Equip Test Beam', onPress: () => this.devEquipTestSkill('necro_test_beam') },
+      { label: 'Equip Test Decay', onPress: () => this.devEquipTestSkill('necro_test_decay') },
       { label: 'Toggle Aim-Assist', onPress: () => this.devToggleAimAssist() },
       { label: 'Cycle Aim Cone', onPress: () => this.devCycleAimCone() },
       { label: 'Start Portal Defense', onPress: () => this.devStartPortalDefense() },
