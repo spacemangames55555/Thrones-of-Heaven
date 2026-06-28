@@ -333,11 +333,17 @@ export interface AngelVariantConfig {
   readonly color: number;
 }
 
-export type AngelVariantKey = 'angel' | 'archangel';
+export type AngelVariantKey = 'angel' | 'archangel' | 'lesser' | 'warden' | 'herald';
 
 /**
- * The two angel variants — pure DATA. Edit a field to retune that variant; both
- * run the SAME behavior/code (AngelEnemy). The Archangel is the boss config.
+ * The angel variants — pure DATA. Edit a field to retune that variant; all run the
+ * SAME behavior/code (AngelEnemy). 'angel'/'archangel' are the originals (Archangel =
+ * the boss config). ACT IV adds three:
+ *   • 'lesser' — weaker/faster fodder (the common Act IV angel, lots of them).
+ *   • 'warden' — tankier/harder-hitting (guarded sites: rivers, the outpost).
+ *   • 'herald' — distinct rose-white look for the NAMED/SPEAKING angels (pleaders/
+ *     warners); moderate stats, its color + scale mark it as "someone."
+ * Spawn any of them with this.spawnAngel('<key>', x, y).
  */
 export const ANGEL_VARIANTS: Record<AngelVariantKey, AngelVariantConfig> = {
   angel: {
@@ -369,6 +375,55 @@ export const ANGEL_VARIANTS: Record<AngelVariantKey, AngelVariantConfig> = {
     holyPowerDrop: 3,
     scale: 1.5,
     color: 0xfff4d0,
+  },
+  // --- ACT IV angel variants (data rows; reuse the AngelEnemy behavior) ---
+  /** LESSER ANGEL — Act IV fodder: low HP, fast, soft bolts. The common many-angel fight. */
+  lesser: {
+    maxHP: 90,
+    projectileDamage: 9,
+    projectileSpeed: 280,
+    projectileRange: 480,
+    fireCooldownMs: 1700,
+    boltsPerVolley: 1,
+    aggroRange: 440,
+    preferredRange: 280,
+    moveTilesPerSec: 6,
+    xpReward: 30,
+    holyPowerDrop: 1,
+    scale: 0.85,
+    color: 0xfff0c0, // pale gold
+  },
+  /** WARDEN ANGEL — guards rivers/the outpost: high HP + damage, multi-bolt, slow + far-ranged. */
+  warden: {
+    maxHP: 300,
+    projectileDamage: 18,
+    projectileSpeed: 300,
+    projectileRange: 560,
+    fireCooldownMs: 1100,
+    boltsPerVolley: 2,
+    aggroRange: 520,
+    preferredRange: 320,
+    moveTilesPerSec: 4.5,
+    xpReward: 90,
+    holyPowerDrop: 2,
+    scale: 1.25,
+    color: 0xcfe0ff, // steel white-blue
+  },
+  /** HERALD ANGEL — the named/speaking angels (pleaders/warners): moderate stats, distinct look. */
+  herald: {
+    maxHP: 180,
+    projectileDamage: 12,
+    projectileSpeed: 270,
+    projectileRange: 520,
+    fireCooldownMs: 1400,
+    boltsPerVolley: 1,
+    aggroRange: 480,
+    preferredRange: 300,
+    moveTilesPerSec: 5,
+    xpReward: 60,
+    holyPowerDrop: 2,
+    scale: 1.15,
+    color: 0xffd0e8, // rose-white — marks "someone"
   },
 };
 
@@ -1171,6 +1226,34 @@ export const RAIDER_MAX_HP = 28;
 export const RAIDER_PLAYER_DAMAGE = 8;
 export const RAIDERS_COUNT = 3;
 
+// --- ACT IV reskinned human + wildlife variant tuning (DATA-only; reuse Townsfolk AI) ---
+//
+// The new Act IV cast as Townsfolk variants (tint + HP + contact damage + XP). Act IV
+// reuses existing 'farmer'/'guardsman'/'raider' where they fit; these cover the rest.
+// NOTE: move speed is a SHARED Townsfolk constant (TOWNSFOLK_MOVE_TILES_PER_SEC), not
+// per-variant in the current schema — tune HP/damage/XP/tint here; speed is global.
+//
+// Humans:
+/** CITY GUARD — Idaho city/town defenders: tankier, trained. */
+export const CITYGUARD_MAX_HP = 50;
+export const CITYGUARD_PLAYER_DAMAGE = 11;
+/** CARAVAN GUARD — trade-day wagon defenders: solid mid-tier. */
+export const CARAVANGUARD_MAX_HP = 38;
+export const CARAVANGUARD_PLAYER_DAMAGE = 9;
+/** TOWNSFOLK DEFENDER — civilian neighbors who take up arms (the 3 Olympia neighbors / Bend folk). */
+export const DEFENDER_MAX_HP = 24;
+export const DEFENDER_PLAYER_DAMAGE = 6;
+// Wildlife (Florence coast hazards):
+/** BEAR — a heavy coastal brute (high HP + hard hits). */
+export const BEAR_MAX_HP = 70;
+export const BEAR_PLAYER_DAMAGE = 16;
+/** EAGLE — a fragile harasser (low HP, quick pecks). */
+export const EAGLE_MAX_HP = 14;
+export const EAGLE_PLAYER_DAMAGE = 7;
+/** CRAB — slow + armored (high HP, modest damage). */
+export const CRAB_MAX_HP = 46;
+export const CRAB_PLAYER_DAMAGE = 8;
+
 /** Olympia delivery point (Q1) — nearest walkable urban tile to the Sound-bound city. */
 export const OLYMPIA_POSITION = { x: 8240, y: 9008 };
 /** The foothills tree line E of Enumclaw (Q2 wolves). */
@@ -1179,7 +1262,7 @@ export const TREE_LINE_POSITION = { x: 11216, y: 6288 };
 export const TACOMA_BEACH_POSITION = { x: 9008, y: 6928 };
 /** Snoqualmie Pass, E/NE in the foothills (Q4 raiders). */
 export const SNOQUALMIE_PASS_POSITION = { x: 12816, y: 5616 };
-/** Proximity (px) that completes the grain delivery when talking to the Olympia recipient. */
+/** Proximity (px) that completes the water-pump delivery when talking to Della in Olympia. */
 export const ACT1_DELIVERY_RANGE = 90;
 
 // --- Act II (corruption escalation) enemy tuning + locations ---------------
@@ -1282,7 +1365,22 @@ export const SEMYAZA = {
  * (a single brute), and 'raider'; Act II adds 'dog' (afflicted pack). `maxHP`/
  * `playerDamage` default to the shared TOWNSFOLK_* values when omitted.
  */
-export type TownsfolkVariant = 'townsperson' | 'guardsman' | 'farmer' | 'wolf' | 'sealion' | 'raider' | 'dog';
+export type TownsfolkVariant =
+  | 'townsperson'
+  | 'guardsman'
+  | 'farmer'
+  | 'wolf'
+  | 'sealion'
+  | 'raider'
+  | 'dog'
+  // --- Act IV humans ---
+  | 'cityguard'
+  | 'caravanguard'
+  | 'defender'
+  // --- Act IV wildlife (Florence coast) ---
+  | 'bear'
+  | 'eagle'
+  | 'crab';
 export const TOWNSFOLK_VARIANTS: Record<
   TownsfolkVariant,
   { color: number; xpReward: number; maxHP?: number; playerDamage?: number }
@@ -1295,6 +1393,14 @@ export const TOWNSFOLK_VARIANTS: Record<
   wolf: { color: 0x8a8f99, xpReward: 12, maxHP: WOLF_MAX_HP, playerDamage: WOLF_PLAYER_DAMAGE }, // grey pack
   sealion: { color: 0x6b5a44, xpReward: 28, maxHP: SEALION_MAX_HP, playerDamage: SEALION_PLAYER_DAMAGE }, // dark brown brute
   raider: { color: 0xc06a5a, xpReward: 20, maxHP: RAIDER_MAX_HP, playerDamage: RAIDER_PLAYER_DAMAGE }, // rust-red brigand
+  // --- Act IV humans (reskins of the Townsfolk melee AI) ---
+  cityguard: { color: 0x6e86c8, xpReward: 26, maxHP: CITYGUARD_MAX_HP, playerDamage: CITYGUARD_PLAYER_DAMAGE }, // deep steel-blue, Idaho city defenders
+  caravanguard: { color: 0xc8a86a, xpReward: 22, maxHP: CARAVANGUARD_MAX_HP, playerDamage: CARAVANGUARD_PLAYER_DAMAGE }, // tan/leather, wagon escorts
+  defender: { color: 0xd9c28a, xpReward: 14, maxHP: DEFENDER_MAX_HP, playerDamage: DEFENDER_PLAYER_DAMAGE }, // homespun straw, civilian neighbors
+  // --- Act IV wildlife (Florence coast) ---
+  bear: { color: 0x5a3f2a, xpReward: 40, maxHP: BEAR_MAX_HP, playerDamage: BEAR_PLAYER_DAMAGE }, // dark brown brute
+  eagle: { color: 0xe8e0d0, xpReward: 16, maxHP: EAGLE_MAX_HP, playerDamage: EAGLE_PLAYER_DAMAGE }, // pale feathered harasser
+  crab: { color: 0xd86a4a, xpReward: 20, maxHP: CRAB_MAX_HP, playerDamage: CRAB_PLAYER_DAMAGE }, // red-shell armored
 };
 
 // --- The wave sequence ---

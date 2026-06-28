@@ -19,7 +19,7 @@ import { WORLD_EARTH, WORLD_HEAVEN, WORLD_HELL, type WorldId } from '../world/wo
  */
 export type ObjectiveTrigger =
   // Act I — the grounded Enumclaw opening (pre-corruption):
-  | 'grain-delivered'
+  | 'pump-delivered'
   | 'wolves-defeated'
   | 'sealion-defeated'
   | 'raiders-defeated'
@@ -227,27 +227,33 @@ export interface QuestDef {
  * ============================================================================
  */
 
-/** [Q1] Spoken by the Olympia recipient when the grain is delivered (fires 'grain-delivered'). */
+/**
+ * [Q1] Spoken by DELLA — the named woman in Olympia — when the water pump is delivered
+ * (fires 'pump-delivered'). She is a REUSABLE NPC at a fixed Olympia house location
+ * (MainScene `olympiaNpc` @ OLYMPIA_POSITION), so a later Act IV quest can send the player
+ * BACK to this same woman + the same pump (the emotional callback). Wholesome — no hint of
+ * anything sinister; the pump is an ordinary irrigation device.
+ */
 export const OLYMPIA_DELIVERY_LINES = [
-  'Olympian: From Marta’s mill, all the way from Enumclaw? Bless her. And bless you for carrying it — that’s a long road.',
-  'Olympian: We’ll eat well this winter because of this. You tell her it arrived safe, and you tell her Olympia says thank you.',
-  'Olympian: ...You’ve got a good way about you, traveler. Folks could use more of that around here.',
+  'Della: Oh — is that the pump? From Marta, up in Enumclaw? You carried this whole machine all the way down here yourself?',
+  'Della: Bless you. My old well’s been near dry all season and my garden with it. With this I can water the rows again — we’ll have greens on the table by spring.',
+  'Della: ...You’ve got a good way about you, traveler. You tell Marta it arrived safe, and you tell her Della says thank you — and that the door’s always open if you’re ever back this way.',
 ];
 
-/** QUEST 1 — "An Honest Day's Work" (giver: MARTA, a miller in Enumclaw; no combat). */
+/** QUEST 1 — "An Honest Day's Work" (giver: MARTA, a miller in Enumclaw; deliver a water pump). */
 export const ACT1_HONEST_DAYS_WORK: QuestDef = {
   id: 'honest-days-work',
   title: 'An Honest Day’s Work',
   prerequisites: [],
-  objectives: [{ text: 'Deliver Marta’s grain to Olympia', trigger: 'grain-delivered', target: 'olympia' }],
+  objectives: [{ text: 'Deliver Marta’s water pump to Della in Olympia', trigger: 'pump-delivered', target: 'olympia' }],
   npcInactiveLines: [
     'Marta: Oh — you’re up early. Good. I was hoping someone with young legs would come by.',
-    'Marta: I’ve got sacks of grain that need to be down in Olympia by week’s end, and my back’s not what it was. The folks down there are counting on it — winter stores, you understand. Half the valley eats from what comes through this mill.',
-    'Marta: It’s a fair walk south and west. Think you can get it there in one piece? I’d be in your debt — and I don’t forget a kindness.',
+    'Marta: I’ve been tinkering all winter and I’ve finally got it — a little hand pump, built from spare mill-iron. There’s a woman down in Olympia, Della, whose well’s gone near dry. This’ll get water to her garden again.',
+    'Marta: It’s a fair walk south and west, and the thing’s a touch heavy. Think you can get it to her in one piece? I’d be in your debt — and I don’t forget a kindness.',
   ],
-  npcActiveLines: ['Marta: Olympia’s south and west. Those winter stores won’t carry themselves.'],
+  npcActiveLines: ['Marta: Della’s down in Olympia, south and west. That pump won’t carry itself — and her garden’s waiting.'],
   npcCompleteLines: [
-    'Marta: Already back? And it got there safe? Ha — I knew I picked right.',
+    'Marta: Already back? And it’s set up and drawing water? Ha — I knew I picked right.',
     'Marta: Here, take this for your trouble. It isn’t much, but it’s honest.',
     'Marta: You keep showing up like this and people are going to start remembering your name. That’s worth more than coin, in a place like this.',
   ],
@@ -268,7 +274,7 @@ export const ACT1_WOLVES_TREE_LINE: QuestDef = {
     { text: 'Drive the wolf pack back from Hollis’s pasture', trigger: 'wolves-defeated', target: 'tree-line' },
   ],
   npcInactiveLines: [
-    'Hollis: You’re the one who ran Marta’s grain down to Olympia, aren’t you? Word travels. Listen — I need help, and I need it before nightfall.',
+    'Hollis: You’re the one who hauled Marta’s pump all the way down to Olympia, aren’t you? Word travels. Listen — I need help, and I need it before nightfall.',
     'Hollis: Wolves. A whole pack’s come down out of the high country, bolder than I’ve ever seen them. They took two of my cattle in as many nights, right out of the lower pasture. My herd’s all I’ve got.',
     'Hollis: I’m no fighter, and I can’t sit out there with a lantern every night. Could you go up to the tree line and drive them back? Put the fear into them — make them think twice about coming down here again.',
     'Hollis: Please. If I lose much more, I lose everything.',
