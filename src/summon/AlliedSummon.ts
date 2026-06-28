@@ -5,6 +5,18 @@ import { TILE_SIZE } from '../render/tileAtlas';
 import type { AlliedSummonConfig } from './summonData';
 
 /**
+ * What an ATTACKER summon needs from the scene each frame to fight: find the nearest enemy
+ * (for movement + targeting) and deal damage (routed through the scene's shared AoE/death
+ * handling so XP/quests/boss logic all fire). Kept narrow so the summon stays decoupled.
+ */
+export interface SummonCombatCtx {
+  /** Nearest live enemy to (x,y) within maxRange, or null. */
+  nearestEnemy(x: number, y: number, maxRange: number): { x: number; y: number; dist: number } | null;
+  /** Deal `damage` to enemies within `range` of (x,y) (reuses the scene's AoE/death path). */
+  attack(x: number, y: number, range: number, damage: number): void;
+}
+
+/**
  * A PLAYER-ALLIED SUMMON — the mirror of an enemy/boss add, allegiance flipped.
  *
  * Generic across summon types via its {@link AlliedSummonConfig}: it has a stable id,
@@ -27,6 +39,14 @@ export class AlliedSummon {
   private readonly speed: number;
   private readonly expireAt: number;
   private dead = false;
+
+  // PET-TARGETED BUFFS (live multipliers pushed in each frame by the manager). damageBonus
+  // scales attack damage; defense is applied via the health pool's incomingMultiplier;
+  // appliedHpMult tracks the max-HP scaling currently baked in so it can be re-scaled/reverted.
+  private damageBonus = 0;
+  private appliedHpMult = 1;
+  /** Next time (ms) this attacker may swing again. */
+  private attackReadyAt = 0;
 
   constructor(scene: Phaser.Scene, x: number, y: number, config: AlliedSummonConfig, id: string) {
     this.id = id;
@@ -62,6 +82,10 @@ export class AlliedSummon {
   get drawsAggro(): boolean {
     return this.config.drawsAggro && !this.dead;
   }
+  /** Aggro priority weight (3-tier hierarchy): higher = enemies prefer this target. */
+  get aggroPriority(): number {
+    return this.config.aggroPriority;
+  }
   get bodyRadius(): number {
     return this.config.bodyRadius;
   }
@@ -93,25 +117,88 @@ export class AlliedSummon {
     return dealt;
   }
 
-  /** Per-frame behavior. Tank: re-approach the player when too far, else hold + soak. */
-  update(playerX: number, playerY: number, _time: number): void {
+  /**
+   * Per-frame behavior.
+   *  - tank: re-approach the player when too far, else hold + soak (no attack).
+   *  - attacker: hunt the nearest enemy within seekRange (while not leashed too far from the
+   *    player), move into attackRange, then swing on cadence; with no enemy near, idle-follow
+   *    the player (so it stays with you instead of wandering). Both reuse simple velocity
+   *    steering, matching the enemy entities' movement.
+   */
+  update(playerX: number, playerY: number, time: number, ctx?: SummonCombatCtx): void {
     if (this.dead) return;
     const body = this.sprite.body as Phaser.Physics.Arcade.Body;
-    if (this.config.behavior === 'tank') {
+    if (this.config.behavior === 'attacker') {
+      this.updateAttacker(body, playerX, playerY, time, ctx);
+    } else {
+      // 'tank' (Ice Golem): hold ground as a meat-shield; re-approach when the player strays.
       const dist = this.distanceTo(playerX, playerY);
       if (dist > this.config.followRange) {
-        const a = Phaser.Math.Angle.Between(this.sprite.x, this.sprite.y, playerX, playerY);
-        body.velocity.set(Math.cos(a) * this.speed, Math.sin(a) * this.speed);
-        this.sprite.setFlipX(playerX < this.sprite.x);
+        this.steerToward(body, playerX, playerY);
       } else {
-        body.velocity.set(0, 0); // hold ground as a meat-shield
+        body.velocity.set(0, 0);
       }
-    } else {
-      // 'attacker' (RESERVED): a future minion moves to the nearest enemy + attacks on
-      // cadence using config.attackDamage / attackCooldownMs. Not built this batch.
-      body.velocity.set(0, 0);
     }
     this.floatBar();
+  }
+
+  /** ATTACKER steering + melee cadence. */
+  private updateAttacker(body: Phaser.Physics.Arcade.Body, playerX: number, playerY: number, time: number, ctx?: SummonCombatCtx): void {
+    const seek = this.config.seekRange ?? this.config.aggroRadius;
+    const leash = this.config.leashRange ?? 600;
+    const enemy = ctx?.nearestEnemy(this.sprite.x, this.sprite.y, seek) ?? null;
+    // Hunt the enemy only while we haven't strayed too far from the player; otherwise return.
+    if (enemy && this.distanceTo(playerX, playerY) <= leash) {
+      const reach = this.config.attackRange ?? 48;
+      if (enemy.dist <= reach) {
+        body.velocity.set(0, 0); // in range: plant + swing
+        this.sprite.setFlipX(enemy.x < this.sprite.x);
+        if (time >= this.attackReadyAt) {
+          const dmg = Math.round((this.config.attackDamage ?? 0) * (1 + this.damageBonus));
+          ctx?.attack(enemy.x, enemy.y, reach, dmg);
+          this.attackReadyAt = time + (this.config.attackCooldownMs ?? 1000);
+          this.swingFx();
+        }
+      } else {
+        this.steerToward(body, enemy.x, enemy.y); // close the distance
+      }
+      return;
+    }
+    // No enemy in range (or leashed) → idle-follow the player.
+    if (this.distanceTo(playerX, playerY) > this.config.followRange) this.steerToward(body, playerX, playerY);
+    else body.velocity.set(0, 0);
+  }
+
+  /** Point the body at (tx,ty) at full move speed + face that way. */
+  private steerToward(body: Phaser.Physics.Arcade.Body, tx: number, ty: number): void {
+    const a = Phaser.Math.Angle.Between(this.sprite.x, this.sprite.y, tx, ty);
+    body.velocity.set(Math.cos(a) * this.speed, Math.sin(a) * this.speed);
+    this.sprite.setFlipX(tx < this.sprite.x);
+  }
+
+  /** A quick scale-punch when the summon swings (cheap attack feedback). */
+  private swingFx(): void {
+    if (this.dead) return;
+    this.sprite.scene.tweens.add({ targets: this.sprite, scale: 1.18, duration: 90, yoyo: true, ease: 'Quad.out' });
+  }
+
+  /**
+   * PET BUFF application (called every frame by the manager with the AGGREGATE multipliers).
+   * Damage is read live at swing time; defense routes through the health pool's incoming
+   * multiplier; max-HP scaling is re-applied only when the multiplier actually changes (and
+   * reverted, current clamped, when a buff lapses) so it works for current + new summons.
+   */
+  applyBuffs(damageBonus: number, drBonus: number, hpMult: number): void {
+    if (this.dead) return;
+    this.damageBonus = damageBonus;
+    this.health.incomingMultiplier = Math.max(0.1, 1 - drBonus); // take (1-dr)x damage
+    if (Math.abs(hpMult - this.appliedHpMult) > 1e-4) {
+      const factor = hpMult / this.appliedHpMult;
+      this.health.max = Math.max(1, Math.round(this.config.maxHP * hpMult));
+      this.health.current = Math.min(this.health.max, Math.max(1, Math.round(this.health.current * factor)));
+      this.appliedHpMult = hpMult;
+      this.bar.setRatio(this.health.ratio);
+    }
   }
 
   /** Stop moving (player frozen in dialogue / death). */
@@ -181,6 +268,47 @@ export class AlliedSummon {
       g.fillStyle(0x6bbfe6, 1);
       g.fillRoundedRect(2, 22, 8, 20, 3);
       g.fillRoundedRect(w - 10, 22, 8, 20, 3);
+    } else if (config.key === 'skeleton') {
+      // A lean bone-white skeleton: dark outline, pale ribs/limbs, a skull with sockets.
+      g.fillStyle(0x2a2a22, 1);
+      g.fillRoundedRect(13, 12, w - 26, h - 14, 5); // torso outline
+      g.fillStyle(0xe6e3d6, 1);
+      g.fillRoundedRect(15, 14, w - 30, h - 18, 4); // bone torso
+      g.fillStyle(0x8f8c7e, 1); // rib shadows
+      g.fillRect(17, 22, w - 34, 2);
+      g.fillRect(17, 28, w - 34, 2);
+      g.fillRect(17, 34, w - 34, 2);
+      g.fillStyle(0xe6e3d6, 1); // arms
+      g.fillRoundedRect(8, 18, 5, 22, 2);
+      g.fillRoundedRect(w - 13, 18, 5, 22, 2);
+      g.fillStyle(0x2a2a22, 1); // skull outline
+      g.fillCircle(w / 2, 12, 9);
+      g.fillStyle(0xf2efe2, 1); // skull
+      g.fillCircle(w / 2, 12, 7.5);
+      g.fillStyle(0x1a1a14, 1); // eye sockets
+      g.fillCircle(w / 2 - 3, 11, 2);
+      g.fillCircle(w / 2 + 3, 11, 2);
+      g.fillRect(w / 2 - 0.8, 14, 1.6, 3); // nasal
+    } else if (config.key === 'dark_matter_monster') {
+      // A large roiling dark-matter horror: black-violet bulk, an inner glow, baleful eyes,
+      // jagged limbs. Bigger silhouette than the others (it's the tank-pet).
+      g.fillStyle(0x140a26, 1);
+      g.fillRoundedRect(2, 6, w - 4, h - 8, 12); // dark outline
+      g.fillStyle(0x3a2068, 1);
+      g.fillRoundedRect(5, 9, w - 10, h - 12, 11); // violet bulk
+      g.fillStyle(0x6a3fb0, 1); // inner glow
+      g.fillRoundedRect(11, 16, w - 22, h - 26, 9);
+      g.fillStyle(0xb78bff, 0.9);
+      g.fillCircle(w / 2, h / 2, 8); // core
+      g.fillStyle(0x05030a, 1); // jagged limbs
+      g.fillTriangle(2, 20, 12, 26, 2, 40);
+      g.fillTriangle(w - 2, 20, w - 12, 26, w - 2, 40);
+      g.fillStyle(0xe6d2ff, 1); // baleful eyes
+      g.fillCircle(w / 2 - 7, 18, 2.6);
+      g.fillCircle(w / 2 + 7, 18, 2.6);
+      g.fillStyle(0xff5cc8, 1);
+      g.fillCircle(w / 2 - 7, 18, 1.1);
+      g.fillCircle(w / 2 + 7, 18, 1.1);
     } else {
       // Generic fallback summon: a simple pale capsule (future types add their own art).
       g.fillStyle(0x101418, 1);

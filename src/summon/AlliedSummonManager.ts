@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
-import { AlliedSummon } from './AlliedSummon';
-import type { AlliedSummonConfig } from './summonData';
+import { AlliedSummon, type SummonCombatCtx } from './AlliedSummon';
+import type { AlliedSummonConfig, SummonBuff } from './summonData';
 
 /**
  * THE ALLIED-SUMMON MANAGER — owns every player-side summon: spawns them (capped per
@@ -16,6 +16,11 @@ export class AlliedSummonManager {
   private readonly scene: Phaser.Scene;
   private summons: AlliedSummon[] = [];
   private nextId = 1;
+
+  // PET-TARGETED BUFFS: active summon buffs (each refreshes its own id rather than stacking).
+  // The AGGREGATE multipliers are pushed onto every summon each frame, so a buff covers both
+  // currently-summoned AND newly-summoned units for its window.
+  private buffs: { id: string; damageBonus: number; hpBonus: number; drBonus: number; endsAt: number }[] = [];
 
   /** Fired when a summon is spawned (the scene routes it past the UI camera + adds colliders). */
   onSpawn?: (summon: AlliedSummon) => void;
@@ -47,14 +52,54 @@ export class AlliedSummonManager {
     }
     const s = new AlliedSummon(this.scene, x, y, config, `summon_${config.key}_${this.nextId++}`);
     this.summons.push(s);
+    this.applyBuffsTo(s); // a unit summoned WHILE a buff is active gets it immediately
     this.onSpawn?.(s);
     return s;
   }
 
-  /** Per-frame: advance each summon (tank-follow), then prune expired/dead ones (no leaks). */
-  update(playerX: number, playerY: number, time: number): void {
+  // --- PET-TARGETED BUFFS --------------------------------------------------------
+
+  /** Apply a summon buff (boosts damage / max HP / defense of the player's summons) for its
+   *  duration. Re-applying the same buff id refreshes rather than stacks. Hits current units
+   *  now; the per-frame push covers any summoned later while it's active. */
+  addBuff(buff: SummonBuff, time: number): void {
+    this.buffs = this.buffs.filter((b) => b.id !== buff.id);
+    this.buffs.push({ id: buff.id, damageBonus: buff.damageBonus ?? 0, hpBonus: buff.hpBonus ?? 0, drBonus: buff.drBonus ?? 0, endsAt: time + buff.durationMs });
+    this.applyBuffsToAll();
+  }
+
+  /** The aggregate live multipliers from all active buffs (additive bonuses, dr capped). */
+  private aggregateBuffs(): { damageBonus: number; drBonus: number; hpMult: number } {
+    let dmg = 0;
+    let dr = 0;
+    let hp = 0;
+    for (const b of this.buffs) {
+      dmg += b.damageBonus;
+      dr += b.drBonus;
+      hp += b.hpBonus;
+    }
+    return { damageBonus: dmg, drBonus: Math.min(0.9, dr), hpMult: 1 + hp };
+  }
+
+  private applyBuffsTo(s: AlliedSummon): void {
+    const a = this.aggregateBuffs();
+    s.applyBuffs(a.damageBonus, a.drBonus, a.hpMult);
+  }
+  private applyBuffsToAll(): void {
+    for (const s of this.summons) if (s.isAlive) this.applyBuffsTo(s);
+  }
+
+  /**
+   * Per-frame: expire lapsed buffs (re-scaling HP back), advance each summon (attackers use
+   * `ctx` to find + hit enemies), then prune expired/dead ones (no leaks).
+   */
+  update(playerX: number, playerY: number, time: number, ctx?: SummonCombatCtx): void {
+    if (this.buffs.length && this.buffs.some((b) => time >= b.endsAt)) {
+      this.buffs = this.buffs.filter((b) => time < b.endsAt);
+    }
+    this.applyBuffsToAll(); // keep live damage/defense/HP multipliers current on every unit
     for (const s of this.summons) {
-      if (s.isAlive && !s.isExpired(time)) s.update(playerX, playerY, time);
+      if (s.isAlive && !s.isExpired(time)) s.update(playerX, playerY, time, ctx);
     }
     if (this.summons.some((s) => !s.isAlive || s.isExpired(time))) {
       for (const s of this.summons) {
@@ -73,17 +118,23 @@ export class AlliedSummonManager {
   }
 
   /**
-   * The aggro-drawing summon nearest to (ex,ey) within ITS aggro radius, or null. Enemies
-   * use this to retarget: if it returns a summon, the enemy chases/attacks the summon.
+   * THE AGGRO-HIERARCHY RESOLVER. Among the aggro-drawing summons whose aggro radius the
+   * point (ex,ey) is inside, return the HIGHEST-priority one (tie → nearest); null if none
+   * is in range (the caller then falls through to the player). Because the Dark Matter
+   * Monster + Ice Golem are MAGNET tier and skeletons are MINION tier, this yields exactly
+   * Monster/golem > skeleton > player — "never above the Monster, never below the player".
    */
   aggroSummonNear(ex: number, ey: number): AlliedSummon | null {
     let best: AlliedSummon | null = null;
+    let bestPriority = -Infinity;
     let bestD = Infinity;
     for (const s of this.summons) {
       if (!s.drawsAggro) continue;
       const d = s.distanceTo(ex, ey);
-      if (d <= s.aggroRadius && d < bestD) {
+      if (d > s.aggroRadius) continue; // out of this summon's pull → not a candidate
+      if (s.aggroPriority > bestPriority || (s.aggroPriority === bestPriority && d < bestD)) {
         best = s;
+        bestPriority = s.aggroPriority;
         bestD = d;
       }
     }

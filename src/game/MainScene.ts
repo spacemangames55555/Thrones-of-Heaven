@@ -54,7 +54,16 @@ import { WIZARD_FIREWIND_TUNING, WIZ_STORM_ID } from '../skills/wizardFireWind';
 import { ICEPOISON_TUNING } from '../skills/wizardIcePoison';
 import { ETHEREAL_TUNING } from '../skills/wizardEthereal';
 import { AlliedSummonManager } from '../summon/AlliedSummonManager';
-import { ICE_GOLEM_CONFIG, ICE_GOLEM_TUNING } from '../summon/summonData';
+import type { SummonCombatCtx } from '../summon/AlliedSummon';
+import {
+  ICE_GOLEM_CONFIG,
+  ICE_GOLEM_TUNING,
+  SKELETON_CONFIG,
+  SKELETON_TUNING,
+  DARK_MATTER_CONFIG,
+  DARK_MATTER_TUNING,
+  SUMMON_BUFF_TUNING,
+} from '../summon/summonData';
 import { PlayerPower } from '../player/PlayerPower';
 import { URIEL_SCENE } from '../story/urielData';
 import { URIEL_SENDOFF_LINES, RIFT_SCENE } from '../story/riftSceneData';
@@ -323,8 +332,10 @@ export class MainScene extends Phaser.Scene {
   private worldFx!: Phaser.GameObjects.Layer;
   private lastCombatTime = -1e9;
   private playerDead = false;
-  /** Player-allied summons (Ice Golem, etc.) — transient, not serialized. */
+  /** Player-allied summons (Ice Golem, skeletons, the Dark Matter Monster) — transient, not serialized. */
   private summons!: AlliedSummonManager;
+  /** What ATTACKER summons use to find + damage enemies (reuses the scene's targeting + AoE). */
+  private summonCombat!: SummonCombatCtx;
 
   // The Power Swap: demonic (default) → holy (at God's judgment). Centralized +
   // serializable; drives the golden ability reflavor + the Holy Bolt's gating.
@@ -775,6 +786,15 @@ export class MainScene extends Phaser.Scene {
       this.physics.add.collider(s.sprite, this.map.layer);
       this.uiCamera?.ignore(s.objects());
     };
+    // ATTACKER summons (skeletons, the Dark Matter Monster) find + hit enemies through the
+    // scene's shared targeting + AoE path, so their kills fire XP/quests/boss logic normally.
+    this.summonCombat = {
+      nearestEnemy: (x, y, maxRange) => {
+        const e = this.nearestEnemy(x, y, maxRange);
+        return e ? { x: e.x, y: e.y, dist: Phaser.Math.Distance.Between(x, y, e.x, e.y) } : null;
+      },
+      attack: (x, y, range, damage) => this.aoeHitAll(x, y, range, damage),
+    };
     this.projectiles.onSummonHit = (x, y, radius, dmg) => this.resolveEnemyBoltVsSummon(x, y, radius, dmg);
     // Toxic Bolt: a poison field blooms where the bolt lands (per-target DoT in radius).
     this.projectiles.onImpactDot = (x, y, dot) => this.applyDotInRange(x, y, dot.radius, dot.dmgPerTick, dot.tickMs, dot.durationMs, dot.color);
@@ -1096,7 +1116,7 @@ export class MainScene extends Phaser.Scene {
     this.updateBosses();
     this.updateDemons();
     this.updateGodJudgment();
-    this.summons.update(this.player.x, this.player.y, this.time.now); // allied tanks follow + prune
+    this.summons.update(this.player.x, this.player.y, this.time.now, this.summonCombat); // tanks follow, attackers hunt + prune
     this.updateAimIndicator(); // PIECE 4: world-space aim arrow while a skill button is dragged
     // Control tree: register the always-on auras (Dominance / Iron Pyrite) + the
     // player-incoming WEAKEN, then scale slowed enemies' velocity. These run AFTER
@@ -1697,6 +1717,12 @@ export class MainScene extends Phaser.Scene {
       }
     } else if (action === 'summon_ice_golem') {
       this.summonIceGolem(); // allied tank/blocker summon (draws aggro, no attack)
+    } else if (action === 'summon_skeleton') {
+      this.summonSkeleton(); // TEST: attacking minion (Summon foundation)
+    } else if (action === 'summon_dark_matter') {
+      this.summonDarkMatterMonster(); // TEST: tanky attacker + aggro magnet
+    } else if (action === 'buff_summons') {
+      this.buffSummons(); // TEST: pet-targeted damage + toughness buff
     } else if (action === 'wiz_icicle') {
       // Ice/Poison #1 — piercing ice shard (passes through several enemies).
       const c = ICEPOISON_TUNING.icicle;
@@ -2420,6 +2446,37 @@ export class MainScene extends Phaser.Scene {
     this.spawnSkillRing(g.x, g.y, ICE_GOLEM_TUNING.bodyRadius + 14, 0x8fd8ff);
     this.showBanner('Ice Golem summoned', 1200);
     this.lastCombatTime = this.time.now;
+  }
+
+  /** Summon an attacking SKELETON near the player (test skill + dev button). */
+  private summonSkeleton(): void {
+    const { dx, dy } = this.facingUnit();
+    // Slight scatter so multiple skeletons don't stack on one pixel.
+    const jx = Phaser.Math.Between(-26, 26);
+    const jy = Phaser.Math.Between(-26, 26);
+    const s = this.summons.summon(SKELETON_CONFIG, this.player.x + dx * 36 + jx, this.player.y + dy * 36 + jy, SKELETON_TUNING.maxConcurrent);
+    this.spawnSkillRing(s.x, s.y, SKELETON_TUNING.bodyRadius + 12, 0xd8dde0);
+    this.showBanner('Skeleton raised', 1000);
+    this.lastCombatTime = this.time.now;
+  }
+
+  /** Summon the DARK MATTER MONSTER near the player (test skill + dev button). */
+  private summonDarkMatterMonster(): void {
+    const { dx, dy } = this.facingUnit();
+    const m = this.summons.summon(DARK_MATTER_CONFIG, this.player.x + dx * 48, this.player.y + dy * 48, DARK_MATTER_TUNING.maxConcurrent);
+    this.spawnSkillRing(m.x, m.y, DARK_MATTER_TUNING.bodyRadius + 16, 0x9a6cff);
+    this.showBanner('Dark Matter Monster manifested', 1400);
+    this.lastCombatTime = this.time.now;
+  }
+
+  /** PET-TARGETED BUFF: empower the player's summons (damage + toughness) for a window.
+   *  Applies to currently-summoned AND newly-summoned units while active. */
+  private buffSummons(): void {
+    // Apply both example buffs (a damage buff + an HP/defense buff) so one tap proves both hooks.
+    this.summons.addBuff(SUMMON_BUFF_TUNING.power, this.time.now);
+    this.summons.addBuff(SUMMON_BUFF_TUNING.bulwark, this.time.now);
+    this.spawnSkillRing(this.player.x, this.player.y, 80, 0xb78bff);
+    this.showBanner('Summons empowered', 1200);
   }
 
   /** Iron Pyrite (capstone form): the player's attacks STAGGER (briefly stun) enemies hit. */
@@ -6463,6 +6520,9 @@ export class MainScene extends Phaser.Scene {
       { label: 'Set Class: Blacksmith', onPress: () => this.devSetClass('blacksmith') },
       { label: 'Set Class: Necromancer', onPress: () => this.devSetClass('necromancer') },
       { label: 'Summon Ice Golem', onPress: () => this.summonIceGolem() },
+      { label: 'Summon Skeleton', onPress: () => this.summonSkeleton() },
+      { label: 'Summon Dark Matter Monster', onPress: () => this.summonDarkMatterMonster() },
+      { label: 'Buff Summons', onPress: () => this.buffSummons() },
       { label: 'Clear Summons', onPress: () => this.summons.clear() },
       { label: 'Toggle Aim-Assist', onPress: () => this.devToggleAimAssist() },
       { label: 'Cycle Aim Cone', onPress: () => this.devCycleAimCone() },

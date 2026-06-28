@@ -26,6 +26,7 @@ import { WIZARD_FIREWIND_SKILLS, WIZ_FIREWIND_TREE } from './wizardFireWind';
 import { WIZARD_ICEPOISON_SKILLS, WIZ_ICEPOISON_TREE } from './wizardIcePoison';
 import { WIZARD_ETHEREAL_SKILLS, WIZ_ETHEREAL_TREE } from './wizardEthereal';
 import { MARROW_TREE_SKILLS, MARROW_TREE } from './necromancerMarrow';
+import { SUMMON_TEST_SKILLS, SUMMON_TEST_TREE } from './necromancerSummonTest';
 
 /** How many active skills the player can equip to on-screen slots. */
 export const LOADOUT_SLOTS = 6;
@@ -115,7 +116,11 @@ export type ActiveActionId =
   | 'necro_wrecking_ball'
   | 'necro_grasp'
   // Allied summons (player-side).
-  | 'summon_ice_golem';
+  | 'summon_ice_golem'
+  // Necromancer summon FOUNDATION — temporary test actives (replaced by the real Summons tree).
+  | 'summon_skeleton'
+  | 'summon_dark_matter'
+  | 'buff_summons';
 
 /**
  * The five supported EFFECT KINDS. The scene applies them generically:
@@ -178,7 +183,7 @@ export function isEquippableSkill(def: SkillDef): boolean {
 
 /** ACTIVE ability ids that deal NO direct damage (pure utility / summons) — excluded from
  *  the "damaging active" classification below. Keep this list tiny + explicit. */
-const NON_DAMAGING_ACTIVE_ACTIONS: ReadonlySet<ActiveActionId> = new Set(['intimidate', 'summon_ice_golem', 'wiz_black_ice', 'eth_mend', 'eth_mana_shield', 'eth_blink', 'eth_ankh']);
+const NON_DAMAGING_ACTIVE_ACTIONS: ReadonlySet<ActiveActionId> = new Set(['intimidate', 'summon_ice_golem', 'summon_skeleton', 'summon_dark_matter', 'buff_summons', 'wiz_black_ice', 'eth_mend', 'eth_mana_shield', 'eth_blink', 'eth_ankh']);
 
 /**
  * DAMAGING ACTIVE = an `active`-kind skill whose ability deals damage. This is the
@@ -196,6 +201,7 @@ export function isDamagingActive(def: SkillDef): boolean {
 const NON_AIMABLE_ACTIONS: ReadonlySet<ActiveActionId> = new Set<ActiveActionId>([
   'forge_strike', 'windmill', 'wiz_immolation', 'wiz_tornado', 'shove', 'intimidate',
   'wiz_freezing_rain', 'wiz_pestilence', 'summon_ice_golem',
+  'summon_skeleton', 'summon_dark_matter', 'buff_summons', // summon foundation: tap-to-fire
   'eth_mend', 'eth_mana_shield', 'eth_ankh',
   'necro_bone_nova', // self-centered shockwave (Bone Dart/Punch/Stake/Wrecking/Grasp are directional)
 ]);
@@ -281,10 +287,14 @@ const NECROMANCER: ClassSkills = {
   classId: 'necromancer',
   trees: [
     { id: MARROW_TREE, name: 'Marrow' }, // 10 tank/solo skills → Grasp of Death (opens on Bone Dart)
+    { id: SUMMON_TEST_TREE, name: 'Summons (TEST)' }, // TEMP scaffolding for the summon foundation
   ],
   skills: [
     // --- MARROW TREE (10 skills, linear → Grasp of Death). Data in necromancerMarrow.ts. ---
     ...MARROW_TREE_SKILLS,
+    // --- SUMMON FOUNDATION TEST SKILLS (temporary; freeUnlock; replaced by the real Summons
+    //     tree later). None is a damaging active, so Bone Dart stays the only first-skill opener. ---
+    ...SUMMON_TEST_SKILLS,
   ],
 };
 
