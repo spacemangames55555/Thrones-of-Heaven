@@ -54,7 +54,7 @@ import { WIZARD_FIREWIND_TUNING, WIZ_STORM_ID } from '../skills/wizardFireWind';
 import { ICEPOISON_TUNING } from '../skills/wizardIcePoison';
 import { ETHEREAL_TUNING } from '../skills/wizardEthereal';
 import { AlliedSummonManager } from '../summon/AlliedSummonManager';
-import type { SummonCombatCtx } from '../summon/AlliedSummon';
+import type { SummonCombatCtx, AlliedSummon } from '../summon/AlliedSummon';
 import {
   ICE_GOLEM_CONFIG,
   ICE_GOLEM_TUNING,
@@ -63,6 +63,8 @@ import {
   DARK_MATTER_CONFIG,
   DARK_MATTER_TUNING,
   SUMMON_BUFF_TUNING,
+  AGGRO_REEVAL_INTERVAL_MS,
+  AGGRO_STICKY_MARGIN,
 } from '../summon/summonData';
 import { PlayerPower } from '../player/PlayerPower';
 import { URIEL_SCENE } from '../story/urielData';
@@ -336,6 +338,13 @@ export class MainScene extends Phaser.Scene {
   private summons!: AlliedSummonManager;
   /** What ATTACKER summons use to find + damage enemies (reuses the scene's targeting + AoE). */
   private summonCombat!: SummonCombatCtx;
+  /**
+   * CONTINUOUS AGGRO STATE — per-enemy cached target + next-re-eval time. Keyed by the enemy
+   * object (auto-GC'd when the enemy is pruned, no manual cleanup). Every enemy that pursues
+   * a target (incl. BOSS-SPAWNED ADDS) resolves its move target through {@link enemyAggroTarget},
+   * which re-picks per the 3-tier hierarchy every AGGRO_REEVAL_INTERVAL_MS with stickiness.
+   */
+  private aggroState = new WeakMap<object, { targetSummon: AlliedSummon | null; nextEval: number }>();
 
   // The Power Swap: demonic (default) → holy (at God's judgment). Centralized +
   // serializable; drives the golden ability reflavor + the Holy Bolt's gating.
@@ -1095,7 +1104,7 @@ export class MainScene extends Phaser.Scene {
       // "return to the outpost" completes before the patron auto-offers the next quest)
       if (this.isDashing()) this.talkButton.setVisible(false);
       else this.checkInteractions();
-      const sqTarget = this.enemyMoveTarget(this.sasquatch.x, this.sasquatch.y); // golem draws aggro
+      const sqTarget = this.enemyAggroTarget(this.sasquatch, this.sasquatch.x, this.sasquatch.y); // hierarchy/golem aggro
       this.sasquatch.update(sqTarget.x, sqTarget.y, this.time.now);
       this.updateSwarmers();
       this.updateAngels();
@@ -2400,20 +2409,59 @@ export class MainScene extends Phaser.Scene {
     this.gainXP(this.sasquatch.xpReward);
   }
 
-  // --- Allied summons (Ice Golem): enemy retargeting + damage redirection -------
+  // --- Allied summons: enemy retargeting (CONTINUOUS aggro) + damage redirection -
   //
-  // The golem "draws aggro": at each enemy's update we feed it the golem's position
-  // instead of the player's when an aggro-drawing summon is within range of that enemy
-  // (so it chases/aims at the golem), and the enemy's contact/ranged damage is redirected
-  // to the golem. With no summon up, every enemy targets the player exactly as before.
+  // EVERY enemy that pursues a target — normal enemies AND boss-spawned adds (demons/
+  // cherubs) — resolves its move target through enemyAggroTarget(), which RE-EVALUATES the
+  // 3-tier hierarchy (Monster > skeletons > player) every AGGRO_REEVAL_INTERVAL_MS rather
+  // than once at spawn. So a summon raised next to foes already chasing the player pulls
+  // them within one interval, and they fall back down the tiers when a higher ally dies/
+  // leaves. With no summon up, every enemy targets the player exactly as before. Contact/
+  // bolt damage is additionally redirected to a summon by proximity (it soaks).
 
-  /** The point an enemy at (ex,ey) should pursue: a nearby aggro-drawing summon, else the
-   *  player. Generic — call it at any enemy's update to make summons pull aggro. */
-  private enemyMoveTarget(ex: number, ey: number): { x: number; y: number } {
-    // Necromancer TAUNT: while active, enemies focus the player (override summon aggro).
-    if (this.time.now < this.tauntUntil) return { x: this.player.x, y: this.player.y };
-    const g = this.summons?.aggroSummonNear(ex, ey);
-    return g ? { x: g.x, y: g.y } : { x: this.player.x, y: this.player.y };
+  /**
+   * The point an enemy should pursue, re-evaluated on a cadence with light stickiness so it
+   * can't thrash between equal-priority targets. `enemy` is the entity object (a stable key);
+   * (ex,ey) is its current position. Returns the live position of its chosen target (a
+   * higher-priority summon, else the player).
+   */
+  private enemyAggroTarget(enemy: object, ex: number, ey: number): { x: number; y: number } {
+    const now = this.time.now;
+    // Necromancer TAUNT is a LIVE override (don't wait for the next re-eval): focus the player.
+    if (now < this.tauntUntil) return { x: this.player.x, y: this.player.y };
+    let st = this.aggroState.get(enemy);
+    const lostTarget = !!st && st.targetSummon != null && !st.targetSummon.isAlive;
+    if (!st || now >= st.nextEval || lostTarget) st = this.reevalEnemyAggro(enemy, ex, ey, st, now);
+    const t = st.targetSummon;
+    if (t && t.isAlive) return { x: t.x, y: t.y };
+    return { x: this.player.x, y: this.player.y };
+  }
+
+  /** Re-pick an enemy's target per the priority hierarchy (+ stickiness), cache it, schedule
+   *  the next re-eval (jittered so enemies don't all re-evaluate on the same frame). */
+  private reevalEnemyAggro(
+    enemy: object,
+    ex: number,
+    ey: number,
+    prev: { targetSummon: AlliedSummon | null; nextEval: number } | undefined,
+    now: number,
+  ): { targetSummon: AlliedSummon | null; nextEval: number } {
+    // Necromancer TAUNT overrides the hierarchy: focus the player while it's active.
+    const taunted = now < this.tauntUntil;
+    const best = taunted ? null : this.summons?.aggroSummonNear(ex, ey) ?? null;
+    let chosen = best;
+    // STICKINESS: keep the current ally-target if it's still alive + in range (+ margin) and
+    // `best` isn't STRICTLY higher priority — never flip between equal-priority targets.
+    const cur = prev?.targetSummon ?? null;
+    if (!taunted && cur && cur.isAlive) {
+      const inRange = cur.distanceTo(ex, ey) <= cur.aggroRadius + AGGRO_STICKY_MARGIN;
+      if (inRange && (!best || best.aggroPriority <= cur.aggroPriority)) chosen = cur;
+    }
+    // Jitter the next re-eval ±25% so a crowd of adds spreads its work across frames.
+    const next = now + Math.round(AGGRO_REEVAL_INTERVAL_MS * (0.75 + Math.random() * 0.5));
+    const st = { targetSummon: chosen, nextEval: next };
+    this.aggroState.set(enemy, st);
+    return st;
   }
 
   /** If an aggro-drawing summon is near the attacking enemy at (ex,ey), the hit lands on
@@ -3097,7 +3145,7 @@ export class MainScene extends Phaser.Scene {
       for (const s of this.swarmers) s.setRevealed(sv);
     }
     for (const s of this.swarmers) {
-      const t = this.enemyMoveTarget(s.x, s.y); // chase the Ice Golem if it's drawing aggro
+      const t = this.enemyAggroTarget(s, s.x, s.y); // continuous hierarchy aggro (summons > player)
       s.update(t.x, t.y, this.time.now);
     }
     if (this.swarmers.some((s) => !s.isAlive)) this.swarmers = this.swarmers.filter((s) => s.isAlive);
@@ -3159,7 +3207,7 @@ export class MainScene extends Phaser.Scene {
   /** Drive each angel with line-of-sight from the scene, then prune the dead. */
   private updateAngels(): void {
     for (const a of this.angels) {
-      const t = this.enemyMoveTarget(a.x, a.y); // aim/kite the Ice Golem if it's drawing aggro
+      const t = this.enemyAggroTarget(a, a.x, a.y); // continuous hierarchy aggro (summons > player)
       const los = this.hasLineOfSight(a.x, a.y, t.x, t.y);
       a.update(t.x, t.y, this.time.now, los);
     }
@@ -3323,18 +3371,21 @@ export class MainScene extends Phaser.Scene {
         });
       }
     };
-    c.onMelee = (dmg) => this.onCherubMelee(dmg);
+    c.onMelee = (dmg) => this.enemyMeleeDamage(c.x, c.y, dmg); // a summon it's chasing soaks the blow
     this.physics.add.collider(c.sprite, mapLayer);
     this.uiCamera?.ignore(c.objects()); // runtime world objects: keep off the UI camera
     this.cherubs.push(c);
     return c;
   }
 
-  /** Drive every Cherub (line of sight from the scene), then prune the dead. */
+  /** Drive every Cherub (line of sight from the scene), then prune the dead. Cherubs are a
+   *  BOSS-ADD type — they obey the summon aggro hierarchy via enemyAggroTarget (LoS still to
+   *  the chosen target so they aim/kite a summon they're pulled onto, not just the player). */
   private updateCherubs(): void {
     for (const c of this.cherubs) {
-      const los = this.hasLineOfSight(c.x, c.y, this.player.x, this.player.y);
-      c.update(this.player.x, this.player.y, this.time.now, los);
+      const t = this.enemyAggroTarget(c, c.x, c.y);
+      const los = this.hasLineOfSight(c.x, c.y, t.x, t.y);
+      c.update(t.x, t.y, this.time.now, los);
     }
     if (this.cherubs.some((c) => !c.isAlive)) this.cherubs = this.cherubs.filter((c) => c.isAlive);
   }
@@ -3351,6 +3402,15 @@ export class MainScene extends Phaser.Scene {
     this.spawnDamageNumber(this.player.x, this.player.y - 26, dealt, '#fff1b8');
     this.lastCombatTime = this.time.now;
     if (this.playerHealth.isDead) this.onPlayerDeath();
+  }
+
+  /** A melee swing from an enemy/boss-add at (ex,ey): if an aggro-drawing summon is adjacent
+   *  it SOAKS the blow (the add is attacking the summon it was pulled onto); else the player
+   *  takes it. Used by demons + cherubs so boss adds actually damage the summon they chase. */
+  private enemyMeleeDamage(ex: number, ey: number, damage: number): void {
+    if (this.playerDead) return;
+    if (this.redirectContactToSummon(ex, ey, damage)) return; // a summon intercepts the blow
+    this.onCherubMelee(damage);
   }
 
   private onCherubKilled(c: Cherub): void {
@@ -4499,10 +4559,12 @@ export class MainScene extends Phaser.Scene {
     return t;
   }
 
-  /** Advance every townsfolk toward its target, then prune the dead. */
+  /** Advance every townsfolk toward its target, then prune the dead. Hostile townsfolk obey
+   *  the summon aggro hierarchy via enemyAggroTarget (summons pull them off the player too). */
   private updateTownsfolk(): void {
     for (const t of this.townsfolk) {
-      t.update(this.player.x, this.player.y, this.time.now);
+      const tgt = this.enemyAggroTarget(t, t.x, t.y);
+      t.update(tgt.x, tgt.y, this.time.now);
     }
     if (this.townsfolk.some((t) => !t.isAlive)) this.townsfolk = this.townsfolk.filter((t) => t.isAlive);
   }
@@ -4640,10 +4702,12 @@ export class MainScene extends Phaser.Scene {
       if (d <= GUARDIAN_ACTIVATION_RANGE) this.startGuardianFight();
     }
 
-    // Advance each guardian (the ranged one needs line of sight from the scene).
+    // Advance each guardian (the ranged one needs line of sight from the scene). Guardians
+    // obey the summon aggro hierarchy via enemyAggroTarget (LoS to the chosen target).
     for (const g of this.guardians) {
-      const los = g.role === 'ranged' ? this.hasLineOfSight(g.x, g.y, this.player.x, this.player.y) : true;
-      g.update(this.player.x, this.player.y, this.time.now, los);
+      const t = this.enemyAggroTarget(g, g.x, g.y);
+      const los = g.role === 'ranged' ? this.hasLineOfSight(g.x, g.y, t.x, t.y) : true;
+      g.update(t.x, t.y, this.time.now, los);
     }
 
     // Defeat gate: both swords down → unlock the corruption interaction.
@@ -4853,7 +4917,7 @@ export class MainScene extends Phaser.Scene {
   /** Spawn one Demon; wire its melee strike + terrain collider for the given world. */
   private spawnDemon(x: number, y: number, mapLayer: Phaser.Tilemaps.TilemapLayerBase): Demon {
     const d = new Demon(this, x, y);
-    d.onMelee = (dmg) => this.onCherubMelee(dmg); // reuse: damage the player
+    d.onMelee = (dmg) => this.enemyMeleeDamage(d.x, d.y, dmg); // a summon it's chasing soaks the blow
     this.physics.add.collider(d.sprite, mapLayer);
     this.uiCamera?.ignore(d.objects());
     this.demons.push(d);
@@ -4866,9 +4930,13 @@ export class MainScene extends Phaser.Scene {
     for (const s of HELL_DEMON_SPAWNS) this.spawnDemon(o.x + s.x, o.y + s.y, this.hellMap.layer);
   }
 
-  /** Drive every Demon (idle when the player is far/elsewhere), then prune the dead. */
+  /** Drive every Demon (idle when the player is far/elsewhere), then prune the dead. Demons
+   *  are the other BOSS-ADD type — they obey the summon aggro hierarchy via enemyAggroTarget. */
   private updateDemons(): void {
-    for (const d of this.demons) d.update(this.player.x, this.player.y, this.time.now);
+    for (const d of this.demons) {
+      const t = this.enemyAggroTarget(d, d.x, d.y);
+      d.update(t.x, t.y, this.time.now);
+    }
     if (this.demons.some((d) => !d.isAlive)) this.demons = this.demons.filter((d) => d.isAlive);
   }
 
