@@ -118,12 +118,5 @@ frequency/drive/glide settings.
 
 ---
 
-### About the name / repo history
-
-This branch repurposes the repository as **Airhorn Hero**. The earlier
-*Thrones of Heaven* map prototype still lives on `main` (and its source remains
-under `src/` for reference); the Airhorn Hero app is fully self-contained under
-`src/airhorn/` and does not depend on it.
-
-Inspired by Klang, but an original implementation — Klang's own source is not
-reused or redistributed here.
+Inspired by [Klang](https://github.com/unorderly/Klang), but an original
+implementation — Klang's own source is not reused or redistributed here.

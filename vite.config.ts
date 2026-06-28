@@ -3,7 +3,7 @@ import { defineConfig } from 'vite';
 // Build identifier, resolved at build time: the commit short-hash when a CI/host
 // provides it (Vercel, GitHub Actions, Netlify), otherwise an ISO timestamp.
 // Injected as the global __BUILD_ID__ and logged once to the console on load
-// (see src/main.ts) — there is no on-screen build overlay anymore.
+// (see src/airhorn/main.ts).
 const buildId =
   process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7) ||
   process.env.GITHUB_SHA?.slice(0, 7) ||
