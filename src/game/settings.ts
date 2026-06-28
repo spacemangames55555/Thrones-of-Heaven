@@ -156,8 +156,9 @@ export const CLASS_BASE_STATS: Record<string, ClassBaseStats> = {
   blacksmith: { baseMaxHP: BASE_MAX_HP, hpPerLevel: HP_PER_LEVEL, baseDamage: BASE_DAMAGE, dmgPerLevel: DMG_PER_LEVEL, moveSpeedMult: 1 },
   // Wizard — fragile glass cannon: low HP, slightly faster, high spell damage.
   wizard: { baseMaxHP: 60, hpPerLevel: 11, baseDamage: 34, dmgPerLevel: 8, moveSpeedMult: 1.1 },
-  // Necromancer — "Coming Soon"; falls back to the Blacksmith baseline if ever set active.
-  necromancer: { baseMaxHP: BASE_MAX_HP, hpPerLevel: HP_PER_LEVEL, baseDamage: BASE_DAMAGE, dmgPerLevel: DMG_PER_LEVEL, moveSpeedMult: 1 },
+  // Necromancer — Slavic death-sorcerer. IN-BETWEEN durability: hardier than the
+  // fragile Wizard, squishier than the Blacksmith; normal move speed. (Tune here.)
+  necromancer: { baseMaxHP: 80, hpPerLevel: 16, baseDamage: 28, dmgPerLevel: 6, moveSpeedMult: 1 },
 };
 
 /** The base-stat profile for a class id (defaults to the Blacksmith baseline). */
