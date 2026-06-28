@@ -27,6 +27,7 @@ import { WIZARD_ICEPOISON_SKILLS, WIZ_ICEPOISON_TREE } from './wizardIcePoison';
 import { WIZARD_ETHEREAL_SKILLS, WIZ_ETHEREAL_TREE } from './wizardEthereal';
 import { MARROW_TREE_SKILLS, MARROW_TREE } from './necromancerMarrow';
 import { SUMMONS_TREE_SKILLS, SUMMONS_TREE } from './necromancerSummons';
+import { DARK_MATTER_TREE_SKILLS, DARK_MATTER_TREE } from './necromancerDarkMatter';
 
 /** How many active skills the player can equip to on-screen slots. */
 export const LOADOUT_SLOTS = 6;
@@ -122,7 +123,15 @@ export type ActiveActionId =
   | 'summon_dark_matter'
   | 'buff_summons'
   | 'necro_dark_matter_burst' // timed +summon-damage burst (Dark Matter, node 5)
-  | 'necro_army'; // capstone: raise a skeleton swarm + empower all summons (Army of the Dead)
+  | 'necro_army' // capstone: raise a skeleton swarm + empower all summons (Army of the Dead)
+  // Necromancer DARK MATTER tree (ranged DPS + debuffs → Singularity).
+  | 'necro_dm_blip'
+  | 'necro_dm_bomb'
+  | 'necro_dm_tainted'
+  | 'necro_dm_hex'
+  | 'necro_dm_abyssal'
+  | 'necro_dm_rift'
+  | 'necro_dm_singularity';
 
 /**
  * The five supported EFFECT KINDS. The scene applies them generically:
@@ -239,7 +248,7 @@ export function isEquippableSkill(def: SkillDef): boolean {
 
 /** ACTIVE ability ids that deal NO direct damage (pure utility / summons) — excluded from
  *  the "damaging active" classification below. Keep this list tiny + explicit. */
-const NON_DAMAGING_ACTIVE_ACTIONS: ReadonlySet<ActiveActionId> = new Set(['intimidate', 'summon_ice_golem', 'summon_skeleton', 'summon_dark_matter', 'buff_summons', 'necro_dark_matter_burst', 'necro_army', 'wiz_black_ice', 'eth_mend', 'eth_mana_shield', 'eth_blink', 'eth_ankh']);
+const NON_DAMAGING_ACTIVE_ACTIONS: ReadonlySet<ActiveActionId> = new Set(['intimidate', 'summon_ice_golem', 'summon_skeleton', 'summon_dark_matter', 'buff_summons', 'necro_dark_matter_burst', 'necro_army', 'necro_dm_hex', 'wiz_black_ice', 'eth_mend', 'eth_mana_shield', 'eth_blink', 'eth_ankh']);
 
 /**
  * DAMAGING ACTIVE = an `active`-kind skill whose ability deals damage. This is the
@@ -273,6 +282,7 @@ const NON_AIMABLE_ACTIONS: ReadonlySet<ActiveActionId> = new Set<ActiveActionId>
   'forge_strike', 'windmill', 'wiz_immolation', 'wiz_tornado', 'shove', 'intimidate',
   'wiz_freezing_rain', 'wiz_pestilence', 'summon_ice_golem',
   'summon_skeleton', 'summon_dark_matter', 'buff_summons', 'necro_dark_matter_burst', 'necro_army', // summons: tap-to-fire
+  'necro_dm_hex', // Dark Matter: targets nearest (tap); Blip/Bomb/Tainted/Abyssal/Rift/Singularity are directional
   'eth_mend', 'eth_mana_shield', 'eth_ankh',
   'necro_bone_nova', // self-centered shockwave (Bone Dart/Punch/Stake/Wrecking/Grasp are directional)
 ]);
@@ -359,6 +369,7 @@ const NECROMANCER: ClassSkills = {
   trees: [
     { id: MARROW_TREE, name: 'Marrow' }, // 10 tank/solo skills → Grasp of Death (opens on Bone Dart)
     { id: SUMMONS_TREE, name: 'Summons' }, // 10 summon/pet skills (node-6 branch) → Army of the Dead
+    { id: DARK_MATTER_TREE, name: 'Dark Matter' }, // 10 ranged DPS + debuff skills → Singularity (opens on Dark Energy Blip)
   ],
   skills: [
     // --- MARROW TREE (10 skills, linear → Grasp of Death). Data in necromancerMarrow.ts. ---
@@ -366,6 +377,9 @@ const NECROMANCER: ClassSkills = {
     // --- SUMMONS TREE (10 skills, linear with a node-6 either/or branch → Army of the Dead).
     //     Data in necromancerSummons.ts. Opens on Summon Skeleton (a valid no-kit first skill). ---
     ...SUMMONS_TREE_SKILLS,
+    // --- DARK MATTER TREE (10 ranged DPS + debuff skills, linear → Singularity). Data in
+    //     necromancerDarkMatter.ts. Opens on Dark Energy Blip (a fast damaging projectile). ---
+    ...DARK_MATTER_TREE_SKILLS,
   ],
 };
 
