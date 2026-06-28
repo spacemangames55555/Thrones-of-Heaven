@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { classSkills, isDamagingActive, type SkillDef } from '../skills/skillData';
+import { classSkills, isStarterSkill, type SkillDef } from '../skills/skillData';
 import type { SkillState } from '../skills/SkillState';
 
 /** The bits of MainScene the forced first-skill picker needs (kept narrow + decoupled). */
@@ -64,7 +64,8 @@ export class FirstSkillScene extends Phaser.Scene {
     this.scale.on(Phaser.Scale.Events.RESIZE, () => this.scene.restart());
   }
 
-  /** Each tree's entry node (lowest tier) that is a damaging active — the legal picks. */
+  /** Each tree's entry node (lowest tier) that is a STARTER skill — a damaging active OR an
+   *  attacking summon (e.g. the Summons tree opens on Summon Skeleton). The legal first picks. */
   private treeOpeners(): SkillDef[] {
     const cls = classSkills(this.host().getSkillState().activeClass);
     const out: SkillDef[] = [];
@@ -72,7 +73,7 @@ export class FirstSkillScene extends Phaser.Scene {
       const first = cls.skills
         .filter((s) => s.tree === tree.id)
         .sort((a, b) => a.tier - b.tier)
-        .find((s) => isDamagingActive(s));
+        .find((s) => isStarterSkill(s));
       if (first) out.push(first);
     }
     return out;
