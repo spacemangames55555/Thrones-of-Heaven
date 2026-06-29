@@ -6,6 +6,8 @@ import {
   INV_QUEST_IDS,
   RETIRED_CORRUPTION_ID,
   RIFT_FINALE_ID,
+  ACT4_QUEST_IDS,
+  DESCENT_OR_LATER_IDS,
   type SaveData,
 } from './SaveData';
 
@@ -16,10 +18,13 @@ import {
  *  • v3→v4 added the Act II (corruption escalation) quests + Uriel's arrival.
  *  • v4→v5 added the Investigation arc (Quests 8–12) before the old corruption beat.
  *  • v5→v6 RETIRED the old corruption beat: the grant moved to Quest 13's rift scene.
+ *  • v6→v7 added Act IV (4.1–4.4) BEFORE the descent (descent-1 now bridges off 4.4).
  * In every additive case a pre-migration player is already past that content, so the
  * new quests are marked COMPLETE (prerequisites stay satisfied → no soft-lock), and
  * Uriel is flagged as already arrived so his scene never replays. v6 also keeps the
- * critical path intact across the removed quest id (see RETIRED_CORRUPTION_ID).
+ * critical path intact across the removed quest id (see RETIRED_CORRUPTION_ID). v7
+ * only marks Act IV complete for saves ALREADY on/after the descent — a save not yet
+ * into the descent is left to play Act IV next (see DESCENT_OR_LATER_IDS).
  */
 function migrate(data: SaveData): SaveData {
   const completed = new Set(data.quests?.completed ?? []);
@@ -42,6 +47,18 @@ function migrate(data: SaveData): SaveData {
       data.quests.activeId = null;
       data.quests.activeObjective = 0;
     }
+  }
+  if (data.saveVersion < 7) {
+    // Act IV (4.1–4.4) was inserted BEFORE the descent. Only a save ALREADY on or
+    // past the descent should skip Act IV: mark the four ids COMPLETE so descent-1's
+    // new prerequisite ('act4-salt-and-sea') stays satisfied and the player keeps
+    // their descent path (no soft-lock, no orphaned activeId). A save not yet into
+    // the descent is left untouched → Azazel offers 4.1 next.
+    const activeId = data.quests?.activeId ?? null;
+    const onDescentOrLater =
+      DESCENT_OR_LATER_IDS.some((id) => completed.has(id)) ||
+      (activeId !== null && DESCENT_OR_LATER_IDS.includes(activeId));
+    if (onDescentOrLater) for (const id of ACT4_QUEST_IDS) completed.add(id);
   }
   if (data.quests) data.quests.completed = [...completed];
   data.saveVersion = SAVE_VERSION;

@@ -25,4 +25,7 @@ export const PICKUP_TYPES: Record<string, PickupTypeDef> = {
   // The descent arc's "pillage the shipment" objective — proves a SECOND pickup
   // type reuses the same system (its collect effect is a quest trigger, not a count).
   plunder: { key: 'plunder', color: 0xc89b3a, collectRadius: 42, label: 'Plunder' },
+  // Act IV (4.4 "Salt and Sea") — pale shore-salt patches gathered count-of-N. Its
+  // collect effect increments the arc gather counter (handled in onPickupCollected).
+  salt: { key: 'salt', color: 0xe8eef2, collectRadius: 48, label: 'Sea Salt' },
 };

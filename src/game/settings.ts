@@ -1169,6 +1169,47 @@ export const DESCENT_OC_ANGELS = 3; // Quest 3
 export const DESCENT_LOC_ANGELS = 2; // Quest 4, per location
 
 
+// --- ACT IV (Batch B) — quests 4.1–4.4 locations + group sizes ---------------
+//
+// Five new marker targets for the Necromancer's Act IV opening (given by Azazel,
+// BEFORE the old descent chain — a temporary bridge keeps the game playable end
+// to end). All on WORLD_EARTH, placed inside the SAME verified-walkable Oregon
+// corridor as the descent positions above (the descent spots are explicit
+// placeholders; these mirror that, spread out so each marker points somewhere
+// distinct). Edit positions / group sizes here; quest TEXT lives in questData.ts.
+
+/** 4.1 — Bend OR (SE of Oregon City): the farmers with the materials Azazel needs. */
+export const BEND_POSITION = { x: 13050, y: 13950 };
+/** 4.2 — La Grande OR (N, the watchers' road): angels barring the way north. */
+export const LA_GRANDE_POSITION = { x: 12950, y: 13000 };
+/** 4.3 — the caravan-intercept route toward Portland (W of the corridor). */
+export const CARAVAN_ROUTE_POSITION = { x: 11400, y: 13500 };
+/** 4.4a — Florence OR (coast, far W): the salt patches along the shore. */
+export const FLORENCE_POSITION = { x: 11300, y: 14150 };
+/** 4.4b — Roseburg OR (S-central): the cleric who purifies the salt. */
+export const ROSEBURG_POSITION = { x: 12200, y: 14250 };
+
+/** 4.1 — Bend farmers (reuse the 'farmer' Townsfolk variant). */
+export const BEND_FARMERS_COUNT = 4;
+/** 4.2 — La Grande road-watch angels: a mix (the herald is the named speaker). */
+export const LAGRANDE_LESSER = 2;
+export const LAGRANDE_WARDEN = 1;
+export const LAGRANDE_HERALDS = 1;
+/** 4.3 — five caravans, each with a small guard knot (reuse 'caravanguard'). */
+export const CARAVANS_COUNT = 5;
+export const CARAVAN_GUARDS_PER = 2;
+/** 4.4a — salt patches to gather along the Florence shore (count-of-N objective). */
+export const SALT_PATCHES = 6;
+/** 4.4a — Florence wildlife that harasses while gathering (reuse bear/eagle/crab/wolf). */
+export const FLORENCE_BEARS = 1;
+export const FLORENCE_EAGLES = 3;
+export const FLORENCE_CRABS = 2;
+/** 4.4b — angels barring the road into Roseburg (mix + a herald warner). */
+export const ROSEBURG_LESSER = 3;
+export const ROSEBURG_WARDEN = 1;
+export const ROSEBURG_HERALDS = 1;
+
+
 // --- Portal Defense (wave-defense encounter) -------------------------------
 //
 // Protect a destructible Dark Portal from waves of townsfolk. Win by surviving

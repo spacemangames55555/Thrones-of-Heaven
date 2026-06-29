@@ -100,6 +100,8 @@ import {
   Q12_AMBUSH_LINES,
   OLYMPIA_DELIVERY_LINES,
   PATRON_IDLE_LINES,
+  CLERIC_LINES,
+  CLERIC_IDLE_LINE,
   TARGET_WORLD,
   SEVEN_SINS_QUEST_ID,
   type ObjectiveTrigger,
@@ -181,6 +183,25 @@ import {
   DESCENT_FARMERS_COUNT,
   DESCENT_OC_ANGELS,
   DESCENT_LOC_ANGELS,
+  // Act IV (Batch B) — 4.1–4.4 locations + group sizes:
+  BEND_POSITION,
+  LA_GRANDE_POSITION,
+  CARAVAN_ROUTE_POSITION,
+  FLORENCE_POSITION,
+  ROSEBURG_POSITION,
+  BEND_FARMERS_COUNT,
+  LAGRANDE_LESSER,
+  LAGRANDE_WARDEN,
+  LAGRANDE_HERALDS,
+  CARAVANS_COUNT,
+  CARAVAN_GUARDS_PER,
+  SALT_PATCHES,
+  FLORENCE_BEARS,
+  FLORENCE_EAGLES,
+  FLORENCE_CRABS,
+  ROSEBURG_LESSER,
+  ROSEBURG_WARDEN,
+  ROSEBURG_HERALDS,
   HOLY_OUTPOST_POSITION,
   HEAVEN_PORTAL_POSITION,
   GUARDIAN_MELEE_OFFSET,
@@ -312,6 +333,7 @@ export class MainScene extends Phaser.Scene {
   private act1Givers: Npc[] = [];
   private act2Givers: Npc[] = [];
   private olympiaNpc!: Npc; // DELLA — the Olympia woman who receives Marta's water pump (Q1); reusable for the Act IV callback
+  private clericNpc!: Npc; // Act IV 4.4 — the Roseburg cleric who purifies the salt (a deliver/recipient NPC)
   // Investigation arc (Quests 8–12) NPCs: Yakima givers (Wend/Halvard), the Seattle
   // Druids (Rowan giver + Alder the vessel-examiner), Bellingham's Greta, Longview's
   // Mire. `deliverNpcs` are recipient NPCs that COMPLETE an objective when talked to
@@ -622,14 +644,25 @@ export class MainScene extends Phaser.Scene {
   private readonly ACT2_IDS = new Set(['whats-gotten-into-them', 'the-blight', 'the-thing-at-white-pass']);
   private readonly INV_IDS = new Set(['word-to-yakima', 'the-iron-road', 'the-northern-farms', 'what-the-dark-ones-carry', 'the-exile-of-longview']);
   private readonly DESCENT_IDS = new Set(['descent-1', 'descent-2', 'descent-3', 'descent-4']);
+  // Act IV (4.1–4.4): the Necromancer's opening arc, given by Azazel BEFORE descent.
+  private readonly ACTIV_IDS = new Set([
+    'act4-what-they-wont-give',
+    'act4-watchers-on-the-road',
+    'act4-the-trade-day',
+    'act4-salt-and-sea',
+  ]);
   // En-route ambush groups (Q9/Q12): each spawns a demon pack on first approach.
   private arcAmbushes: { x: number; y: number; lines: string[]; spawned: boolean }[] = [];
   private arcEnemies: (Townsfolk | AngelEnemy | Demon)[] = [];
-  private arcMode: 'defeat' | 'plunder' | 'reach' | 'pickup' | 'burn' | 'none' = 'none';
+  private arcMode: 'defeat' | 'plunder' | 'reach' | 'pickup' | 'burn' | 'gather' | 'none' = 'none';
   private arcReach: { x: number; y: number } | null = null;
   private arcShipmentPos: { x: number; y: number } | null = null;
   private arcHolyBaseline = 0;
   private arcHolyRequired = 0;
+  // Act IV 4.4: count-of-N salt-patch gather (arcMode 'gather'). The pickups fire
+  // 'salt' collects into arcGatherCount; the objective completes at the required count.
+  private arcGatherCount = 0;
+  private arcGatherRequired = 0;
   // The active objective's "on arriving" scripted narration (Act II): the lines +
   // the target position + a one-shot guard so it plays once on first approach.
   private arcEncounterNarration: readonly string[] | null = null;
@@ -778,14 +811,18 @@ export class MainScene extends Phaser.Scene {
     this.alderNpc = new Npc(this, sea.x + ts * 2, sea.y, [...ALDER_EXAM_LINES]);
     this.mireNpc = new Npc(this, LONGVIEW_POSITION.x, LONGVIEW_POSITION.y, [...MIRE_VERDICT_LINES]);
     const greta = new Npc(this, BELLINGHAM_FARMS_POSITION.x, BELLINGHAM_FARMS_POSITION.y, [...GRETA_LINES]);
+    // Act IV 4.4 — the Roseburg cleric who purifies the salt (a deliver/recipient NPC).
+    this.clericNpc = new Npc(this, ROSEBURG_POSITION.x, ROSEBURG_POSITION.y, [...CLERIC_LINES]);
     this.invGivers = [wend, halvard, rowan];
-    for (const g of [...this.invGivers, this.alderNpc, this.mireNpc, greta]) this.physics.add.collider(this.player.sprite, g.sprite);
+    for (const g of [...this.invGivers, this.alderNpc, this.mireNpc, greta, this.clericNpc]) this.physics.add.collider(this.player.sprite, g.sprite);
     // Recipient NPCs (talk while the trigger is active → completes the objective).
     this.deliverNpcs = [
       { npc: this.olympiaNpc, trigger: 'pump-delivered', lines: [...OLYMPIA_DELIVERY_LINES], idle: 'Della: The garden’s drinking deep again, thanks to you. Safe travels, friend — and don’t be a stranger.' },
       { npc: greta, trigger: 'bellingham-thanked', lines: [...GRETA_LINES], idle: 'Greta: The fields are ours again, thanks to you. Safe travels.' },
       { npc: this.alderNpc, trigger: 'contraption-examined', lines: [...ALDER_EXAM_LINES], idle: 'Alder: The roots are uneasy of late. Walk carefully, friend.' },
       { npc: this.mireNpc, trigger: 'mire-verdict', lines: [...MIRE_VERDICT_LINES], idle: 'Mire: I’ve said my piece. Leave an old exile to the quiet.' },
+      // Act IV 4.4: bring the gathered salt to the cleric (completes 'roseburg-reached').
+      { npc: this.clericNpc, trigger: 'roseburg-reached', lines: [...CLERIC_LINES], idle: CLERIC_IDLE_LINE },
     ];
 
     // Portland's quest-giver-style NPC — flavor dialogue only (no quest wired).
@@ -935,7 +972,18 @@ export class MainScene extends Phaser.Scene {
       this.questGivers.push({
         entity: patron,
         pos: () => ({ x: patron.x, y: patron.y }),
-        questIds: ['descent-1', 'descent-2', 'descent-3', 'descent-4'],
+        // Act IV (4.1–4.4) is offered FIRST (firstAvailable walks this list in order);
+        // the old descent ids stay for the bridge after 4.4.
+        questIds: [
+          'act4-what-they-wont-give',
+          'act4-watchers-on-the-road',
+          'act4-the-trade-day',
+          'act4-salt-and-sea',
+          'descent-1',
+          'descent-2',
+          'descent-3',
+          'descent-4',
+        ],
         idleLines: [...PATRON_IDLE_LINES],
         requiresCorruption: true,
       });
@@ -3676,6 +3724,11 @@ export class MainScene extends Phaser.Scene {
   private onPickupCollected(e: PickupCollected): void {
     if (e.type === 'holy-power') this.holyPower.add(e.amount); // HUD ticks via onChange
     else if (e.type === 'plunder') this.notifyQuest('shipment-collected'); // descent Quest 2
+    else if (e.type === 'salt') {
+      // Act IV 4.4a: count salt patches toward the gather objective; the watcher
+      // (updateArc) fires 'salt-gathered' once the required count is collected.
+      if (this.arcMode === 'gather') this.arcGatherCount++;
+    }
     this.spawnPickupPop(e.x, e.y, e.color);
     if (e.type === 'holy-power') this.autosave(); // meaningful moment: holy power collected
   }
@@ -6108,7 +6161,11 @@ export class MainScene extends Phaser.Scene {
   private isArcQuest(id?: string): boolean {
     return (
       id !== undefined &&
-      (this.ACT1_IDS.has(id) || this.ACT2_IDS.has(id) || this.INV_IDS.has(id) || this.DESCENT_IDS.has(id))
+      (this.ACT1_IDS.has(id) ||
+        this.ACT2_IDS.has(id) ||
+        this.INV_IDS.has(id) ||
+        this.ACTIV_IDS.has(id) ||
+        this.DESCENT_IDS.has(id))
     );
   }
 
@@ -6216,6 +6273,38 @@ export class MainScene extends Phaser.Scene {
         this.arcMode = 'reach';
         this.arcReach = { ...DARK_OUTPOST_POSITION };
         break;
+      // --- Act IV (4.1–4.4), given by Azazel before the descent ---
+      case 'bend-materials-taken':
+        // 4.1 — beat the Bend farmers; "taking the materials" is the completeNarration.
+        this.spawnArcTownsfolk('farmer', BEND_POSITION, BEND_FARMERS_COUNT);
+        this.arcMode = 'defeat';
+        break;
+      case 'lagrande-angels-defeated':
+        // 4.2 — clear the road-watch: a herald (the speaker) + lesser/warden angels.
+        this.spawnArcAngelsMixed(LA_GRANDE_POSITION, { lesser: LAGRANDE_LESSER, warden: LAGRANDE_WARDEN, herald: LAGRANDE_HERALDS });
+        this.arcMode = 'defeat';
+        break;
+      case 'caravans-stopped':
+        // 4.3 — five caravans, each a small guard knot, strung along the route.
+        for (let c = 0; c < CARAVANS_COUNT; c++) {
+          const a = (Math.PI * 2 * c) / CARAVANS_COUNT;
+          const spot = { x: CARAVAN_ROUTE_POSITION.x + Math.cos(a) * 150, y: CARAVAN_ROUTE_POSITION.y + Math.sin(a) * 150 };
+          this.spawnArcTownsfolk('caravanguard', spot, CARAVAN_GUARDS_PER);
+        }
+        this.arcMode = 'defeat';
+        break;
+      case 'salt-gathered':
+        // 4.4a — gather N salt patches along the Florence shore while wildlife harasses.
+        this.beginGather(FLORENCE_POSITION, SALT_PATCHES);
+        this.spawnArcTownsfolk('bear', FLORENCE_POSITION, FLORENCE_BEARS);
+        this.spawnArcTownsfolk('eagle', FLORENCE_POSITION, FLORENCE_EAGLES);
+        this.spawnArcTownsfolk('crab', FLORENCE_POSITION, FLORENCE_CRABS);
+        break;
+      case 'roseburg-reached':
+        // 4.4b — angels bar the road into Roseburg; the CLERIC (deliver NPC) completes it.
+        this.spawnArcAngelsMixed(ROSEBURG_POSITION, { lesser: ROSEBURG_LESSER, warden: ROSEBURG_WARDEN, herald: ROSEBURG_HERALDS });
+        this.arcMode = 'none';
+        break;
       default:
         this.arcMode = 'none';
     }
@@ -6232,6 +6321,18 @@ export class MainScene extends Phaser.Scene {
     this.arcMode = 'plunder';
     this.arcHolyBaseline = this.holyPower.count;
     this.arcHolyRequired = required;
+  }
+
+  /** Act IV 4.4: scatter `n` salt-patch pickups around `center` for a count-of-N gather. */
+  private beginGather(center: { x: number; y: number }, n: number): void {
+    this.arcMode = 'gather';
+    this.arcGatherCount = 0;
+    this.arcGatherRequired = n;
+    for (let i = 0; i < n; i++) {
+      const a = (Math.PI * 2 * i) / n + Math.random() * 0.4;
+      const r = 70 + Math.random() * 90;
+      this.pickups.spawn({ x: center.x + Math.cos(a) * r, y: center.y + Math.sin(a) * r, type: 'salt', amount: 1 });
+    }
   }
 
   /** Watch for the active arc objective's completion each frame (Act I / Act II / descent). */
@@ -6252,6 +6353,9 @@ export class MainScene extends Phaser.Scene {
       const collected = this.holyPower.count - this.arcHolyBaseline;
       const allDead = this.arcEnemies.length > 0 && this.arcEnemies.every((e) => !e.isAlive);
       if (allDead && collected >= this.arcHolyRequired) this.notifyQuest(trig);
+    } else if (this.arcMode === 'gather') {
+      // Act IV 4.4a: complete once the required number of salt patches are collected.
+      if (this.arcGatherCount >= this.arcGatherRequired) this.notifyQuest(trig);
     } else if (this.arcMode === 'reach' && this.arcReach) {
       if (Phaser.Math.Distance.Between(this.player.x, this.player.y, this.arcReach.x, this.arcReach.y) <= REACH_OUTPOST_RANGE) {
         this.notifyQuest(trig);
@@ -6261,8 +6365,8 @@ export class MainScene extends Phaser.Scene {
       const near = Phaser.Math.Distance.Between(this.player.x, this.player.y, this.arcReach.x, this.arcReach.y) <= GROVE_BURN_RANGE;
       this.burnButton.setVisible(near && !this.dialogue.isOpen());
     }
-    // Keep the tracker's live "(N left)" / "(Holy Power x/y)" suffix current.
-    if (this.arcMode === 'defeat' || this.arcMode === 'plunder') this.refreshQuestUi();
+    // Keep the tracker's live "(N left)" / "(Holy Power x/y)" / "(salt x/y)" suffix current.
+    if (this.arcMode === 'defeat' || this.arcMode === 'plunder' || this.arcMode === 'gather') this.refreshQuestUi();
   }
 
   /** Show the active objective's scripted "on arriving" narration once, on first approach. */
@@ -6332,6 +6436,21 @@ export class MainScene extends Phaser.Scene {
     }
   }
 
+  /** Act IV: spawn a MIX of angel variants in a ring (the herald is the speaking one). */
+  private spawnArcAngelsMixed(center: { x: number; y: number }, mix: Partial<Record<AngelVariantKey, number>>): void {
+    const keys: AngelVariantKey[] = [];
+    (Object.entries(mix) as [AngelVariantKey, number][]).forEach(([k, count]) => {
+      for (let i = 0; i < count; i++) keys.push(k);
+    });
+    const n = Math.max(keys.length, 1);
+    keys.forEach((key, i) => {
+      const a = (Math.PI * 2 * i) / n + Math.random() * 0.5;
+      const r = 80 + Math.random() * 50;
+      const angel = this.spawnAngel(key, center.x + Math.cos(a) * r, center.y + Math.sin(a) * r);
+      this.arcEnemies.push(angel);
+    });
+  }
+
   /** Clear the current objective's arc enemies + watcher state (not the holy-power motes). */
   private clearArcObjective(): void {
     const set = new Set<Townsfolk | AngelEnemy | Demon>(this.arcEnemies);
@@ -6343,6 +6462,9 @@ export class MainScene extends Phaser.Scene {
     this.arcMode = 'none';
     this.arcReach = null;
     this.arcShipmentPos = null;
+    this.arcGatherCount = 0;
+    this.arcGatherRequired = 0;
+    this.pickups.clearByType('salt'); // prune any leftover Act IV 4.4 salt patches
     this.arcEncounterNarration = null;
     this.arcEncounterPos = null;
     this.arcEncounterShown = false;
@@ -7046,6 +7168,12 @@ export class MainScene extends Phaser.Scene {
       { label: 'Jump to Rift Scene (Q13)', onPress: () => this.devJumpToRift() },
       { label: 'Force Corrupt', onPress: () => this.devForceCorrupt() },
       { label: 'Teleport to Dark Outpost', onPress: () => this.devTeleportToOutpost() },
+      // Act IV (4.1–4.4) teleports — playtest the new locations on mobile.
+      { label: 'Teleport to Bend (4.1)', onPress: () => this.devTeleportTo(BEND_POSITION) },
+      { label: 'Teleport to La Grande (4.2)', onPress: () => this.devTeleportTo(LA_GRANDE_POSITION) },
+      { label: 'Teleport to Caravan Route (4.3)', onPress: () => this.devTeleportTo(CARAVAN_ROUTE_POSITION) },
+      { label: 'Teleport to Florence (4.4)', onPress: () => this.devTeleportTo(FLORENCE_POSITION) },
+      { label: 'Teleport to Roseburg (4.4)', onPress: () => this.devTeleportTo(ROSEBURG_POSITION) },
       { label: 'Teleport to Holy Outpost', onPress: () => this.devTeleportToHolyOutpost() },
       { label: 'Start Guardian Fight', onPress: () => this.startGuardianFight() },
       { label: 'Reset Portal', onPress: () => this.resetGuardianEncounter() },
@@ -7135,6 +7263,9 @@ export class MainScene extends Phaser.Scene {
       const got = Math.min(this.holyPower.count - this.arcHolyBaseline, this.arcHolyRequired);
       const left = this.arcEnemies.filter((e) => e.isAlive).length;
       return `  (Holy Power ${Math.max(0, got)}/${this.arcHolyRequired}, ${left} angels left)`;
+    }
+    if (this.arcMode === 'gather') {
+      return `  (salt ${Math.min(this.arcGatherCount, this.arcGatherRequired)}/${this.arcGatherRequired})`;
     }
     return '';
   }
@@ -7284,6 +7415,18 @@ export class MainScene extends Phaser.Scene {
         return { x: this.town.rift.x, y: this.town.rift.y, label: '' };
       case 'npc':
         return { x: this.npc.sprite.x, y: this.npc.sprite.y, label: '' };
+      // --- Act IV (4.1–4.4) locations ---
+      case 'bend':
+        return { x: BEND_POSITION.x, y: BEND_POSITION.y, label: '' };
+      case 'la-grande':
+        return { x: LA_GRANDE_POSITION.x, y: LA_GRANDE_POSITION.y, label: '' };
+      case 'caravan-route':
+        return { x: CARAVAN_ROUTE_POSITION.x, y: CARAVAN_ROUTE_POSITION.y, label: '' };
+      case 'florence':
+        return { x: FLORENCE_POSITION.x, y: FLORENCE_POSITION.y, label: '' };
+      case 'roseburg':
+        // 4.4b points at the cleric (reach + deliver are at the same Roseburg spot).
+        return { x: this.clericNpc.sprite.x, y: this.clericNpc.sprite.y, label: '' };
       case 'outpost':
         return { x: DARK_OUTPOST_POSITION.x, y: DARK_OUTPOST_POSITION.y, label: '' };
       case 'oregon-city':

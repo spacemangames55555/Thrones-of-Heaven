@@ -5,7 +5,7 @@ import type { PlayerPath } from '../story/playerPath';
 import type { SkillSaveState } from '../skills/SkillState';
 
 /** Bump when the SaveData shape changes; SaveSystem.read can then migrate old saves. */
-export const SAVE_VERSION = 6;
+export const SAVE_VERSION = 7;
 
 /**
  * Act I (Enumclaw opening) quest ids — inserted at the FRONT of the chain, with the
@@ -49,6 +49,37 @@ export const INV_QUEST_IDS = [
  */
 export const RETIRED_CORRUPTION_ID = 'corruption-at-the-gates';
 export const RIFT_FINALE_ID = 'the-source';
+
+/**
+ * Act IV (4.1–4.4) quest ids (Batch B) — INSERTED before the old descent chain,
+ * given by Azazel right after the rift. The bridge re-points descent-1's
+ * prerequisite at the last of them ('act4-salt-and-sea').
+ *
+ * v6→v7 migration: a pre-v7 save that is ALREADY on/after the descent (started or
+ * finished any descent quest, or is in the climax/Hell beyond) is LEFT on its
+ * descent path — the four Act IV ids are marked COMPLETE so descent-1's new
+ * prerequisite stays satisfied (no soft-lock, no orphaned activeId, and Act IV is
+ * NOT forced on a player who's already past it). A save that has NOT yet entered
+ * the descent simply flows into Act IV next (Azazel offers 4.1), so it is left
+ * untouched. See SaveSystem.migrate + DESCENT_OR_LATER_IDS.
+ */
+export const ACT4_QUEST_IDS = [
+  'act4-what-they-wont-give',
+  'act4-watchers-on-the-road',
+  'act4-the-trade-day',
+  'act4-salt-and-sea',
+];
+/** Descent + everything downstream of it — used to detect "already past Act IV." */
+export const DESCENT_OR_LATER_IDS = [
+  'descent-1',
+  'descent-2',
+  'descent-3',
+  'descent-4',
+  'climax-defiled-gate',
+  'climax-judgment',
+  'climax-seven-sins',
+];
+
 /** The single localStorage slot key. */
 export const SAVE_KEY = 'toh_save';
 

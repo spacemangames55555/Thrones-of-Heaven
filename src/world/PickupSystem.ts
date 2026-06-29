@@ -129,6 +129,16 @@ export class PickupSystem {
     this.items = [];
   }
 
+  /** Remove uncollected pickups of one type (e.g. leftover salt when an arc objective ends). */
+  clearByType(type: string): void {
+    const remaining: Pickup[] = [];
+    for (const p of this.items) {
+      if (p.type === type) p.destroy();
+      else remaining.push(p);
+    }
+    this.items = remaining;
+  }
+
   private static ensureTexture(scene: Phaser.Scene): void {
     if (scene.textures.exists(TEXTURE_KEY)) return;
     const s = 18;

@@ -41,6 +41,13 @@ export type ObjectiveTrigger =
   | 'sasquatch-defeated'
   | 'rift-reached'
   | 'angel-refused'
+  // Act IV (quests 4.1–4.4) — given by Azazel BEFORE the descent (a temporary
+  // bridge re-enters descent-1 after 4.4). All corruption-gated:
+  | 'bend-materials-taken'
+  | 'lagrande-angels-defeated'
+  | 'caravans-stopped'
+  | 'salt-gathered'
+  | 'roseburg-reached'
   // The Descent arc:
   | 'guardsmen-defeated'
   | 'farmers-defeated'
@@ -86,6 +93,12 @@ export type TargetKind =
   | 'sasquatch'
   | 'rift'
   | 'npc'
+  // Act IV (4.1–4.4) locations — Oregon, all on Earth:
+  | 'bend'
+  | 'la-grande'
+  | 'caravan-route'
+  | 'florence'
+  | 'roseburg'
   // The Descent arc locations:
   | 'outpost'
   | 'oregon-city'
@@ -125,6 +138,11 @@ export const TARGET_WORLD: Record<TargetKind, WorldId> = {
   sasquatch: WORLD_EARTH,
   rift: WORLD_EARTH,
   npc: WORLD_EARTH,
+  bend: WORLD_EARTH,
+  'la-grande': WORLD_EARTH,
+  'caravan-route': WORLD_EARTH,
+  florence: WORLD_EARTH,
+  roseburg: WORLD_EARTH,
   outpost: WORLD_EARTH,
   'oregon-city': WORLD_EARTH,
   'farm-field': WORLD_EARTH,
@@ -742,10 +760,198 @@ export const PATRON_IDLE_LINES = [
   'Azazel: You are not yet of us. Come back when the light has gone out of your road.',
 ];
 
+/**
+ * ============================================================================
+ * ACT IV (quests 4.1–4.4) — the Necromancer's opening descent into doing real
+ * harm "for the road home." Given by the patron AZAZEL at the Dark Outpost, all
+ * corruption-gated, inserted BEFORE the old descent chain. 4.1 unlocks right
+ * after the rift ('the-source'); 4.2←4.1, 4.3←4.2, 4.4←4.3. A TEMPORARY BRIDGE
+ * (descent-1.prerequisites = ['act4-salt-and-sea']) re-enters the old descent
+ * chain after 4.4, so the game stays playable end to end (4.4 → descent-1..4 →
+ * climax → Heaven → endgame, all unchanged).
+ *
+ * Each routes through the existing arc-objective system (like descent): defeat /
+ * gather / reach watchers + a return-to-Azazel step. The angels' pleas are
+ * `encounterNarration` (freeze-and-read). The Roseburg cleric is a deliver NPC.
+ *
+ * >>> EDIT ACT IV TEXT HERE: each quest's `title`, objective `text`, the three
+ *     Azazel dialogue states, the encounter/complete narration, and the reward.
+ *     The Roseburg cleric's lines are CLERIC_LINES below. <<<
+ * ============================================================================
+ */
+
+/** 4.4 — the Roseburg cleric (a deliver/recipient NPC) who purifies the salt. */
+export const CLERIC_LINES = [
+  'Cleric: I’ll cleanse it. Not because I want to — because I’ve seen what happens to those who refuse you. God forgive me for the part these hands are playing in whatever this becomes.',
+  'Cleric: It’s done. Take it and go. And may you someday understand what you carried out of here.',
+];
+/** Cleric flavor line once the salt is purified / before that step is active. */
+export const CLERIC_IDLE_LINE =
+  'Cleric: I’ve done what you asked of me. Leave me to my prayers.';
+
+/** 4.1 — "What They Won't Give" (Bend): take materials the farmers won't trade. */
+export const ACT4_WHAT_THEY_WONT_GIVE: QuestDef = {
+  id: 'act4-what-they-wont-give',
+  title: 'What They Won’t Give',
+  prerequisites: ['the-source'],
+  requiresCorruption: true,
+  objectives: [
+    {
+      text: 'Take the materials from the farmers at Bend',
+      trigger: 'bend-materials-taken',
+      target: 'bend',
+      encounterNarration: [
+        'The farmers see you coming — and something in how you move, or the cold that comes with you now, makes them back toward their door. “We don’t— we don’t want any trouble. Whatever you are, just go. Please.” They will not give you what you came for. There is only one way to take it.',
+      ],
+      completeNarration: [
+        'It’s done. The materials are yours. The farmers are alive — shaken, beaten, watching you go with eyes full of a fear you used to stand against. You tell yourself they left you no choice.',
+      ],
+    },
+    { text: 'Return to Azazel at the Dark Outpost', trigger: 'reach-outpost', target: 'outpost' },
+  ],
+  npcInactiveLines: [
+    'Azazel: There you are. Good. We have so much work ahead of us, you and I — but it ends with us home. Hold on to that.',
+    'Azazel: If we’re ever going to open the door back to Heaven, we’ll need supplies. A great many. And here is the hard truth, friend: your kind is terrified of us. They see what the angels made us into and they can’t see past it. They won’t trade with us. They won’t even speak with us.',
+    'Azazel: So we’re left with no choice but to take what we need. I wish it were otherwise.',
+    'Azazel: There are farmers down in Bend, in Oregon, with materials we can’t do without. Go to them. Ask first — be civil, give them the chance. But if they refuse you... then take it. We can’t let their fear cost us our only way home.',
+  ],
+  npcActiveLines: ['Azazel: The materials are at Bend, to the south. Take them, then come back to me.'],
+  npcCompleteLines: [
+    'Azazel: You got it. I knew you would.',
+    'Azazel: I know that wasn’t easy — taking from frightened people. It sits wrong, doesn’t it? Hold on to that feeling, even. It means you’re still good. That’s why you’ll do so much good once we’re home and all of this is behind us. Rest now. There’s more to do.',
+  ],
+  preAcceptHint: 'Seek Azazel at the Dark Outpost',
+  reward: { healToFull: true, xp: 200, banner: 'What They Won’t Give — complete' },
+};
+
+/** 4.2 — "The Watchers on the Road" (La Grande): clear the angels barring the way. */
+export const ACT4_WATCHERS_ON_THE_ROAD: QuestDef = {
+  id: 'act4-watchers-on-the-road',
+  title: 'The Watchers on the Road',
+  prerequisites: ['act4-what-they-wont-give'],
+  requiresCorruption: true,
+  objectives: [
+    {
+      text: 'Clear the angels watching the road to La Grande',
+      trigger: 'lagrande-angels-defeated',
+      target: 'la-grande',
+      encounterNarration: [
+        'HERALD: Stop. I know what you were, before this. I have read it in the Light you carry — Light that was given freely by a dying liar, and is not yours.',
+        'HERALD: You were a protector once. You drove the wolf from the farmer’s door. Do you remember? It is not too late to remember.',
+        'HERALD: Turn back. Set down what they have made you into. Please — I do not wish to raise my hand against you. None of us do.',
+        'PLAYER: ...You don’t know what they did to you.',
+        'HERALD: ...No. You don’t. Not yet. I am sorry for what comes next — for both of us.',
+      ],
+      completeNarration: [
+        'The angels do not die. As the last one falls, its form unravels into light and is gone — back to Heaven, leaving behind a faint, warm residue: a trace of the Light. You gather it. You try not to think about the sorrow in its voice.',
+      ],
+    },
+    { text: 'Return to Azazel at the Dark Outpost', trigger: 'reach-outpost', target: 'outpost' },
+  ],
+  npcInactiveLines: [
+    'Azazel: We need to move north, to La Grande — but we can’t. The angels have found our trail. They watch everything we do now, and they’ve set themselves across the road to stop us.',
+    'Azazel: You understand what they are, don’t you? The same beings who drained us, who cast us out, who keep us from going home. And now they stand between us and the supplies we need to get there.',
+    'Azazel: Clear them off the road. Don’t let them turn you back. We’ve come too far to be stopped by the very ones who started all this.',
+  ],
+  npcActiveLines: ['Azazel: The angels still hold the road north. Clear them, then return to me.'],
+  npcCompleteLines: [
+    'Azazel: The road’s clear. And you brought back Light from them — good, good. Every scrap brings us closer.',
+    'Azazel: I saw it hesitate. They’ll do that — talk. Fill your head with doubt, with half-remembered things, anything to stop you. It’s what they do. Don’t let their words in. They are very, very good at sounding kind. Come. La Grande waits.',
+  ],
+  preAcceptHint: 'Seek Azazel at the Dark Outpost',
+  reward: {
+    healToFull: true,
+    xp: 240,
+    holyPower: 8,
+    banner: 'The Watchers on the Road — complete',
+  },
+};
+
+/** 4.3 — "The Trade Day" (caravans → Portland): take the worked metal off the road. */
+export const ACT4_THE_TRADE_DAY: QuestDef = {
+  id: 'act4-the-trade-day',
+  title: 'The Trade Day',
+  prerequisites: ['act4-watchers-on-the-road'],
+  requiresCorruption: true,
+  objectives: [
+    {
+      text: 'Stop the five caravans before they reach Portland',
+      trigger: 'caravans-stopped',
+      target: 'caravan-route',
+      encounterNarration: [
+        '(The wagon people form up — not soldiers, just drivers and traders clutching whatever they can swing, terrified but standing their ground in front of everything they own.)',
+      ],
+      completeNarration: [
+        'Five caravans, stripped. The road behind you is strewn with overturned wagons and people too hurt or too afraid to chase you. A day’s worth of a hundred families’ work, gone.',
+      ],
+    },
+    { text: 'Return to Azazel at the Dark Outpost', trigger: 'reach-outpost', target: 'outpost' },
+  ],
+  npcInactiveLines: [
+    'Azazel: Fortune smiles on us today, friend. It’s the great trade day across the region — the one day all the wealth of these lands moves on the roads at once. We may never get a chance like this again.',
+    'Azazel: Five caravans are rolling toward Portland, heavy with worked metal — wheels, axles, fittings. The very thing we need most. We cannot make the door home without it.',
+    'Azazel: Head them off before they reach the city. Take their metal — all of it. They’ll have hands to guard the wagons, frightened folk who’ll fight to keep what’s theirs. Don’t let that stop you. What we’re building is bigger than one day’s trade.',
+  ],
+  npcActiveLines: ['Azazel: The caravans are still on the road to Portland. Take their metal, then return to me.'],
+  npcCompleteLines: [
+    'Azazel: Magnificent. Look at all of it — that’s months of progress in a single day.',
+    'Azazel: I know. They weren’t soldiers. They were just people, hauling their goods to market. It troubles you. It should — a heart that didn’t trouble at that wouldn’t be worth saving.',
+    'Azazel: But think of the scale of what we’re building. A door between worlds. When weighed against that, what is one caravan of wheels? What is one bad day, against your whole people finally free of these tyrants? Hold the bigger picture. It’s the only way through this.',
+  ],
+  preAcceptHint: 'Seek Azazel at the Dark Outpost',
+  reward: { healToFull: true, xp: 280, banner: 'The Trade Day — complete' },
+};
+
+/** 4.4 — "Salt and Sea" (Florence → Roseburg): gather salt, cut into Roseburg, purify it. */
+export const ACT4_SALT_AND_SEA: QuestDef = {
+  id: 'act4-salt-and-sea',
+  title: 'Salt and Sea',
+  prerequisites: ['act4-the-trade-day'],
+  requiresCorruption: true,
+  objectives: [
+    {
+      text: 'Gather the shore-salt along the Florence coast',
+      trigger: 'salt-gathered',
+      target: 'florence',
+      encounterNarration: [
+        'The salt lies in pale crusted patches up and down the shore, and the creatures here want you nowhere near it — driven half-mad by something in the air. You take what you came for, one patch at a time, with claws and teeth and talons testing you the whole way.',
+      ],
+    },
+    {
+      text: 'Cut through the angels into Roseburg and bring the salt to the cleric',
+      trigger: 'roseburg-reached',
+      target: 'roseburg',
+      encounterNarration: [
+        'HERALD: Salt, now. Metal, Light, and salt. Do you even know what you’re building, mortal? Do you know what that door lets out — or only what your master tells you it lets in?',
+        'HERALD: We are not your enemy. We have never once raised a hand against your towns, your families — only against you, and only here, only to slow what’s coming. Ask yourself why protectors would need to stop you.',
+        'HERALD: ...I see the answer won’t come. Not yet. Then I am sorry. We do what we must to guard them — as you once did.',
+      ],
+    },
+    { text: 'Return to Azazel at the Dark Outpost', trigger: 'reach-outpost', target: 'outpost' },
+  ],
+  npcInactiveLines: [
+    'Azazel: We’re closer than you know. The door home needs more than metal — it needs purity, and there’s a rare thing only your world makes. On the coast at Florence, the ocean and the wind together leave behind a mineralized salt, found nowhere else. We need a great deal of it.',
+    'Azazel: Gather it along the shore. But be warned — the wild things there have grown strange near the Light’s edge, and they’ll turn on you. Watch the water, the rocks, the sky.',
+    'Azazel: Once you have the salt, it’s raw — useless to us until it’s purified. Take it inland to Roseburg. There’s a cleric there with the old knowledge who can cleanse it. The angels know that salt matters to us. They’ll be watching the road into Roseburg. Be ready to cut through them.',
+  ],
+  npcActiveLines: ['Azazel: Salt from the Florence shore, then the cleric at Roseburg. Then home to me.'],
+  npcCompleteLines: [
+    'Azazel: Purified — perfect. The pieces are nearly all in place now. I can almost see home from here.',
+    'Azazel: The angels talked again, didn’t they? Asked their little questions, planted their little doubts. “Do you know what you’re building.” As if we’re the deceivers. We’re building a door, friend. That’s all. A way home. Don’t let them make it into something monstrous in your mind. Come — we’re so close now.',
+  ],
+  preAcceptHint: 'Seek Azazel at the Dark Outpost',
+  reward: {
+    healToFull: true,
+    xp: 320,
+    holyPower: 10,
+    banner: 'Salt and Sea — complete',
+  },
+};
+
 export const DESCENT_1: QuestDef = {
   id: 'descent-1',
   title: 'The Patron’s First Errand',
-  prerequisites: ['the-source'],
+  prerequisites: ['act4-salt-and-sea'], // BRIDGE: the old descent chain re-enters after Act IV 4.4
   requiresCorruption: true,
   objectives: [
     { text: 'Slay the guardsmen of Oregon City', trigger: 'guardsmen-defeated', target: 'oregon-city' },
@@ -986,8 +1192,13 @@ export const QUEST_REGISTRY: readonly QuestDef[] = [
   // FINALE — Quest 13 + the rift scene (the REAL corruption beat). The old
   // 'corruption-at-the-gates' placeholder is RETIRED (no longer in the chain).
   THE_SOURCE,
-  // The descent arc — unchanged; descent-1 now unlocks after the rift (prereq
-  // 'the-source'), and the patron (Azazel) offers it once the player is corrupted.
+  // Act IV (4.1–4.4) — given by Azazel right after the rift, BEFORE the descent.
+  ACT4_WHAT_THEY_WONT_GIVE,
+  ACT4_WATCHERS_ON_THE_ROAD,
+  ACT4_THE_TRADE_DAY,
+  ACT4_SALT_AND_SEA,
+  // The descent arc — unchanged content; descent-1 now bridges off Act IV's 4.4
+  // ('act4-salt-and-sea'), and the patron (Azazel) offers it once corrupted.
   DESCENT_1,
   DESCENT_2,
   DESCENT_3,
