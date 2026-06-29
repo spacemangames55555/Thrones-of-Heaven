@@ -94,6 +94,18 @@ export const ZOOM_OUT_MARGIN = 1.08;
 // one place. Gameplay is unaffected either way.
 export const DEV_MODE: boolean = true;
 
+// --- Transient combat FX pools (perf) --------------------------------------
+//
+// Floating damage numbers + impact circles were the measured cause of the
+// under-load stutter: allocating/destroying a `Text` costs ~0.7 ms each, so a
+// crowd taking AoE/DoT damage spawned dozens per frame and blew the frame budget.
+// They are now POOLED (src/combat/FxPools.ts) and reused. These caps are the
+// MAX concurrent items: a burst recycles the oldest instead of allocating, so the
+// frame cost is bounded no matter how much happens at once. Tune up if you ever
+// see labels/flashes disappear too early under extreme load.
+export const MAX_FLOATING_TEXTS = 48; // concurrent damage numbers / combat labels
+export const MAX_CIRCLE_FX = 48; // concurrent impact/pulse circles
+
 // --- Progression / Leveling v1 ---------------------------------------------
 //
 // XP curve: xpToNext(level) = round(BASE_XP * GROWTH_FACTOR^(level-1)). This is

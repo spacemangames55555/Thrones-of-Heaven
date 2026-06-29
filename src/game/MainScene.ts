@@ -6,6 +6,7 @@ import { Npc } from '../entities/Npc';
 import { Controls } from '../input/Controls';
 import { CityMarkers } from '../ui/CityMarkers';
 import { DebugReadout } from '../ui/DebugReadout';
+import { PerfReadout } from '../ui/PerfReadout';
 import { DialogueBox } from '../ui/DialogueBox';
 import { TouchButton } from '../ui/TouchButton';
 import { ZoomControls } from '../ui/ZoomControls';
@@ -37,6 +38,7 @@ import { buildHeavenMapData, HEAVEN_WIDTH, HEAVEN_HEIGHT, HEAVEN_CHERUB_SPAWNS, 
 import { buildHellMapData, HELL_WIDTH, HELL_HEIGHT, HELL_DEMON_SPAWNS, SATAN_LAIR } from '../map/hellWorld';
 import { WORLD_EARTH, WORLD_HEAVEN, WORLD_HELL, type WorldId, type WorldRuntime } from '../world/worlds';
 import { ProjectileSystem } from '../combat/ProjectileSystem';
+import { FloatingTextPool, CircleFxPool } from '../combat/FxPools';
 import { HazardField } from '../combat/HazardField';
 import { PickupSystem, type PickupCollected } from '../world/PickupSystem';
 import { HolyPower } from '../progression/HolyPower';
@@ -125,6 +127,8 @@ import {
   SASQUATCH_DAMAGE,
   DEV_GRANT_XP_CHUNK,
   DEV_MODE,
+  MAX_FLOATING_TEXTS,
+  MAX_CIRCLE_FX,
   DMG_PER_LEVEL,
   MAX_ENERGY,
   ENERGY_REGEN_PER_SEC,
@@ -326,6 +330,7 @@ export class MainScene extends Phaser.Scene {
   private player!: Player;
   private controls!: Controls;
   private readout!: DebugReadout;
+  private perfReadout?: PerfReadout; // DEV_MODE-only FPS / frame-time + entity/pool counts
   private town!: TownFeatures;
   private npc!: Npc;
   // Act I (Enumclaw opening) quest-givers + the Olympia water-pump recipient (Della). Givers
@@ -364,6 +369,14 @@ export class MainScene extends Phaser.Scene {
   private playerHpText!: Phaser.GameObjects.Text;
   private banner!: Phaser.GameObjects.Text;
   private worldFx!: Phaser.GameObjects.Layer;
+  // Pooled transient FX (perf: damage numbers + impact circles were the measured
+  // under-load churn — see src/combat/FxPools.ts). Reused, not re-allocated.
+  private floatingText!: FloatingTextPool;
+  private circleFx!: CircleFxPool;
+  // Per-frame cache of the live combat-enemy list (perf): the concat+filter used to
+  // allocate a fresh array on every AoE/DoT/contagion/aim/scan call — many per frame.
+  private combatEnemyCache: CombatEnemy[] = [];
+  private combatEnemyCacheTime = -1;
   private lastCombatTime = -1e9;
   private playerDead = false;
   /** Player-allied summons (Ice Golem, skeletons, the Dark Matter Monster) — transient, not serialized. */
@@ -839,6 +852,10 @@ export class MainScene extends Phaser.Scene {
     // Combat: a world-space FX layer (damage numbers, swings) + the Sasquatch.
     // Created here so they fall in the WORLD snapshot (drawn by the main camera).
     this.worldFx = this.add.layer().setDepth(12);
+    // Pooled transient FX (perf): reuse damage-number Texts + impact circles instead
+    // of allocating/freeing them per hit — the measured cause of the under-load stutter.
+    this.floatingText = new FloatingTextPool(this, this.worldFx, MAX_FLOATING_TEXTS);
+    this.circleFx = new CircleFxPool(this, this.worldFx, MAX_CIRCLE_FX);
     // The reusable projectile system draws bolts into the world-FX layer (so the
     // UI camera ignores them). Enemy bolts damage the player; impacts spawn a poof.
     this.projectiles = new ProjectileSystem(this, this.map, this.worldFx);
@@ -1024,6 +1041,9 @@ export class MainScene extends Phaser.Scene {
     this.burnButton = new TouchButton(this, 'Burn the Grove', () => this.tryBurnGrove());
     this.zoomControls = new ZoomControls(this, cam, this.map.pixelWidth, this.map.pixelHeight);
     this.readout = new DebugReadout(this, this.map, this.player);
+    // DEV-only live perf readout (FPS / frame-time + entity, effect + pool counts) so
+    // the under-load behaviour is observable on a phone. Gated by DEV_MODE.
+    if (DEV_MODE) this.perfReadout = new PerfReadout(this, () => this.perfLines());
     // Spirit Vision tint is UI (created after the world snapshot so it lands in
     // the UI camera partition below). The reusable choice prompt creates its
     // objects on demand and tells the main camera to ignore them.
@@ -1098,6 +1118,11 @@ export class MainScene extends Phaser.Scene {
     }
     // Zoom keeps smoothing every frame, even during dialogue.
     this.zoomControls.update(delta);
+    // Pooled transient FX animate every frame (even during dialogue/death freezes, so
+    // in-flight labels/flashes finish fading instead of sticking).
+    this.floatingText.tick(this.time.now);
+    this.circleFx.tick(this.time.now);
+    this.perfReadout?.sample(delta); // DEV-only FPS / frame-time + counts (runs every frame)
     this.updateCombatHud();
     this.updateClimaxQuestActivation(); // self-healing climax start + world catch-up (all worlds)
     this.updateObjectiveMarker();
@@ -2175,6 +2200,7 @@ export class MainScene extends Phaser.Scene {
     let best: CombatEnemy | null = null;
     let bestDist = Infinity;
     for (const e of this.combatEnemies()) {
+      if (!e.isAlive) continue; // per-frame cache may include a mid-frame death
       const ex = e.x - x;
       const ey = e.y - y;
       const dist = Math.hypot(ex, ey);
@@ -2995,22 +3021,44 @@ export class MainScene extends Phaser.Scene {
 
   /** Every LIVE combat enemy across all type lists, as the shared CombatEnemy shape. */
   private combatEnemies(): CombatEnemy[] {
-    const all: CombatEnemy[] = [
-      this.sasquatch,
-      ...this.swarmers,
-      ...this.angels,
-      ...this.townsfolk,
-      ...this.guardians,
-      ...this.cherubs,
-      ...this.demons,
-      ...this.bosses,
-    ];
-    return all.filter((e) => e && e.isAlive);
+    // Per-frame cache (perf): rebuild the concat+filter at most ONCE per frame (keyed
+    // by the scene clock). Callers that act on the result re-check `isAlive`, so a
+    // mid-frame death between rebuilds is handled correctly.
+    const now = this.time.now;
+    if (now !== this.combatEnemyCacheTime) {
+      this.combatEnemyCacheTime = now;
+      const all: CombatEnemy[] = [
+        this.sasquatch,
+        ...this.swarmers,
+        ...this.angels,
+        ...this.townsfolk,
+        ...this.guardians,
+        ...this.cherubs,
+        ...this.demons,
+        ...this.bosses,
+      ];
+      this.combatEnemyCache = all.filter((e) => e && e.isAlive);
+    }
+    return this.combatEnemyCache;
   }
 
-  /** Live enemies within `range` of (x,y). */
+  /** Live enemies within `range` of (x,y). Re-checks isAlive so a mid-frame death
+   *  (since the per-frame cache was built) is never treated as a live target. */
   private combatEnemiesInRange(x: number, y: number, range: number): CombatEnemy[] {
-    return this.combatEnemies().filter((e) => Phaser.Math.Distance.Between(x, y, e.x, e.y) <= range);
+    return this.combatEnemies().filter((e) => e.isAlive && Phaser.Math.Distance.Between(x, y, e.x, e.y) <= range);
+  }
+
+  /** DEV perf readout content: live entity, effect + pool counts (see PerfReadout).
+   *  Pool lines show active/size — `size` stays at/under the cap, never growing
+   *  unbounded, which is the at-a-glance proof the FX churn is gone. */
+  private perfLines(): string[] {
+    return [
+      `enemies ${this.combatEnemies().length}  summons ${this.summons.count}`,
+      `dem ${this.demons.length} ang ${this.angels.length} twn ${this.townsfolk.length} swm ${this.swarmers.length} bos ${this.bosses.length}`,
+      `bolts ${this.projectiles.count}  dots ${this.dots.length}`,
+      `dmg# ${this.floatingText.activeCount}/${this.floatingText.size}  circ ${this.circleFx.activeCount}/${this.circleFx.size}`,
+      `worldFx ${this.worldFx.list.length}`,
+    ];
   }
 
   /** Freeze/unfreeze an enemy's physics body (the stun primitive's "can't move"). */
@@ -3027,10 +3075,9 @@ export class MainScene extends Phaser.Scene {
     for (const e of this.combatEnemiesInRange(x, y, range)) {
       this.stunnedEnemies.set(e, until);
       this.freezeEnemyBody(e, true);
-      // A brief star spark over the stunned enemy (world FX).
-      const star = this.add.text(e.x, e.y - 30, '✦', { fontFamily: 'system-ui, sans-serif', fontSize: '16px', color: '#ffe9a8' }).setOrigin(0.5).setDepth(14);
-      this.worldFx.add(star);
-      this.tweens.add({ targets: star, y: e.y - 44, alpha: 0, duration: ms, onComplete: () => star.destroy() });
+      // A brief star spark over the stunned enemy (world FX) — pooled (fires per
+      // stunned enemy, so an AoE stun into a crowd would otherwise churn many Texts).
+      this.floatingText.show(e.x, e.y - 30, '✦', '#ffe9a8', { fontSize: 16, riseBy: 14, durationMs: ms, depth: 14 });
     }
   }
 
@@ -3786,18 +3833,9 @@ export class MainScene extends Phaser.Scene {
     return true;
   }
 
-  /** A small fading flash where a bolt impacts. */
+  /** A small fading flash where a bolt impacts — pooled (fires per bolt impact). */
   private spawnBoltImpact(x: number, y: number, color: number): void {
-    const flash = this.add.circle(x, y, 6, color, 0.85).setDepth(13);
-    this.worldFx.add(flash);
-    this.tweens.add({
-      targets: flash,
-      scale: 2.2,
-      alpha: 0,
-      duration: 180,
-      ease: 'Quad.out',
-      onComplete: () => flash.destroy(),
-    });
+    this.circleFx.show(x, y, 6, color, { alpha: 0.85, toScale: 2.2, durationMs: 180 });
   }
 
   /** Remove all angels and any bolts in flight (dev reset). */
@@ -6535,25 +6573,8 @@ export class MainScene extends Phaser.Scene {
   }
 
   private spawnDamageNumber(x: number, y: number, amount: number, color: string): void {
-    const t = this.add
-      .text(x, y, `-${Math.round(amount)}`, {
-        fontFamily: 'system-ui, sans-serif',
-        fontSize: '18px',
-        color,
-        fontStyle: 'bold',
-      })
-      .setOrigin(0.5)
-      .setDepth(13)
-      .setStroke('#000000', 4);
-    this.worldFx.add(t);
-    this.tweens.add({
-      targets: t,
-      y: y - 34,
-      alpha: 0,
-      duration: 600,
-      ease: 'Quad.out',
-      onComplete: () => t.destroy(),
-    });
+    // Pooled (perf): reuse a Text from the pool instead of allocating one per hit.
+    this.floatingText.show(x, y, `-${Math.round(amount)}`, color);
   }
 
   private spawnSlash(x: number, y: number, angle: number): void {
