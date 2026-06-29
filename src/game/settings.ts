@@ -1222,6 +1222,41 @@ export const ROSEBURG_WARDEN = 1;
 export const ROSEBURG_HERALDS = 1;
 
 
+// --- ACT IV (Batch C) — quests 4.5–4.7 locations + group sizes ---------------
+//
+// The Idaho leg: arrive at the Kamiah outpost (4.5; reuses the patron's existing
+// Dark Outpost so Azazel stays reachable — relabelled "Kamiah" in the fiction),
+// the OLYMPIA gut-punch (4.5b reuses OLYMPIA_POSITION + the Della NPC from Q1),
+// three poisoned rivers (4.6) and three sacked cities (4.7). New marker spots are
+// placed in the SAME verified-walkable corridor as the Batch B descent/Act-IV
+// positions (placeholders, spread out so each marker points somewhere distinct).
+// Edit positions / group sizes here; quest TEXT lives in questData.ts.
+
+/** 4.5 — "Kamiah, ID": the patron's new outpost. Reuses the Dark Outpost coordinate so
+ *  Azazel (who stands there) is reachable; it is simply called Kamiah from 4.5 on. */
+export const KAMIAH_POSITION = { x: DARK_OUTPOST_POSITION.x, y: DARK_OUTPOST_POSITION.y };
+
+/** 4.6 — three river headwaters to taint (proximity "Taint the Water" action). */
+export const RIVER_1_POSITION = { x: 12600, y: 13150 };
+export const RIVER_2_POSITION = { x: 13050, y: 13550 };
+export const RIVER_3_POSITION = { x: 12750, y: 14050 };
+/** 4.7 — three weakened Idaho cities to sack. */
+export const CITY_1_POSITION = { x: 12900, y: 13350 };
+export const CITY_2_POSITION = { x: 12500, y: 13800 };
+export const CITY_3_POSITION = { x: 13150, y: 14100 };
+
+/** 4.5b — the three neighbour men who ambush as you leave the woman's house. */
+export const OLYMPIA_NEIGHBORS_COUNT = 3;
+/** 4.6 — angels that appear after EACH river is tainted (the herald speaks at river 3). */
+export const RIVER_LESSER = 2;
+export const RIVER_WARDEN = 1;
+export const RIVER_HERALDS = 1; // only added at the THIRD river
+/** 4.7 — per city: the (weakened, sick) guards, then the angels that descend over the heart. */
+export const CITY_GUARDS = 5;
+export const CITY_ANGELS_LESSER = 2;
+export const CITY_ANGELS_WARDEN = 1;
+
+
 // --- Portal Defense (wave-defense encounter) -------------------------------
 //
 // Protect a destructible Dark Portal from waves of townsfolk. Win by surviving

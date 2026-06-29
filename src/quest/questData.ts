@@ -48,6 +48,14 @@ export type ObjectiveTrigger =
   | 'caravans-stopped'
   | 'salt-gathered'
   | 'roseburg-reached'
+  // Act IV (quests 4.5–4.7) — the Idaho leg (still before the descent bridge):
+  | 'reach-kamiah'
+  | 'olympia-pump-taken'
+  | 'olympia-neighbors-defeated'
+  | 'river-taint' // proximity "Taint the Water" action (reused for all 3 rivers)
+  | 'river-angels' // defeat the angels that appear after each tainting (reused ×3)
+  | 'city-sack' // cut through a city's guards + take its heart (reused ×3)
+  | 'city-angels' // defeat the angels over each sacked city (reused ×3)
   // The Descent arc:
   | 'guardsmen-defeated'
   | 'farmers-defeated'
@@ -99,6 +107,14 @@ export type TargetKind =
   | 'caravan-route'
   | 'florence'
   | 'roseburg'
+  // Act IV (4.5–4.7) locations — the Idaho leg, all on Earth:
+  | 'kamiah'
+  | 'river-1'
+  | 'river-2'
+  | 'river-3'
+  | 'city-1'
+  | 'city-2'
+  | 'city-3'
   // The Descent arc locations:
   | 'outpost'
   | 'oregon-city'
@@ -143,6 +159,13 @@ export const TARGET_WORLD: Record<TargetKind, WorldId> = {
   'caravan-route': WORLD_EARTH,
   florence: WORLD_EARTH,
   roseburg: WORLD_EARTH,
+  kamiah: WORLD_EARTH,
+  'river-1': WORLD_EARTH,
+  'river-2': WORLD_EARTH,
+  'river-3': WORLD_EARTH,
+  'city-1': WORLD_EARTH,
+  'city-2': WORLD_EARTH,
+  'city-3': WORLD_EARTH,
   outpost: WORLD_EARTH,
   'oregon-city': WORLD_EARTH,
   'farm-field': WORLD_EARTH,
@@ -948,10 +971,213 @@ export const ACT4_SALT_AND_SEA: QuestDef = {
   },
 };
 
+/**
+ * ============================================================================
+ * ACT IV (Batch C) — the Idaho leg, quests 4.5–4.7. The hope (4.5: the angels'
+ * door is found at Mount McGuire) curdles into the worst thing the player does
+ * (4.5b: rob the kind Olympia woman from Quest 1), then darkens further (4.6:
+ * poison the towns' rivers; 4.7: sack the weakened cities). Still BEFORE the
+ * descent — the bridge now re-enters descent-1 after 4.7. All corruption-gated,
+ * all given by Azazel. Each ends by returning to him at the Kamiah outpost
+ * (the relabelled Dark Outpost, so Azazel stays put + reachable).
+ *
+ * >>> EDIT 4.5–4.7 TEXT HERE: each quest's title, objective text, Azazel's three
+ *     dialogue states, and the encounter/complete narration. <<<
+ * ============================================================================
+ */
+
+/** 4.5 — "The Door They Came Through": arrive at the Kamiah, ID outpost (a transition). */
+export const ACT4_THE_DOOR_THEY_CAME_THROUGH: QuestDef = {
+  id: 'act4-the-door-they-came-through',
+  title: 'The Door They Came Through',
+  prerequisites: ['act4-salt-and-sea'],
+  requiresCorruption: true,
+  objectives: [
+    {
+      text: 'Travel east to Kamiah, Idaho and meet Azazel at the new outpost',
+      trigger: 'reach-kamiah',
+      target: 'kamiah',
+      encounterNarration: [
+        'You cross into Idaho with everything you’ve taken — the metal, the salt, the gathered Light — and find Azazel waiting, the demons gathered around him, an outpost rising in the shadow of the mountains. For the first time, the thing you’ve been building toward feels close enough to touch. Azazel looks at you the way no one has since you left home: like you are the most important person in the world.',
+      ],
+    },
+  ],
+  npcInactiveLines: [
+    'Azazel: Friend. I have news I’ve waited an eternity to say.',
+    'Azazel: We’ve found it. The angels can walk your world, but only because they have a door of their own — a way through from Heaven. And we have found it. It’s east, in the mountains of Idaho. Mount McGuire.',
+    'Azazel: This changes everything. If their door opens out, then with what we’ve gathered, we can force it open in — and walk home the way they’ve been walking here all along.',
+    'Azazel: We’ll make our outpost near theirs. Bring everything we’ve collected and meet us there — at Kamiah, in Idaho. The end of our long exile is finally in sight. I can hardly believe it’s real.',
+  ],
+  npcActiveLines: ['Azazel: Kamiah, in Idaho, east in the mountains. Bring everything. Meet me there.'],
+  npcCompleteLines: [
+    'Azazel: You made it. And you brought all of it. Look at this — look at what we’ve built together. None of it happens without you. Not one piece.',
+    'Azazel: We’re so close now I can taste it. But there’s still work to do before we can force their door. The angels won’t make it easy. Rest tonight. Tomorrow, we finish this.',
+  ],
+  preAcceptHint: 'Seek Azazel at the Dark Outpost',
+  reward: { healToFull: true, xp: 300, banner: 'The Door They Came Through — Kamiah, Idaho' },
+};
+
+/** 4.5b — "Olympia": THE GUT-PUNCH. Rob the kind woman from Quest 1 of the water pump. */
+export const ACT4_OLYMPIA: QuestDef = {
+  id: 'act4-olympia',
+  title: 'Olympia',
+  prerequisites: ['act4-the-door-they-came-through'],
+  requiresCorruption: true,
+  objectives: [
+    {
+      text: 'Go to Olympia and take the water pump from the woman’s house',
+      trigger: 'olympia-pump-taken',
+      target: 'olympia',
+      encounterNarration: [
+        'WOMAN: Oh — hello there, can I—',
+        '(Then she sees you. Truly sees you. The cold, the Light, what you’ve become. The smile dies.)',
+        'WOMAN: ...No. No, it can’t— you’re the one who brought it to me. You carried it all this way. You were so kind. I remember your face— what— what happened to you?',
+        'WOMAN: Please. Please don’t. Not you. Whatever they’ve done to you — you don’t have to do this. I remember who you were, even if you don’t.',
+      ],
+      completeNarration: [
+        'PLAYER: ...I’m sorry. I have to. It’s the only way home.',
+        'You take the machine from her hands. She doesn’t fight you — she just lets go, and looks at you with something worse than fear: grief. For you. As you turn to leave, the warmth you felt on this porch a lifetime ago curdles into something you can’t name and don’t want to.',
+      ],
+    },
+    {
+      text: 'Cut down the neighbors and leave Olympia',
+      trigger: 'olympia-neighbors-defeated',
+      target: 'olympia',
+      encounterNarration: [
+        'You step off the porch and they’re there — three men from the town, who came running when they heard. Not soldiers. Neighbors. Standing between you and the road, between you and the woman, the way you once stood between people and the dark.',
+        'NEIGHBOR: We saw what you did in there. We don’t care what you are. You don’t get to do that to her and just walk away.',
+      ],
+      completeNarration: [
+        'You leave them behind you on the ground, and the woman weeping in her doorway, and the device cold in your hands. Something is wrong. Something has been wrong for a long time, and for just a moment, here, it’s hard to keep Azazel’s words loud enough to drown it out.',
+      ],
+    },
+    { text: 'Return to Azazel at the Kamiah outpost', trigger: 'reach-outpost', target: 'outpost' },
+  ],
+  npcInactiveLines: [
+    'Azazel: One more thing we need — and this one, only you can fetch. There’s a device. A simple thing, a machine of your world, but it does something we cannot replicate — and the door won’t seal true without it.',
+    'Azazel: It’s in Olympia. A woman keeps it. You may even know the place — I’m told a courier brought it to her, long ago, from a mill up north. Go to her. Take it. You know by now that asking does no good — they only ever see the monster. Bring me the device, and we are nearly home.',
+  ],
+  npcActiveLines: ['Azazel: The device is in Olympia, west, with the woman. Take it and bring it to me.'],
+  npcCompleteLines: [
+    'Azazel: There it is. The last piece. I knew you’d bring it.',
+    'Azazel: ...You’re quiet. It got to you, that one. I can see it. Listen to me. That ache you feel? That’s not doubt. That’s the weight of how much this costs — and it’s proof of how much it matters. Soon, friend. Soon you’ll be home, and all of this will have been worth it. I promise you. Just a little further.',
+  ],
+  preAcceptHint: 'Seek Azazel at the Dark Outpost',
+  reward: { healToFull: true, xp: 340, banner: '' }, // empty banner — keep it quiet/heavy (no completion flourish)
+};
+
+/** 4.6 — "Poison the Well": taint 3 river headwaters (proximity action) + their angels. */
+export const ACT4_POISON_THE_WELL: QuestDef = {
+  id: 'act4-poison-the-well',
+  title: 'Poison the Well',
+  prerequisites: ['act4-olympia'],
+  requiresCorruption: true,
+  objectives: [
+    {
+      text: 'Taint the headwater of the first river',
+      trigger: 'river-taint',
+      target: 'river-1',
+      completeNarration: [
+        'At the headwater, you pour the corruption into the clear running water and watch it curdle and darken, flowing down toward people who will drink it without knowing. The light gathers — the angels appear, desperate now, throwing themselves between you and the river.',
+      ],
+    },
+    { text: 'Destroy the angels at the first river', trigger: 'river-angels', target: 'river-1' },
+    {
+      text: 'Taint the headwater of the second river',
+      trigger: 'river-taint',
+      target: 'river-2',
+      completeNarration: [
+        'At the headwater, you pour the corruption into the clear running water and watch it curdle and darken, flowing down toward people who will drink it without knowing. The light gathers — the angels appear, desperate now, throwing themselves between you and the river.',
+      ],
+    },
+    { text: 'Destroy the angels at the second river', trigger: 'river-angels', target: 'river-2' },
+    {
+      text: 'Taint the headwater of the third river',
+      trigger: 'river-taint',
+      target: 'river-3',
+      completeNarration: [
+        'At the headwater, you pour the corruption into the clear running water and watch it curdle and darken, flowing down toward people who will drink it without knowing. The light gathers — the angels appear, desperate now, throwing themselves between you and the river.',
+      ],
+    },
+    {
+      text: 'Destroy the angels at the third river',
+      trigger: 'river-angels',
+      target: 'river-3',
+      encounterNarration: [
+        'HERALD: Those are children downstream! Mothers, the old, the sick — you would poison them in their cradles? This is not slowing us — this is murder, and some part of you still knows it. STOP—',
+      ],
+    },
+    { text: 'Return to Azazel at the Kamiah outpost', trigger: 'reach-outpost', target: 'outpost' },
+  ],
+  npcInactiveLines: [
+    'Azazel: We’re in the final stretch now, friend, but these Idaho towns are a problem. They’re thriving — too strong, too well-defended. And do you know why? The angels. They’ve been blessing the towns’ water, keeping the people healthy and bold. Strong enough to stand against us.',
+    'Azazel: We can’t take what we need from people who can fight back. So we weaken them at the source. There are three rivers feeding three towns nearby — taint them at the headwaters, and the angels’ blessing turns to sickness.',
+    'Azazel: I know. This one is darker than the rest. But a weakened town is a town that survives us — we take what we need and move on, and they recover in time. A strong town forces us to burn it to the ground. This is the mercy, friend, strange as it sounds. Trust me.',
+  ],
+  npcActiveLines: ['Azazel: Three rivers, three headwaters. Taint each, put down the angels that come, then return to me.'],
+  npcCompleteLines: [
+    'Azazel: It’s done. The towns will weaken within days, and then they’re ours for the taking.',
+    'Azazel: The angels screamed about children, I’d wager. They always reach for that — it’s their sharpest blade, your own tenderness turned against you. But ask yourself: who poisoned more children across the ages, us, or the ones who cast a third of Heaven into the dark for the crime of wanting freedom? Don’t let them put their sins on your shoulders. Nearly there now. Nearly home.',
+  ],
+  preAcceptHint: 'Seek Azazel at the Dark Outpost',
+  reward: { healToFull: true, xp: 380, holyPower: 10, banner: 'Poison the Well — complete' },
+};
+
+/** 4.7 — "The Heart of Each City": sack 3 weakened Idaho cities (guards + heart + angels each). */
+export const ACT4_THE_HEART_OF_EACH_CITY: QuestDef = {
+  id: 'act4-the-heart-of-each-city',
+  title: 'The Heart of Each City',
+  prerequisites: ['act4-poison-the-well'],
+  requiresCorruption: true,
+  objectives: [
+    {
+      text: 'Cut through the first city’s guards and take its heart',
+      trigger: 'city-sack',
+      target: 'city-1',
+      completeNarration: [
+        'The towns are sicker than when you poisoned them — your doing. The guards who rise to meet you are coughing, fevered, slow, and they fight you anyway, because behind them are the people and the things they can’t bear to lose. You cut through them, take the heart of their city, and the angels descend to make their last stand over each one.',
+      ],
+    },
+    { text: 'Destroy the angels over the first city', trigger: 'city-angels', target: 'city-1' },
+    {
+      text: 'Cut through the second city’s guards and take its heart',
+      trigger: 'city-sack',
+      target: 'city-2',
+      completeNarration: [
+        'The towns are sicker than when you poisoned them — your doing. The guards who rise to meet you are coughing, fevered, slow, and they fight you anyway, because behind them are the people and the things they can’t bear to lose. You cut through them, take the heart of their city, and the angels descend to make their last stand over each one.',
+      ],
+    },
+    { text: 'Destroy the angels over the second city', trigger: 'city-angels', target: 'city-2' },
+    {
+      text: 'Cut through the third city’s guards and take its heart',
+      trigger: 'city-sack',
+      target: 'city-3',
+      completeNarration: [
+        'The towns are sicker than when you poisoned them — your doing. The guards who rise to meet you are coughing, fevered, slow, and they fight you anyway, because behind them are the people and the things they can’t bear to lose. You cut through them, take the heart of their city, and the angels descend to make their last stand over each one.',
+      ],
+    },
+    { text: 'Destroy the angels over the third city', trigger: 'city-angels', target: 'city-3' },
+    { text: 'Return to Azazel at the Kamiah outpost', trigger: 'reach-outpost', target: 'outpost' },
+  ],
+  npcInactiveLines: [
+    'Azazel: The poison’s done its work — those three towns are on their knees now, just as I promised. It’s time to take what we came for.',
+    'Azazel: Each of these Idaho towns guards something precious in its heart — rare minerals, worked into materials found nowhere else on this earth. We need what lies at the center of each one. The door cannot be finished without them.',
+    'Azazel: They’ll still have guards — weakened, but they’ll fight for what’s theirs. Cut through them. Take the heart of each city. And when you do, the angels will come — they always come. Put them down too. This is the last of the gathering, friend. After this, we open the door.',
+  ],
+  npcActiveLines: ['Azazel: Three cities, three hearts. Cut through the guards, take each heart, put down the angels. Then return.'],
+  npcCompleteLines: [
+    'Azazel: That’s everything. Every last piece. After all this time, all this work — we have it all.',
+    'Azazel: Look at what you’ve done, friend. What we’ve done. The door is within our grasp. I told you, didn’t I, all the way back at the rift — I told you that you were one of us, that you’d be safe, that you’d do extraordinary things. And look. Look.',
+    'Azazel: There’s only the angels’ door left between us and home. And we are going to open it. Come — it’s almost time.',
+  ],
+  preAcceptHint: 'Seek Azazel at the Dark Outpost',
+  reward: { healToFull: true, xp: 450, holyPower: 15, banner: 'THE GATHERING IS COMPLETE.' },
+};
+
 export const DESCENT_1: QuestDef = {
   id: 'descent-1',
   title: 'The Patron’s First Errand',
-  prerequisites: ['act4-salt-and-sea'], // BRIDGE: the old descent chain re-enters after Act IV 4.4
+  prerequisites: ['act4-the-heart-of-each-city'], // BRIDGE: the old descent chain re-enters after Act IV 4.7
   requiresCorruption: true,
   objectives: [
     { text: 'Slay the guardsmen of Oregon City', trigger: 'guardsmen-defeated', target: 'oregon-city' },
@@ -1197,6 +1423,11 @@ export const QUEST_REGISTRY: readonly QuestDef[] = [
   ACT4_WATCHERS_ON_THE_ROAD,
   ACT4_THE_TRADE_DAY,
   ACT4_SALT_AND_SEA,
+  // Act IV Batch C — the Idaho leg (4.5–4.7), still before the descent bridge.
+  ACT4_THE_DOOR_THEY_CAME_THROUGH,
+  ACT4_OLYMPIA,
+  ACT4_POISON_THE_WELL,
+  ACT4_THE_HEART_OF_EACH_CITY,
   // The descent arc — unchanged content; descent-1 now bridges off Act IV's 4.4
   // ('act4-salt-and-sea'), and the patron (Azazel) offers it once corrupted.
   DESCENT_1,

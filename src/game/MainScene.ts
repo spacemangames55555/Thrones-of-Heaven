@@ -206,6 +206,21 @@ import {
   ROSEBURG_LESSER,
   ROSEBURG_WARDEN,
   ROSEBURG_HERALDS,
+  // Act IV (Batch C) — 4.5–4.7 locations + group sizes:
+  KAMIAH_POSITION,
+  RIVER_1_POSITION,
+  RIVER_2_POSITION,
+  RIVER_3_POSITION,
+  CITY_1_POSITION,
+  CITY_2_POSITION,
+  CITY_3_POSITION,
+  OLYMPIA_NEIGHBORS_COUNT,
+  RIVER_LESSER,
+  RIVER_WARDEN,
+  RIVER_HERALDS,
+  CITY_GUARDS,
+  CITY_ANGELS_LESSER,
+  CITY_ANGELS_WARDEN,
   HOLY_OUTPOST_POSITION,
   HEAVEN_PORTAL_POSITION,
   GUARDIAN_MELEE_OFFSET,
@@ -663,11 +678,20 @@ export class MainScene extends Phaser.Scene {
     'act4-watchers-on-the-road',
     'act4-the-trade-day',
     'act4-salt-and-sea',
+    // Batch C — the Idaho leg (4.5–4.7).
+    'act4-the-door-they-came-through',
+    'act4-olympia',
+    'act4-poison-the-well',
+    'act4-the-heart-of-each-city',
   ]);
   // En-route ambush groups (Q9/Q12): each spawns a demon pack on first approach.
   private arcAmbushes: { x: number; y: number; lines: string[]; spawned: boolean }[] = [];
   private arcEnemies: (Townsfolk | AngelEnemy | Demon)[] = [];
+  // 'burn' is the generic PROXIMITY-ACTION mode: a captioned button appears near
+  // arcReach and, on tap, fires the active objective's trigger. Used for Act II's
+  // "Burn the Grove", Act IV 4.5b "Take the Pump", and 4.6 "Taint the Water".
   private arcMode: 'defeat' | 'plunder' | 'reach' | 'pickup' | 'burn' | 'gather' | 'none' = 'none';
+  private arcActionLabel = 'Burn the Grove'; // caption for the proximity-action button
   private arcReach: { x: number; y: number } | null = null;
   private arcShipmentPos: { x: number; y: number } | null = null;
   private arcHolyBaseline = 0;
@@ -717,6 +741,12 @@ export class MainScene extends Phaser.Scene {
   private restoring = false;
   /** The player's current awarded title (mirrors the HUD text; serialized). */
   private currentTitle: string | null = null;
+  // A quest just completed whose giver's "complete" reaction hasn't been shown yet.
+  // With a MULTI-quest giver (Azazel) the next quest becomes available the instant the
+  // last one completes, so the offer would otherwise skip npcCompleteLines. We show
+  // them ONCE, on the next talk, before offering the next quest. Session-only (null on
+  // load → at worst one acknowledgement is skipped; never a soft-lock).
+  private pendingAckQuestId: string | null = null;
   private savedFlash?: Phaser.GameObjects.Text;
   /** Throttle: time (scene ms) of the last autosave write. */
   private lastAutosaveAt = -1e9;
@@ -996,6 +1026,10 @@ export class MainScene extends Phaser.Scene {
           'act4-watchers-on-the-road',
           'act4-the-trade-day',
           'act4-salt-and-sea',
+          'act4-the-door-they-came-through',
+          'act4-olympia',
+          'act4-poison-the-well',
+          'act4-the-heart-of-each-city',
           'descent-1',
           'descent-2',
           'descent-3',
@@ -1038,7 +1072,7 @@ export class MainScene extends Phaser.Scene {
     this.corruptButton = new TouchButton(this, 'Corrupt the Portal', () => this.tryCorruptPortal());
     // Act II Q6: the proximity "Burn the Grove" action (same bottom-centre slot as
     // Talk/Corrupt; they never contend — the grove has no NPC). Hidden until in range.
-    this.burnButton = new TouchButton(this, 'Burn the Grove', () => this.tryBurnGrove());
+    this.burnButton = new TouchButton(this, 'Burn the Grove', () => this.tryArcAction());
     this.zoomControls = new ZoomControls(this, cam, this.map.pixelWidth, this.map.pixelHeight);
     this.readout = new DebugReadout(this, this.map, this.player);
     // DEV-only live perf readout (FPS / frame-time + entity, effect + pool counts) so
@@ -6240,9 +6274,8 @@ export class MainScene extends Phaser.Scene {
         this.arcMode = 'defeat';
         break;
       case 'grove-burned':
-        // No enemies — a "Burn the Grove" action button appears near the grove.
-        this.arcMode = 'burn';
-        this.arcReach = { ...CORRUPTED_GROVE_POSITION };
+        // No enemies — a "Burn the Grove" proximity-action button appears near the grove.
+        this.beginArcAction({ ...CORRUPTED_GROVE_POSITION }, 'Burn the Grove');
         break;
       case 'whitepass-demons-defeated':
         this.spawnArcDemons(WHITEPASS_FARM_POSITION, WHITEPASS_DEMONS_COUNT);
@@ -6343,6 +6376,49 @@ export class MainScene extends Phaser.Scene {
         this.spawnArcAngelsMixed(ROSEBURG_POSITION, { lesser: ROSEBURG_LESSER, warden: ROSEBURG_WARDEN, herald: ROSEBURG_HERALDS });
         this.arcMode = 'none';
         break;
+      // --- Act IV Batch C (the Idaho leg, 4.5–4.7) ---
+      case 'reach-kamiah':
+        // 4.5 — travel to the Kamiah outpost (the relabelled Dark Outpost; Azazel waits).
+        this.arcMode = 'reach';
+        this.arcReach = { ...KAMIAH_POSITION };
+        break;
+      case 'olympia-pump-taken':
+        // 4.5b — proximity "Take the Pump" action at the Olympia woman's house (Q1 callback).
+        this.beginArcAction({ ...OLYMPIA_POSITION }, 'Take the Pump');
+        break;
+      case 'olympia-neighbors-defeated':
+        // 4.5b — the three neighbour men ambush as you leave the porch.
+        this.spawnArcTownsfolk('defender', OLYMPIA_POSITION, OLYMPIA_NEIGHBORS_COUNT);
+        this.arcMode = 'defeat';
+        break;
+      case 'river-taint': {
+        // 4.6 — proximity "Taint the Water" action at the CURRENT objective's river headwater.
+        const pos = this.activeObjectivePos() ?? { ...DARK_OUTPOST_POSITION };
+        this.beginArcAction(pos, 'Taint the Water');
+        break;
+      }
+      case 'river-angels': {
+        // 4.6 — angels appear after each tainting; the herald speaks at the third river.
+        const pos = this.activeObjectivePos() ?? { ...DARK_OUTPOST_POSITION };
+        const isThird = this.chain.activeObjectiveDef?.target === 'river-3';
+        this.spawnArcAngelsMixed(pos, { lesser: RIVER_LESSER, warden: RIVER_WARDEN, herald: isThird ? RIVER_HERALDS : 0 });
+        this.arcMode = 'defeat';
+        break;
+      }
+      case 'city-sack': {
+        // 4.7 — cut through the (weakened) city guards; "taking the heart" is the completeNarration.
+        const pos = this.activeObjectivePos() ?? { ...DARK_OUTPOST_POSITION };
+        this.spawnArcTownsfolk('cityguard', pos, CITY_GUARDS);
+        this.arcMode = 'defeat';
+        break;
+      }
+      case 'city-angels': {
+        // 4.7 — the angels descend over each sacked city.
+        const pos = this.activeObjectivePos() ?? { ...DARK_OUTPOST_POSITION };
+        this.spawnArcAngelsMixed(pos, { lesser: CITY_ANGELS_LESSER, warden: CITY_ANGELS_WARDEN });
+        this.arcMode = 'defeat';
+        break;
+      }
       default:
         this.arcMode = 'none';
     }
@@ -6359,6 +6435,23 @@ export class MainScene extends Phaser.Scene {
     this.arcMode = 'plunder';
     this.arcHolyBaseline = this.holyPower.count;
     this.arcHolyRequired = required;
+  }
+
+  /** Set up a generic PROXIMITY-ACTION objective: a captioned button appears near
+   *  `pos` and, on tap, fires the active objective's trigger (Burn / Taint / Take). */
+  private beginArcAction(pos: { x: number; y: number }, label: string): void {
+    this.arcMode = 'burn';
+    this.arcReach = pos;
+    this.arcActionLabel = label;
+  }
+
+  /** World position of the ACTIVE objective's target (for triggers reused across
+   *  multiple objectives, e.g. river-1/2/3 or city-1/2/3), or null if none. */
+  private activeObjectivePos(): { x: number; y: number } | null {
+    const t = this.chain.activeObjectiveDef?.target;
+    if (!t) return null;
+    const r = this.resolveTarget(t);
+    return r ? { x: r.x, y: r.y } : null;
   }
 
   /** Act IV 4.4: scatter `n` salt-patch pickups around `center` for a count-of-N gather. */
@@ -6399,8 +6492,9 @@ export class MainScene extends Phaser.Scene {
         this.notifyQuest(trig);
       }
     } else if (this.arcMode === 'burn' && this.arcReach) {
-      // Q6: show the "Burn the Grove" action button while in range (the player taps it).
+      // Generic proximity action: show the captioned button while in range (the player taps it).
       const near = Phaser.Math.Distance.Between(this.player.x, this.player.y, this.arcReach.x, this.arcReach.y) <= GROVE_BURN_RANGE;
+      this.burnButton.setLabel(this.arcActionLabel);
       this.burnButton.setVisible(near && !this.dialogue.isOpen());
     }
     // Keep the tracker's live "(N left)" / "(Holy Power x/y)" / "(salt x/y)" suffix current.
@@ -6436,14 +6530,16 @@ export class MainScene extends Phaser.Scene {
     }
   }
 
-  /** Q6 button/proximity: burn the corrupted grove if currently allowed (in range, Q6 active). */
-  private tryBurnGrove(): void {
+  /** Generic proximity-action tap (Burn the Grove / Taint the Water / Take the Pump):
+   *  if a 'burn'-mode objective is active and the player is in range, fire its trigger. */
+  private tryArcAction(): void {
     if (this.arcMode !== 'burn' || !this.arcReach) return;
-    if (this.chain.activeTrigger !== 'grove-burned') return;
+    const trig = this.chain.activeTrigger;
+    if (!trig) return;
     const near = Phaser.Math.Distance.Between(this.player.x, this.player.y, this.arcReach.x, this.arcReach.y) <= GROVE_BURN_RANGE;
     if (!near) return;
     this.burnButton.setVisible(false);
-    this.notifyQuest('grove-burned'); // completes Q6 → reward banner (the burn scene text)
+    this.notifyQuest(trig); // completes the current action objective (grove / river / pump)
   }
 
   /** Spawn `n` Hell Demons at a point on the ACTIVE (Earth) map for an arc objective. */
@@ -6677,7 +6773,13 @@ export class MainScene extends Phaser.Scene {
           this.reenableControls = true;
         });
       } else {
-        this.dialogue.open([deliver.idle], () => {
+        // Act IV 4.5b ("Olympia"): while the gut-punch quest is active, the woman must
+        // NOT greet you with her warm Q1 idle line — show a quiet, grieving line instead.
+        const somber =
+          deliver.npc === this.olympiaNpc && this.chain.status('act4-olympia') === 'active'
+            ? 'Della: (She backs away from you, her eyes wet, and says nothing.)'
+            : deliver.idle;
+        this.dialogue.open([somber], () => {
           this.reenableControls = true;
         });
       }
@@ -6716,6 +6818,16 @@ export class MainScene extends Phaser.Scene {
     const activeId = giver.questIds.find((id) => this.chain.status(id) === 'active');
     if (activeId) {
       this.dialogue.open([...this.chain.get(activeId)!.npcActiveLines], () => {
+        this.reenableControls = true;
+      });
+      return;
+    }
+    // A just-completed quest from THIS giver whose "complete" reaction hasn't played:
+    // show it once before offering the next (otherwise a multi-quest giver skips it).
+    if (this.pendingAckQuestId && giver.questIds.includes(this.pendingAckQuestId) && this.chain.status(this.pendingAckQuestId) === 'complete') {
+      const ackId = this.pendingAckQuestId;
+      this.pendingAckQuestId = null;
+      this.dialogue.open([...this.chain.get(ackId)!.npcCompleteLines], () => {
         this.reenableControls = true;
       });
       return;
@@ -6782,6 +6894,9 @@ export class MainScene extends Phaser.Scene {
       }
       case 'quest-complete':
         if (this.isArcQuest(e.questId)) this.clearArcObjective();
+        // Remember the just-completed quest so its giver's "complete" reaction is shown
+        // on the next talk, before the next quest is offered (see openQuestGiverDialogue).
+        if ((this.chain.get(e.questId)?.npcCompleteLines.length ?? 0) > 0) this.pendingAckQuestId = e.questId;
         this.grantQuestReward(e.questId);
         // Act II finale: completing Q7 arms URIEL'S ARRIVAL, which fires when the
         // player returns to the Enumclaw square (and gates the old corruption beat).
@@ -6815,7 +6930,10 @@ export class MainScene extends Phaser.Scene {
     if (r.healToFull) this.playerHealth.full();
     if (r.title) this.awardTitle(r.title);
     if (r.holyPower) this.holyPower.add(r.holyPower);
-    this.showBanner(r.note ? `${r.banner}\n\n${r.note}` : r.banner, 3600);
+    // An empty banner + no note = a deliberately quiet completion (e.g. Act IV 4.5b
+    // "Olympia"): skip the flourish entirely rather than flashing an empty banner.
+    const bannerText = r.note ? `${r.banner}\n\n${r.note}`.trim() : r.banner;
+    if (bannerText) this.showBanner(bannerText, 3600);
     if (r.xp > 0) this.gainXP(r.xp);
   }
 
@@ -7448,6 +7566,22 @@ export class MainScene extends Phaser.Scene {
       case 'roseburg':
         // 4.4b points at the cleric (reach + deliver are at the same Roseburg spot).
         return { x: this.clericNpc.sprite.x, y: this.clericNpc.sprite.y, label: '' };
+      // --- Act IV (4.5–4.7) Idaho-leg locations ---
+      case 'kamiah':
+        // 4.5 — the patron's new outpost (reuses the Dark Outpost coord; Azazel stands there).
+        return { x: KAMIAH_POSITION.x, y: KAMIAH_POSITION.y, label: '' };
+      case 'river-1':
+        return { x: RIVER_1_POSITION.x, y: RIVER_1_POSITION.y, label: '' };
+      case 'river-2':
+        return { x: RIVER_2_POSITION.x, y: RIVER_2_POSITION.y, label: '' };
+      case 'river-3':
+        return { x: RIVER_3_POSITION.x, y: RIVER_3_POSITION.y, label: '' };
+      case 'city-1':
+        return { x: CITY_1_POSITION.x, y: CITY_1_POSITION.y, label: '' };
+      case 'city-2':
+        return { x: CITY_2_POSITION.x, y: CITY_2_POSITION.y, label: '' };
+      case 'city-3':
+        return { x: CITY_3_POSITION.x, y: CITY_3_POSITION.y, label: '' };
       case 'outpost':
         return { x: DARK_OUTPOST_POSITION.x, y: DARK_OUTPOST_POSITION.y, label: '' };
       case 'oregon-city':

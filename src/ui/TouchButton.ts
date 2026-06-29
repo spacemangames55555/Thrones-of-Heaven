@@ -11,7 +11,7 @@ export class TouchButton {
   private readonly scene: Phaser.Scene;
   private readonly bg: Phaser.GameObjects.Rectangle;
   private readonly label: Phaser.GameObjects.Text;
-  private readonly width: number;
+  private width: number;
   private readonly height = 44;
   // Starts true to match the default-visible game objects, so the constructor's
   // setVisible(false) actually hides them.
@@ -54,6 +54,16 @@ export class TouchButton {
     // Disable the hit area when hidden so it can't swallow taps.
     if (v) this.bg.setInteractive();
     else this.bg.disableInteractive();
+  }
+
+  /** Re-caption the button (used by the generic proximity-action button: "Burn the
+   *  Grove" / "Taint the Water" / "Take the Pump"). Recomputes width + re-centres. */
+  setLabel(text: string): void {
+    if (this.label.text === text) return;
+    this.label.setText(text);
+    this.width = Math.max(96, text.length * 11 + 28);
+    this.bg.setSize(this.width, this.height);
+    this.layout();
   }
 
   private layout(): void {

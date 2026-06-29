@@ -19,6 +19,7 @@ import {
  *  • v4→v5 added the Investigation arc (Quests 8–12) before the old corruption beat.
  *  • v5→v6 RETIRED the old corruption beat: the grant moved to Quest 13's rift scene.
  *  • v6→v7 added Act IV (4.1–4.4) BEFORE the descent (descent-1 now bridges off 4.4).
+ *  • v7→v8 extended Act IV with the Idaho leg (4.5–4.7); the bridge now points at 4.7.
  * In every additive case a pre-migration player is already past that content, so the
  * new quests are marked COMPLETE (prerequisites stay satisfied → no soft-lock), and
  * Uriel is flagged as already arrived so his scene never replays. v6 also keeps the
@@ -54,6 +55,18 @@ function migrate(data: SaveData): SaveData {
     // new prerequisite ('act4-salt-and-sea') stays satisfied and the player keeps
     // their descent path (no soft-lock, no orphaned activeId). A save not yet into
     // the descent is left untouched → Azazel offers 4.1 next.
+    const activeId = data.quests?.activeId ?? null;
+    const onDescentOrLater =
+      DESCENT_OR_LATER_IDS.some((id) => completed.has(id)) ||
+      (activeId !== null && DESCENT_OR_LATER_IDS.includes(activeId));
+    if (onDescentOrLater) for (const id of ACT4_QUEST_IDS) completed.add(id);
+  }
+  if (data.saveVersion < 8) {
+    // Act IV's Idaho leg (4.5–4.7) was inserted before the descent; the bridge now
+    // points descent-1 at 4.7. Same rule as v6→v7 (ACT4_QUEST_IDS now includes 4.5–4.7):
+    // a save ALREADY on/after the descent is marked through 4.7 so descent-1's new
+    // prerequisite stays satisfied and Act IV isn't re-offered; a save that just finished
+    // 4.4 is left untouched → Azazel offers 4.5 and it plays on into 4.7 → descent.
     const activeId = data.quests?.activeId ?? null;
     const onDescentOrLater =
       DESCENT_OR_LATER_IDS.some((id) => completed.has(id)) ||

@@ -5,7 +5,7 @@ import type { PlayerPath } from '../story/playerPath';
 import type { SkillSaveState } from '../skills/SkillState';
 
 /** Bump when the SaveData shape changes; SaveSystem.read can then migrate old saves. */
-export const SAVE_VERSION = 7;
+export const SAVE_VERSION = 8;
 
 /**
  * Act I (Enumclaw opening) quest ids — inserted at the FRONT of the chain, with the
@@ -62,12 +62,22 @@ export const RIFT_FINALE_ID = 'the-source';
  * NOT forced on a player who's already past it). A save that has NOT yet entered
  * the descent simply flows into Act IV next (Azazel offers 4.1), so it is left
  * untouched. See SaveSystem.migrate + DESCENT_OR_LATER_IDS.
+ *
+ * Batch C extends this with the Idaho leg (4.5–4.7) and re-points the bridge so
+ * descent-1's prerequisite is now '4.7' (act4-the-heart-of-each-city). The v7→v8
+ * migration mirrors v6→v7 with this same (now longer) list, so a descent-era save
+ * stays on its path and a save that finished 4.4 flows on into 4.5 → … → 4.7.
  */
 export const ACT4_QUEST_IDS = [
   'act4-what-they-wont-give',
   'act4-watchers-on-the-road',
   'act4-the-trade-day',
   'act4-salt-and-sea',
+  // Batch C — the Idaho leg.
+  'act4-the-door-they-came-through',
+  'act4-olympia',
+  'act4-poison-the-well',
+  'act4-the-heart-of-each-city',
 ];
 /** Descent + everything downstream of it — used to detect "already past Act IV." */
 export const DESCENT_OR_LATER_IDS = [
