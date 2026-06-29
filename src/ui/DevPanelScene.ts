@@ -17,8 +17,13 @@ import type { DevAction } from './DevPanel';
  *
  * >>> This is DEV TOOLING ONLY. It must never affect gameplay/balance/content. <<<
  */
-const BTN_H = 46; // legible, tappable button height
-const BTN_GAP = 8;
+const COLS = 3; // fixed 3-column grid
+const COL_GAP = 6; // gutter between columns
+const ROW_GAP = 8; // gutter between rows
+const BTN_MIN_H = 44; // legible, tappable floor; rows grow taller to fit wrapped labels
+const TEXT_VPAD = 12; // vertical padding added around the (possibly multi-line) label
+const TEXT_HPAD = 10; // horizontal padding the label wraps within (label width = col width − this)
+const FONT_PX = 13; // legible at 3 columns on a 428px phone
 const PAD = 12;
 const HEADER_H = 46; // title + close row
 const DRAG_THRESHOLD = 8; // px of finger travel that turns a tap into a scroll
@@ -27,6 +32,7 @@ export class DevPanelScene extends Phaser.Scene {
   private actions: DevAction[] = [];
   private list!: Phaser.GameObjects.Container;
   private buttons: Phaser.GameObjects.Rectangle[] = [];
+  private labels: Phaser.GameObjects.Text[] = [];
   private vp = { x: 0, y: 0, w: 0, h: 0 }; // the scroll viewport (panel interior)
   private scrollMin = 0; // most-negative container.y (content bottom reached)
   private dragging = false;
@@ -92,35 +98,66 @@ export class DevPanelScene extends Phaser.Scene {
       h: panelBottom - (panelTop + HEADER_H) - PAD,
     };
 
-    // Buttons live in a container clipped to the viewport by a geometry mask.
+    // Buttons live in a container clipped to the viewport by a geometry mask. The mask
+    // graphics must be IN the display list (added, just hidden) for its geometry to be
+    // uploaded — a detached make.graphics() mask does not reliably clip here.
     this.list = this.add.container(0, 0);
-    const maskG = this.make.graphics({}, false);
+    const maskG = this.add.graphics().setVisible(false);
     maskG.fillStyle(0xffffff);
     maskG.fillRect(this.vp.x, this.vp.y, this.vp.w, this.vp.h);
     this.list.setMask(maskG.createGeometryMask());
 
-    const bx = this.vp.x + this.vp.w / 2;
-    let y = this.vp.y + BTN_H / 2;
-    for (const action of this.actions) {
+    // 3-column grid: fixed column width (the content width split evenly with gutters);
+    // buttons never grow WIDER — a long label word-wraps and the button grows TALLER.
+    const btnW = (this.vp.w - (COLS - 1) * COL_GAP) / COLS;
+    const wrapW = btnW - TEXT_HPAD;
+    const colX = (c: number): number => this.vp.x + c * (btnW + COL_GAP) + btnW / 2;
+
+    // First pass: build each label (word-wrapped to the fixed width) and its button bg,
+    // and measure the wrapped label height so the row can size to its tallest button.
+    const cells = this.actions.map((action) => {
+      const label = this.add
+        .text(0, 0, action.label, {
+          fontFamily: 'system-ui, sans-serif',
+          fontSize: `${FONT_PX}px`,
+          color: '#ffe9a8',
+          align: 'center',
+          wordWrap: { width: wrapW, useAdvancedWrap: true },
+        })
+        .setOrigin(0.5);
       const bg = this.add
-        .rectangle(bx, y, this.vp.w, BTN_H, 0x1d2b40, 0.96)
+        .rectangle(0, 0, btnW, BTN_MIN_H, 0x1d2b40, 0.96)
         .setStrokeStyle(2, 0xffd24a, 0.9)
         .setInteractive({ useHandCursor: true });
-      const label = this.add
-        .text(bx, y, action.label, { fontFamily: 'system-ui, sans-serif', fontSize: '15px', color: '#ffe9a8' })
-        .setOrigin(0.5);
       // Fire on RELEASE, and only if the finger didn't travel (a tap, not a scroll).
       bg.on(Phaser.Input.Events.GAMEOBJECT_POINTER_UP, () => {
         if (!this.dragMoved) action.onPress();
       });
+      // bg under label: add bg first, then label, for every cell.
       this.list.add(bg);
       this.list.add(label);
       this.buttons.push(bg);
-      y += BTN_H + BTN_GAP;
+      this.labels.push(label);
+      return { bg, label, h: label.height + TEXT_VPAD };
+    });
+
+    // Second pass: place row by row. Each row's height fits its TALLEST button, and all
+    // three buttons in the row take that height (uniform per row → tidy, no overlap).
+    let rowTop = this.vp.y;
+    for (let i = 0; i < cells.length; i += COLS) {
+      const row = cells.slice(i, i + COLS);
+      const rowH = Math.max(BTN_MIN_H, ...row.map((cell) => cell.h));
+      const cy = rowTop + rowH / 2;
+      row.forEach((cell, c) => {
+        const cx = colX(c);
+        cell.bg.setSize(btnW, rowH).setPosition(cx, cy);
+        cell.label.setPosition(cx, cy);
+      });
+      rowTop += rowH + ROW_GAP;
     }
 
-    const contentH = this.actions.length * (BTN_H + BTN_GAP) - BTN_GAP;
-    this.scrollMin = Math.min(0, this.vp.h - contentH); // negative if the list overflows
+    const contentH = rowTop - this.vp.y - ROW_GAP; // total stacked grid height
+    this.scrollMin = Math.min(0, this.vp.h - contentH); // negative if the grid overflows
 
     // Drag-to-scroll (touch) + wheel (desktop). Scene-level so a drag that begins
     // on a button still scrolls the list.
@@ -169,15 +206,22 @@ export class DevPanelScene extends Phaser.Scene {
     this.updateButtonInput();
   }
 
-  /** Disable taps on buttons scrolled out of the viewport (a mask hides them but does
-   *  NOT clip their hit area), so a tap on the dimmed area never hits an unseen button. */
+  /** Keep the scroll tidy: a row fully outside the viewport is HIDDEN (so it can never
+   *  bleed over the header/panel chrome — belt-and-suspenders alongside the mask, which
+   *  crops the partial edge rows). Taps are disabled on any button whose CENTRE is out of
+   *  view, so a tap on the dimmed area never hits an unseen button. */
   private updateButtonInput(): void {
     const top = this.vp.y;
     const bottom = this.vp.y + this.vp.h;
-    for (const bg of this.buttons) {
+    for (let i = 0; i < this.buttons.length; i++) {
+      const bg = this.buttons[i];
       const effY = bg.y + this.list.y;
-      const inView = effY >= top && effY <= bottom;
-      if (bg.input) bg.input.enabled = inView;
+      const half = bg.height / 2;
+      const overlaps = effY + half >= top && effY - half <= bottom; // any part in view
+      const centreInView = effY >= top && effY <= bottom;
+      bg.setVisible(overlaps);
+      this.labels[i]?.setVisible(overlaps);
+      if (bg.input) bg.input.enabled = centreInView;
     }
   }
 
