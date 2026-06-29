@@ -1,14 +1,15 @@
 /**
  * Tunable gameplay constants. Edit these to change how the world feels.
  *
- * The map is 800 x 800 tiles at 32px each = 25,600 x 25,600 px (Washington in
- * the north 500 rows, Oregon appended below as one continuous landmass).
+ * The map is 1100 x 800 tiles at 32px each = 35,200 x 25,600 px (Washington in
+ * the north 500 rows, Oregon below as one continuous landmass, and IDAHO appended
+ * to the east as the new columns 800–1099 — WA/OR pixels are unchanged).
  */
 
 /**
  * Player run speed, expressed in TILES PER SECOND (stable across tile-size changes;
- * the actual px/s = this × tile size). At 8 tiles/s, crossing the full 800-tile state
- * west↔east takes ~1.7 minutes of straight running.
+ * the actual px/s = this × tile size). At 8 tiles/s, crossing the full 1100-tile world
+ * (WA/OR + Idaho) west↔east takes ~2.3 minutes of straight running.
  */
 export const PLAYER_SPEED_TILES_PER_SEC = 8;
 /** Tile size in px (mirrors render/tileAtlas TILE_SIZE; inlined to keep settings free of
@@ -1162,14 +1163,14 @@ export const SATAN = {
 // every quest. Edit positions / group sizes here; quest TEXT lives in questData.ts.
 
 /** The arc hub: where the dark patron dwells; "return to the outpost" centers here. */
-export const DARK_OUTPOST_POSITION = { x: 12048, y: 13456 };
+export const DARK_OUTPOST_POSITION = { x: 15600, y: 13100 }; // N-central OR frontier, by the rift (east of Mt. Hood)
 /** Oregon City — Quest 1 guardsmen + Quest 3 angels spawn here. */
-export const OREGON_CITY_POSITION = { x: 12800, y: 13300 };
+export const OREGON_CITY_POSITION = { x: 15000, y: 13700 };
 /** The farm field — Quest 2 farmers + the shipment pickup. */
-export const FARM_FIELD_POSITION = { x: 11650, y: 13650 };
+export const FARM_FIELD_POSITION = { x: 14700, y: 13900 };
 /** Quest 4's two marked spots. */
-export const DESCENT_LOC_A = { x: 12700, y: 14100 };
-export const DESCENT_LOC_B = { x: 11800, y: 14150 };
+export const DESCENT_LOC_A = { x: 15900, y: 13900 };
+export const DESCENT_LOC_B = { x: 14800, y: 14150 };
 
 /** Proximity (px) that completes a "reach the outpost" / "travel to" objective. */
 export const REACH_OUTPOST_RANGE = 90;
@@ -1191,15 +1192,15 @@ export const DESCENT_LOC_ANGELS = 2; // Quest 4, per location
 // distinct). Edit positions / group sizes here; quest TEXT lives in questData.ts.
 
 /** 4.1 — Bend OR (SE of Oregon City): the farmers with the materials Azazel needs. */
-export const BEND_POSITION = { x: 13050, y: 13950 };
+export const BEND_POSITION = { x: 15600, y: 15300 }; // central OR, east of the Cascades (real Bend)
 /** 4.2 — La Grande OR (N, the watchers' road): angels barring the way north. */
-export const LA_GRANDE_POSITION = { x: 12950, y: 13000 };
+export const LA_GRANDE_POSITION = { x: 20000, y: 13600 }; // NE Oregon (Blue Mountains / Grande Ronde)
 /** 4.3 — the caravan-intercept route toward Portland (W of the corridor). */
-export const CARAVAN_ROUTE_POSITION = { x: 11400, y: 13500 };
+export const CARAVAN_ROUTE_POSITION = { x: 12500, y: 13800 }; // Willamette corridor between the OR towns and Portland
 /** 4.4a — Florence OR (coast, far W): the salt patches along the shore. */
-export const FLORENCE_POSITION = { x: 11300, y: 14150 };
+export const FLORENCE_POSITION = { x: 2300, y: 15500 }; // the Oregon COAST (far west), mid-OR latitude
 /** 4.4b — Roseburg OR (S-central): the cleric who purifies the salt. */
-export const ROSEBURG_POSITION = { x: 12200, y: 14250 };
+export const ROSEBURG_POSITION = { x: 11400, y: 16700 }; // SW interior OR (Umpqua valley, S of Eugene)
 
 /** 4.1 — Bend farmers (reuse the 'farmer' Townsfolk variant). */
 export const BEND_FARMERS_COUNT = 4;
@@ -1234,16 +1235,16 @@ export const ROSEBURG_HERALDS = 1;
 
 /** 4.5 — "Kamiah, ID": the patron's new outpost. Reuses the Dark Outpost coordinate so
  *  Azazel (who stands there) is reachable; it is simply called Kamiah from 4.5 on. */
-export const KAMIAH_POSITION = { x: DARK_OUTPOST_POSITION.x, y: DARK_OUTPOST_POSITION.y };
+export const KAMIAH_POSITION = { x: 28000, y: 3900 }; // north-central IDAHO (Clearwater valley, the Mt. McGuire leg)
 
 /** 4.6 — three river headwaters to taint (proximity "Taint the Water" action). */
-export const RIVER_1_POSITION = { x: 12600, y: 13150 };
-export const RIVER_2_POSITION = { x: 13050, y: 13550 };
-export const RIVER_3_POSITION = { x: 12750, y: 14050 };
+export const RIVER_1_POSITION = { x: 29600, y: 5600 }; // north-central Idaho uplands
+export const RIVER_2_POSITION = { x: 28000, y: 8400 }; // central-west Idaho
+export const RIVER_3_POSITION = { x: 30000, y: 9600 }; // central Idaho
 /** 4.7 — three weakened Idaho cities to sack. */
-export const CITY_1_POSITION = { x: 12900, y: 13350 };
-export const CITY_2_POSITION = { x: 12500, y: 13800 };
-export const CITY_3_POSITION = { x: 13150, y: 14100 };
+export const CITY_1_POSITION = { x: 27000, y: 14600 }; // SW Idaho Snake River plain (Boise-ish)
+export const CITY_2_POSITION = { x: 31300, y: 15600 }; // S-central Idaho Snake plain (Twin Falls-ish)
+export const CITY_3_POSITION = { x: 32800, y: 13600 }; // SE Idaho (Idaho Falls-ish)
 
 /** 4.5b — the three neighbour men who ambush as you leave the woman's house. */
 export const OLYMPIA_NEIGHBORS_COUNT = 3;
@@ -1267,7 +1268,7 @@ export const CITY_ANGELS_WARDEN = 1;
 /** Portal health pool — the player loses if it hits 0. */
 export const PORTAL_MAX_HP = 300;
 /** Portal world position (Oregon, near the spirit corridor — placeholder spot). */
-export const PORTAL_POSITION = { x: 12432, y: 13776 };
+export const PORTAL_POSITION = { x: 15400, y: 13550 };
 /** Distance (px) within which a townsfolk can strike the portal. */
 export const PORTAL_ATTACK_RANGE = 56;
 
@@ -1420,7 +1421,7 @@ export const AMBUSH_TRIGGER_RANGE = 300;
 // where the corruption grant now lives. Tune in playtest.
 
 /** The N-Oregon rift (Q13 target + rift-scene site), world px on a walkable foothill. */
-export const OREGON_RIFT_POSITION = { x: 13392, y: 13712 };
+export const OREGON_RIFT_POSITION = { x: 15200, y: 13350 }; // northern Oregon, just east of Mt. Hood (the source)
 /** Proximity (px) at which reaching the rift BEGINS the rift scene. */
 export const RIFT_SCENE_RANGE = 120;
 /** Semyaza is HALTED (the lie cutscene fires) when his HP first drops to this ratio. */
@@ -1520,9 +1521,9 @@ export const PORTAL_SPAWN_OFFSETS: { dx: number; dy: number }[] = [
 // NOT wired to the quest chain yet. Positions are placeholder, verified walkable.
 
 /** The holy outpost (Oregon) — distinct from the Dark Outpost and the Dark Portal. */
-export const HOLY_OUTPOST_POSITION = { x: 11500, y: 14400 };
+export const HOLY_OUTPOST_POSITION = { x: 16200, y: 13400 }; // N-central OR frontier, near the rift/dark outpost
 /** The Heaven Portal sits at the outpost centre. */
-export const HEAVEN_PORTAL_POSITION = { x: 11500, y: 14400 };
+export const HEAVEN_PORTAL_POSITION = { x: 16200, y: 13400 }; // == Holy Outpost (the portal sits at the outpost)
 /** Guardian spawn points, as offsets (px) from the portal (one melee, one ranged). */
 export const GUARDIAN_MELEE_OFFSET = { dx: 78, dy: 34 };
 export const GUARDIAN_RANGED_OFFSET = { dx: -78, dy: 34 };

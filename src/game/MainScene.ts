@@ -6114,6 +6114,11 @@ export class MainScene extends Phaser.Scene {
     const b = w.map.bounds;
     this.physics.world.setBounds(b.x, b.y, b.width, b.height);
     this.cameras.main.setBounds(b.x, b.y, b.width, b.height);
+    // Re-anchor a destination that falls OUTSIDE this world (e.g. a save's remembered
+    // Heaven/Hell position from before the map widened, which shifted those worlds
+    // east) to the world's default arrival, so the player never lands off-map.
+    const inBounds = dest.x >= b.x && dest.x <= b.x + b.width && dest.y >= b.y && dest.y <= b.y + b.height;
+    if (!inBounds) dest = { ...w.defaultArrival };
     this.player.sprite.setPosition(dest.x, dest.y);
     this.player.setDirection(0, 0);
     this.cameras.main.centerOn(dest.x, dest.y);

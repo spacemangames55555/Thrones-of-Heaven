@@ -29,10 +29,15 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 // is byte-identical to before — only the former ocean south of the Columbia is
 // reclaimed as Oregon. Change any of these and re-run.
 // ---------------------------------------------------------------------------
-const WIDTH = 800;     // tiles, west -> east
+// Idaho is APPENDED on the EAST as NEW columns, WITHOUT rescaling WA/OR. The WA/OR
+// geography is normalised over its ORIGINAL width (WAOR_WIDTH) so every existing tile
+// keeps its exact pixel coordinate; only columns >= WAOR_WIDTH are new Idaho land.
+const WAOR_WIDTH = 800; // original WA+OR width — DO NOT change (keeps WA/OR pixel-stable)
+const IDAHO_COLS = 300; // appended Idaho columns on the east (px 25,600 -> 35,168)
+const WIDTH = WAOR_WIDTH + IDAHO_COLS; // total grid width (tiles, west -> east)
 const WA_ROWS = 500;   // original Washington rows (all WA geography anchors here)
 const OR_ROWS = 300;   // appended Oregon rows to the south
-const HEIGHT = WA_ROWS + OR_ROWS; // 800 — continuous WA+OR
+const HEIGHT = WA_ROWS + OR_ROWS; // 800 — continuous WA+OR (Idaho fills all rows east)
 const TILE_SIZE = 32;
 const ZONE_SIZE = 32;
 
@@ -292,6 +297,66 @@ function oregonTerrainAt(nx, nyWA, n) {
 }
 
 // ---------------------------------------------------------------------------
+// IDAHO — the NEW eastern land (appended columns tx >= WAOR_WIDTH). Authored in a
+// LOCAL normalised x (ix 0..1 across the appended columns, west->east) and the SAME
+// WA-anchored latitude (nyWA = ty/(WA_ROWS-1)) so it lines up with WA/OR across the
+// seam. Stylised, consistent palette: a walkable western seam (Snake/Owyhee plain
+// you can walk in from eastern Oregon/Washington), the rugged central Idaho
+// batholith (mountains + montane forest, with periodic E-W pass valleys), the
+// forested northern panhandle (Clearwater country, where Kamiah sits), the southern
+// Snake River Plain (steppe + farmland), and a hard Bitterroot wall on the far-east
+// Idaho/Montana border. NONE of this touches WA/OR tiles.
+// ---------------------------------------------------------------------------
+const ID_CITIES = [
+  { name: 'Kamiah, ID',     x: 0.30, y: 0.265 }, // north-central, Clearwater valley (Mount McGuire leg)
+  { name: 'Lewiston, ID',   x: 0.075, y: 0.300 }, // on the seam where the Clearwater meets the Snake
+  { name: 'Boise, ID',      x: 0.30, y: 0.905 }, // SW Snake plain
+  { name: 'Twin Falls, ID', x: 0.52, y: 0.965 }, // S-central Snake plain
+  { name: 'Idaho Falls, ID', x: 0.74, y: 0.855 }, // SE Snake plain
+];
+// Snake River — a broad arc across the SOUTH (in from the east, bows south, out west).
+const ID_SNAKE = [
+  [1.00, 0.78], [0.80, 0.86], [0.58, 0.95], [0.40, 0.965], [0.22, 0.92], [0.04, 0.80],
+];
+// Clearwater River — across the NORTH panhandle to the Snake at the seam (Lewiston).
+const ID_CLEARWATER = [[0.62, 0.255], [0.42, 0.262], [0.24, 0.272], [0.075, 0.295]];
+
+function idahoTerrainAt(tx, ty) {
+  const ix = (tx - WAOR_WIDTH) / (IDAHO_COLS - 1); // 0..1 across Idaho, west -> east
+  const ny = ty / (WA_ROWS - 1);                   // same latitude space as WA/OR
+  const n = fbm(ix + 7.3, ny + 3.1, 22);           // organic edge wobble (offset seed → distinct from WA)
+
+  // Urban cores at the Idaho city anchors.
+  for (const c of ID_CITIES) if (dist(ix, ny, c.x, c.y) < 0.011) return T.urban;
+
+  // Narrow rivers (kept thin so they never seal a valley).
+  if (distToPolyline(ix + n * 0.008, ny, ID_SNAKE) < 0.0085) return T.river;
+  if (distToPolyline(ix, ny, ID_CLEARWATER) < 0.006) return T.river;
+
+  // Far-east Bitterroot wall (Idaho/Montana border) — the hard eastern boundary.
+  if (ix > 0.88 + n * 0.03) return T.mountain;
+
+  // Walkable western seam (continuity with eastern WA/OR so you can walk into Idaho).
+  if (ix < 0.10) return ny < 0.30 ? T.foothills : T.steppe;
+
+  // Central Idaho batholith: rugged mountains + montane forest, with periodic E-W
+  // pass valleys (so it is crossable). Roughly ix 0.34..0.74, ny 0.16..0.66.
+  if (ix > 0.34 && ix < 0.74 && ny > 0.16 && ny < 0.66) {
+    if (Math.abs(Math.sin(ny * 7.0)) < 0.20) return T.foothills; // E-W pass valley
+    return fbm(ix, ny, 26) > 0.15 ? T.mountain : T.montane;
+  }
+
+  // Northern panhandle (Clearwater country): forested foothills + montane.
+  if (ny < 0.32) return fbm(ix, ny, 40) > 0.10 ? T.foothills : T.montane;
+
+  // Southern Snake River Plain: shrub-steppe + Palouse-like farmland.
+  if (ny > 0.62) return fbm(ix, ny, 35) > 0.0 ? T.steppe : T.farmland;
+
+  // Interior default: shrub-steppe with scattered montane stands.
+  return fbm(ix, ny, 30) > 0.35 ? T.montane : T.steppe;
+}
+
+// ---------------------------------------------------------------------------
 // Water masks
 // ---------------------------------------------------------------------------
 function oceanEdge(ny) {
@@ -447,7 +512,13 @@ function landTerrain(nx, ny, n) {
 // Sample one tile
 // ---------------------------------------------------------------------------
 function terrainAt(tx, ty) {
-  const nx = tx / (WIDTH - 1);
+  // Idaho = the NEW eastern columns. Sampled in its own normalised x so WA/OR is
+  // untouched. (Branch BEFORE the WA/OR nx math so existing columns are byte-stable.)
+  if (tx >= WAOR_WIDTH) return idahoTerrainAt(tx, ty);
+
+  // WA/OR keep their ORIGINAL normalisation (over WAOR_WIDTH), so columns 0..799
+  // map to the exact same nx — and thus the same terrain — as before Idaho existed.
+  const nx = tx / (WAOR_WIDTH - 1);
   // Latitude stays anchored to the original Washington height, so WA features
   // land on the exact same rows as before and Oregon simply continues south.
   const nyWA = ty / (WA_ROWS - 1);
@@ -505,7 +576,7 @@ function placeBridge(bridge) {
   const p = nearestOnPolyline(bridge.anchor[0], bridge.anchor[1], bridge.river);
   const dir = Math.abs(p.dy) > Math.abs(p.dx) ? 'h' : 'v'; // bridge runs across flow
   const step = dir === 'h' ? [1, 0] : [0, 1];
-  let cx = Math.round(p.x * (WIDTH - 1));
+  let cx = Math.round(p.x * (WAOR_WIDTH - 1)); // bridges are WA features → WA/OR x-domain
   let cy = Math.round(p.y * (WA_ROWS - 1)); // river anchors live in WA-anchored latitude
 
   // Nudge onto an actual river/sound tile (search a small neighbourhood).
@@ -569,7 +640,7 @@ function nearestWalkable(cx, cy) {
 }
 const seattle = CITIES[0];
 const spawnTile = nearestWalkable(
-  Math.round(seattle.x * (WIDTH - 1)),
+  Math.round(seattle.x * (WAOR_WIDTH - 1)),
   Math.round(seattle.y * (WA_ROWS - 1)),
 );
 
@@ -592,7 +663,9 @@ function connectivityReport() {
       }
     }
   }
-  const tile = (nx, ny) => [Math.round(nx * (WIDTH - 1)), Math.round(ny * (WA_ROWS - 1))];
+  const tile = (nx, ny) => [Math.round(nx * (WAOR_WIDTH - 1)), Math.round(ny * (WA_ROWS - 1))];
+  // Idaho region probes use the appended-column x-mapping (ix 0..1 across Idaho).
+  const idTile = (ix, ny) => [Math.round(WAOR_WIDTH + ix * (IDAHO_COLS - 1)), Math.round(ny * (WA_ROWS - 1))];
   const nearReach = (tx, ty) => {
     for (let r = 0; r < 12; r++) {
       for (let dy = -r; dy <= r; dy++) {
@@ -623,6 +696,11 @@ function connectivityReport() {
     'Bend OR (E)': tile(0.610, 0.966),
     'OR coast': tile(0.060, 0.900),
     'S Oregon': tile(0.470, 1.150),
+    // Idaho (new eastern land) — quest-leg valleys must be reachable on foot.
+    'ID seam (W)': idTile(0.04, 0.45),
+    'ID Kamiah (N)': idTile(0.30, 0.27),
+    'ID Snake plain (S)': idTile(0.45, 0.92),
+    'ID city east (SE)': idTile(0.70, 0.88),
   };
   console.log('Connectivity from spawn', spawnTile, ':');
   let allOk = true;
@@ -658,11 +736,26 @@ for (let zy = 0; zy < zonesY; zy++) {
   }
 }
 
-const cities = [...CITIES, ...OR_CITIES].map((c) => ({
-  name: c.name,
-  tx: Math.round(c.x * (WIDTH - 1)),
-  ty: Math.round(c.y * (WA_ROWS - 1)),
-}));
+// Marker-ONLY cities: emitted into the cities list (so the home-town TownBuilder can
+// anchor on them) but NOT painted as urban terrain — so the underlying tiles stay
+// byte-stable. Enumclaw is the home-town anchor (townData.ts) and is intentionally a
+// grassland tile, not an urban core; its marker tile matches the original map exactly.
+const MARKER_ONLY_CITIES = [{ name: 'Enumclaw', tx: 316, ty: 196 }];
+const cities = [
+  // WA + OR cities keep the ORIGINAL x-domain so their pixel markers don't move.
+  ...[...CITIES, ...OR_CITIES].map((c) => ({
+    name: c.name,
+    tx: Math.round(c.x * (WAOR_WIDTH - 1)),
+    ty: Math.round(c.y * (WA_ROWS - 1)),
+  })),
+  ...MARKER_ONLY_CITIES,
+  // Idaho cities use the appended-column x-mapping (ix 0..1 across the new land).
+  ...ID_CITIES.map((c) => ({
+    name: c.name,
+    tx: Math.round(WAOR_WIDTH + c.x * (IDAHO_COLS - 1)),
+    ty: Math.round(c.y * (WA_ROWS - 1)),
+  })),
+];
 
 const out = {
   name: 'Washington',

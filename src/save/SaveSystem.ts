@@ -20,6 +20,12 @@ import {
  *  • v5→v6 RETIRED the old corruption beat: the grant moved to Quest 13's rift scene.
  *  • v6→v7 added Act IV (4.1–4.4) BEFORE the descent (descent-1 now bridges off 4.4).
  *  • v7→v8 extended Act IV with the Idaho leg (4.5–4.7); the bridge now points at 4.7.
+ *  • v8→v9 widened Earth east (added the Idaho region), which shifts the Heaven/Hell
+ *    worlds east. Saved ABSOLUTE Heaven/Hell positions are now off those relocated
+ *    maps, so their `remembered` entries are dropped → re-entering falls back to each
+ *    world's defaultArrival (the portals pass explicit arrival points, so this is safe).
+ *    EARTH positions are kept (WA/OR pixels are unchanged). A save whose CURRENT world
+ *    is Heaven/Hell is additionally re-anchored on load (applyWorldSwap bounds-snap).
  * In every additive case a pre-migration player is already past that content, so the
  * new quests are marked COMPLETE (prerequisites stay satisfied → no soft-lock), and
  * Uriel is flagged as already arrived so his scene never replays. v6 also keeps the
@@ -72,6 +78,17 @@ function migrate(data: SaveData): SaveData {
       DESCENT_OR_LATER_IDS.some((id) => completed.has(id)) ||
       (activeId !== null && DESCENT_OR_LATER_IDS.includes(activeId));
     if (onDescentOrLater) for (const id of ACT4_QUEST_IDS) completed.add(id);
+  }
+  if (data.saveVersion < 9) {
+    // The Idaho widening shifted Heaven/Hell east. Drop the now-off-map remembered
+    // positions for the non-Earth worlds so re-entering uses their defaultArrival;
+    // KEEP Earth (its WA/OR pixels are unchanged). Idempotent (delete-if-present).
+    if (data.world?.remembered) {
+      delete data.world.remembered.heaven;
+      delete data.world.remembered.hell;
+    }
+    // (If the save's CURRENT world is Heaven/Hell, its now-invalid x/y is re-anchored
+    //  to defaultArrival on load by MainScene.applyWorldSwap's bounds-snap.)
   }
   if (data.quests) data.quests.completed = [...completed];
   data.saveVersion = SAVE_VERSION;
