@@ -1,5 +1,8 @@
 import Phaser from 'phaser';
-import { getInsets, UI_MARGIN } from './uiLayout';
+import { getInsets, UI_MARGIN, DEPTH_HUD_TEXTBOX } from './uiLayout';
+
+// TEXTBOX band: the choice prompt renders in FRONT of the buttons + data readout.
+const D = DEPTH_HUD_TEXTBOX;
 
 export interface ChoiceOption {
   label: string;
@@ -54,7 +57,7 @@ export class ChoicePrompt {
 
     // Dim modal backdrop (taps outside the buttons do nothing — controls are
     // frozen by the caller during a choice).
-    add(scene.add.rectangle(0, 0, w, h, 0x05060a, 0.5).setOrigin(0, 0).setScrollFactor(0).setDepth(1600));
+    add(scene.add.rectangle(0, 0, w, h, 0x05060a, 0.5).setOrigin(0, 0).setScrollFactor(0).setDepth(D));
 
     // Prompt text first so we can measure its height for the panel.
     const promptText = add(
@@ -68,15 +71,15 @@ export class ChoicePrompt {
         })
         .setOrigin(0.5, 0)
         .setScrollFactor(0)
-        .setDepth(1603),
+        .setDepth(D + 3),
     );
 
     const panelH = pad + promptText.height + promptGap + options.length * btnH + (options.length - 1) * btnGap + pad;
     // Upper-middle, clear of the bottom-left joystick and bottom-right zoom.
     const top = Phaser.Math.Clamp(h * 0.42 - panelH / 2, insets.top + UI_MARGIN, h - panelH - UI_MARGIN);
 
-    add(scene.add.rectangle(cx, top + panelH / 2, panelW + 4, panelH + 4, 0xffd24a, 0.9).setScrollFactor(0).setDepth(1601));
-    add(scene.add.rectangle(cx, top + panelH / 2, panelW, panelH, 0x0c1626, 0.98).setScrollFactor(0).setDepth(1602));
+    add(scene.add.rectangle(cx, top + panelH / 2, panelW + 4, panelH + 4, 0xffd24a, 0.9).setScrollFactor(0).setDepth(D + 1));
+    add(scene.add.rectangle(cx, top + panelH / 2, panelW, panelH, 0x0c1626, 0.98).setScrollFactor(0).setDepth(D + 2));
     promptText.setPosition(cx, top + pad);
 
     let by = top + pad + promptText.height + promptGap;
@@ -86,7 +89,7 @@ export class ChoicePrompt {
           .rectangle(cx, by + btnH / 2, panelW - pad * 2, btnH, 0x1d2b40, 1)
           .setStrokeStyle(2, 0xffd24a, 0.95)
           .setScrollFactor(0)
-          .setDepth(1603)
+          .setDepth(D + 3)
           .setInteractive({ useHandCursor: true }),
       );
       add(
@@ -98,7 +101,7 @@ export class ChoicePrompt {
           })
           .setOrigin(0.5)
           .setScrollFactor(0)
-          .setDepth(1604),
+          .setDepth(D + 4),
       );
       bg.on(Phaser.Input.Events.GAMEOBJECT_POINTER_DOWN, () => {
         if (this.scene.time.now < this.acceptTapAt) return;

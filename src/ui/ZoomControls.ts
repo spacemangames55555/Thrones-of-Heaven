@@ -6,10 +6,10 @@ import {
   ZOOM_IN_LIMIT,
   ZOOM_OUT_MARGIN,
 } from '../game/settings';
-import { getInsets, UI_MARGIN } from './uiLayout';
+import { getInsets } from './uiLayout';
 
-const BTN = 62; // zoom buttons, stacked on the mid-right edge (thumb-reachable)
-const GAP = 14;
+const BTN = 31; // half-size zoom buttons, snug against the mid-right edge
+const GAP = 8;
 const HOLD_DELAY = 250; // ms before a press becomes a continuous zoom
 
 type Dir = 'in' | 'out';
@@ -181,7 +181,7 @@ export class ZoomControls {
     const label = this.scene.add
       .text(0, 0, glyph, {
         fontFamily: 'system-ui, sans-serif',
-        fontSize: '40px',
+        fontSize: '20px',
         color: '#ffe9a8',
         fontStyle: 'bold',
       })
@@ -199,9 +199,8 @@ export class ZoomControls {
     const w = this.scene.scale.width;
     const h = this.scene.scale.height;
     const insets = getInsets(this.scene);
-    // MID-RIGHT edge, stacked vertically ([+] over [−]), thumb-reachable and clear
-    // of the top/bottom HUD. The + sits above the screen centre, − just below.
-    const x = w - insets.right - UI_MARGIN - BTN / 2;
+    // SNUG against the RIGHT edge, vertically centred, stacked ([+] over [−]).
+    const x = w - insets.right - 2 - BTN / 2;
     const cy = h / 2;
     const inY = cy - (BTN / 2 + GAP / 2); // + on top
     const outY = cy + (BTN / 2 + GAP / 2); // − below

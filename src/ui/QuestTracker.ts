@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { getInsets, UI_MARGIN } from './uiLayout';
+import { getInsets, UI_MARGIN, DEPTH_HUD_TEXTBOX, DEPTH_HUD_ARROW } from './uiLayout';
 
 // Sits TOP-CENTER, dropped below the top HUD row so it never overlaps the
 // top-left health bar + debug readout or the top-right dev button.
@@ -11,8 +11,8 @@ const TITLE_GAP = 4;
 // Screen-edge arrow geometry.
 const ARROW_MARGIN = 44; // how far in from the edge the arrow rides
 const EDGE_TEST_MARGIN = 36; // target this close to an edge counts as off-screen
-// The quest direction arrow sits above every other UI element (HUD = 2000/2001).
-const QUEST_ARROW_DEPTH = 3000;
+// The quest direction arrow sits above every other UI element (incl. the text boxes).
+const QUEST_ARROW_DEPTH = DEPTH_HUD_ARROW;
 
 /**
  * Fixed objective tracker (UI camera, unaffected by zoom): the active quest's
@@ -34,7 +34,8 @@ export class QuestTracker {
 
   constructor(scene: Phaser.Scene) {
     this.scene = scene;
-    const depth = 1500;
+    // TEXTBOX band: the tracker banner renders in FRONT of the buttons + data readout.
+    const depth = DEPTH_HUD_TEXTBOX;
 
     this.border = scene.add
       .rectangle(0, 0, PANEL_W + 4, 10, 0xffd24a, 0.92)

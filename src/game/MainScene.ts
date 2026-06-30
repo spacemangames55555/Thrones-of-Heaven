@@ -119,7 +119,7 @@ import { OREGON_SPIRIT_ID } from '../spirit/spiritData';
 import type { SpiritEntity } from '../spirit/SpiritEntity';
 import type { Interactable } from '../entities/Interactable';
 import type { PlayerPath } from '../story/playerPath';
-import { getInsets, UI_MARGIN } from '../ui/uiLayout';
+import { getInsets, UI_MARGIN, DEPTH_HUD_BUTTONS, DEPTH_HUD_TEXTBOX } from '../ui/uiLayout';
 import {
   CAMERA_ZOOM,
   PLAYER_ATTACK_RANGE,
@@ -1284,9 +1284,10 @@ export class MainScene extends Phaser.Scene {
   // --- Combat ---------------------------------------------------------------
 
   private createCombatHud(): void {
-    const depth = 2000;
-    // Top-left cluster: a level badge + HP numbers on top, HP bar, then a thin
-    // XP bar directly beneath — a clean HP + XP group above the debug readout.
+    // BUTTONS band (back): the HP/XP/Energy bars are player HUD chrome, so they sit
+    // BEHIND the data readout and the story text boxes (see uiLayout z-order).
+    const depth = DEPTH_HUD_BUTTONS;
+    // Bottom-left corner cluster: a level badge + HP numbers, HP bar, thin XP + Energy.
     this.playerBar = new HealthBar(this, 150, 10, depth);
     this.playerBar.setScrollFactor(0);
     this.xpBar = new HealthBar(this, 150, 5, depth, 0x49b6ff); // fixed blue XP fill
@@ -1321,7 +1322,7 @@ export class MainScene extends Phaser.Scene {
       })
       .setOrigin(0.5)
       .setScrollFactor(0)
-      .setDepth(2100)
+      .setDepth(DEPTH_HUD_TEXTBOX + 100) // story text box: in front of buttons + readout
       .setStroke('#1a1008', 6)
       .setVisible(false);
     // Dedicated level-up banner (sits above the combat banner so the two never
@@ -1336,7 +1337,7 @@ export class MainScene extends Phaser.Scene {
       })
       .setOrigin(0.5)
       .setScrollFactor(0)
-      .setDepth(2101)
+      .setDepth(DEPTH_HUD_TEXTBOX + 101)
       .setStroke('#08131f', 6)
       .setVisible(false);
 
@@ -1344,16 +1345,15 @@ export class MainScene extends Phaser.Scene {
       const ins = getInsets(this);
       const h = this.scale.height;
       const x = ins.left + UI_MARGIN;
-      // BOTTOM-LEFT, stacked just ABOVE the joystick home (its hint rides ~92px up
-      // with a 56px radius → its top is ~148px up), so the bars and the joystick /
-      // its thumb-drag zone never overlap. HP (thick) on top → XP → Energy, with HP
-      // numbers + the level badge in the right column.
-      const top = h - ins.bottom - 178;
-      this.playerBar.setPosition(x, top);
-      this.playerHpText.setPosition(x + 158, top);
-      this.xpBar.setPosition(x, top + 10);
-      this.energyBar.setPosition(x, top + 19);
-      this.levelBadge.setPosition(x + 158, top + 19);
+      // VERY BOTTOM-LEFT CORNER: Energy at the floor, XP above it, HP (thick) on top,
+      // with HP numbers + the level badge in the right column. The joystick sits in
+      // the band directly above this stack (see Controls.layout).
+      const bottomY = h - ins.bottom - UI_MARGIN;
+      this.energyBar.setPosition(x, bottomY - 4);
+      this.xpBar.setPosition(x, bottomY - 13);
+      this.playerBar.setPosition(x, bottomY - 24);
+      this.playerHpText.setPosition(x + 158, bottomY - 24);
+      this.levelBadge.setPosition(x + 158, bottomY - 4);
     };
     layout();
     this.scale.on(Phaser.Scale.Events.RESIZE, layout);

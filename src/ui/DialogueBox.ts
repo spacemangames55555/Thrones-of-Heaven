@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { getInsets, UI_MARGIN } from './uiLayout';
+import { getInsets, UI_MARGIN, DEPTH_HUD_TEXTBOX } from './uiLayout';
 
 /**
  * Reusable, phone-friendly dialogue box pinned to the bottom of the screen.
@@ -22,7 +22,8 @@ export class DialogueBox {
 
   constructor(scene: Phaser.Scene) {
     this.scene = scene;
-    const depth = 1500;
+    // TEXTBOX band: dialogue renders in FRONT of the buttons + data readout.
+    const depth = DEPTH_HUD_TEXTBOX;
 
     this.border = scene.add.rectangle(0, 0, 10, 10, 0xffd24a, 0.9).setScrollFactor(0).setDepth(depth);
     this.box = scene.add.rectangle(0, 0, 10, 10, 0x0c1626, 0.94).setScrollFactor(0).setDepth(depth + 1);

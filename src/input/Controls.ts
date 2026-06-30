@@ -1,7 +1,6 @@
 import Phaser from 'phaser';
-import { getInsets } from '../ui/uiLayout';
+import { getInsets, UI_MARGIN } from '../ui/uiLayout';
 
-const HINT_MARGIN = 92;
 const BASE_RADIUS = 56;
 const THUMB_RADIUS = 28;
 const DEADZONE = 0.18;
@@ -110,7 +109,10 @@ export class Controls {
   private layout(): void {
     const h = this.scene.scale.height;
     const insets = getInsets(this.scene);
-    this.hint.setPosition(insets.left + HINT_MARGIN, h - insets.bottom - HINT_MARGIN);
+    // The joystick home sits DIRECTLY ABOVE the bottom-left HP/mana/resource bars
+    // (the bars occupy the bottom ~30px corner; this rides just above them).
+    const barsTop = h - insets.bottom - UI_MARGIN - 30;
+    this.hint.setPosition(insets.left + UI_MARGIN + BASE_RADIUS, barsTop - 8 - BASE_RADIUS);
   }
 
   private resetJoystick(): void {
