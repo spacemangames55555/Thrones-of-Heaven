@@ -113,6 +113,7 @@ import {
 import { ObjectiveMarker } from '../quest/ObjectiveMarker';
 import { QuestTracker } from '../ui/QuestTracker';
 import { DevPanel } from '../ui/DevPanel';
+import type { QuestTabRow } from '../ui/QuestTabScene';
 import { PlayerProgression } from '../progression/PlayerProgression';
 import { OREGON_SPIRIT_ID } from '../spirit/spiritData';
 import type { SpiritEntity } from '../spirit/SpiritEntity';
@@ -1506,7 +1507,8 @@ export class MainScene extends Phaser.Scene {
 
   /** A short button caption for an activatable skill (first word of its name, minus the [TEST] tag). */
   private skillButtonLabel(d: SkillDef): string {
-    return d.name.replace(/^\[TEST\]\s*/, '').split(' ').slice(0, 2).join(' ');
+    // FULL name (the loadout bar auto-fits the font + wraps so it never truncates).
+    return d.name.replace(/^\[TEST\]\s*/, '');
   }
 
   /** Open the skill-tree screen (pauses the game underneath, like the pause menu). */
@@ -4306,20 +4308,6 @@ export class MainScene extends Phaser.Scene {
     for (const b of this.bosses) if (b.isActive) b.notePlayerAction(type);
   }
 
-  /** DEV: jump just south of Michael's sanctum (Heaven), travelling there if needed. */
-  private devTeleportToMichael(): void {
-    this.cancelDash();
-    const sx = this.michael.x;
-    const sy = this.michael.y;
-    const off = this.michael.def.activationRange + 80;
-    if (this.activeWorld !== WORLD_HEAVEN) this.travelToWorld(WORLD_HEAVEN, { x: sx, y: sy + off });
-    else {
-      this.player.sprite.setPosition(sx, sy + off);
-      this.player.setDirection(0, 0);
-      this.cameras.main.centerOn(sx, sy);
-    }
-  }
-
   /** DEV: spawn the data-only TEST BOSS just ahead of the player, in the active world. */
   private devSpawnTestBoss(): void {
     const len = Math.hypot(this.player.facingX, this.player.facingY) || 1;
@@ -4456,16 +4444,6 @@ export class MainScene extends Phaser.Scene {
   /** DEV: spawn + start a specific Sin (ignoring gating) and teleport to it. */
   private devStartSin(i: number): void {
     this.teleportToBoss(this.ensureSinSpawned(i), true);
-  }
-
-  /** DEV: travel to the currently-available Sin's location (does not force-start it). */
-  private devTeleportToNextSin(): void {
-    const i = this.sins.nextIndex;
-    if (i < 0) {
-      this.showBanner('All available Sins are vanquished.', 2000);
-      return;
-    }
-    this.teleportToBoss(this.ensureSinSpawned(i), false);
   }
 
   // --- The Unholy Trinity: the staged Dragon → Beast → Satan finale + the ending ---
@@ -5318,14 +5296,6 @@ export class MainScene extends Phaser.Scene {
     });
   }
 
-  /** DEV: jump just south of the Holy Outpost so the guardians can be triggered. */
-  private devTeleportToHolyOutpost(): void {
-    this.cancelDash();
-    this.player.sprite.setPosition(HOLY_OUTPOST_POSITION.x, HOLY_OUTPOST_POSITION.y + GUARDIAN_ACTIVATION_RANGE + 60);
-    this.player.setDirection(0, 0);
-    this.cameras.main.centerOn(HOLY_OUTPOST_POSITION.x, HOLY_OUTPOST_POSITION.y);
-  }
-
   // --- Multi-world: Heaven + the two-way portal transition ------------------
   //
   // Heaven is a SECOND GameMap built at a large coordinate offset so it never
@@ -5930,19 +5900,6 @@ export class MainScene extends Phaser.Scene {
     this.hellPortal?.destroy();
     this.hellPortal = undefined;
     this.hellPortalArmed = false;
-  }
-
-  /** DEV: jump to the throne (travelling to Heaven if needed). */
-  private devTeleportToThrone(): void {
-    this.cancelDash();
-    const arrival = { x: this.thronePos.x, y: this.thronePos.y + 260 };
-    if (this.activeWorld !== WORLD_HEAVEN) {
-      this.travelToWorld(WORLD_HEAVEN, arrival);
-    } else {
-      this.player.sprite.setPosition(arrival.x, arrival.y);
-      this.player.setDirection(0, 0);
-      this.cameras.main.centerOn(this.thronePos.x, this.thronePos.y);
-    }
   }
 
   /** DEV: force the judgment sequence regardless of whether Michael is dead. */
@@ -6616,14 +6573,6 @@ export class MainScene extends Phaser.Scene {
     this.setPlayerPath('corrupted');
   }
 
-  /** DEV: jump to the Dark Outpost (the arc hub / patron). */
-  private devTeleportToOutpost(): void {
-    this.cancelDash();
-    this.player.sprite.setPosition(DARK_OUTPOST_POSITION.x, DARK_OUTPOST_POSITION.y + 70);
-    this.player.setDirection(0, 0);
-    this.cameras.main.centerOn(DARK_OUTPOST_POSITION.x, DARK_OUTPOST_POSITION.y);
-  }
-
   /**
    * DEV: spawn a pack just ahead of the player and force Spirit Vision on, so the
    * encounter is immediately testable on demand regardless of story state.
@@ -6636,14 +6585,6 @@ export class MainScene extends Phaser.Scene {
       this.player.x + (this.player.facingX / len) * ahead,
       this.player.y + (this.player.facingY / len) * ahead,
     );
-  }
-
-  /** DEV: jump straight to Portland (Oregon) to test the south without the walk. */
-  private devTeleportToOregon(): void {
-    this.cancelDash();
-    this.player.sprite.setPosition(this.portland.spawn.x, this.portland.spawn.y);
-    this.player.setDirection(0, 0);
-    this.cameras.main.centerOn(this.portland.spawn.x, this.portland.spawn.y);
   }
 
   /** DEV: fast-forward the chain to Quest 13 (active) and teleport to the rift, so the
@@ -7300,43 +7241,28 @@ export class MainScene extends Phaser.Scene {
       { label: 'Start Portal Defense', onPress: () => this.devStartPortalDefense() },
       { label: 'Stop Portal Defense', onPress: () => this.resetPortalDefense() },
       { label: 'Refill Energy', onPress: () => this.energy.full() },
-      { label: 'Teleport to Oregon', onPress: () => this.devTeleportToOregon() },
-      // Investigation arc (Quests 8–12) teleports — playtest the new locations on mobile.
-      { label: 'Teleport to Seattle (Druids)', onPress: () => this.devTeleportTo(this.seattle.spawn) },
-      { label: 'Teleport to Yakima', onPress: () => this.devTeleportTo(YAKIMA_POSITION) },
-      { label: 'Teleport to Lake Chelan', onPress: () => this.devTeleportTo(LAKE_CHELAN_POSITION) },
-      { label: 'Teleport to Bellingham', onPress: () => this.devTeleportTo(BELLINGHAM_FARMS_POSITION) },
-      { label: 'Teleport to Cascades', onPress: () => this.devTeleportTo(CASCADES_POSITION) },
-      { label: 'Teleport to Longview', onPress: () => this.devTeleportTo(LONGVIEW_POSITION) },
-      { label: 'Teleport to Oregon Rift', onPress: () => this.devTeleportTo(OREGON_RIFT_POSITION) },
-      { label: 'Jump to Rift Scene (Q13)', onPress: () => this.devJumpToRift() },
+      // NOTE: the targeted "Teleport to <place>" buttons were REMOVED — the DEV QUEST
+      // TAB (the QUESTS tab under DEV) now state-warps to any quest's start, which
+      // covers every location these teleports reached (and sets up corruption/world/
+      // power too). The remaining buttons below are the non-teleport dev tools, kept
+      // as-is (many are reused by the quest jump).
       { label: 'Force Corrupt', onPress: () => this.devForceCorrupt() },
-      { label: 'Teleport to Dark Outpost', onPress: () => this.devTeleportToOutpost() },
-      // Act IV (4.1–4.4) teleports — playtest the new locations on mobile.
-      { label: 'Teleport to Bend (4.1)', onPress: () => this.devTeleportTo(BEND_POSITION) },
-      { label: 'Teleport to La Grande (4.2)', onPress: () => this.devTeleportTo(LA_GRANDE_POSITION) },
-      { label: 'Teleport to Caravan Route (4.3)', onPress: () => this.devTeleportTo(CARAVAN_ROUTE_POSITION) },
-      { label: 'Teleport to Florence (4.4)', onPress: () => this.devTeleportTo(FLORENCE_POSITION) },
-      { label: 'Teleport to Roseburg (4.4)', onPress: () => this.devTeleportTo(ROSEBURG_POSITION) },
-      { label: 'Teleport to Holy Outpost', onPress: () => this.devTeleportToHolyOutpost() },
+      { label: 'Jump to Rift Scene (Q13)', onPress: () => this.devJumpToRift() },
       { label: 'Start Guardian Fight', onPress: () => this.startGuardianFight() },
       { label: 'Reset Portal', onPress: () => this.resetGuardianEncounter() },
       { label: 'Spawn Cherub', onPress: () => this.devSpawnCherub('cherub') },
       { label: 'Spawn Cherubim', onPress: () => this.devSpawnCherub('cherubim') },
       { label: 'Smite All (Dev)', onPress: () => this.devSmite(true) },
       { label: 'Smite Adds (Dev)', onPress: () => this.devSmite(false) },
-      { label: 'Teleport to Michael', onPress: () => this.devTeleportToMichael() },
       { label: 'Start Michael Fight', onPress: () => this.startMichaelFight() },
       { label: 'Reset Michael', onPress: () => this.resetMichael() },
       { label: 'Spawn Test Boss', onPress: () => this.devSpawnTestBoss() },
-      { label: 'Teleport to Throne', onPress: () => this.devTeleportToThrone() },
       { label: "Trigger God's Judgment", onPress: () => this.devTriggerGodJudgment() },
       { label: 'Reset Judgment', onPress: () => this.resetGodJudgment() },
       { label: 'Grant Holy Power (swap to holy)', onPress: () => this.swapToHoly() },
       { label: 'Reset to Demonic', onPress: () => this.revertToDemonic() },
       { label: 'Go to Hell', onPress: () => this.devGoToHell() },
       { label: 'Spawn Demon', onPress: () => this.devSpawnDemon() },
-      { label: 'Teleport to Next Sin', onPress: () => this.devTeleportToNextSin() },
       { label: 'Start Wrath', onPress: () => this.devStartSin(0) },
       { label: 'Start Sloth', onPress: () => this.devStartSin(1) },
       { label: 'Start Gluttony', onPress: () => this.devStartSin(2) },
@@ -7366,7 +7292,171 @@ export class MainScene extends Phaser.Scene {
     const kb = this.input.keyboard;
     for (const a of actions) if (a.key !== undefined) kb?.addKey(a.key).on('down', a.onPress);
 
-    new DevPanel(this, actions.map((a) => ({ label: a.label, onPress: a.onPress })));
+    new DevPanel(this, actions.map((a) => ({ label: a.label, onPress: a.onPress })), {
+      rows: () => this.questTabRows(),
+      onJump: (id) => this.devJumpToQuest(id),
+    });
+  }
+
+  // --- DEV QUEST TAB: list the full chain + STATE-WARP to any quest's start --------
+  //
+  // The QUESTS tab (under the DEV tab) opens a paused, scrollable list of the whole
+  // quest chain grouped by act, each marked complete/active, and a tap warps the game
+  // to that quest's start. This replaces the removed targeted "Teleport to <place>"
+  // buttons: one jump sets corruption, world, position, power, and the active quest.
+
+  /** Static display metadata (act group + short chain code) per quest id, in registry order. */
+  private static readonly QUEST_TAB_META: Record<string, { group: string; code: string }> = {
+    'honest-days-work': { group: 'Act I — Enumclaw', code: '1' },
+    'wolves-tree-line': { group: 'Act I — Enumclaw', code: '2' },
+    shallows: { group: 'Act I — Enumclaw', code: '3' },
+    'the-pass': { group: 'Act I — Enumclaw', code: '4' },
+    'whats-gotten-into-them': { group: 'Act II — The Corruption', code: '5' },
+    'the-blight': { group: 'Act II — The Corruption', code: '6' },
+    'the-thing-at-white-pass': { group: 'Act II — The Corruption', code: '7' },
+    'word-to-yakima': { group: 'Investigation', code: '8' },
+    'the-iron-road': { group: 'Investigation', code: '9' },
+    'the-northern-farms': { group: 'Investigation', code: '10' },
+    'what-the-dark-ones-carry': { group: 'Investigation', code: '11' },
+    'the-exile-of-longview': { group: 'Investigation', code: '12' },
+    'the-source': { group: 'The Source (rift)', code: '13' },
+    'act4-what-they-wont-give': { group: 'Act IV — Oregon', code: '4.1' },
+    'act4-watchers-on-the-road': { group: 'Act IV — Oregon', code: '4.2' },
+    'act4-the-trade-day': { group: 'Act IV — Oregon', code: '4.3' },
+    'act4-salt-and-sea': { group: 'Act IV — Oregon', code: '4.4' },
+    'act4-the-door-they-came-through': { group: 'Act IV — Idaho', code: '4.5' },
+    'act4-olympia': { group: 'Act IV — Idaho', code: '4.5b' },
+    'act4-poison-the-well': { group: 'Act IV — Idaho', code: '4.6' },
+    'act4-the-heart-of-each-city': { group: 'Act IV — Idaho', code: '4.7' },
+    'descent-1': { group: 'The Descent', code: 'D1' },
+    'descent-2': { group: 'The Descent', code: 'D2' },
+    'descent-3': { group: 'The Descent', code: 'D3' },
+    'descent-4': { group: 'The Descent', code: 'D4' },
+    'climax-defiled-gate': { group: 'The Climax', code: 'C1' },
+    'climax-judgment': { group: 'The Climax', code: 'C2' },
+    'climax-seven-sins': { group: 'The Climax', code: 'C3' },
+  };
+
+  /** Snapshot the full quest chain for the DEV quest tab (called fresh on each open). */
+  private questTabRows(): QuestTabRow[] {
+    return QUEST_REGISTRY.map((q) => {
+      const meta = MainScene.QUEST_TAB_META[q.id] ?? { group: 'Other', code: '' };
+      const st = this.chain.status(q.id);
+      return {
+        id: q.id,
+        group: meta.group,
+        code: meta.code,
+        title: q.title,
+        completed: st === 'complete',
+        active: st === 'active',
+      };
+    });
+  }
+
+  /**
+   * DEV STATE-WARP to a quest's start. Marks every EARLIER quest (chain order)
+   * complete, applies the stateful prerequisites by range (corruption / power / Holy
+   * Power / endgame gates), loads the correct world + a safe walkable position near
+   * the first objective's target, activates the quest at objective 0, and refreshes
+   * the tracker / marker / arrow. Synchronous (it may run while the quest tab pauses
+   * the scene), so it uses applyWorldSwap directly rather than the tweened travel.
+   *
+   * Robust: any unresolved position falls back to the target world's defaultArrival,
+   * and the quest is always left ACTIVE — it never soft-locks or lands out of bounds.
+   */
+  private devJumpToQuest(targetId: string): void {
+    const order = QUEST_REGISTRY.map((q) => q.id);
+    const ti = order.indexOf(targetId);
+    const def = this.chain.get(targetId);
+    if (ti < 0 || !def) return;
+
+    const JUMP_APPROACH_OFFSET = 280; // place the player S of the target (clear of 'reach' range + enemy ring)
+    const JUMP_HOLY_POWER = 60; // safe Holy Power buffer for endgame plunder/relic beats
+
+    // --- Stateful prerequisites by chain range -------------------------------
+    // Corruption is granted at the rift (completing 'the-source'), so everything
+    // AFTER it begins corrupted; 'the-source' and earlier do not.
+    const corrupted = ti > order.indexOf('the-source');
+    // The demonic→holy swap happens at the throne (mid climax-judgment); only the
+    // post-throne Hell gauntlet begins holy.
+    const holy = targetId === SEVEN_SINS_QUEST_ID;
+
+    // Pre-satisfy narrative one-shots so a jump never replays an old cutscene/gate.
+    this.urielPending = false;
+    this.urielArrived = true;
+    this.seattleIntroShown = true;
+    this.riftLieFired = corrupted;
+    this.riftSceneStarted = corrupted; // the rift is behind us once corrupted
+    if (this.semyaza) { this.semyaza.destroy(); this.semyaza = undefined; }
+
+    // Corruption (drives Spirit Vision + the patron's offers + conditional dialogue).
+    if (corrupted) this.setPlayerPath('corrupted');
+    else { this.setPlayerPath('neutral'); this.spirit.setSpiritVision(false); }
+
+    // Power state: holy (Holy Bolt + golden kit) only for the post-throne gauntlet.
+    if (holy) this.swapToHoly(); else this.revertToDemonic();
+
+    // Holy Power buffer (descent onward) since we skip the prior quests' reward grants.
+    if (ti >= order.indexOf('descent-1') && this.holyPower.count < JUMP_HOLY_POWER) {
+      this.holyPower.add(JUMP_HOLY_POWER - this.holyPower.count);
+    }
+
+    // Endgame gate flags so the climax quests land mid-flow, not re-doing earlier beats.
+    if (targetId === 'climax-defiled-gate') {
+      this.resetGuardianEncounter(); // start the gate fresh at the Holy Outpost
+      this.resetGodJudgment();
+    } else if (targetId === 'climax-judgment') {
+      this.guardianPhase = 'corrupted'; // the Heaven gate is already defiled
+      this.michaelDefeated = false;
+      this.judgmentFired = false;
+      this.judgmentActive = false;
+      this.hellPortal?.destroy();
+      this.hellPortal = undefined;
+    } else if (targetId === SEVEN_SINS_QUEST_ID) {
+      this.guardianPhase = 'corrupted';
+      this.michaelDefeated = true; // judgment already happened (we're past the throne)
+      this.judgmentFired = true;
+      this.judgmentActive = false;
+    }
+
+    // --- World + position (synchronous swap; we may be paused) ----------------
+    const obj0 = def.objectives[0];
+    const world: WorldId = obj0?.target ? TARGET_WORLD[obj0.target] : WORLD_EARTH;
+    const dest = this.jumpApproachPos(def, world, JUMP_APPROACH_OFFSET);
+    if (this.activeWorld !== world) {
+      this.applyWorldSwap(world, dest); // instant core swap (bounds/camera/zoom/bodies)
+    } else {
+      this.cancelDash();
+      this.player.sprite.setPosition(dest.x, dest.y);
+      this.player.setDirection(0, 0);
+      this.cameras.main.centerOn(dest.x, dest.y);
+    }
+
+    // --- Activate the target quest at objective 0 ----------------------------
+    // load() clears the active quest; accept() then fires 'started' → handleQuestEvent
+    // sets up arc objective 0 (spawns enemies in the now-correct world).
+    this.chain.load({ completed: order.slice(0, ti), activeId: null, activeObjective: 0 });
+    this.chain.accept(targetId);
+
+    // Arrive at full HP/energy so the jump always lands playable (dev convenience).
+    this.playerHealth.full();
+    this.energy.full();
+
+    this.refreshQuestUi();
+    this.updateObjectiveMarker();
+    this.showBanner(`Jumped to: ${def.title}`, 2200);
+  }
+
+  /** Walkable world position near a quest's first-objective target (offset S so a
+   *  'reach'/proximity objective isn't instantly tripped), with safe fallbacks. */
+  private jumpApproachPos(def: QuestDef, world: WorldId, offset: number): { x: number; y: number } {
+    const obj0 = def.objectives[0];
+    const base = (obj0?.target ? this.resolveTarget(obj0.target) : null) ?? {
+      x: this.worlds[world].defaultArrival.x,
+      y: this.worlds[world].defaultArrival.y,
+      label: '',
+    };
+    return this.worlds[world].map.nearestWalkableWorld(base.x, base.y + offset);
   }
 
   // --- Quest ----------------------------------------------------------------

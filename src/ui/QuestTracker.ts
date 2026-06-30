@@ -11,6 +11,8 @@ const TITLE_GAP = 4;
 // Screen-edge arrow geometry.
 const ARROW_MARGIN = 44; // how far in from the edge the arrow rides
 const EDGE_TEST_MARGIN = 36; // target this close to an edge counts as off-screen
+// The quest direction arrow sits above every other UI element (HUD = 2000/2001).
+const QUEST_ARROW_DEPTH = 3000;
 
 /**
  * Fixed objective tracker (UI camera, unaffected by zoom): the active quest's
@@ -69,11 +71,13 @@ export class QuestTracker {
       .setDepth(depth + 2);
 
     // A gold pointer that lives at the screen edge toward an off-screen target.
+    // ON TOP OF EVERYTHING (above the HP/XP HUD at 2000 + the dev FPS readout at 2001)
+    // so the quest direction is always visible regardless of HUD layout.
     this.arrow = scene.add
       .triangle(0, 0, 0, -11, 9, 8, -9, 8, 0xffd24a, 0.95)
       .setStrokeStyle(2, 0x5a4410, 1)
       .setScrollFactor(0)
-      .setDepth(depth + 3)
+      .setDepth(QUEST_ARROW_DEPTH)
       .setVisible(false);
 
     scene.scale.on(Phaser.Scale.Events.RESIZE, this.layout, this);

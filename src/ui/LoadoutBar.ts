@@ -19,6 +19,8 @@ const SIZE = 58;
 const GAP = 8;
 const COLS = 3; // 3 columns × 2 rows = 6 slots, in the freed bottom-right corner
 const DEPTH = 1350;
+const LABEL_FONT_MAX = 12; // auto-fit label font range (px); shrinks to fit the full name
+const LABEL_FONT_MIN = 7;
 
 /**
  * THE LOADOUT BAR — the player's entire active kit (the 6 equipped skills), as
@@ -132,11 +134,32 @@ export class LoadoutBar {
     for (let i = 0; i < 6; i++) {
       const filled = !!this.equipped[i];
       const s = this.slots[i];
-      s.label.setText(filled ? labels[i] ?? '' : '');
+      if (filled) this.fitLabel(s.label, labels[i] ?? '');
+      else s.label.setText('');
       s.bg.setStrokeStyle(2, filled ? 0xffd24a : 0x36405a, 0.95);
       s.bg.setFillStyle(filled ? 0x1d2b40 : 0x12161e, filled ? 0.92 : 0.7);
       if (!filled) s.cd.setVisible(false);
     }
+  }
+
+  /** Auto-fit the FULL skill name inside the button: word-wrap to the button width and
+   *  shrink the font until every line fits without truncation (so "Army of the Dead",
+   *  "Unleash the Monster", etc. are fully readable). */
+  private fitLabel(label: Phaser.GameObjects.Text, str: string): void {
+    const maxW = SIZE - 6;
+    const maxH = SIZE - 8;
+    let chosen = LABEL_FONT_MIN;
+    for (let fs = LABEL_FONT_MAX; fs >= LABEL_FONT_MIN; fs--) {
+      label.setFontSize(fs);
+      label.setText(str); // re-wraps at the new size (wordWrap width is fixed in the style)
+      if (label.width <= maxW && label.height <= maxH) {
+        chosen = fs;
+        break;
+      }
+      chosen = fs; // keep the smallest tried if none fully fit (still better than truncating)
+    }
+    label.setFontSize(chosen);
+    label.setText(str);
   }
 
   /** Update one slot's cooldown shade + disabled (low-energy) look. ratio 1 = full cd. */
