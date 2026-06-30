@@ -46,8 +46,9 @@ export class PerfReadout {
 
   private layout(): void {
     const insets = getInsets(this.scene);
-    // Below the HP/XP/Energy cluster + the 3-line debug readout (top-left HUD stack).
-    this.text.setPosition(insets.left + UI_MARGIN, insets.top + UI_MARGIN + 96);
+    // Directly below the 3-line debug readout (the HP/XP/Energy bars moved out of the
+    // top-left to the bottom-left, so this stack now starts at the top).
+    this.text.setPosition(insets.left + UI_MARGIN, insets.top + UI_MARGIN + 56);
   }
 
   /** Call every frame with the real frame delta (ms). Refreshes the display ~4×/sec. */

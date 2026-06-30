@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { getInsets, UI_MARGIN } from './uiLayout';
+import { getInsets, UI_MARGIN, LEFT_TAB_W, LEFT_TAB_H, leftTabPos } from './uiLayout';
 import { DRAG_AIM_THRESHOLD } from '../game/settings';
 
 /** Callbacks the scene wires to the loadout buttons (Piece 4: tap = quick fire, drag = aim). */
@@ -75,14 +75,17 @@ export class LoadoutBar {
       scene.input.off(Phaser.Input.Events.POINTER_UP_OUTSIDE, this.onPointerUp, this);
     });
 
+    // SKILLS opens the skill-tree screen. It lives on the LEFT edge as the third
+    // stacked tab (DEV → QUESTS → SKILLS), sized to match those tabs; DEV/QUESTS are
+    // DEV_MODE-only, but SKILLS is always present (a player function).
     this.openBg = scene.add
-      .rectangle(0, 0, SIZE, 28, 0x241433, 0.92)
+      .rectangle(0, 0, LEFT_TAB_W, LEFT_TAB_H, 0x241433, 0.92)
       .setStrokeStyle(2, 0xb98aff, 0.95)
       .setScrollFactor(0)
       .setDepth(DEPTH)
       .setInteractive({ useHandCursor: true });
     this.openLabel = scene.add
-      .text(0, 0, 'SKILLS', { fontFamily: 'system-ui, sans-serif', fontSize: '10px', color: '#e9d6ff', fontStyle: 'bold' })
+      .text(0, 0, 'SKILLS', { fontFamily: 'ui-monospace, monospace', fontSize: '10px', color: '#e9d6ff', fontStyle: 'bold', align: 'center', wordWrap: { width: LEFT_TAB_W - 6 } })
       .setOrigin(0.5)
       .setScrollFactor(0)
       .setDepth(DEPTH + 1);
@@ -188,11 +191,9 @@ export class LoadoutBar {
       s.label.setPosition(x, y);
       s.cd.setPosition(x, y + SIZE / 2);
     }
-    // SKILLS open button: above the grid, leftmost column (clear of the Holy Bolt
-    // button that sits above the rightmost column).
-    const ox = rightX - (COLS - 1) * (SIZE + GAP);
-    const oy = bottomY - 2 * (SIZE + GAP) - 6;
-    this.openBg.setPosition(ox, oy);
-    this.openLabel.setPosition(ox, oy);
+    // SKILLS button: LEFT edge, third stacked tab under DEV + QUESTS (index 2).
+    const skills = leftTabPos(this.scene, 2);
+    this.openBg.setPosition(skills.x, skills.y);
+    this.openLabel.setPosition(skills.x, skills.y);
   }
 }

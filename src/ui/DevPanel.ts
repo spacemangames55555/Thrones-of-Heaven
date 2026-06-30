@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { getInsets } from './uiLayout';
+import { LEFT_TAB_W, LEFT_TAB_H, leftTabPos } from './uiLayout';
 import type { QuestTabRow } from './QuestTabScene';
 
 /** One labeled dev button: its caption and the action it fires. */
@@ -16,9 +16,8 @@ export interface QuestTabHook {
   onJump: (id: string) => void;
 }
 
-const TAB_W = 46;
-const TAB_H = 66;
-const TAB_GAP = 10; // gap between the stacked DEV + QUESTS tabs
+const TAB_W = LEFT_TAB_W;
+const TAB_H = LEFT_TAB_H;
 const DEPTH = 1550; // above the static HUD/tracker, below the choice/dialogue modals
 
 /**
@@ -115,16 +114,12 @@ export class DevPanel {
   }
 
   private layout(): void {
-    const insets = getInsets(this.scene);
-    const h = this.scene.scale.height;
-    const leftX = insets.left + 6;
-    const tabCx = leftX + TAB_W / 2;
-    const tabCy = h / 2;
-    this.tabBg.setPosition(tabCx, tabCy);
-    this.tabLabel.setPosition(tabCx, tabCy);
-    // QUESTS tab directly under DEV.
-    const questCy = tabCy + TAB_H / 2 + TAB_GAP + TAB_H / 2;
-    this.questBg?.setPosition(tabCx, questCy);
-    this.questLabel?.setPosition(tabCx, questCy);
+    // Shared left-edge column: 0 = DEV, 1 = QUESTS (SKILLS is index 2, owned by LoadoutBar).
+    const dev = leftTabPos(this.scene, 0);
+    this.tabBg.setPosition(dev.x, dev.y);
+    this.tabLabel.setPosition(dev.x, dev.y);
+    const quests = leftTabPos(this.scene, 1);
+    this.questBg?.setPosition(quests.x, quests.y);
+    this.questLabel?.setPosition(quests.x, quests.y);
   }
 }

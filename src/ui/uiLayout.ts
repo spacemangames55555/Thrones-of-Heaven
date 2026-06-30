@@ -14,6 +14,24 @@ export const NO_INSETS: Insets = { top: 0, right: 0, bottom: 0, left: 0 };
 export const UI_MARGIN = 14;
 
 /**
+ * Left-edge stacked tab geometry, SHARED so the DEV / QUESTS / SKILLS buttons line
+ * up as one column (DevPanel owns DEV + QUESTS; LoadoutBar owns SKILLS). Index 0 =
+ * DEV (mid-left), each next tab sits directly under the previous.
+ */
+export const LEFT_TAB_W = 46;
+export const LEFT_TAB_H = 66;
+export const LEFT_TAB_GAP = 10;
+
+/** Centre of the Nth stacked left-edge tab (0 = DEV, 1 = QUESTS, 2 = SKILLS). */
+export function leftTabPos(scene: Phaser.Scene, index: number): { x: number; y: number } {
+  const insets = getInsets(scene);
+  const h = scene.scale.height;
+  const x = insets.left + 6 + LEFT_TAB_W / 2;
+  const y = h / 2 + index * (LEFT_TAB_H + LEFT_TAB_GAP);
+  return { x, y };
+}
+
+/**
  * Safe-area insets, published to the game registry by main.ts and refreshed on
  * resize. UI reads this so nothing sits under the notch or home indicator.
  */

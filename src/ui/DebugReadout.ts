@@ -37,8 +37,9 @@ export class DebugReadout {
 
   private layout(): void {
     const insets = getInsets(this.scene);
-    // Below the player HP + XP + Energy bar cluster (top-left HUD).
-    this.text.setPosition(insets.left + UI_MARGIN, insets.top + UI_MARGIN + 33);
+    // Top-left: the HP/XP/Energy bars moved to the bottom-left, so this readout now
+    // sits at the very top of the left column.
+    this.text.setPosition(insets.left + UI_MARGIN, insets.top + UI_MARGIN);
   }
 
   update(): void {

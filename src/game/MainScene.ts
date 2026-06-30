@@ -1342,15 +1342,18 @@ export class MainScene extends Phaser.Scene {
 
     const layout = (): void => {
       const ins = getInsets(this);
+      const h = this.scale.height;
       const x = ins.left + UI_MARGIN;
-      const base = ins.top + UI_MARGIN;
-      // Three stacked bars: HP (thick) → XP → Energy, with HP numbers and the
-      // level badge in the right column. Energy ends above the debug readout.
-      this.playerBar.setPosition(x, base + 7);
-      this.playerHpText.setPosition(x + 158, base + 7);
-      this.xpBar.setPosition(x, base + 17);
-      this.energyBar.setPosition(x, base + 26);
-      this.levelBadge.setPosition(x + 158, base + 26);
+      // BOTTOM-LEFT, stacked just ABOVE the joystick home (its hint rides ~92px up
+      // with a 56px radius → its top is ~148px up), so the bars and the joystick /
+      // its thumb-drag zone never overlap. HP (thick) on top → XP → Energy, with HP
+      // numbers + the level badge in the right column.
+      const top = h - ins.bottom - 178;
+      this.playerBar.setPosition(x, top);
+      this.playerHpText.setPosition(x + 158, top);
+      this.xpBar.setPosition(x, top + 10);
+      this.energyBar.setPosition(x, top + 19);
+      this.levelBadge.setPosition(x + 158, top + 19);
     };
     layout();
     this.scale.on(Phaser.Scale.Events.RESIZE, layout);
@@ -5677,6 +5680,7 @@ export class MainScene extends Phaser.Scene {
   private swapToHoly(): void {
     this.power.swapToHoly();
     this.holyBoltButton.setVisible(true); // the new ability appears
+    this.refreshHolyPowerUi(); // the Holy Power counter now reveals (holy endgame)
     this.ensureHolyAura();
     // A radiant burst + golden flash so the transformation reads clearly.
     this.player.levelUpFlash();
@@ -5690,6 +5694,7 @@ export class MainScene extends Phaser.Scene {
   private revertToDemonic(): void {
     this.power.reset();
     this.holyBoltButton.setVisible(false);
+    this.refreshHolyPowerUi(); // hide the Holy Power counter (back to demonic)
     this.holyAura?.destroy();
     this.holyAura = undefined;
   }
@@ -7755,10 +7760,12 @@ export class MainScene extends Phaser.Scene {
   }
 
   /**
-   * The Holy Power counter — a fixed, right-anchored HUD readout in the free
-   * TOP-RIGHT corner, grouped with the resource cluster but clear of the top-left
-   * HP/XP/energy bars, the top-centre quest tracker, the joystick, and the action
-   * buttons. Routed through the UI camera (fixed across zoom).
+   * The Holy Power counter — a fixed, right-anchored HUD readout in the TOP-RIGHT
+   * corner. It is HIDDEN through the entire normal game (town, Acts I–IV, the
+   * descent) and only SHOWN once the player is in the holy-powered endgame state
+   * (after the throne power-swap, `this.power.isHoly`) — the Heaven→throne→Hell
+   * stretch where Holy Power / the Holy Bolt actually matter. Routed through the UI
+   * camera (fixed across zoom).
    */
   private createHolyPowerHud(): void {
     this.holyPowerText = this.add
@@ -7772,7 +7779,8 @@ export class MainScene extends Phaser.Scene {
       })
       .setOrigin(1, 0) // right-anchored
       .setScrollFactor(0)
-      .setDepth(2000);
+      .setDepth(2000)
+      .setVisible(false); // gated on the holy endgame state (see refreshHolyPowerUi)
 
     const layout = (): void => {
       const insets = getInsets(this);
@@ -7782,9 +7790,11 @@ export class MainScene extends Phaser.Scene {
     this.scale.on(Phaser.Scale.Events.RESIZE, layout);
   }
 
-  /** Refresh the Holy Power counter (called on every count change). */
+  /** Refresh the Holy Power counter + gate its visibility to the holy endgame. Called
+   *  on every count change and whenever the power state flips (swap to holy / revert). */
   private refreshHolyPowerUi(): void {
     this.holyPowerText.setText(`✦ Holy Power: ${this.holyPower.count}`);
+    this.holyPowerText.setVisible(this.power.isHoly);
   }
 
   // --- Building interior transitions ---------------------------------------

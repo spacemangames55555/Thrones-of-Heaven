@@ -1,11 +1,13 @@
 import Phaser from 'phaser';
-import { getInsets, UI_MARGIN } from './uiLayout';
+import { getInsets } from './uiLayout';
 
 /**
  * A small, reusable on-screen button pinned to the camera (works on touch and
- * mouse). Used for the "Talk" prompt; future buttons (Enter, Use, …) reuse it.
- * Anchored bottom-CENTER inside the safe area, clear of the bottom-right zoom
- * buttons and the bottom-left joystick.
+ * mouse). It is the SINGLE, STANDARD home for every contextual / proximity action
+ * button — Talk (NPCs), Corrupt the Portal, Taint the Water / Burn the Grove, and
+ * any similar interact prompt. Only one is ever applicable at a time (they are all
+ * proximity-gated), so they share this one slot: the CENTRE, just above the bottom-
+ * right skill-hotkey cluster and clear of the bottom-left HP bars + joystick.
  */
 export class TouchButton {
   private readonly scene: Phaser.Scene;
@@ -71,7 +73,9 @@ export class TouchButton {
     const h = this.scene.scale.height;
     const insets = getInsets(this.scene);
     const cx = w / 2;
-    const cy = h - insets.bottom - UI_MARGIN - this.height / 2;
+    // CENTRE, sitting high enough above the bottom clusters to clear both the
+    // bottom-right skill grid and the bottom-left HP bars (which now live there).
+    const cy = h - insets.bottom - 210;
     this.bg.setPosition(cx, cy);
     this.label.setPosition(cx, cy);
   }

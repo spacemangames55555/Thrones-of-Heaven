@@ -8,8 +8,8 @@ import {
 } from '../game/settings';
 import { getInsets, UI_MARGIN } from './uiLayout';
 
-const BTN = 40; // small zoom buttons (top of screen now, not the old big right-edge pair)
-const GAP = 10;
+const BTN = 62; // zoom buttons, stacked on the mid-right edge (thumb-reachable)
+const GAP = 14;
 const HOLD_DELAY = 250; // ms before a press becomes a continuous zoom
 
 type Dir = 'in' | 'out';
@@ -181,7 +181,7 @@ export class ZoomControls {
     const label = this.scene.add
       .text(0, 0, glyph, {
         fontFamily: 'system-ui, sans-serif',
-        fontSize: '24px',
+        fontSize: '40px',
         color: '#ffe9a8',
         fontStyle: 'bold',
       })
@@ -197,17 +197,17 @@ export class ZoomControls {
     // A rotation/resize can change the out-limit; keep the target in range.
     this.target = Phaser.Math.Clamp(this.target, this.outLimit, ZOOM_IN_LIMIT);
     const w = this.scene.scale.width;
+    const h = this.scene.scale.height;
     const insets = getInsets(this.scene);
-    // TOP-CENTER, laid out HORIZONTALLY ([−] [+]) — small and clear of the top-left
-    // HP/level cluster and the top-right Holy Power readout, and above the quest
-    // tracker. Frees the whole right edge it used to occupy.
-    const cy = insets.top + UI_MARGIN + BTN / 2;
-    const cx = w / 2;
-    const outX = cx - (BTN / 2 + GAP / 2); // − on the left
-    const inX = cx + (BTN / 2 + GAP / 2); // + on the right
-    this.outBtn.bg.setPosition(outX, cy);
-    this.outBtn.label.setPosition(outX, cy);
-    this.inBtn.bg.setPosition(inX, cy);
-    this.inBtn.label.setPosition(inX, cy);
+    // MID-RIGHT edge, stacked vertically ([+] over [−]), thumb-reachable and clear
+    // of the top/bottom HUD. The + sits above the screen centre, − just below.
+    const x = w - insets.right - UI_MARGIN - BTN / 2;
+    const cy = h / 2;
+    const inY = cy - (BTN / 2 + GAP / 2); // + on top
+    const outY = cy + (BTN / 2 + GAP / 2); // − below
+    this.inBtn.bg.setPosition(x, inY);
+    this.inBtn.label.setPosition(x, inY);
+    this.outBtn.bg.setPosition(x, outY);
+    this.outBtn.label.setPosition(x, outY);
   }
 }
