@@ -1257,6 +1257,31 @@ export const CITY_GUARDS = 5;
 export const CITY_ANGELS_LESSER = 2;
 export const CITY_ANGELS_WARDEN = 1;
 
+// --- ACT IV FINALE (4.8–4.10): Boise + the catapults + the outpost assault ---
+//
+// 4.8 "Draw Them Down": burn Boise with three catapults (proximity "Fire the
+// Catapult" actions; each firing spawns a city-guard defender group). Boise sits
+// on the SW Idaho Snake plain, SOUTH-WEST of the 4.5–4.7 quest cluster.
+export const BOISE_POSITION = { x: 26200, y: 15000 };
+export const CATAPULT_1_POSITION = { x: 25500, y: 14350 }; // NW of the city walls
+export const CATAPULT_2_POSITION = { x: 26300, y: 14150 }; // due north
+export const CATAPULT_3_POSITION = { x: 27100, y: 14400 }; // NE of the walls
+/** Defenders that pour out after EACH catapult fires (city-guard variant). */
+export const CATAPULT_DEFENDERS_COUNT = 4;
+
+// 4.9 "The Door Home": the assault on the (emptied) angels' outpost. All offsets
+// are from HOLY_OUTPOST_POSITION; the approach faces Kamiah (west of the outpost).
+export const ASSAULT_APPROACH_OFFSET = { dx: -520, dy: 120 }; // obj 0 'reach' point
+export const ASSAULT_OUTER_OFFSET = { dx: -340, dy: 80 }; // the OUTER angel group
+export const ASSAULT_INNER_OFFSET = { dx: -40, dy: 50 }; // the INNER angel group
+export const ASSAULT_OUTER_LESSER = 4;
+export const ASSAULT_OUTER_WARDEN = 2;
+export const ASSAULT_INNER_LESSER = 3;
+export const ASSAULT_INNER_WARDEN = 2;
+export const ASSAULT_INNER_HERALD = 1;
+/** The demon escort that fights at the player's back through the assault (4.9). */
+export const DEMON_ALLY_COUNT = 5;
+
 
 // --- Portal Defense (wave-defense encounter) -------------------------------
 //
@@ -1520,10 +1545,12 @@ export const PORTAL_SPAWN_OFFSETS: { dx: number; dy: number }[] = [
 // triggerable unit (FlamingSword ×2 + HeavenPortal, orchestrated by MainScene) —
 // NOT wired to the quest chain yet. Positions are placeholder, verified walkable.
 
-/** The holy outpost (Oregon) — distinct from the Dark Outpost and the Dark Portal. */
-export const HOLY_OUTPOST_POSITION = { x: 16200, y: 13400 }; // N-central OR frontier, near the rift/dark outpost
+/** The HOLY OUTPOST — the angels' door, in the Mount McGuire mountains of IDAHO,
+ *  east of Azazel's Kamiah outpost (where Act IV 4.5 located it; the Act IV finale
+ *  4.9 assaults it, then the endgame proceeds through its portal). */
+export const HOLY_OUTPOST_POSITION = { x: 30000, y: 3200 }; // Mt. McGuire leg, NE of Kamiah (verified walkable + all assault points)
 /** The Heaven Portal sits at the outpost centre. */
-export const HEAVEN_PORTAL_POSITION = { x: 16200, y: 13400 }; // == Holy Outpost (the portal sits at the outpost)
+export const HEAVEN_PORTAL_POSITION = { x: 30000, y: 3200 }; // == Holy Outpost (the portal sits at the outpost)
 /** Guardian spawn points, as offsets (px) from the portal (one melee, one ranged). */
 export const GUARDIAN_MELEE_OFFSET = { dx: 78, dy: 34 };
 export const GUARDIAN_RANGED_OFFSET = { dx: -78, dy: 34 };

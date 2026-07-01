@@ -5,7 +5,7 @@ import type { PlayerPath } from '../story/playerPath';
 import type { SkillSaveState } from '../skills/SkillState';
 
 /** Bump when the SaveData shape changes; SaveSystem.read can then migrate old saves. */
-export const SAVE_VERSION = 9;
+export const SAVE_VERSION = 10;
 
 /**
  * Act I (Enumclaw opening) quest ids — inserted at the FRONT of the chain, with the
@@ -79,7 +79,9 @@ export const ACT4_QUEST_IDS = [
   'act4-poison-the-well',
   'act4-the-heart-of-each-city',
 ];
-/** Descent + everything downstream of it — used to detect "already past Act IV." */
+/** Descent + everything downstream of it — used to detect "already past Act IV"
+ *  by the LEGACY v6→v7 / v7→v8 steps (these ids are retired as quests but the old
+ *  migration steps still key off their presence in old saves). */
 export const DESCENT_OR_LATER_IDS = [
   'descent-1',
   'descent-2',
@@ -89,6 +91,22 @@ export const DESCENT_OR_LATER_IDS = [
   'climax-judgment',
   'climax-seven-sins',
 ];
+
+/**
+ * ACT IV FINALE (v9→v10): descent-1..4 AND climax-defiled-gate are RETIRED from the
+ * chain; 4.8–4.10 replace them and climax-judgment's prerequisite is now 4.10
+ * ('act4-heaven').
+ *  - RETIRED_FINALE_IDS: ids that no longer exist — a save ACTIVE on one has its
+ *    activeId cleared (the patron then offers the right Act IV quest; corruption +
+ *    completions stand — a mid-descent save simply flows into 4.8 next).
+ *  - PAST_DESCENT_IDS: any of these COMPLETE (or an endgame id ACTIVE) means the
+ *    save is already past the old descent → 4.1–4.10 are marked complete so the
+ *    repointed climax-judgment (and everything after) stays unlocked.
+ */
+export const RETIRED_FINALE_IDS = ['descent-1', 'descent-2', 'descent-3', 'descent-4', 'climax-defiled-gate'];
+export const ACT4_FINALE_IDS = ['act4-draw-them-down', 'act4-the-door-home', 'act4-heaven'];
+export const PAST_DESCENT_IDS = ['descent-4', 'climax-defiled-gate', 'climax-judgment', 'climax-seven-sins'];
+export const ENDGAME_ACTIVE_IDS = ['climax-judgment', 'climax-seven-sins'];
 
 /** The single localStorage slot key. */
 export const SAVE_KEY = 'toh_save';

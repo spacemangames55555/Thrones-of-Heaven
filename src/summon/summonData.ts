@@ -286,6 +286,53 @@ export const RANGED_ALLY_CONFIG: AlliedSummonConfig = {
   projectileColor: RANGED_ALLY_TUNING.projectileColor,
 };
 
+// ─── DEMON ALLY (Act IV 4.9 "The Door Home": the demons at the player's back) ──
+//
+// The crusade escort: a squad of demon-styled RANGED allies spawned when 4.9 begins.
+// Exactly the ranged-attacker behavior proven by RANGED_ALLY_CONFIG — they follow
+// behind the player, fling low-damage pooled friendly bolts, and NEVER pull aggro
+// (enemies keep targeting per Monster > skeletons > player; the player absorbs all
+// aggro, which is the point of the crusade). They persist through the assault (long
+// lifespan) and despawn on entering Heaven (world swaps clear all summons).
+export const DEMON_ALLY_TUNING = {
+  maxHP: 40, // moot (enemies ignore them) — shared summon plumbing
+  /** Long lifespan so the squad lasts the whole assault; the Heaven transition
+   *  (applyWorldSwap clears summons) is the real despawn. */
+  durationMs: 20 * 60 * 1000,
+  attackDamage: 8, // LOW per-bolt damage — they help, they don't carry
+  attackCooldownMs: 1000,
+  fireRange: 360,
+  projectileSpeed: 460,
+  projectileRadius: 7,
+  projectileColor: 0xff5a3a, // demon-ember bolt
+  followRange: 170, // trails BEHIND the player between fights
+  moveTilesPerSec: 6.5, // keeps up with the march
+  bodyRadius: 13,
+  maxConcurrent: 8, // >= DEMON_ALLY_COUNT (settings) so the whole squad stands
+  tint: 0xc9553a, // deep demon red
+} as const;
+
+export const DEMON_ALLY_CONFIG: AlliedSummonConfig = {
+  key: 'demon_ally',
+  name: 'Demon',
+  behavior: 'ranged',
+  maxHP: DEMON_ALLY_TUNING.maxHP,
+  durationMs: DEMON_ALLY_TUNING.durationMs,
+  aggroRadius: 0,
+  followRange: DEMON_ALLY_TUNING.followRange,
+  moveTilesPerSec: DEMON_ALLY_TUNING.moveTilesPerSec,
+  bodyRadius: DEMON_ALLY_TUNING.bodyRadius,
+  tint: DEMON_ALLY_TUNING.tint,
+  drawsAggro: false, // KEY: enemies fully IGNORE the escort — the player holds all aggro
+  aggroPriority: PLAYER_AGGRO_PRIORITY, // unused (drawsAggro=false)
+  attackDamage: DEMON_ALLY_TUNING.attackDamage,
+  attackCooldownMs: DEMON_ALLY_TUNING.attackCooldownMs,
+  attackRange: DEMON_ALLY_TUNING.fireRange,
+  projectileSpeed: DEMON_ALLY_TUNING.projectileSpeed,
+  projectileRadius: DEMON_ALLY_TUNING.projectileRadius,
+  projectileColor: DEMON_ALLY_TUNING.projectileColor,
+};
+
 // ─── PET-TARGETED BUFFS (new buff target = your summons) ───────────────────────
 //
 // A buff that boosts the player's SUMMONS rather than the player. The manager keeps a list

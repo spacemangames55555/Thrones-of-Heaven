@@ -173,6 +173,17 @@ export class AlliedSummonManager {
     return best;
   }
 
+  /** Remove every summon of ONE type (e.g. the 4.9 demon escort when the assault ends).
+   *  Leaves other summons standing. No leaks. */
+  clearKey(key: string): void {
+    const doomed = this.summons.filter((s) => s.config.key === key);
+    for (const s of doomed) {
+      this.onExpire?.(s);
+      s.destroy();
+    }
+    this.summons = this.summons.filter((s) => s.config.key !== key);
+  }
+
   /** Remove every summon immediately (dev clear / save load / world reset). No leaks. */
   clear(): void {
     for (const s of this.summons) {

@@ -8,6 +8,10 @@ import {
   RIFT_FINALE_ID,
   ACT4_QUEST_IDS,
   DESCENT_OR_LATER_IDS,
+  RETIRED_FINALE_IDS,
+  ACT4_FINALE_IDS,
+  PAST_DESCENT_IDS,
+  ENDGAME_ACTIVE_IDS,
   type SaveData,
 } from './SaveData';
 
@@ -26,6 +30,11 @@ import {
  *    world's defaultArrival (the portals pass explicit arrival points, so this is safe).
  *    EARTH positions are kept (WA/OR pixels are unchanged). A save whose CURRENT world
  *    is Heaven/Hell is additionally re-anchored on load (applyWorldSwap bounds-snap).
+ *  • v9→v10 (the ACT IV FINALE) RETIRED descent-1..4 + climax-defiled-gate; 4.8–4.10
+ *    replace them and climax-judgment now requires 4.10. Stale active pointers at
+ *    retired ids are cleared; saves past the old descent/gate are marked through
+ *    4.8 / 4.10 respectively so the endgame stays unlocked; retired ids are dropped
+ *    from the completed set.
  * In every additive case a pre-migration player is already past that content, so the
  * new quests are marked COMPLETE (prerequisites stay satisfied → no soft-lock), and
  * Uriel is flagged as already arrived so his scene never replays. v6 also keeps the
@@ -89,6 +98,43 @@ function migrate(data: SaveData): SaveData {
     }
     // (If the save's CURRENT world is Heaven/Hell, its now-invalid x/y is re-anchored
     //  to defaultArrival on load by MainScene.applyWorldSwap's bounds-snap.)
+  }
+  if (data.saveVersion < 10) {
+    // v9→v10 — THE ACT IV FINALE: descent-1..4 + climax-defiled-gate are RETIRED;
+    // 4.8–4.10 replace them, and climax-judgment's prerequisite is now 'act4-heaven'.
+    // (a) A save ACTIVE on a retired quest → clear the stale pointer. Corruption +
+    //     its completed set stand, so on load the patron offers the first available
+    //     Act IV quest (a mid-descent save flows into 4.8; a mid-defiled-gate save
+    //     into 4.9's assault — the same Holy-Outpost content it was on).
+    if (data.quests && data.quests.activeId && RETIRED_FINALE_IDS.includes(data.quests.activeId)) {
+      data.quests.activeId = null;
+      data.quests.activeObjective = 0;
+    }
+    const activeId = data.quests?.activeId ?? null;
+    // (b) PAST THE GATE (climax-defiled-gate complete, or a later endgame quest
+    //     complete/ACTIVE — i.e. the player is in Heaven/Hell or finished): mark
+    //     4.1–4.10 ALL complete so the repointed climax-judgment (and everything
+    //     after) stays unlocked — no soft-lock, no replaying Act IV mid-endgame.
+    const pastGate =
+      completed.has('climax-defiled-gate') ||
+      completed.has('climax-judgment') ||
+      completed.has('climax-seven-sins') ||
+      (activeId !== null && ENDGAME_ACTIVE_IDS.includes(activeId));
+    // (c) PAST THE DESCENT but not the gate (descent-4 complete; was on/around the
+    //     old defiled-gate beat): mark 4.1–4.8 complete — the patron then offers
+    //     4.9, so they play the new assault instead of the retired wrapper.
+    const pastDescent = pastGate || PAST_DESCENT_IDS.some((id) => completed.has(id));
+    if (pastDescent) {
+      for (const id of ACT4_QUEST_IDS) completed.add(id);
+      completed.add(ACT4_FINALE_IDS[0]); // 4.8 'act4-draw-them-down'
+    }
+    if (pastGate) {
+      completed.add(ACT4_FINALE_IDS[1]); // 4.9 'act4-the-door-home'
+      completed.add(ACT4_FINALE_IDS[2]); // 4.10 'act4-heaven'
+    }
+    // (d) Hygiene: drop the retired ids from the completed set (nothing references
+    //     them anymore). Idempotent (delete-if-present).
+    for (const id of RETIRED_FINALE_IDS) completed.delete(id);
   }
   if (data.quests) data.quests.completed = [...completed];
   data.saveVersion = SAVE_VERSION;

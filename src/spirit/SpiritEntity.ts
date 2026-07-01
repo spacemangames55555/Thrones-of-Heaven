@@ -20,14 +20,20 @@ export class SpiritEntity implements Interactable {
   private readonly corruptedLines?: string[];
   private path: PlayerPath = 'neutral';
 
+  private readonly scene: Phaser.Scene;
   private readonly sprite: Phaser.GameObjects.Sprite;
   private readonly label: Phaser.GameObjects.Text;
+  private homeX: number;
+  private homeY: number;
 
   constructor(scene: Phaser.Scene, data: SpiritEntityData) {
+    this.scene = scene;
     this.id = data.id;
     this.name = data.name;
     this.defaultLines = data.lines;
     this.corruptedLines = data.corruptedLines;
+    this.homeX = data.x;
+    this.homeY = data.y;
     SpiritEntity.ensureTexture(scene);
 
     this.sprite = scene.add
@@ -45,18 +51,36 @@ export class SpiritEntity implements Interactable {
       .setStroke('#1a1030', 4)
       .setDepth(8);
 
-    // Gentle, ghostly bob + flicker so it reads as "not of this world".
-    scene.tweens.add({
+    this.startBob();
+    this.setRevealed(false);
+  }
+
+  /** The gentle, ghostly bob + flicker (anchored to the current home position). */
+  private startBob(): void {
+    this.scene.tweens.add({
       targets: this.sprite,
-      y: data.y - 4,
+      y: this.homeY - 4,
       alpha: { from: 0.55, to: 0.92 },
       duration: 1300,
       yoyo: true,
       repeat: -1,
       ease: 'Sine.inOut',
     });
+  }
 
-    this.setRevealed(false);
+  /**
+   * RELOCATE the spirit to a new world position (Azazel's progress-gated hub:
+   * Oregon → the Kamiah outpost → Heaven). Re-anchors the bob tween so it keeps
+   * hovering at the NEW spot. Idempotent (no-op when already there).
+   */
+  moveTo(x: number, y: number): void {
+    if (this.homeX === x && this.homeY === y) return;
+    this.homeX = x;
+    this.homeY = y;
+    this.scene.tweens.killTweensOf(this.sprite);
+    this.sprite.setPosition(x, y).setAlpha(0.85);
+    this.label.setPosition(x, y - 28);
+    this.startBob();
   }
 
   /** Conditional dialogue: corrupted set once the player has taken the dark path. */

@@ -76,6 +76,8 @@ import {
   DARK_MATTER_TUNING,
   RANGED_ALLY_CONFIG,
   RANGED_ALLY_TUNING,
+  DEMON_ALLY_CONFIG,
+  DEMON_ALLY_TUNING,
   SUMMON_BUFF_TUNING,
   AGGRO_REEVAL_INTERVAL_MS,
   AGGRO_STICKY_MARGIN,
@@ -117,7 +119,7 @@ import { QuestTracker } from '../ui/QuestTracker';
 import { DevPanel } from '../ui/DevPanel';
 import type { QuestTabRow } from '../ui/QuestTabScene';
 import { PlayerProgression } from '../progression/PlayerProgression';
-import { OREGON_SPIRIT_ID } from '../spirit/spiritData';
+import { OREGON_SPIRIT_ID, PATRON_HOME_POSITION } from '../spirit/spiritData';
 import type { SpiritEntity } from '../spirit/SpiritEntity';
 import type { Interactable } from '../entities/Interactable';
 import type { PlayerPath } from '../story/playerPath';
@@ -224,6 +226,21 @@ import {
   CITY_GUARDS,
   CITY_ANGELS_LESSER,
   CITY_ANGELS_WARDEN,
+  // ACT IV FINALE (4.8–4.10) — Boise, the catapults, the outpost assault:
+  BOISE_POSITION,
+  CATAPULT_1_POSITION,
+  CATAPULT_2_POSITION,
+  CATAPULT_3_POSITION,
+  CATAPULT_DEFENDERS_COUNT,
+  ASSAULT_APPROACH_OFFSET,
+  ASSAULT_OUTER_OFFSET,
+  ASSAULT_INNER_OFFSET,
+  ASSAULT_OUTER_LESSER,
+  ASSAULT_OUTER_WARDEN,
+  ASSAULT_INNER_LESSER,
+  ASSAULT_INNER_WARDEN,
+  ASSAULT_INNER_HERALD,
+  DEMON_ALLY_COUNT,
   HOLY_OUTPOST_POSITION,
   HEAVEN_PORTAL_POSITION,
   GUARDIAN_MELEE_OFFSET,
@@ -267,6 +284,17 @@ import washingtonMap from '../map/washington.map.json';
 const DOOR_TRIGGER = 20; // < one tile (32) so returning one tile out doesn't re-enter
 const NPC_AUTO_RANGE = 44; // ~1.4 tiles — auto-open dialogue on contact
 const NPC_TALK_RANGE = 80; // ~2.5 tiles — show the Talk button
+
+// ACT IV FINALE quest ids (4.8–4.10) — referenced by the assault sequencing, the
+// demon-escort spawn, Azazel's relocation, and the 4.10 talk-completion.
+const ACT4_DRAW_ID = 'act4-draw-them-down';
+const ACT4_DOOR_HOME_ID = 'act4-the-door-home';
+const ACT4_HEAVEN_ID = 'act4-heaven';
+/** 4.5's id — completing it moves Azazel (and the 'outpost' return hub) to Kamiah. */
+const ACT4_KAMIAH_ID = 'act4-the-door-they-came-through';
+/** 4.9's objective index for 'guardians-defeated' (the portal fight) — the dormant
+ *  guardians hold until the quest reaches this objective + the mask-drop has played. */
+const DOOR_HOME_GUARDIANS_OBJ = 3;
 
 // The lone Sasquatch sits in dense forest, 26 tiles north of the HOME-town spawn.
 // Derived from the town spawn at create() time so it tracks wherever home is
@@ -667,15 +695,14 @@ export class MainScene extends Phaser.Scene {
   // The single stored+displayed alignment title (its text() IS the stored value).
   private titleText!: Phaser.GameObjects.Text;
 
-  // The Descent arc + the Act I (Enumclaw) opening both reuse the same per-objective
-  // world setup + completion watcher. arcEnemies are the live spawns for the current
-  // objective; arcMode picks the completion test. ACT1_IDS are the grounded openers
-  // (no corruption gate); DESCENT_IDS the corrupted arc.
+  // The arc quests (Act I opening / Act II / Investigation / Act IV) all reuse the
+  // same per-objective world setup + completion watcher. arcEnemies are the live
+  // spawns for the current objective; arcMode picks the completion test. (The old
+  // placeholder DESCENT arc was RETIRED by the Act IV finale — 4.8–4.10 replace it.)
   private readonly ACT1_IDS = new Set(['honest-days-work', 'wolves-tree-line', 'shallows', 'the-pass']);
   private readonly ACT2_IDS = new Set(['whats-gotten-into-them', 'the-blight', 'the-thing-at-white-pass']);
   private readonly INV_IDS = new Set(['word-to-yakima', 'the-iron-road', 'the-northern-farms', 'what-the-dark-ones-carry', 'the-exile-of-longview']);
-  private readonly DESCENT_IDS = new Set(['descent-1', 'descent-2', 'descent-3', 'descent-4']);
-  // Act IV (4.1–4.4): the Necromancer's opening arc, given by Azazel BEFORE descent.
+  // Act IV: the Necromancer's corrupted arc, given by Azazel (4.1 → 4.10).
   private readonly ACTIV_IDS = new Set([
     'act4-what-they-wont-give',
     'act4-watchers-on-the-road',
@@ -686,6 +713,10 @@ export class MainScene extends Phaser.Scene {
     'act4-olympia',
     'act4-poison-the-well',
     'act4-the-heart-of-each-city',
+    // The FINALE (4.8–4.9): Boise catapults + the outpost assault. (4.10 has no
+    // world spawns — its talk-completion is handled in openQuestGiverDialogue.)
+    ACT4_DRAW_ID,
+    ACT4_DOOR_HOME_ID,
   ]);
   // En-route ambush groups (Q9/Q12): each spawns a demon pack on first approach.
   private arcAmbushes: { x: number; y: number; lines: string[]; spawned: boolean }[] = [];
@@ -1041,8 +1072,10 @@ export class MainScene extends Phaser.Scene {
       this.questGivers.push({
         entity: patron,
         pos: () => ({ x: patron.x, y: patron.y }),
-        // Act IV (4.1–4.4) is offered FIRST (firstAvailable walks this list in order);
-        // the old descent ids stay for the bridge after 4.4.
+        // The FULL Act IV chain, in order (firstAvailable walks this list). The old
+        // placeholder descent ids are RETIRED — the finale (4.8–4.10) replaces them.
+        // 4.10 is autoActivate (never offered) but listed so the giver's active /
+        // complete dialogue states resolve for it.
         questIds: [
           'act4-what-they-wont-give',
           'act4-watchers-on-the-road',
@@ -1052,10 +1085,9 @@ export class MainScene extends Phaser.Scene {
           'act4-olympia',
           'act4-poison-the-well',
           'act4-the-heart-of-each-city',
-          'descent-1',
-          'descent-2',
-          'descent-3',
-          'descent-4',
+          ACT4_DRAW_ID,
+          ACT4_DOOR_HOME_ID,
+          ACT4_HEAVEN_ID,
         ],
         idleLines: [...PATRON_IDLE_LINES],
         requiresCorruption: true,
@@ -1076,6 +1108,10 @@ export class MainScene extends Phaser.Scene {
     // The SECOND world — Heaven — built at a coordinate offset (its objects fall in
     // the world snapshot below → main camera only). Earth stays active.
     this.setupHeaven();
+
+    // Azazel's progress-gated station (fresh chain = his Oregon home; a Continue
+    // load re-derives it in applySave; heavenArrivalPos exists now for stage 3).
+    this.updatePatronLocation();
 
     const cam = this.cameras.main;
     cam.startFollow(this.player.sprite, true, 0.12, 0.12);
@@ -1272,7 +1308,10 @@ export class MainScene extends Phaser.Scene {
       this.portalDefense.update(this.time.now);
       this.updateGuardianEncounter();
     } else if (this.activeWorld === WORLD_HEAVEN) {
-      this.talkButton.setVisible(false);
+      // Interactions run in Heaven too — Azazel stands at the arrival for Act IV
+      // 4.10's talk (Earth interactables are all out of range here).
+      if (this.isDashing()) this.talkButton.setVisible(false);
+      else this.checkInteractions();
       this.updateHeaven();
     } else {
       this.talkButton.setVisible(false);
@@ -4957,6 +4996,18 @@ export class MainScene extends Phaser.Scene {
       this.applyWorldSwap(s.world.active as WorldId, { x: s.world.x, y: s.world.y });
       this.worldPos = { ...s.world.remembered }; // applyWorldSwap rewrote the leave-world entry
 
+      // Azazel's progress-gated station (Oregon → Kamiah → Heaven) from the loaded chain.
+      this.updatePatronLocation();
+
+      // Re-establish the ACTIVE arc objective's world state (spawned enemies / the
+      // proximity action button) — a mid-arc load otherwise resumes with nothing to
+      // fight or press. Arc quests are Earth-only, so guard on the loaded world.
+      if (this.activeWorld === WORLD_EARTH && this.isArcActive()) this.beginArcObjective();
+      // 4.9 mid-assault: the demon escort is transient (never serialized) — remuster it.
+      if (this.activeWorld === WORLD_EARTH && this.chain.activeQuest?.id === ACT4_DOOR_HOME_ID) {
+        this.spawnDemonAllies(false);
+      }
+
       // Refresh every HUD readout.
       this.refreshXpUi();
       this.refreshHolyPowerUi();
@@ -5266,8 +5317,10 @@ export class MainScene extends Phaser.Scene {
 
   /** Drive the guardians + the encounter's phase transitions each frame. */
   private updateGuardianEncounter(): void {
-    // Proximity activation: nearing the outpost wakes the dormant pair.
-    if (this.guardianPhase === 'dormant') {
+    // Proximity activation: nearing the outpost wakes the dormant pair. During Act IV
+    // 4.9's assault they HOLD until the quest reaches the portal objective and the
+    // mask-drop narration has played (see assaultHoldsGuardians).
+    if (this.guardianPhase === 'dormant' && !this.assaultHoldsGuardians()) {
       const d = Phaser.Math.Distance.Between(this.player.x, this.player.y, HOLY_OUTPOST_POSITION.x, HOLY_OUTPOST_POSITION.y);
       if (d <= GUARDIAN_ACTIVATION_RANGE) this.startGuardianFight();
     }
@@ -6028,6 +6081,7 @@ export class MainScene extends Phaser.Scene {
   private enterHeavenPortal(): void {
     if (this.transitioning || this.time.now < this.worldCooldownUntil) return;
     if (this.guardianPhase !== 'corrupted') return; // only the corrupted portal transports
+    if (this.dialogue.isOpen()) return; // let a narration (4.9's pour-the-Light beat) finish first
     this.travelToWorld(WORLD_HEAVEN, this.heavenArrivalPos);
   }
 
@@ -6239,11 +6293,7 @@ export class MainScene extends Phaser.Scene {
   private isArcQuest(id?: string): boolean {
     return (
       id !== undefined &&
-      (this.ACT1_IDS.has(id) ||
-        this.ACT2_IDS.has(id) ||
-        this.INV_IDS.has(id) ||
-        this.ACTIV_IDS.has(id) ||
-        this.DESCENT_IDS.has(id))
+      (this.ACT1_IDS.has(id) || this.ACT2_IDS.has(id) || this.INV_IDS.has(id) || this.ACTIV_IDS.has(id))
     );
   }
 
@@ -6347,8 +6397,10 @@ export class MainScene extends Phaser.Scene {
         this.beginPlunder(DESCENT_LOC_ANGELS);
         break;
       case 'reach-outpost':
+        // "Return to Azazel": the hub is PROGRESS-GATED — the Oregon Dark Outpost
+        // through 4.4, the Kamiah (Idaho) outpost from 4.5 on (it moves with Azazel).
         this.arcMode = 'reach';
-        this.arcReach = { ...DARK_OUTPOST_POSITION };
+        this.arcReach = { ...this.patronHubPos() };
         break;
       // --- Act IV (4.1–4.4), given by Azazel before the descent ---
       case 'bend-materials-taken':
@@ -6425,6 +6477,49 @@ export class MainScene extends Phaser.Scene {
         this.arcMode = 'defeat';
         break;
       }
+      // --- ACT IV FINALE (4.8–4.9) ---
+      case 'catapult-fired': {
+        // 4.8 — proximity "Fire the Catapult" action at the CURRENT objective's catapult.
+        const pos = this.activeObjectivePos() ?? { ...BOISE_POSITION };
+        this.beginArcAction(pos, 'Fire the Catapult');
+        break;
+      }
+      case 'catapult-defenders': {
+        // 4.8 — Boise defenders pour out to stop you after each firing.
+        const pos = this.activeObjectivePos() ?? { ...BOISE_POSITION };
+        this.spawnArcTownsfolk('cityguard', pos, CATAPULT_DEFENDERS_COUNT);
+        this.arcMode = 'defeat';
+        break;
+      }
+      case 'reach-holy-outpost':
+        // 4.9 obj 0 — march on the outpost: completes at the APPROACH point (outside
+        // the guardians' activation range; the machine's own later fire is a no-op).
+        this.arcMode = 'reach';
+        this.arcReach = {
+          x: HOLY_OUTPOST_POSITION.x + ASSAULT_APPROACH_OFFSET.dx,
+          y: HOLY_OUTPOST_POSITION.y + ASSAULT_APPROACH_OFFSET.dy,
+        };
+        break;
+      case 'outpost-outer-defeated':
+        // 4.9 obj 1 — the angel group OUTSIDE the outpost.
+        this.spawnArcAngelsMixed(
+          { x: HOLY_OUTPOST_POSITION.x + ASSAULT_OUTER_OFFSET.dx, y: HOLY_OUTPOST_POSITION.y + ASSAULT_OUTER_OFFSET.dy },
+          { lesser: ASSAULT_OUTER_LESSER, warden: ASSAULT_OUTER_WARDEN },
+        );
+        this.arcMode = 'defeat';
+        break;
+      case 'outpost-inner-defeated':
+        // 4.9 obj 2 — the angel group INSIDE the outpost.
+        this.spawnArcAngelsMixed(
+          { x: HOLY_OUTPOST_POSITION.x + ASSAULT_INNER_OFFSET.dx, y: HOLY_OUTPOST_POSITION.y + ASSAULT_INNER_OFFSET.dy },
+          { lesser: ASSAULT_INNER_LESSER, warden: ASSAULT_INNER_WARDEN, herald: ASSAULT_INNER_HERALD },
+        );
+        this.arcMode = 'defeat';
+        break;
+      // 4.9 objs 3–5 ('guardians-defeated' / 'portal-corrupted' / 'entered-heaven')
+      // fall through to the default: the EXISTING Holy-Outpost guardian/portal state
+      // machine drives those fights/actions and fires the triggers — the quest only
+      // CONSUMES them (arcMode 'none'; the mask-drop narration is armed below).
       default:
         this.arcMode = 'none';
     }
@@ -6617,6 +6712,89 @@ export class MainScene extends Phaser.Scene {
     this.setPlayerPath('corrupted');
   }
 
+  // --- AZAZEL'S PROGRESS-GATED LOCATION + the 4.9 demon escort ---------------
+
+  /**
+   * The patron's EARTH hub — where "Return to Azazel" (reach-outpost) completes and
+   * where the 'outpost' marker points: the Oregon Dark Outpost through 4.4, the
+   * Kamiah (Idaho) outpost once 4.5 ("The Door They Came Through") is complete.
+   */
+  private patronHubPos(): { x: number; y: number } {
+    return this.chain.status(ACT4_KAMIAH_ID) === 'complete' ? KAMIAH_POSITION : DARK_OUTPOST_POSITION;
+  }
+
+  /**
+   * Move Azazel to his progress-gated station (three stages, world-aware):
+   *   Oregon (his spirit-data seed) → the KAMIAH outpost once 4.5 completes →
+   *   HEAVEN (near the arrival point) once 4.9 completes (he walked through with you).
+   * Called at create, on every quest completion, after loads, and on quest-tab jumps.
+   * Idempotent (SpiritEntity.moveTo no-ops when already there).
+   */
+  private updatePatronLocation(): void {
+    const patron = this.oregonSpirit;
+    if (!patron) return;
+    if (this.chain.status(ACT4_DOOR_HOME_ID) === 'complete') {
+      patron.moveTo(this.heavenArrivalPos.x + 90, this.heavenArrivalPos.y - 10);
+    } else if (this.chain.status(ACT4_KAMIAH_ID) === 'complete') {
+      patron.moveTo(KAMIAH_POSITION.x + 10, KAMIAH_POSITION.y + 46);
+    } else {
+      patron.moveTo(PATRON_HOME_POSITION.x, PATRON_HOME_POSITION.y);
+    }
+  }
+
+  /**
+   * ACT IV 4.9 "The Door Home" — spawn the DEMON ESCORT: a squad of ranged demon
+   * allies (low-damage pooled friendly bolts, NEVER pull aggro) that follows behind
+   * the player through the assault. They despawn on entering Heaven (world swaps
+   * clear all summons) with clearDemonAllies as the belt-and-suspenders.
+   */
+  private spawnDemonAllies(withBark = true): void {
+    this.summons.clearKey(DEMON_ALLY_CONFIG.key); // never stack squads (re-accept / reload)
+    const { dx, dy } = this.facingUnit();
+    for (let i = 0; i < DEMON_ALLY_COUNT; i++) {
+      // Fan out BEHIND the player (opposite the facing) with scatter.
+      const jx = Phaser.Math.Between(-46, 46);
+      const jy = Phaser.Math.Between(-46, 46);
+      const a = this.summons.summon(
+        DEMON_ALLY_CONFIG,
+        this.player.x - dx * 52 + jx,
+        this.player.y - dy * 52 + jy,
+        DEMON_ALLY_TUNING.maxConcurrent,
+      );
+      this.spawnSkillRing(a.x, a.y, DEMON_ALLY_TUNING.bodyRadius + 10, DEMON_ALLY_TUNING.projectileColor);
+    }
+    if (withBark) {
+      // Azazel's battle-bark as the crusade sets out.
+      this.time.delayedCall(400, () =>
+        this.showBanner('Azazel: Almost there! Stay with him! HOME is on the other side of that door!', 3200),
+      );
+    }
+  }
+
+  /** Remove the 4.9 demon escort (quest complete / fail-safe). Other summons stand. */
+  private clearDemonAllies(): void {
+    this.summons.clearKey(DEMON_ALLY_CONFIG.key);
+  }
+
+  /**
+   * ACT IV 4.9 sequencing for the Holy-Outpost machine: while the assault quest is
+   * on its EARLIER objectives (the outer/inner fights), the dormant guardians HOLD
+   * (don't proximity-wake); on the portal objective they still hold until the
+   * MASK-DROP encounterNarration has played. Outside 4.9 (dev tools, stale saves)
+   * the machine behaves exactly as before.
+   */
+  private assaultHoldsGuardians(): boolean {
+    if (this.chain.activeQuest?.id !== ACT4_DOOR_HOME_ID) return false;
+    const i = this.chain.activeObjectiveIndex;
+    if (i < DOOR_HOME_GUARDIANS_OBJ) return true; // still fighting toward the portal
+    if (i === DOOR_HOME_GUARDIANS_OBJ) {
+      // Hold until the mask-drop has played AND its dialogue is fully closed —
+      // the guardians must not swing while the player is frozen reading it.
+      return (!!this.arcEncounterNarration && !this.arcEncounterShown) || this.dialogue.isOpen();
+    }
+    return false;
+  }
+
   /**
    * DEV: spawn a pack just ahead of the player and force Spirit Vision on, so the
    * encounter is immediately testable on demand regardless of story state.
@@ -6805,6 +6983,16 @@ export class MainScene extends Phaser.Scene {
     idleLines: string[];
     requiresCorruption?: boolean;
   }): void {
+    // ACT IV 4.10 "Heaven": the ONE talk-completes giver quest — talking to Azazel
+    // in Heaven plays the locked arrival dialogue, then COMPLETES the quest (which
+    // auto-starts the repointed climax-judgment endgame).
+    if (giver.questIds.includes(ACT4_HEAVEN_ID) && this.chain.activeQuest?.id === ACT4_HEAVEN_ID) {
+      this.dialogue.open([...this.chain.get(ACT4_HEAVEN_ID)!.npcActiveLines], () => {
+        this.notifyQuest('azazel-heaven-talk');
+        this.reenableControls = true;
+      });
+      return;
+    }
     const activeId = giver.questIds.find((id) => this.chain.status(id) === 'active');
     if (activeId) {
       this.dialogue.open([...this.chain.get(activeId)!.npcActiveLines], () => {
@@ -6851,9 +7039,11 @@ export class MainScene extends Phaser.Scene {
   private handleQuestEvent(e: QuestEvent): void {
     switch (e.type) {
       case 'started': {
-        if (this.isArcQuest(e.questId)) this.beginArcObjective(); // set up objective 0 (Act I + descent)
+        if (this.isArcQuest(e.questId)) this.beginArcObjective(); // set up objective 0 (Act I + Act IV arcs)
         // Quest 13 (finale): Uriel's scripted send-off plays on start (pre-warning).
         if (e.questId === 'the-source') this.playUrielSendoff();
+        // ACT IV 4.9 "The Door Home": the demon escort marches out at the player's back.
+        if (e.questId === ACT4_DOOR_HOME_ID) this.spawnDemonAllies();
         // Auto-activating climax quests have no NPC: show their start narration as a
         // banner (a beat after any preceding completion banner reads).
         const startDef = this.chain.get(e.questId);
@@ -6887,6 +7077,12 @@ export class MainScene extends Phaser.Scene {
         // Remember the just-completed quest so its giver's "complete" reaction is shown
         // on the next talk, before the next quest is offered (see openQuestGiverDialogue).
         if ((this.chain.get(e.questId)?.npcCompleteLines.length ?? 0) > 0) this.pendingAckQuestId = e.questId;
+        // ACT IV 4.9 done (the player just stepped into Heaven — the world swap already
+        // cleared all summons; this is the belt-and-suspenders for any edge path).
+        if (e.questId === ACT4_DOOR_HOME_ID) this.clearDemonAllies();
+        // Azazel's station is progress-gated (Oregon → Kamiah → Heaven) — re-derive it
+        // on every completion (idempotent; only 4.5 / 4.9 actually move him).
+        this.updatePatronLocation();
         this.grantQuestReward(e.questId);
         // Act II finale: completing Q7 arms URIEL'S ARRIVAL, which fires when the
         // player returns to the Enumclaw square (and gates the old corruption beat).
@@ -7148,6 +7344,8 @@ export class MainScene extends Phaser.Scene {
     this.riftLieFired = false;
     if (this.semyaza) { this.semyaza.destroy(); this.semyaza = undefined; }
     this.guardTarget = null;
+    this.clearDemonAllies(); // the 4.9 escort doesn't survive a chain reset
+    this.updatePatronLocation(); // fresh chain → Azazel back at his Oregon home
     this.refreshQuestUi();
   }
 
@@ -7376,13 +7574,12 @@ export class MainScene extends Phaser.Scene {
     'act4-olympia': { group: 'Act IV — Idaho', code: '4.5b' },
     'act4-poison-the-well': { group: 'Act IV — Idaho', code: '4.6' },
     'act4-the-heart-of-each-city': { group: 'Act IV — Idaho', code: '4.7' },
-    'descent-1': { group: 'The Descent', code: 'D1' },
-    'descent-2': { group: 'The Descent', code: 'D2' },
-    'descent-3': { group: 'The Descent', code: 'D3' },
-    'descent-4': { group: 'The Descent', code: 'D4' },
-    'climax-defiled-gate': { group: 'The Climax', code: 'C1' },
-    'climax-judgment': { group: 'The Climax', code: 'C2' },
-    'climax-seven-sins': { group: 'The Climax', code: 'C3' },
+    // The Act IV FINALE replaces the retired descent-1..4 + climax-defiled-gate.
+    'act4-draw-them-down': { group: 'Act IV — The Finale', code: '4.8' },
+    'act4-the-door-home': { group: 'Act IV — The Finale', code: '4.9' },
+    'act4-heaven': { group: 'Act IV — The Finale', code: '4.10' },
+    'climax-judgment': { group: 'The Climax', code: 'C1' },
+    'climax-seven-sins': { group: 'The Climax', code: 'C2' },
   };
 
   /** Snapshot the full quest chain for the DEV quest tab (called fresh on each open). */
@@ -7436,6 +7633,9 @@ export class MainScene extends Phaser.Scene {
     this.riftLieFired = corrupted;
     this.riftSceneStarted = corrupted; // the rift is behind us once corrupted
     if (this.semyaza) { this.semyaza.destroy(); this.semyaza = undefined; }
+    // The 4.9 demon escort never travels across jumps (a jump TO 4.9 re-spawns a
+    // fresh squad via its 'started' event).
+    this.clearDemonAllies();
 
     // Corruption (drives Spirit Vision + the patron's offers + conditional dialogue).
     if (corrupted) this.setPlayerPath('corrupted');
@@ -7444,17 +7644,18 @@ export class MainScene extends Phaser.Scene {
     // Power state: holy (Holy Bolt + golden kit) only for the post-throne gauntlet.
     if (holy) this.swapToHoly(); else this.revertToDemonic();
 
-    // Holy Power buffer (descent onward) since we skip the prior quests' reward grants.
-    if (ti >= order.indexOf('descent-1') && this.holyPower.count < JUMP_HOLY_POWER) {
+    // Holy Power buffer (the Act IV finale onward) since we skip the prior quests'
+    // reward grants (4.2/4.4/4.6/4.7 Light) — keeps endgame beats comfortable.
+    if (ti >= order.indexOf(ACT4_DRAW_ID) && this.holyPower.count < JUMP_HOLY_POWER) {
       this.holyPower.add(JUMP_HOLY_POWER - this.holyPower.count);
     }
 
-    // Endgame gate flags so the climax quests land mid-flow, not re-doing earlier beats.
-    if (targetId === 'climax-defiled-gate') {
-      this.resetGuardianEncounter(); // start the gate fresh at the Holy Outpost
+    // Endgame gate flags so the target quest lands mid-flow, not re-doing earlier beats.
+    if (targetId === ACT4_DOOR_HOME_ID) {
+      this.resetGuardianEncounter(); // the assault ends at a FRESH gate (guardians dormant)
       this.resetGodJudgment();
-    } else if (targetId === 'climax-judgment') {
-      this.guardianPhase = 'corrupted'; // the Heaven gate is already defiled
+    } else if (targetId === ACT4_HEAVEN_ID || targetId === 'climax-judgment') {
+      this.guardianPhase = 'corrupted'; // the Heaven gate is already defiled behind us
       this.michaelDefeated = false;
       this.judgmentFired = false;
       this.judgmentActive = false;
@@ -7466,6 +7667,13 @@ export class MainScene extends Phaser.Scene {
       this.judgmentFired = true;
       this.judgmentActive = false;
     }
+
+    // --- Chain state FIRST (prior quests complete), so progress-gated things
+    // (Azazel's station, the 'outpost' hub) resolve correctly for the placement.
+    // load() clears the active quest; autoActivate targets may self-accept on the
+    // 'unlocked' event this fires — accept() below is then a harmless no-op.
+    this.chain.load({ completed: order.slice(0, ti), activeId: null, activeObjective: 0 });
+    this.updatePatronLocation();
 
     // --- World + position (synchronous swap; we may be paused) ----------------
     const obj0 = def.objectives[0];
@@ -7481,9 +7689,8 @@ export class MainScene extends Phaser.Scene {
     }
 
     // --- Activate the target quest at objective 0 ----------------------------
-    // load() clears the active quest; accept() then fires 'started' → handleQuestEvent
-    // sets up arc objective 0 (spawns enemies in the now-correct world).
-    this.chain.load({ completed: order.slice(0, ti), activeId: null, activeObjective: 0 });
+    // accept() fires 'started' → handleQuestEvent sets up arc objective 0 (spawns
+    // enemies — and 4.9's demon escort — in the now-correct world).
     this.chain.accept(targetId);
 
     // Arrive at full HP/energy so the jump always lands playable (dev convenience).
@@ -7725,8 +7932,23 @@ export class MainScene extends Phaser.Scene {
         return { x: CITY_2_POSITION.x, y: CITY_2_POSITION.y, label: '' };
       case 'city-3':
         return { x: CITY_3_POSITION.x, y: CITY_3_POSITION.y, label: '' };
+      // --- ACT IV FINALE (4.8–4.10) locations ---
+      case 'boise':
+        return { x: BOISE_POSITION.x, y: BOISE_POSITION.y, label: '' };
+      case 'catapult-1':
+        return { x: CATAPULT_1_POSITION.x, y: CATAPULT_1_POSITION.y, label: '' };
+      case 'catapult-2':
+        return { x: CATAPULT_2_POSITION.x, y: CATAPULT_2_POSITION.y, label: '' };
+      case 'catapult-3':
+        return { x: CATAPULT_3_POSITION.x, y: CATAPULT_3_POSITION.y, label: '' };
+      case 'azazel-heaven':
+        // 4.10 — Azazel's LIVE position (relocated to Heaven once 4.9 completes).
+        return this.oregonSpirit
+          ? { x: this.oregonSpirit.x, y: this.oregonSpirit.y, label: '' }
+          : { x: this.heavenArrivalPos.x, y: this.heavenArrivalPos.y, label: '' };
       case 'outpost':
-        return { x: DARK_OUTPOST_POSITION.x, y: DARK_OUTPOST_POSITION.y, label: '' };
+        // The patron's hub — progress-gated (Oregon through 4.4, Kamiah from 4.5 on).
+        return { x: this.patronHubPos().x, y: this.patronHubPos().y, label: '' };
       case 'oregon-city':
         return { x: OREGON_CITY_POSITION.x, y: OREGON_CITY_POSITION.y, label: '' };
       case 'farm-field':

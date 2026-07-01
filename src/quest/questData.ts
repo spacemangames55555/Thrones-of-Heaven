@@ -56,7 +56,14 @@ export type ObjectiveTrigger =
   | 'river-angels' // defeat the angels that appear after each tainting (reused ×3)
   | 'city-sack' // cut through a city's guards + take its heart (reused ×3)
   | 'city-angels' // defeat the angels over each sacked city (reused ×3)
-  // The Descent arc:
+  // ACT IV FINALE (4.8–4.10) — Boise, the outpost assault, the Heaven arrival:
+  | 'catapult-fired' // proximity "Fire the Catapult" action (reused for all 3 catapults)
+  | 'catapult-defenders' // defeat the defenders that pour out after each firing (reused ×3)
+  | 'outpost-outer-defeated' // 4.9: the angel group OUTSIDE the Holy Outpost
+  | 'outpost-inner-defeated' // 4.9: the angel group INSIDE the outpost
+  | 'azazel-heaven-talk' // 4.10: talk with Azazel at the Heaven arrival
+  // The RETIRED descent arc's triggers — kept as dead enum members (no quest in the
+  // registry fires them since the Act IV finale retired descent-1..4; harmless data):
   | 'guardsmen-defeated'
   | 'farmers-defeated'
   | 'shipment-collected'
@@ -64,9 +71,10 @@ export type ObjectiveTrigger =
   | 'loca-angels-plundered'
   | 'locb-angels-plundered'
   | 'reach-outpost'
-  // The Climax arc (Quests 5–6) — each fires off an EXISTING world event, no new
-  // encounters (see MainScene: startGuardianFight, guardian-defeat, corruptPortal,
-  // travelToWorld, the god-judgment hook, godJudgmentComplete):
+  // The endgame's positional-machine triggers (fired by the Holy-Outpost guardian/
+  // portal state machine — consumed by Act IV 4.9 — plus Heaven/Hell events; see
+  // MainScene: startGuardianFight, guardian-defeat, corruptPortal, travelToWorld,
+  // the god-judgment hook, godJudgmentComplete):
   | 'reach-holy-outpost'
   | 'guardians-defeated'
   | 'portal-corrupted'
@@ -115,15 +123,22 @@ export type TargetKind =
   | 'city-1'
   | 'city-2'
   | 'city-3'
-  // The Descent arc locations:
+  // ACT IV FINALE (4.8–4.10) locations:
+  | 'boise' // Earth — the city the catapults burn (SW Idaho)
+  | 'catapult-1' // Earth — the three catapults outside Boise
+  | 'catapult-2'
+  | 'catapult-3'
+  | 'azazel-heaven' // HEAVEN — Azazel at the arrival point (4.10's talk)
+  // The patron's hub (progress-gated: the Oregon Dark Outpost pre-4.5, Kamiah after):
   | 'outpost'
+  // RETIRED descent-arc locations (dead enum members; no quest targets them):
   | 'oregon-city'
   | 'farm-field'
   | 'shipment'
   | 'loc-a'
   | 'loc-b'
-  // The Climax arc locations:
-  | 'holy-outpost' // Earth — Holy Outpost == the Heaven Portal site
+  // The endgame locations:
+  | 'holy-outpost' // Earth — the IDAHO Holy Outpost == the Heaven Portal site
   | 'michael' // Heaven — Archangel Michael's sanctum
   | 'throne' // Heaven — God's throne (judgment site)
   | 'hell-portal' // Heaven — the Hell portal that opens at the throne
@@ -166,6 +181,11 @@ export const TARGET_WORLD: Record<TargetKind, WorldId> = {
   'city-1': WORLD_EARTH,
   'city-2': WORLD_EARTH,
   'city-3': WORLD_EARTH,
+  boise: WORLD_EARTH,
+  'catapult-1': WORLD_EARTH,
+  'catapult-2': WORLD_EARTH,
+  'catapult-3': WORLD_EARTH,
+  'azazel-heaven': WORLD_HEAVEN,
   outpost: WORLD_EARTH,
   'oregon-city': WORLD_EARTH,
   'farm-field': WORLD_EARTH,
@@ -1174,144 +1194,165 @@ export const ACT4_THE_HEART_OF_EACH_CITY: QuestDef = {
   reward: { healToFull: true, xp: 450, holyPower: 15, banner: 'THE GATHERING IS COMPLETE.' },
 };
 
-export const DESCENT_1: QuestDef = {
-  id: 'descent-1',
-  title: 'The Patron’s First Errand',
-  prerequisites: ['act4-the-heart-of-each-city'], // BRIDGE: the old descent chain re-enters after Act IV 4.7
-  requiresCorruption: true,
-  objectives: [
-    { text: 'Slay the guardsmen of Oregon City', trigger: 'guardsmen-defeated', target: 'oregon-city' },
-    { text: 'Return to the Dark Outpost', trigger: 'reach-outpost', target: 'outpost' },
-  ],
-  npcInactiveLines: [
-    'Azazel: So the light has left you. Good — then you can be useful.',
-    'Azazel: Oregon City still keeps a watch of guardsmen who would bar our road. Break them. Then come back to me here, at the outpost.',
-  ],
-  npcActiveLines: ['Azazel: The guardsmen of Oregon City still stand. Return to me when they do not.'],
-  npcCompleteLines: ['Azazel: The watch is broken. The road south opens a little wider.'],
-  preAcceptHint: 'Seek the dark patron at the outpost',
-  reward: { healToFull: false, xp: 120, banner: 'The Patron’s First Errand — complete' },
-};
+/**
+ * ============================================================================
+ * ACT IV FINALE (4.8–4.10) — the end of Act IV, replacing the RETIRED placeholder
+ * descent arc (descent-1..4) AND the old climax-defiled-gate wrapper entirely:
+ *   4.7 → 4.8 (burn Boise to empty the outpost) → 4.9 (the assault: demons at the
+ *   player's back → the two angel groups → the EXISTING guardian/portal machine →
+ *   corrupt → enter Heaven) → 4.10 (Azazel in Heaven) → climax-judgment onward,
+ *   UNCHANGED.
+ * 4.9 ABSORBS the old climax-defiled-gate role: its later objectives consume the
+ * SAME positional triggers the Holy-Outpost machine already fires (reach-holy-
+ * outpost → guardians-defeated → portal-corrupted → entered-heaven).
+ * >>> EDIT 4.8–4.10 TEXT HERE. <<<
+ * ============================================================================
+ */
 
-export const DESCENT_2: QuestDef = {
-  id: 'descent-2',
-  title: 'Pillage the Harvest',
-  prerequisites: ['descent-1'],
-  requiresCorruption: true,
-  objectives: [
-    { text: 'Cut down the farmers in the fields', trigger: 'farmers-defeated', target: 'farm-field' },
-    { text: 'Pillage their shipment', trigger: 'shipment-collected', target: 'shipment' },
-    { text: 'Return to the Dark Outpost', trigger: 'reach-outpost', target: 'outpost' },
-  ],
-  npcInactiveLines: [
-    'Azazel: The valley folk are bringing in their harvest under guard. Cut the farmers down.',
-    'Azazel: When the field is still, take the shipment they were hauling and bring word back to me.',
-  ],
-  npcActiveLines: ['Azazel: The fields, the shipment, then home to me. In that order.'],
-  npcCompleteLines: ['Azazel: Their harvest is ours now. The outpost grows fat on it.'],
-  preAcceptHint: 'Seek the dark patron at the outpost',
-  reward: { healToFull: false, xp: 150, banner: 'Pillage the Harvest — complete' },
-};
-
-export const DESCENT_3: QuestDef = {
-  id: 'descent-3',
-  title: 'Harvest of Light',
-  prerequisites: ['descent-2'],
+/** 4.8 — "Draw Them Down": rain fire on Boise so the angels abandon their outpost. */
+export const ACT4_DRAW_THEM_DOWN: QuestDef = {
+  id: 'act4-draw-them-down',
+  title: 'Draw Them Down',
+  prerequisites: ['act4-the-heart-of-each-city'],
   requiresCorruption: true,
   objectives: [
     {
-      text: 'Slay the angels outside Oregon City and take their Holy Power',
-      trigger: 'oc-angels-plundered',
-      target: 'oregon-city',
+      text: 'Fire the first catapult outside Boise',
+      trigger: 'catapult-fired',
+      target: 'catapult-1',
+      completeNarration: [
+        'The catapult groans and looses its burning payload over the walls, and fire blooms across the rooftops of a city full of people who never knew your name. Defenders pour out to stop you.',
+      ],
     },
-    { text: 'Return to the Dark Outpost', trigger: 'reach-outpost', target: 'outpost' },
+    { text: 'Defeat the defenders at the first catapult', trigger: 'catapult-defenders', target: 'catapult-1' },
+    {
+      text: 'Fire the second catapult',
+      trigger: 'catapult-fired',
+      target: 'catapult-2',
+      completeNarration: [
+        'The catapult groans and looses its burning payload over the walls, and fire blooms across the rooftops of a city full of people who never knew your name. Defenders pour out to stop you.',
+      ],
+    },
+    { text: 'Defeat the defenders at the second catapult', trigger: 'catapult-defenders', target: 'catapult-2' },
+    {
+      text: 'Fire the third catapult',
+      trigger: 'catapult-fired',
+      target: 'catapult-3',
+      completeNarration: [
+        'The catapult groans and looses its burning payload over the walls, and fire blooms across the rooftops of a city full of people who never knew your name. Defenders pour out to stop you.',
+      ],
+    },
+    {
+      text: 'Defeat the defenders at the third catapult',
+      trigger: 'catapult-defenders',
+      target: 'catapult-3',
+      completeNarration: [
+        'Far away, on the horizon, you see it working: points of light lifting from the distant outpost, streaking toward the burning city. The angels are leaving their post. Just as Azazel said.',
+      ],
+    },
+    { text: 'Return to Azazel at the Kamiah outpost', trigger: 'reach-outpost', target: 'outpost' },
   ],
   npcInactiveLines: [
-    'Azazel: Angels have come to ward Oregon City. Where they fall, they leave their Holy Power behind.',
-    'Azazel: Slay them and GATHER what they drop — kills alone are nothing to us. Then return.',
+    'Azazel: Here we are, friend. The last move before the door. But there’s a problem — the angels know what we’re after, and they’ve massed at their outpost. Hundreds of them, between us and home. We’d never cut through them all. Not even you.',
+    'Azazel: So we don’t fight them there. We make them come to us. Down at Boise — a great city, full of life, full of Light. If it burns, the angels will have no choice. They’ll abandon their post and rush to save it, the way they always rush to save your kind. And while they’re gone, the door stands open.',
+    'Azazel: We’ve placed catapults outside the city. Light them up. Rain fire down on Boise until the sky over the outpost empties. I know what I’m asking. Do it anyway — we are one step from the end of everything we’ve suffered.',
   ],
-  npcActiveLines: ['Azazel: The angels still glow outside Oregon City. Take their power, do not merely scatter them.'],
-  npcCompleteLines: ['Azazel: Their light is in your hands now. It will feed what comes next.'],
-  preAcceptHint: 'Seek the dark patron at the outpost',
-  reward: { healToFull: false, xp: 200, banner: 'Harvest of Light — complete' },
+  npcActiveLines: ['Azazel: The catapults stand outside Boise, to the southwest. Fire all three, then return to me.'],
+  npcCompleteLines: [
+    'Azazel: It’s working — look at them go. Every angel in the territory, flying to save Boise, leaving the door wide open behind them.',
+    'Azazel: I won’t pretend that was a small thing you just did. But it’s the last thing, friend — the last terrible price. The door is unguarded now. Meet us at the outpost. We finish this today.',
+  ],
+  preAcceptHint: 'Seek Azazel at the Kamiah outpost',
+  reward: { healToFull: true, xp: 400, banner: 'Draw Them Down — complete' },
 };
 
-export const DESCENT_4: QuestDef = {
-  id: 'descent-4',
-  title: 'The Two Reliquaries',
-  prerequisites: ['descent-3'],
+/** 4.9 — "The Door Home": the assault on the emptied outpost, demons at your back.
+ *  Flows INTO the existing positional guardian/portal machine at the Idaho Holy
+ *  Outpost (its objectives 3–5 consume the machine's triggers). */
+export const ACT4_THE_DOOR_HOME: QuestDef = {
+  id: 'act4-the-door-home',
+  title: 'The Door Home',
+  prerequisites: ['act4-draw-them-down'],
   requiresCorruption: true,
   objectives: [
-    { text: 'Plunder the angels at the first reliquary', trigger: 'loca-angels-plundered', target: 'loc-a' },
-    { text: 'Plunder the angels at the second reliquary', trigger: 'locb-angels-plundered', target: 'loc-b' },
-    { text: 'Return to the Dark Outpost', trigger: 'reach-outpost', target: 'outpost' },
+    // All objectives point at the Holy Outpost — the whole quest is the assault on it.
+    { text: 'March on the angels’ outpost', trigger: 'reach-holy-outpost', target: 'holy-outpost' },
+    { text: 'Destroy the angels outside the outpost', trigger: 'outpost-outer-defeated', target: 'holy-outpost' },
+    { text: 'Destroy the angels inside the outpost', trigger: 'outpost-inner-defeated', target: 'holy-outpost' },
+    {
+      text: 'Destroy the guardians of the Heaven Portal',
+      trigger: 'guardians-defeated',
+      target: 'holy-outpost',
+      // THE MASK-DROP — plays on approaching the portal, before the final fight.
+      encounterNarration: [
+        'ANGEL: Azazel. Of course it’s you. Still whispering, still poisoning — and now you’ve made a mortal carry your sins for you. Look at this child you’ve ruined.',
+        'AZAZEL: Spare me, cousin. You cast us into the dark and called it justice. We are simply coming home. Step aside.',
+        'ANGEL: Whatever he promised you — it is a lie wearing the shape of mercy. You are not opening a door home. You are opening a wound. And when you understand what you’ve let through, may you find the strength to do what’s right. Some part of you is still in there. I have to believe that.',
+        'ANGEL: I will not step aside.',
+      ],
+      completeNarration: [
+        'The last guardian unravels into light and is gone. The way is clear. Before you, the Heaven portal stands open and shining. Azazel steps up beside you, gazing at it with something like rapture. ‘Go on, friend. You first. You’ve earned it. Open the door — and let’s go home.’',
+      ],
+    },
+    {
+      text: 'Corrupt the Heaven Portal',
+      trigger: 'portal-corrupted',
+      target: 'holy-outpost',
+      completeNarration: [
+        'You pour the gathered, corrupted Light into the angels’ door. It shudders, darkens, accepts you — and you step through, the demons pouring through behind you, into the Light of Heaven itself.',
+      ],
+    },
+    { text: 'Enter the Heaven Portal', trigger: 'entered-heaven', target: 'holy-outpost' },
   ],
   npcInactiveLines: [
-    'Azazel: Two reliquaries remain, each warded by angels, each rich with Holy Power.',
-    'Azazel: Empty them both — slay and gather — then bring everything home. After this, the way is clear.',
+    'Azazel: This is it. The angels are gone, the door is open, and everything — everything — we’ve worked for is on the other side of this outpost. Home. The Light. An end to the dying.',
+    'Azazel: We go together now, friend. All of us. You’ve carried us this far — let us carry you the last steps. Cut us a path to the portal, and we’ll be right behind you, every one of us. For the first time since the Fall, we walk home. Lead us.',
   ],
-  npcActiveLines: ['Azazel: Two reliquaries. Plunder both, then return to me.'],
-  npcCompleteLines: ['Azazel: It is done. You have become something the light will not forgive.'],
-  preAcceptHint: 'Seek the dark patron at the outpost',
-  reward: {
-    healToFull: true,
-    xp: 300,
-    holyPower: 25,
-    title: 'Harbinger',
-    banner: 'THE DESCENT — Arc Complete',
-    // >>> EDIT THE DESCENT→CLIMAX HAND-OFF LINE HERE. Quest 5 auto-starts the
-    //     instant this completes, so this is no longer a dead end. <<<
-    note: 'The Holy Outpost wards the last gate between worlds. Defile it.',
-  },
+  npcActiveLines: ['Azazel: The outpost is east, in the mountains. We are right behind you. Lead us home.'],
+  npcCompleteLines: [],
+  preAcceptHint: 'Seek Azazel at the Kamiah outpost',
+  reward: { healToFull: true, xp: 500, banner: 'THE DOOR IS OPEN.' },
+};
+
+/** 4.10 — "Heaven": the arrival. AUTO-ACTIVATES the moment 4.9 completes (the player
+ *  just stepped through); talking with Azazel (who now stands in Heaven near the
+ *  arrival) completes it and hands off to the UNCHANGED endgame (climax-judgment). */
+export const ACT4_HEAVEN: QuestDef = {
+  id: 'act4-heaven',
+  title: 'Heaven',
+  prerequisites: ['act4-the-door-home'],
+  requiresCorruption: true,
+  autoActivate: true,
+  objectives: [{ text: 'Talk with Azazel', trigger: 'azazel-heaven-talk', target: 'azazel-heaven' }],
+  // No start banner (npcInactiveLines empty) — the arrival narration IS the talk.
+  npcInactiveLines: [],
+  // The LOCKED arrival dialogue — played by the scene when the player talks to
+  // Azazel while this quest is active (completing it).
+  npcActiveLines: [
+    'Azazel: ...Do you see it? Do you see it, friend? After all this time. We’re home.',
+    'Azazel: You did this. You opened the way no demon could. And now — now we take back what was stolen from us. All of it.',
+    'Azazel: Stay close. Heaven will not welcome us kindly. But we have an army, and we have you. It’s time to claim what’s ours.',
+  ],
+  npcCompleteLines: ['Azazel: Heaven lies before us, friend. Claim what’s ours.'],
+  preAcceptHint: 'Speak with Azazel in Heaven',
+  reward: { healToFull: false, xp: 250, banner: '' }, // quiet — climax-judgment's start banner follows at once
 };
 
 /**
- * THE CLIMAX ARC (Quests 5–6) — the main-story forward march that replaces the
- * old proximity-only climax with real guidance. Both AUTO-ACTIVATE (no NPC: there
- * are no friends in Heaven), wrap EXISTING encounters (guardians, portal
- * corruption, Michael, the throne judgment, the portals) with objectives + a
+ * THE CLIMAX ARC — the endgame's forward march, UNCHANGED from climax-judgment
+ * onward. (The old climax-defiled-gate wrapper is RETIRED — Act IV 4.9 absorbed
+ * its role; climax-judgment now hands off from 4.10.) Both remaining quests
+ * AUTO-ACTIVATE (no NPC: there are no friends in Heaven), wrap EXISTING
+ * encounters (Michael, the throne judgment, the portals) with objectives + a
  * world-aware marker/arrow, and use `npcInactiveLines` as start narration.
- *
- * >>> EDIT QUEST 5 & 6 TEXT HERE: `title`, every objective `text`, and
- *     `npcInactiveLines` (the quest-start narration / the patron's whisper shown
- *     as a banner when the quest auto-begins). The other npc*Lines are unused
- *     (these quests have no giver) but kept to satisfy the shared QuestDef shape.
  */
-
-/** QUEST 5 — guides the descent→Heaven hand-off (fixes the unmarked Holy Outpost gap). */
-export const QUEST_5_THE_DEFILED_GATE: QuestDef = {
-  id: 'climax-defiled-gate',
-  title: 'The Defiled Gate', // [placeholder]
-  prerequisites: ['descent-4'],
-  autoActivate: true,
-  objectives: [
-    // All four objectives sit at the same Earth coordinate (the Holy Outpost IS the
-    // Heaven Portal site), so the arrow points there for the whole quest.
-    { text: 'Travel to the Holy Outpost', trigger: 'reach-holy-outpost', target: 'holy-outpost' },
-    { text: 'Destroy the flaming-sword guardians', trigger: 'guardians-defeated', target: 'holy-outpost' },
-    { text: 'Corrupt the Heaven Portal', trigger: 'portal-corrupted', target: 'holy-outpost' },
-    { text: 'Enter the Heaven Portal', trigger: 'entered-heaven', target: 'holy-outpost' },
-  ],
-  // [placeholder narration — shown as a banner when the quest auto-starts]
-  npcInactiveLines: [
-    'The Harbinger’s road ends at a gate of light to the north — the Holy Outpost. Tear it open.',
-  ],
-  npcActiveLines: [],
-  npcCompleteLines: [],
-  preAcceptHint: 'Defile the Holy Outpost',
-  reward: {
-    healToFull: true,
-    xp: 250,
-    banner: 'The Defiled Gate — complete', // [placeholder]
-  },
-};
 
 /** QUEST 6 — guides Heaven→Michael→throne→Hell (fixes the silently-skippable finale). */
 export const QUEST_6_JUDGMENT: QuestDef = {
   id: 'climax-judgment',
   title: 'Judgment', // [placeholder]
-  prerequisites: ['climax-defiled-gate'],
-  autoActivate: true, // begins the instant Heaven is entered (Quest 5's last objective)
+  prerequisites: ['act4-heaven'], // ACT IV FINALE hand-off: 4.10 completes → this auto-starts
+  autoActivate: true, // begins the instant 4.10's talk with Azazel finishes
   objectives: [
     { text: 'Cut down Archangel Michael', trigger: 'michael-defeated', target: 'michael' },
     { text: 'Approach the throne', trigger: 'throne-judgment', target: 'throne' },
@@ -1423,18 +1464,17 @@ export const QUEST_REGISTRY: readonly QuestDef[] = [
   ACT4_WATCHERS_ON_THE_ROAD,
   ACT4_THE_TRADE_DAY,
   ACT4_SALT_AND_SEA,
-  // Act IV Batch C — the Idaho leg (4.5–4.7), still before the descent bridge.
+  // Act IV Batch C — the Idaho leg (4.5–4.7).
   ACT4_THE_DOOR_THEY_CAME_THROUGH,
   ACT4_OLYMPIA,
   ACT4_POISON_THE_WELL,
   ACT4_THE_HEART_OF_EACH_CITY,
-  // The descent arc — unchanged content; descent-1 now bridges off Act IV's 4.4
-  // ('act4-salt-and-sea'), and the patron (Azazel) offers it once corrupted.
-  DESCENT_1,
-  DESCENT_2,
-  DESCENT_3,
-  DESCENT_4,
-  QUEST_5_THE_DEFILED_GATE,
+  // ACT IV FINALE (4.8–4.10) — replaces the RETIRED descent-1..4 placeholders AND
+  // the old climax-defiled-gate wrapper (4.9 absorbed the Holy-Outpost machine).
+  ACT4_DRAW_THEM_DOWN,
+  ACT4_THE_DOOR_HOME,
+  ACT4_HEAVEN,
+  // The endgame — UNCHANGED from climax-judgment onward (now gated on 4.10).
   QUEST_6_JUDGMENT,
   QUEST_7_THE_SEVEN_SINS,
 ];

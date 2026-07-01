@@ -358,7 +358,7 @@ export class AlliedSummon {
       g.fillStyle(0xff5cc8, 1);
       g.fillCircle(w / 2 - 7, 18, 1.1);
       g.fillCircle(w / 2 + 7, 18, 1.1);
-    } else if (config.key === 'ranged_ally') {
+    } else if (config.key === 'ranged_ally' || config.key === 'demon_ally') {
       // A demon imp caster: dark-red hooded body, ember core, horns, glowing eyes — reads as a
       // demonic ally flinging bolts from the backline (the Act IV "demons at your back" style).
       g.fillStyle(0x2a0d0a, 1);

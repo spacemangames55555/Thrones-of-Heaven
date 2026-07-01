@@ -28,6 +28,11 @@ export interface SpiritEntityData {
 /** Id of the seeded Oregon spirit — the stub quest "A Path Opens" points at it. */
 export const OREGON_SPIRIT_ID = 'oregon-shade';
 
+/** Azazel's HOME (stage-1) position — must match the 'oregon-shade' entry below.
+ *  His later stations (Kamiah from 4.5, Heaven after 4.9) are applied by
+ *  MainScene.updatePatronLocation via SpiritEntity.moveTo. */
+export const PATRON_HOME_POSITION = { x: 12048, y: 13456 };
+
 export const SPIRIT_ENTITIES: SpiritEntityData[] = [
   {
     id: 'rift-wraith',
