@@ -14,6 +14,12 @@ export interface SummonCombatCtx {
   nearestEnemy(x: number, y: number, maxRange: number): { x: number; y: number; dist: number } | null;
   /** Deal `damage` to enemies within `range` of (x,y) (reuses the scene's AoE/death path). */
   attack(x: number, y: number, range: number, damage: number): void;
+  /**
+   * RANGED-attacker: spawn a pooled PLAYER-faction projectile from (fromX,fromY) toward
+   * (targetX,targetY). Reuses the EXISTING friendly-projectile pipeline (ProjectileSystem,
+   * pooled) — no new projectile system, no per-shot allocation churn.
+   */
+  fireProjectile(fromX: number, fromY: number, targetX: number, targetY: number, damage: number, speed: number, range: number, radius: number, color: number): void;
 }
 
 /**
@@ -132,7 +138,9 @@ export class AlliedSummon {
   update(playerX: number, playerY: number, time: number, ctx?: SummonCombatCtx): void {
     if (this.dead) return;
     const body = this.sprite.body as Phaser.Physics.Arcade.Body;
-    if (this.config.behavior === 'attacker') {
+    if (this.config.behavior === 'ranged') {
+      this.updateRanged(body, playerX, playerY, time, ctx);
+    } else if (this.config.behavior === 'attacker') {
       this.updateAttacker(body, playerX, playerY, time, ctx);
     } else {
       // 'tank' (Ice Golem): hold ground as a meat-shield; re-approach when the player strays.
@@ -169,6 +177,41 @@ export class AlliedSummon {
       return;
     }
     // No enemy in range (or leashed) → idle-follow the player.
+    if (this.distanceTo(playerX, playerY) > this.config.followRange) this.steerToward(body, playerX, playerY);
+    else body.velocity.set(0, 0);
+  }
+
+  /**
+   * RANGED-attacker (backline): hold position near the player and FIRE a pooled player-faction
+   * projectile at any enemy inside the fire range, on cadence, for low damage. It NEVER charges
+   * into melee — if an enemy is in fire range it plants + shoots; otherwise it idle-follows the
+   * player (staying behind you). No aggro (drawsAggro=false), so enemies ignore it entirely.
+   */
+  private updateRanged(body: Phaser.Physics.Arcade.Body, playerX: number, playerY: number, time: number, ctx?: SummonCombatCtx): void {
+    const fireRange = this.config.attackRange ?? 320; // 'ranged' reuses attackRange as the FIRE range
+    const enemy = ctx?.nearestEnemy(this.sprite.x, this.sprite.y, fireRange) ?? null;
+    if (enemy) {
+      body.velocity.set(0, 0); // plant + fire (backline: does not close the distance)
+      this.sprite.setFlipX(enemy.x < this.sprite.x);
+      if (time >= this.attackReadyAt && ctx?.fireProjectile) {
+        const dmg = Math.round((this.config.attackDamage ?? 0) * (1 + this.damageBonus));
+        ctx.fireProjectile(
+          this.sprite.x,
+          this.sprite.y,
+          enemy.x,
+          enemy.y,
+          dmg,
+          this.config.projectileSpeed ?? 440,
+          fireRange + 120, // bolt travels a bit past the fire range before despawning
+          this.config.projectileRadius ?? 7,
+          this.config.projectileColor ?? 0xff6a4a,
+        );
+        this.attackReadyAt = time + (this.config.attackCooldownMs ?? 900);
+        this.swingFx();
+      }
+      return;
+    }
+    // No enemy in fire range → idle-follow the player so it stays behind you.
     if (this.distanceTo(playerX, playerY) > this.config.followRange) this.steerToward(body, playerX, playerY);
     else body.velocity.set(0, 0);
   }
@@ -315,6 +358,27 @@ export class AlliedSummon {
       g.fillStyle(0xff5cc8, 1);
       g.fillCircle(w / 2 - 7, 18, 1.1);
       g.fillCircle(w / 2 + 7, 18, 1.1);
+    } else if (config.key === 'ranged_ally') {
+      // A demon imp caster: dark-red hooded body, ember core, horns, glowing eyes — reads as a
+      // demonic ally flinging bolts from the backline (the Act IV "demons at your back" style).
+      g.fillStyle(0x2a0d0a, 1);
+      g.fillRoundedRect(6, 12, w - 12, h - 14, 8); // dark outline
+      g.fillStyle(0x7a1f16, 1);
+      g.fillRoundedRect(9, 15, w - 18, h - 20, 7); // deep-red robe
+      g.fillStyle(0xc23a22, 1); // inner robe highlight
+      g.fillRoundedRect(13, 20, w - 26, h - 30, 5);
+      g.fillStyle(0xff8a3a, 0.95); // ember core (the gathered bolt)
+      g.fillCircle(w / 2, h / 2 + 4, 6);
+      g.fillStyle(0x2a0d0a, 1); // head outline
+      g.fillCircle(w / 2, 15, 9);
+      g.fillStyle(0x8f271b, 1); // head
+      g.fillCircle(w / 2, 15, 7.5);
+      g.fillStyle(0x1a0705, 1); // horns
+      g.fillTriangle(w / 2 - 8, 10, w / 2 - 4, 12, w / 2 - 10, 2);
+      g.fillTriangle(w / 2 + 8, 10, w / 2 + 4, 12, w / 2 + 10, 2);
+      g.fillStyle(0xffd24a, 1); // glowing eyes
+      g.fillCircle(w / 2 - 3, 15, 1.9);
+      g.fillCircle(w / 2 + 3, 15, 1.9);
     } else {
       // Generic fallback summon: a simple pale capsule (future types add their own art).
       g.fillStyle(0x101418, 1);

@@ -74,6 +74,8 @@ import {
   SKELETON_TUNING,
   DARK_MATTER_CONFIG,
   DARK_MATTER_TUNING,
+  RANGED_ALLY_CONFIG,
+  RANGED_ALLY_TUNING,
   SUMMON_BUFF_TUNING,
   AGGRO_REEVAL_INTERVAL_MS,
   AGGRO_STICKY_MARGIN,
@@ -913,6 +915,25 @@ export class MainScene extends Phaser.Scene {
         return e ? { x: e.x, y: e.y, dist: Phaser.Math.Distance.Between(x, y, e.x, e.y) } : null;
       },
       attack: (x, y, range, damage) => this.aoeHitAll(x, y, range, damage),
+      // RANGED allies fire through the EXISTING pooled PLAYER-faction projectile path — the
+      // same system player skills use, so no new pipeline + no per-shot allocation churn.
+      fireProjectile: (fx, fy, tx, ty, damage, speed, range, radius, color) => {
+        const a = Phaser.Math.Angle.Between(fx, fy, tx, ty);
+        const dx = Math.cos(a);
+        const dy = Math.sin(a);
+        this.projectiles.spawn({
+          x: fx + dx * 18,
+          y: fy + dy * 18,
+          dirX: dx,
+          dirY: dy,
+          speed,
+          damage,
+          maxRange: range,
+          faction: 'player',
+          color,
+          radius,
+        });
+      },
     };
     // PASSIVE summon auras from the Necromancer's Summons tree (Necrotic Presence, Unyielding
     // Beast, the chosen branch passive, Tentacles) — per-summon-type, applied every frame.
@@ -2939,6 +2960,24 @@ export class MainScene extends Phaser.Scene {
     this.lastCombatTime = this.time.now;
   }
 
+  /**
+   * Summon a TEST RANGED ALLY behind the player (dev button; base for the Act IV "demons at
+   * your back"). It holds position + fires low-damage pooled player-faction bolts at nearby
+   * enemies and NEVER draws aggro (enemies ignore it), so the crusade allies help while the
+   * player still absorbs all aggro.
+   */
+  private summonRangedAlly(): void {
+    const { dx, dy } = this.facingUnit();
+    // Place it slightly BEHIND the player (opposite the facing) with a little scatter, so it
+    // reads as a backline unit rather than out front.
+    const jx = Phaser.Math.Between(-24, 24);
+    const jy = Phaser.Math.Between(-24, 24);
+    const a = this.summons.summon(RANGED_ALLY_CONFIG, this.player.x - dx * 40 + jx, this.player.y - dy * 40 + jy, RANGED_ALLY_TUNING.maxConcurrent);
+    this.spawnSkillRing(a.x, a.y, RANGED_ALLY_TUNING.bodyRadius + 12, RANGED_ALLY_TUNING.projectileColor);
+    this.showBanner('Ranged ally summoned', 1000);
+    this.lastCombatTime = this.time.now;
+  }
+
   /** PET-TARGETED BUFF: empower the player's summons (damage + toughness) for a window.
    *  Applies to currently-summoned AND newly-summoned units while active. */
   private buffSummons(): void {
@@ -3092,7 +3131,7 @@ export class MainScene extends Phaser.Scene {
    *  unbounded, which is the at-a-glance proof the FX churn is gone. */
   private perfLines(): string[] {
     return [
-      `enemies ${this.combatEnemies().length}  summons ${this.summons.count}`,
+      `enemies ${this.combatEnemies().length}  summons ${this.summons.count}  ranged ${this.summons.list.filter((s) => s.config.behavior === 'ranged').length}`,
       `dem ${this.demons.length} ang ${this.angels.length} twn ${this.townsfolk.length} swm ${this.swarmers.length} bos ${this.bosses.length}`,
       `bolts ${this.projectiles.count}  dots ${this.dots.length}`,
       `dmg# ${this.floatingText.activeCount}/${this.floatingText.size}  circ ${this.circleFx.activeCount}/${this.circleFx.size}`,
@@ -7227,6 +7266,7 @@ export class MainScene extends Phaser.Scene {
       { label: 'Summon Ice Golem', onPress: () => this.summonIceGolem() },
       { label: 'Summon Skeleton', onPress: () => this.summonSkeleton() },
       { label: 'Summon Dark Matter Monster', onPress: () => this.summonDarkMatterMonster() },
+      { label: 'Spawn Ranged Ally', onPress: () => this.summonRangedAlly() },
       { label: 'Buff Summons', onPress: () => this.buffSummons() },
       { label: 'Clear Summons', onPress: () => this.summons.clear() },
       { label: 'Unlock Summons Tree', onPress: () => this.devUnlockSummons() },

@@ -17,8 +17,15 @@
  *                 short-range), retargeting as enemies die or leave; leashes back to the
  *                 player when no enemy is near. Skeletons (pure attacker) and the Dark
  *                 Matter Monster (attacker that ALSO draws aggro) use this.
+ *  - 'ranged'   — a BACKLINE attacker: it holds position near the player (never charges into
+ *                 melee) and, when an enemy wanders inside its fire range, FIRES a pooled
+ *                 PLAYER-faction projectile at it on a cooldown for LOW damage. It has
+ *                 drawsAggro=false and sits OUTSIDE the aggro hierarchy, so enemies never
+ *                 target it (see AlliedSummonManager.aggroSummonNear / summonAt) — it reads as
+ *                 "standing behind you, flinging ranged attacks." This is the base the Act IV
+ *                 "demons fighting at your back" (Quest 4.9) allies are authored on later.
  */
-export type SummonBehavior = 'tank' | 'attacker';
+export type SummonBehavior = 'tank' | 'attacker' | 'ranged';
 
 /**
  * THE 3-TIER AGGRO HIERARCHY (Monster > skeletons > player).
@@ -78,8 +85,9 @@ export interface AlliedSummonConfig {
   /** Aggro priority WEIGHT (see {@link AGGRO_TIER}). Higher = enemies prefer it. Tanks/Monster
    *  use MAGNET, skeletons use MINION. Ignored when drawsAggro is false. */
   readonly aggroPriority: number;
-  /** ATTACKER-only: contact damage per swing + cadence + reach + how far it hunts enemies
-   *  before leashing back to the player. Unused (undefined) for pure tanks. */
+  /** ATTACKER / RANGED: damage per hit + cadence. For 'attacker' this is a melee swing within
+   *  `attackRange`; for 'ranged' it is the projectile's damage and `attackRange` is the FIRE
+   *  range (how near an enemy must be before the ally shoots). Unused for pure tanks. */
   readonly attackDamage?: number;
   readonly attackCooldownMs?: number;
   readonly attackRange?: number;
@@ -87,6 +95,12 @@ export interface AlliedSummonConfig {
   readonly seekRange?: number;
   /** Max distance (px) from the player before an attacker abandons the hunt and returns. */
   readonly leashRange?: number;
+  /** RANGED-only: the fired projectile's speed (px/sec) + collision radius (px). Reuses the
+   *  existing pooled PLAYER-faction projectile pipeline; no new projectile system. */
+  readonly projectileSpeed?: number;
+  readonly projectileRadius?: number;
+  /** RANGED-only: bolt tint. */
+  readonly projectileColor?: number;
 }
 
 // ─── ICE GOLEM (the proof: a tank/blocker) — EDIT THESE TO TUNE ───────────────
@@ -213,6 +227,63 @@ export const DARK_MATTER_CONFIG: AlliedSummonConfig = {
   attackRange: DARK_MATTER_TUNING.attackRange,
   seekRange: DARK_MATTER_TUNING.seekRange,
   leashRange: DARK_MATTER_TUNING.leashRange,
+};
+
+// ─── RANGED ALLY (the proof: a backline projectile attacker that NEVER pulls aggro) ──
+//
+// A player-faction ally that HOLDS position near the player (never charges into melee) and
+// FIRES a pooled PLAYER-faction projectile at any enemy inside its fire range, for LOW damage,
+// on a cadence. drawsAggro=false → it sits OUTSIDE the aggro hierarchy, so enemies IGNORE it as
+// a target (they keep hitting per Monster>skeletons>player) and their bolts pass through it.
+// This is a TEST unit; the Act IV "demons fighting at your back" (4.9) allies are authored later
+// as another config of behavior:'ranged' (demon tint, several at once). Every value is tunable.
+export const RANGED_ALLY_TUNING = {
+  /** HP pool. It is effectively non-targetable (enemies ignore it), so this rarely matters —
+   *  kept for the lifespan/bar plumbing shared with every summon. */
+  maxHP: 40,
+  /** Lifespan (ms) — despawns after this if not cleared first. */
+  durationMs: 20000,
+  /** LOW projectile damage per shot. */
+  attackDamage: 8,
+  /** Fire cadence (ms between shots). */
+  attackCooldownMs: 900,
+  /** FIRE RANGE (px): an enemy nearer than this gets shot; the ally plants + fires. */
+  fireRange: 360,
+  /** Fired-bolt speed (px/sec) + collision radius (px) + tint. */
+  projectileSpeed: 460,
+  projectileRadius: 7,
+  projectileColor: 0xff6a4a, // demon-ember bolt
+  /** Idle-follow distance to the player when no enemy is in range (keeps it behind you). */
+  followRange: 150,
+  /** Move speed (tiles/sec) — modest; it repositions to stay near the player, never charges. */
+  moveTilesPerSec: 5,
+  /** Collision footprint (px) — small; only used for the shared body, not for enemy targeting. */
+  bodyRadius: 13,
+  /** Max concurrent ranged allies (re-casting at the cap recycles the oldest). */
+  maxConcurrent: 4,
+  /** Demon-styled tint. */
+  tint: 0xff7a5c,
+} as const;
+
+export const RANGED_ALLY_CONFIG: AlliedSummonConfig = {
+  key: 'ranged_ally',
+  name: 'Ranged Ally',
+  behavior: 'ranged',
+  maxHP: RANGED_ALLY_TUNING.maxHP,
+  durationMs: RANGED_ALLY_TUNING.durationMs,
+  aggroRadius: 0, // NEVER pulls aggro (drawsAggro=false makes this moot)
+  followRange: RANGED_ALLY_TUNING.followRange,
+  moveTilesPerSec: RANGED_ALLY_TUNING.moveTilesPerSec,
+  bodyRadius: RANGED_ALLY_TUNING.bodyRadius,
+  tint: RANGED_ALLY_TUNING.tint,
+  drawsAggro: false, // KEY: outside the aggro hierarchy → enemies ignore it as a target
+  aggroPriority: PLAYER_AGGRO_PRIORITY, // unused (drawsAggro=false); the player-floor weight
+  attackDamage: RANGED_ALLY_TUNING.attackDamage,
+  attackCooldownMs: RANGED_ALLY_TUNING.attackCooldownMs,
+  attackRange: RANGED_ALLY_TUNING.fireRange, // for 'ranged' this is the FIRE range
+  projectileSpeed: RANGED_ALLY_TUNING.projectileSpeed,
+  projectileRadius: RANGED_ALLY_TUNING.projectileRadius,
+  projectileColor: RANGED_ALLY_TUNING.projectileColor,
 };
 
 // ─── PET-TARGETED BUFFS (new buff target = your summons) ───────────────────────

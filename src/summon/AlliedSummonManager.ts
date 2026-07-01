@@ -152,12 +152,18 @@ export class AlliedSummonManager {
     return best;
   }
 
-  /** The summon whose body the point (x,y) lands in (for enemy-bolt collision), or null. */
+  /**
+   * The summon whose body the point (x,y) lands in (for enemy-bolt interception), or null.
+   * ONLY aggro-drawing summons intercept bolts — a non-aggro ally (e.g. the ranged backline
+   * attacker) sits OUTSIDE the hierarchy, so enemy bolts pass THROUGH it and it is never a
+   * target: enemies fully ignore it (this pairs with aggroSummonNear, which already skips it).
+   */
   summonAt(x: number, y: number, radius: number): AlliedSummon | null {
     let best: AlliedSummon | null = null;
     let bestD = Infinity;
     for (const s of this.summons) {
       if (!s.isAlive) continue;
+      if (!s.drawsAggro) continue; // non-aggro allies don't intercept bolts (fully ignored)
       const d = s.distanceTo(x, y);
       if (d <= radius + s.bodyRadius && d < bestD) {
         best = s;
