@@ -48,6 +48,12 @@ export class TouchButton {
     this.setVisible(false);
   }
 
+  /** Whether the button is currently shown (all contextual buttons share ONE slot —
+   *  callers can check this to avoid stacking two at once). */
+  get isVisible(): boolean {
+    return this.visible;
+  }
+
   setVisible(v: boolean): void {
     if (this.visible === v) return;
     this.visible = v;

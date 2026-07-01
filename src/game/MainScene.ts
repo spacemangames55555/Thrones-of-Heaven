@@ -232,7 +232,7 @@ import {
   CATAPULT_2_POSITION,
   CATAPULT_3_POSITION,
   CATAPULT_DEFENDERS_COUNT,
-  ASSAULT_APPROACH_OFFSET,
+  ASSAULT_OUTER_TRIGGER_RADIUS,
   ASSAULT_OUTER_OFFSET,
   ASSAULT_INNER_OFFSET,
   ASSAULT_OUTER_LESSER,
@@ -240,6 +240,8 @@ import {
   ASSAULT_INNER_LESSER,
   ASSAULT_INNER_WARDEN,
   ASSAULT_INNER_HERALD,
+  ASSAULT_PORTAL_LESSER,
+  ASSAULT_PORTAL_WARDEN,
   DEMON_ALLY_COUNT,
   HOLY_OUTPOST_POSITION,
   HEAVEN_PORTAL_POSITION,
@@ -567,6 +569,9 @@ export class MainScene extends Phaser.Scene {
   private guardians: FlamingSword[] = [];
   private guardianPhase: 'dormant' | 'fighting' | 'defeated' | 'corrupting' | 'corrupted' = 'dormant';
   private corruptButton!: TouchButton;
+  /** The corrupted Holy-Outpost portal crosses by BUTTON (no walk-in), both directions. */
+  private enterHeavenButton!: TouchButton;
+  private returnEarthButton!: TouchButton;
   /** Act II Q6: the proximity "Burn the Grove" action button (reuses the corrupt-button pattern). */
   private burnButton!: TouchButton;
 
@@ -727,6 +732,10 @@ export class MainScene extends Phaser.Scene {
   private arcMode: 'defeat' | 'plunder' | 'reach' | 'pickup' | 'burn' | 'gather' | 'none' = 'none';
   private arcActionLabel = 'Burn the Grove'; // caption for the proximity-action button
   private arcReach: { x: number; y: number } | null = null;
+  /** Completion radius for the CURRENT 'reach' objective. Defaults to the tight
+   *  REACH_OUTPOST_RANGE; 4.9's march uses a generous ring around the outpost so
+   *  approaching from ANY direction arms the assault layers. */
+  private arcReachRadius = REACH_OUTPOST_RANGE;
   private arcShipmentPos: { x: number; y: number } | null = null;
   private arcHolyBaseline = 0;
   private arcHolyRequired = 0;
@@ -1128,6 +1137,11 @@ export class MainScene extends Phaser.Scene {
     // The defeat-gated portal-corruption button (bottom-centre, like Talk; the
     // outpost has no NPC so the two never contend). Hidden until both swords die.
     this.corruptButton = new TouchButton(this, 'Corrupt the Portal', () => this.tryCorruptPortal());
+    // The CORRUPTED Holy-Outpost portal crosses by BUTTON, not walk-in (both ways) —
+    // no accidental world change from walking near it. Other portals (Heaven→Hell,
+    // the ending's one-way home) keep their established walk-in behavior.
+    this.enterHeavenButton = new TouchButton(this, 'Enter Heaven', () => this.enterHeavenPortal());
+    this.returnEarthButton = new TouchButton(this, 'Return to Earth', () => this.returnToEarthPortal());
     // Act II Q6: the proximity "Burn the Grove" action (same bottom-centre slot as
     // Talk/Corrupt; they never contend — the grove has no NPC). Hidden until in range.
     this.burnButton = new TouchButton(this, 'Burn the Grove', () => this.tryArcAction());
@@ -1239,6 +1253,8 @@ export class MainScene extends Phaser.Scene {
       this.aimingDir = null;
       this.hideAimIndicator();
       this.corruptButton.setVisible(false);
+      this.enterHeavenButton.setVisible(false);
+      this.returnEarthButton.setVisible(false);
       this.readout.update();
       return;
     }
@@ -1254,6 +1270,8 @@ export class MainScene extends Phaser.Scene {
       this.player.setDirection(0, 0);
       this.talkButton.setVisible(false);
       this.corruptButton.setVisible(false);
+      this.enterHeavenButton.setVisible(false);
+      this.returnEarthButton.setVisible(false);
       this.sasquatch.halt();
       this.haltSwarmers();
       this.haltAngels();
@@ -5344,12 +5362,12 @@ export class MainScene extends Phaser.Scene {
     const nearPortal = Phaser.Math.Distance.Between(this.player.x, this.player.y, this.heavenPortal.x, this.heavenPortal.y) <= PORTAL_CORRUPT_RANGE;
     this.corruptButton.setVisible(this.guardianPhase === 'defeated' && nearPortal);
 
-    // Entering the now-corrupted portal transports the player to Heaven (the real
-    // transition, replacing the old "coming soon" beat). Gated on CORRUPTED.
-    if (this.guardianPhase === 'corrupted') {
-      const d = Phaser.Math.Distance.Between(this.player.x, this.player.y, this.heavenPortal.x, this.heavenPortal.y);
-      if (d <= PORTAL_ENTER_RANGE) this.enterHeavenPortal();
-    }
+    // Crossing the CORRUPTED portal is an explicit BUTTON (the same contextual slot
+    // as Talk/Corrupt) — no accidental transport from walking near it. Tapping it
+    // runs the same Heaven transition as before ('entered-heaven' fires on arrival).
+    this.enterHeavenButton.setVisible(
+      this.guardianPhase === 'corrupted' && nearPortal && !this.transitioning && !this.dialogue.isOpen(),
+    );
   }
 
   private haltGuardians(): void {
@@ -6077,24 +6095,44 @@ export class MainScene extends Phaser.Scene {
     }
   }
 
-  /** Fired when the player enters the CORRUPTED Earth Heaven-Portal → travel to Heaven. */
+  /** The "Enter Heaven" button's action: cross the CORRUPTED Holy-Outpost portal.
+   *  Self-gates (phase / proximity / transition / dialogue) so a stale tap is safe. */
   private enterHeavenPortal(): void {
     if (this.transitioning || this.time.now < this.worldCooldownUntil) return;
     if (this.guardianPhase !== 'corrupted') return; // only the corrupted portal transports
     if (this.dialogue.isOpen()) return; // let a narration (4.9's pour-the-Light beat) finish first
+    const d = Phaser.Math.Distance.Between(this.player.x, this.player.y, this.heavenPortal.x, this.heavenPortal.y);
+    if (d > PORTAL_CORRUPT_RANGE) return; // must still be standing at the portal
+    this.enterHeavenButton.setVisible(false);
     this.travelToWorld(WORLD_HEAVEN, this.heavenArrivalPos);
   }
 
-  /** Heaven-side per-frame logic: entering the return gate transitions back to Earth. */
-  private updateHeaven(): void {
+  /** The "Return to Earth" button's action: cross back through the Heaven-side gate. */
+  private returnToEarthPortal(): void {
     if (this.transitioning || this.time.now < this.worldCooldownUntil) return;
+    if (this.activeWorld !== WORLD_HEAVEN) return;
+    const d = Phaser.Math.Distance.Between(this.player.x, this.player.y, this.heavenReturnPortalPos.x, this.heavenReturnPortalPos.y);
+    if (d > PORTAL_CORRUPT_RANGE) return;
+    this.returnEarthButton.setVisible(false);
+    this.travelToWorld(WORLD_EARTH, this.earthReturnPos);
+  }
+
+  /** Heaven-side per-frame logic: the return gate crosses by BUTTON (same slot as
+   *  Talk — the Talk prompt wins if Azazel is nearer, so the two never stack). */
+  private updateHeaven(): void {
+    if (this.transitioning || this.time.now < this.worldCooldownUntil) {
+      this.returnEarthButton.setVisible(false);
+      return;
+    }
     const d = Phaser.Math.Distance.Between(
       this.player.x,
       this.player.y,
       this.heavenReturnPortalPos.x,
       this.heavenReturnPortalPos.y,
     );
-    if (d <= PORTAL_ENTER_RANGE) this.travelToWorld(WORLD_EARTH, this.earthReturnPos);
+    this.returnEarthButton.setVisible(
+      d <= PORTAL_CORRUPT_RANGE && !this.dialogue.isOpen() && !this.talkButton.isVisible,
+    );
   }
 
   /**
@@ -6179,10 +6217,12 @@ export class MainScene extends Phaser.Scene {
     this.cameras.main.centerOn(dest.x, dest.y);
     this.zoomControls.setMapSize(b.width, b.height); // re-derive zoom-out from THIS map
 
-    // Drop any in-flight Earth bolts; clear Earth-only UI prompts.
+    // Drop any in-flight Earth bolts; clear the contextual portal/talk prompts.
     this.projectiles.clear();
     this.talkButton.setVisible(false);
     this.corruptButton.setVisible(false);
+    this.enterHeavenButton.setVisible(false);
+    this.returnEarthButton.setVisible(false);
   }
 
   /** Disable every currently-live Earth enemy body; remember them for resume. */
@@ -6492,16 +6532,17 @@ export class MainScene extends Phaser.Scene {
         break;
       }
       case 'reach-holy-outpost':
-        // 4.9 obj 0 — march on the outpost: completes at the APPROACH point (outside
-        // the guardians' activation range; the machine's own later fire is a no-op).
+        // 4.9 obj 0 — march on the outpost: completes within a GENEROUS ring of the
+        // outpost itself (any approach direction — the quest arrow points here), which
+        // is what arms the assault layers. The ring is wider than the guardians'
+        // activation range, and they're held dormant through the layers regardless.
         this.arcMode = 'reach';
-        this.arcReach = {
-          x: HOLY_OUTPOST_POSITION.x + ASSAULT_APPROACH_OFFSET.dx,
-          y: HOLY_OUTPOST_POSITION.y + ASSAULT_APPROACH_OFFSET.dy,
-        };
+        this.arcReach = { ...HOLY_OUTPOST_POSITION };
+        this.arcReachRadius = ASSAULT_OUTER_TRIGGER_RADIUS;
         break;
       case 'outpost-outer-defeated':
-        // 4.9 obj 1 — the angel group OUTSIDE the outpost.
+        // 4.9 obj 1 — the angel group OUTSIDE the outpost. Spawns the moment the
+        // march ring completes; angels actively hunt the player from their anchor.
         this.spawnArcAngelsMixed(
           { x: HOLY_OUTPOST_POSITION.x + ASSAULT_OUTER_OFFSET.dx, y: HOLY_OUTPOST_POSITION.y + ASSAULT_OUTER_OFFSET.dy },
           { lesser: ASSAULT_OUTER_LESSER, warden: ASSAULT_OUTER_WARDEN },
@@ -6516,10 +6557,23 @@ export class MainScene extends Phaser.Scene {
         );
         this.arcMode = 'defeat';
         break;
-      // 4.9 objs 3–5 ('guardians-defeated' / 'portal-corrupted' / 'entered-heaven')
-      // fall through to the default: the EXISTING Holy-Outpost guardian/portal state
-      // machine drives those fights/actions and fires the triggers — the quest only
-      // CONSUMES them (arcMode 'none'; the mask-drop narration is armed below).
+      case 'guardians-defeated':
+        // 4.9 obj 3 — the FINAL layer at the portal: a small angel group descends
+        // alongside the two flaming-sword guardians (tunable; 0/0 = guardians only).
+        // The MACHINE's 'guardians-defeated' advances the quest; these are the
+        // "final group" flavor and are cleared when the layer ends. arcMode 'none'
+        // (the machine owns the completion), mask-drop narration armed below.
+        if (this.chain.activeQuest?.id === ACT4_DOOR_HOME_ID && (ASSAULT_PORTAL_LESSER > 0 || ASSAULT_PORTAL_WARDEN > 0)) {
+          this.spawnArcAngelsMixed(
+            { x: HOLY_OUTPOST_POSITION.x, y: HOLY_OUTPOST_POSITION.y + 40 },
+            { lesser: ASSAULT_PORTAL_LESSER, warden: ASSAULT_PORTAL_WARDEN },
+          );
+        }
+        this.arcMode = 'none';
+        break;
+      // 4.9 objs 4–5 ('portal-corrupted' / 'entered-heaven') fall through to the
+      // default: the EXISTING Holy-Outpost portal machine drives those actions and
+      // fires the triggers — the quest only CONSUMES them.
       default:
         this.arcMode = 'none';
     }
@@ -6589,7 +6643,7 @@ export class MainScene extends Phaser.Scene {
       // Act IV 4.4a: complete once the required number of salt patches are collected.
       if (this.arcGatherCount >= this.arcGatherRequired) this.notifyQuest(trig);
     } else if (this.arcMode === 'reach' && this.arcReach) {
-      if (Phaser.Math.Distance.Between(this.player.x, this.player.y, this.arcReach.x, this.arcReach.y) <= REACH_OUTPOST_RANGE) {
+      if (Phaser.Math.Distance.Between(this.player.x, this.player.y, this.arcReach.x, this.arcReach.y) <= this.arcReachRadius) {
         this.notifyQuest(trig);
       }
     } else if (this.arcMode === 'burn' && this.arcReach) {
@@ -6696,6 +6750,7 @@ export class MainScene extends Phaser.Scene {
     this.arcEnemies = [];
     this.arcMode = 'none';
     this.arcReach = null;
+    this.arcReachRadius = REACH_OUTPOST_RANGE; // per-objective override (4.9's march ring) resets
     this.arcShipmentPos = null;
     this.arcGatherCount = 0;
     this.arcGatherRequired = 0;

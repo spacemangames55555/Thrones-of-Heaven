@@ -1269,9 +1269,12 @@ export const CATAPULT_3_POSITION = { x: 27100, y: 14400 }; // NE of the walls
 /** Defenders that pour out after EACH catapult fires (city-guard variant). */
 export const CATAPULT_DEFENDERS_COUNT = 4;
 
-// 4.9 "The Door Home": the assault on the (emptied) angels' outpost. All offsets
-// are from HOLY_OUTPOST_POSITION; the approach faces Kamiah (west of the outpost).
-export const ASSAULT_APPROACH_OFFSET = { dx: -520, dy: 120 }; // obj 0 'reach' point
+// 4.9 "The Door Home": the assault on the (emptied) angels' outpost.
+// The march objective completes — and the OUTER angel group spawns — when the
+// player gets within this radius of the outpost, from ANY approach direction
+// (a generous ring, so following the quest arrow always arms the assault layers).
+export const ASSAULT_OUTER_TRIGGER_RADIUS = 700;
+// Spawn anchors as offsets from HOLY_OUTPOST_POSITION (Kamiah lies to the west).
 export const ASSAULT_OUTER_OFFSET = { dx: -340, dy: 80 }; // the OUTER angel group
 export const ASSAULT_INNER_OFFSET = { dx: -40, dy: 50 }; // the INNER angel group
 export const ASSAULT_OUTER_LESSER = 4;
@@ -1279,6 +1282,11 @@ export const ASSAULT_OUTER_WARDEN = 2;
 export const ASSAULT_INNER_LESSER = 3;
 export const ASSAULT_INNER_WARDEN = 2;
 export const ASSAULT_INNER_HERALD = 1;
+// The FINAL layer at the portal: a small angel group that descends ALONGSIDE the
+// two flaming-sword guardians (flavor — the guardians' defeat advances the quest).
+// Set both to 0 if the guardians alone should carry the final fight.
+export const ASSAULT_PORTAL_LESSER = 2;
+export const ASSAULT_PORTAL_WARDEN = 1;
 /** The demon escort that fights at the player's back through the assault (4.9). */
 export const DEMON_ALLY_COUNT = 5;
 
