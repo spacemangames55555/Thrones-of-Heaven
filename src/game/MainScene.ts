@@ -7249,6 +7249,15 @@ export class MainScene extends Phaser.Scene {
     // Buttons carry an optional key (keyboard convenience for desktop). The two
     // panel-only actions (no key) spawn a swarm and refill energy for testing.
     const actions: { label: string; key?: number; onPress: () => void }[] = [
+      // ── SUMMON TEST CLUSTER — pinned to the TOP of the panel so they're the first
+      //    buttons visible on mobile (no scrolling needed to reach "Spawn Ranged Ally"). ──
+      { label: 'Summon Ice Golem', onPress: () => this.summonIceGolem() },
+      { label: 'Summon Skeleton', onPress: () => this.summonSkeleton() },
+      { label: 'Summon Dark Matter Monster', onPress: () => this.summonDarkMatterMonster() },
+      { label: 'Spawn Ranged Ally', onPress: () => this.summonRangedAlly() },
+      { label: 'Buff Summons', onPress: () => this.buffSummons() },
+      { label: 'Clear Summons', onPress: () => this.summons.clear() },
+      // ── everything else ──
       { label: 'Grant XP', key: KC.X, onPress: () => this.gainXP(DEV_GRANT_XP_CHUNK) },
       { label: 'Instant Level-Up', key: KC.L, onPress: () => this.gainXP(this.progression.xpRemainingToLevel()) },
       { label: 'Full Heal', key: KC.H, onPress: () => this.playerHealth.full() },
@@ -7263,12 +7272,6 @@ export class MainScene extends Phaser.Scene {
       { label: 'Set Class: Wizard', onPress: () => this.devSetClass('wizard') },
       { label: 'Set Class: Blacksmith', onPress: () => this.devSetClass('blacksmith') },
       { label: 'Set Class: Necromancer', onPress: () => this.devSetClass('necromancer') },
-      { label: 'Summon Ice Golem', onPress: () => this.summonIceGolem() },
-      { label: 'Summon Skeleton', onPress: () => this.summonSkeleton() },
-      { label: 'Summon Dark Matter Monster', onPress: () => this.summonDarkMatterMonster() },
-      { label: 'Spawn Ranged Ally', onPress: () => this.summonRangedAlly() },
-      { label: 'Buff Summons', onPress: () => this.buffSummons() },
-      { label: 'Clear Summons', onPress: () => this.summons.clear() },
       { label: 'Unlock Summons Tree', onPress: () => this.devUnlockSummons() },
       { label: 'Reset Skill Trees', onPress: () => this.resetSkillTrees() },
       // Act IV enemy variants — spawn one next to the player to eyeball look/stats.
