@@ -42,7 +42,7 @@ import { MANIFEST_CLASS_FOR, KNOWN_CLASS_NAMES } from '../world/class-canon';
 import { SparseWorldMap } from '../map/SparseWorldMap';
 import { WORLD_CALIBRATION, WORLD_SPAN_DEGREES } from '../world/world-calibration';
 import { createSparseWorld, stampZone, buildChunkMapData, type BuiltChunk } from '../world/world-builder';
-import { getZone } from '../world/world-manifest';
+import { getZone, WORLD } from '../world/world-manifest';
 import { EUROPE_BUILT_ZONES, buildEuropeQuestDefs } from '../world/europe-built';
 import { appendToRegistry } from '../world/quest-factory';
 import { ENEMY_ROSTER, DOMAIN_TINT } from '../world/enemy-roster';
@@ -706,6 +706,8 @@ export class MainScene extends Phaser.Scene {
   private europeMap?: SparseWorldMap;
   private europeColliders: Phaser.Physics.Arcade.Collider[] = [];
   private europeGates: { x: number; y: number; label: string; dest: { x: number; y: number } }[] = [];
+  /** Per-zone arrival points (the spot south of each chunk's settlement). */
+  private europeZoneArrivals: Record<string, { x: number; y: number }> = {};
   /** Where the NEXT world east goes (advanced by setupCities/setupEurope). */
   private nextWorldOriginX = 0;
   // DEV "Test City Arrow": a fake objective target exercising the hierarchical
@@ -5693,6 +5695,10 @@ export class MainScene extends Phaser.Scene {
       this.europeColliders.push(collider);
       chunkMaps.push(map);
       built.set(id, { chunk, map });
+      this.europeZoneArrivals[id] = map.nearestWalkableWorld(
+        origin.x + chunk.arrivalLocalPx.x,
+        origin.y + chunk.arrivalLocalPx.y,
+      );
 
       // Spawn markers (visual placeholders): one tinted disc per enemy family.
       for (const m of plan.spawnMarkers) {
@@ -8068,7 +8074,7 @@ export class MainScene extends Phaser.Scene {
 
   /** Snapshot the full quest chain for the DEV quest tab (called fresh on each open). */
   private questTabRows(): QuestTabRow[] {
-    return QUEST_REGISTRY.map((q) => {
+    const rows = QUEST_REGISTRY.map((q) => {
       const meta = MainScene.QUEST_TAB_META[q.id] ?? { group: 'Other', code: '' };
       const st = this.chain.status(q.id);
       return {
@@ -8080,6 +8086,24 @@ export class MainScene extends Phaser.Scene {
         active: st === 'active',
       };
     });
+    // FACTORY-REGISTERED chains (built Europe zones): appended after the
+    // hand-authored chain, grouped by zone, coded by beat position.
+    for (const zoneId of EUROPE_BUILT_ZONES) {
+      const zone = getZone(zoneId);
+      if (!zone) continue;
+      zone.questChain.forEach((beat, i) => {
+        const st = this.chain.status(beat.id);
+        rows.push({
+          id: beat.id,
+          group: zone.displayName,
+          code: `${i + 1}`,
+          title: beat.title,
+          completed: st === 'complete',
+          active: st === 'active',
+        });
+      });
+    }
+    return rows;
   }
 
   /**
@@ -8097,7 +8121,12 @@ export class MainScene extends Phaser.Scene {
     const order = QUEST_REGISTRY.map((q) => q.id);
     const ti = order.indexOf(targetId);
     const def = this.chain.get(targetId);
-    if (ti < 0 || !def) return;
+    if (!def) return;
+    if (ti < 0) {
+      // Not in the hand-authored chain → a FACTORY-REGISTERED (Europe) beat.
+      this.devJumpToFactoryBeat(targetId, def);
+      return;
+    }
 
     const JUMP_APPROACH_OFFSET = 280; // place the player S of the target (clear of 'reach' range + enemy ring)
     const JUMP_HOLY_POWER = 60; // safe Holy Power buffer for endgame plunder/relic beats
@@ -8184,6 +8213,69 @@ export class MainScene extends Phaser.Scene {
     this.refreshQuestUi();
     this.updateObjectiveMarker();
     this.showBanner(`Jumped to: ${def.title}`, 2200);
+  }
+
+  /**
+   * DEV STATE-WARP for a FACTORY-REGISTERED beat (built Europe zones): satisfies
+   * the beat's prerequisite CLOSURE (one arm per anyOf slot is enough — arms that
+   * exist in the live chain are preferred), sets the dev class override when the
+   * beat is class-gated and the current class doesn't satisfy it (announced in
+   * the banner), travels the player to the beat's zone chunk (synchronous swap —
+   * the quest tab pauses the scene), and activates the beat at objective 0.
+   * The hand-authored NA jump path above is untouched.
+   */
+  private devJumpToFactoryBeat(targetId: string, def: QuestDef): void {
+    const zone = WORLD.find((z) => z.questChain.some((b) => b.id === targetId));
+    if (!zone || !EUROPE_BUILT_ZONES.includes(zone.id)) return;
+
+    // Class gate: satisfy it via the dev override if needed, and say so.
+    if (def.classRequirement) {
+      const current = (this.devClassOverride ?? MANIFEST_CLASS_FOR[this.classId] ?? this.classId).toLowerCase();
+      if (current !== def.classRequirement.toLowerCase()) {
+        const name = def.classRequirement.charAt(0).toUpperCase() + def.classRequirement.slice(1);
+        this.devClassOverride = name;
+        this.showBanner(`DEV: class override → ${name} (this chain is ${name}-only)`, 2400);
+      }
+    }
+    this.announcePlayerClass();
+
+    // Prerequisite closure: any ONE arm of an anyOf group satisfies its slot.
+    const completed = new Set<string>();
+    const walk = (id: string): void => {
+      const d = this.chain.get(id);
+      if (!d) return;
+      for (const p of d.prerequisites) {
+        const arms = typeof p === 'string' ? [p] : p.anyOf;
+        const pick = arms.find((a) => !!this.chain.get(a)) ?? arms[0];
+        if (!pick || completed.has(pick)) continue;
+        completed.add(pick);
+        walk(pick);
+      }
+    };
+    walk(targetId);
+    this.clearDemonAllies(); // no stale escorts across any dev jump
+    this.chain.load({ completed: [...completed], activeId: null, activeObjective: 0 });
+
+    // Travel to the beat's zone (synchronous; we may be paused under the tab).
+    const dest = this.europeZoneArrivals[zone.id] ?? this.worlds[WORLD_EUROPE]?.defaultArrival;
+    if (dest) {
+      if (this.activeWorld !== WORLD_EUROPE) {
+        this.applyWorldSwap(WORLD_EUROPE, dest);
+      } else {
+        this.cancelDash();
+        this.player.sprite.setPosition(dest.x, dest.y);
+        this.player.setDirection(0, 0);
+        this.cameras.main.centerOn(dest.x, dest.y);
+      }
+    }
+
+    // Activate at objective 0 (a no-op if auto-activation already started it).
+    this.chain.accept(targetId);
+    this.playerHealth.full();
+    this.energy.full();
+    this.refreshQuestUi();
+    this.updateObjectiveMarker();
+    this.showBanner(`Jumped to: ${def.title} (${zone.displayName})`, 2200);
   }
 
   /** Walkable world position near a quest's first-objective target (offset S so a
