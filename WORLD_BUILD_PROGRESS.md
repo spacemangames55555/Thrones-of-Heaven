@@ -40,7 +40,7 @@ source of truth; `world-builder.ts` stamps zones into region worlds;
 - [x] **epirus-landing** — done. First Greek chunk; the Adriatic SEA CROSSING is live — "Sail to…" dock gates both directions between Apulia and Epirus (fade-travel boat placeholder). Beats chained off apu-02.
 - [x] **thessaloniki-outpost** — done. Act IV outpost chunk (holy-highland, walled footprint). Isolated until thermopylae-pass (next) and vardar-corridor (later batch) build — its gates arrive with those commits. TODO: eu-01 (Azazel patron voice) prose. Entry gated on var-02 (unbuilt → reads UNMET, correct).
 - [x] **thermopylae-pass** — done. The Act IV march chunk: 8 beats, entry = anyOf(eu-02, epi-02) (the two tributaries merge here); gates BOTH ways to Thessaloniki and Epirus. TODOs: eu-03 / eu-07 / eu-09 prose + eu-06's FIVE class-variant scripts (bard/priest/blacksmith/mage/necromancer). The Delphi gate arrives with delphi-sanctuary (next batch).
-- [ ] **delphi-sanctuary** — pending
+- [x] **delphi-sanctuary** — done. The portal terminal chunk (portal-threshold placeholder, small footprint); gate pair to Thermopylae. The Priest spine is now walkable end to end (Rome→…→Delphi). NO portal machine built (structure only). TODOs: eu-11 (mask-drop) + eu-12 (threshold) prose.
 - [ ] **murmansk-bone-harbor** — pending
 - [ ] **karelia-lakes** — pending
 - [ ] **smolensk-gate** — pending
