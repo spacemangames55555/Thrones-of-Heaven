@@ -31,6 +31,7 @@ export const EUROPE_BUILT_ZONES: string[] = [
   'belgrade-iron-river',
   'vardar-corridor',
   'london-grey-chorus',
+  'kent-passage',
 ];
 
 /**
