@@ -29,6 +29,7 @@ export const EUROPE_BUILT_ZONES: string[] = [
   'alps-high-pass',
   'vienna-river-muster',
   'belgrade-iron-river',
+  'vardar-corridor',
 ];
 
 /**

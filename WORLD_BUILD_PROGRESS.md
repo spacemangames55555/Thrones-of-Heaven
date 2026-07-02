@@ -53,7 +53,7 @@ source of truth; `world-builder.ts` stamps zones into region worlds;
 - [x] **alps-high-pass** — done. The Brenner summit corridor; gates to Tyrol (Burgundy + Vienna links arrive with theirs). Entry anyOf(bur-02, tyr-03) — the tyr arm is live now, the Bard-road arm activates when Burgundy builds. alp-01's region-champion (Physical) is a marker.
 - [x] **vienna-river-muster** — done. Danube city; Alps↔Vienna gates — the Blacksmith spine now runs Munich→Tyrol→Alps→Vienna. Belgrade link (and the vie/car anyOf merge) arrives with belgrade-iron-river next batch.
 - [x] **belgrade-iron-river** — done. Balkan city at the confluence; the DANUBE MERGE is live — entry anyOf(vie-02, car-02), gates both ways to Vienna AND the Carpathians. The German and Russian roads now meet here. bel-02's region-champion (Physical) is a marker.
-- [ ] **vardar-corridor** — pending
+- [x] **vardar-corridor** — done. Balkan-highland corridor; Belgrade↔Vardar↔Thessaloniki gates close the LAST link of the march trunk — var-02 (Thessaloniki's primary anyOf arm) is now earnable in-world. The eastern/central spines reach Azazel's muster on foot.
 - [ ] **london-grey-chorus** — pending
 - [ ] **kent-passage** — pending
 - [ ] **calais-landing** — pending
