@@ -28,6 +28,7 @@ export const EUROPE_BUILT_ZONES: string[] = [
   'tyrol-forge-road',
   'alps-high-pass',
   'vienna-river-muster',
+  'belgrade-iron-river',
 ];
 
 /**
