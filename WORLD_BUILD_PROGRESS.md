@@ -49,7 +49,7 @@ source of truth; `world-builder.ts` stamps zones into region worlds;
 - [x] **kyiv-river-gate** — done. Steppe-river city; the EASTERN MERGE is live — its entry anyOf(bry-02, smo-02) means either Russian road unlocks it, and it gates both ways to Bryansk AND Smolensk. kyi-01's region-champion (Mental) is a marker until combat wiring.
 - [x] **carpathian-crossing** — done. Carpathian-pass corridor; gates to Kyiv (Belgrade link arrives with its zone). The eastern trunk now runs Murmansk/Moscow→Kyiv→Carpathians.
 - [x] **munich-anvil-hold** — done. BLACKSMITH home city — the highest-stakes guard test (Blacksmith is the game's DEFAULT class): a real Blacksmith fresh start stays clean on Earth, mun-01 waits for class-start. Isolated until tyrol-forge-road (next). TODOs: mun-01, mun-03 prose.
-- [ ] **tyrol-forge-road** — pending
+- [x] **tyrol-forge-road** — done. Alpine corridor; Munich↔Tyrol gates open the Blacksmith spine. tyr-02's escort is a marker until combat wiring.
 - [ ] **alps-high-pass** — pending
 - [ ] **vienna-river-muster** — pending
 - [ ] **belgrade-iron-river** — pending

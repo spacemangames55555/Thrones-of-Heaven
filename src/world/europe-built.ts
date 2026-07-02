@@ -25,6 +25,7 @@ export const EUROPE_BUILT_ZONES: string[] = [
   'kyiv-river-gate',
   'carpathian-crossing',
   'munich-anvil-hold',
+  'tyrol-forge-road',
 ];
 
 /**
