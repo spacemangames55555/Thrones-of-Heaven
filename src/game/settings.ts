@@ -346,7 +346,7 @@ export interface AngelVariantConfig {
   readonly color: number;
 }
 
-export type AngelVariantKey = 'angel' | 'archangel' | 'lesser' | 'warden' | 'herald';
+export type AngelVariantKey = 'angel' | 'archangel' | 'lesser' | 'warden' | 'herald' | 'darkcaster';
 
 /**
  * The angel variants — pure DATA. Edit a field to retune that variant; all run the
@@ -437,6 +437,25 @@ export const ANGEL_VARIANTS: Record<AngelVariantKey, AngelVariantConfig> = {
     holyPowerDrop: 2,
     scale: 1.15,
     color: 0xffd0e8, // rose-white — marks "someone"
+  },
+  /** DARK-CASTER (Europe, Mental/blue) — low HP, keeps its distance (the native
+   *  preferredRange kite) and repositions when closed on; its bolts carry the
+   *  'caster-bolt' tag → slow + weaken + stacking DoT on the player (MainScene).
+   *  Drops no Holy Power (not an angel in fiction — this is a gray-box reuse). */
+  darkcaster: {
+    maxHP: 55,
+    projectileDamage: 8,
+    projectileSpeed: 250,
+    projectileRange: 500,
+    fireCooldownMs: 1600,
+    boltsPerVolley: 1,
+    aggroRange: 480,
+    preferredRange: 340,
+    moveTilesPerSec: 5.5,
+    xpReward: 25,
+    holyPowerDrop: 0,
+    scale: 0.9,
+    color: 0x3a6de0, // Mental blue
   },
 };
 
@@ -1502,10 +1521,25 @@ export type TownsfolkVariant =
   // --- Act IV wildlife (Florence coast) ---
   | 'bear'
   | 'eagle'
-  | 'crab';
+  | 'crab'
+  // --- Europe (new-family gray-box) ---
+  | 'brute'
+  | 'ambusher';
 export const TOWNSFOLK_VARIANTS: Record<
   TownsfolkVariant,
-  { color: number; xpReward: number; maxHP?: number; playerDamage?: number }
+  {
+    color: number;
+    xpReward: number;
+    maxHP?: number;
+    playerDamage?: number;
+    /** Per-variant move speed (tiles/sec); defaults to the shared TOWNSFOLK_MOVE_TILES_PER_SEC. */
+    moveTilesPerSec?: number;
+    /** Per-variant strike cooldown (ms); defaults to TOWNSFOLK_ATTACK_COOLDOWN_MS. */
+    attackCooldownMs?: number;
+    /** Max turn rate (rad/sec) — heading rotates toward the target instead of snapping.
+     *  Omit for the default instant turning (all pre-Europe variants). */
+    turnRadPerSec?: number;
+  }
 > = {
   townsperson: { color: 0xffffff, xpReward: TOWNSFOLK_XP_REWARD }, // no tint (default brown)
   guardsman: { color: 0x9fb6e6, xpReward: 16 }, // steel-blue
@@ -1523,6 +1557,16 @@ export const TOWNSFOLK_VARIANTS: Record<
   bear: { color: 0x5a3f2a, xpReward: 40, maxHP: BEAR_MAX_HP, playerDamage: BEAR_PLAYER_DAMAGE }, // dark brown brute
   eagle: { color: 0xe8e0d0, xpReward: 16, maxHP: EAGLE_MAX_HP, playerDamage: EAGLE_PLAYER_DAMAGE }, // pale feathered harasser
   crab: { color: 0xd86a4a, xpReward: 20, maxHP: CRAB_MAX_HP, playerDamage: CRAB_PLAYER_DAMAGE }, // red-shell armored
+  // --- Europe: HOLLOWED-BRUTE (Spiritual) — slow move + slow turn, huge tier-scaled
+  //     HP (overridden per-spawn), tiny contact damage: the threat is its TELEGRAPHED
+  //     heavy strike (scene-driven; see MainScene's brute logic). Never flees
+  //     (townsfolk AI never flees). Cooldown literal = BRUTE_STRIKE_COOLDOWN_MS
+  //     (declared below this table — TDZ forbids the reference). ---
+  brute: { color: 0x9a4ae0, xpReward: 60, maxHP: 220, playerDamage: 5, moveTilesPerSec: 1.7, attackCooldownMs: 2600, turnRadPerSec: 2.2 },
+  // --- Europe: VEIL-AMBUSHER (Mental) — fast burst melee; the hidden/reveal/re-hide
+  //     state machine lives in MainScene (spawned invisible + untargetable, outside
+  //     this.townsfolk until revealed). ---
+  ambusher: { color: 0x3a6de0, xpReward: 30, maxHP: 80, playerDamage: 14, moveTilesPerSec: 5.5 },
 };
 
 // --- The wave sequence ---
@@ -1675,6 +1719,27 @@ export const EUROPE_CLEAR_KILLS = 5;
 /** Guardian/lesser-angel kills needed for the eu-10 harvest (mirrors the NA
  *  plunder-style harvest: kill count + live tracker suffix). */
 export const EUROPE_HARVEST_KILLS = 8;
+
+// --- NEW enemy-family behaviors (variants over EXISTING systems) ---------------
+/** DARK-CASTER bolt debuffs (applied to the player on hit). */
+export const CASTER_SLOW_MS = 2500;
+export const CASTER_SLOW_FACTOR = 0.65; // player move speed while slowed
+export const CASTER_WEAKEN_MS = 4000;
+export const CASTER_WEAKEN_INCOMING = 1.25; // player takes +25% while weakened
+export const CASTER_DOT_TICK_DAMAGE = 2; // per tick PER STACK
+export const CASTER_DOT_TICK_MS = 1000;
+export const CASTER_DOT_STACK_MS = 5000; // each stack's lifetime
+export const CASTER_DOT_MAX_STACKS = 3;
+/** VEIL-AMBUSHERS: hidden until the player is this close; burst this long. */
+export const AMBUSHER_TRIGGER_RADIUS = 140;
+export const AMBUSHER_BURST_MS = 6000;
+/** HOLLOWED-BRUTES: telegraphed heavy strike + tier-scaled HP; hard 2-per-pack cap. */
+export const BRUTE_TELEGRAPH_MS = 1200;
+export const BRUTE_STRIKE_RADIUS = 90;
+export const BRUTE_STRIKE_DAMAGE = 34;
+export const BRUTE_STRIKE_COOLDOWN_MS = 2600;
+export const BRUTE_HP_PER_TIER = 220; // maxHP = this * zone tier
+export const BRUTE_PACK_CAP = 2;
 
 /** NESTED CITIES: how close (px) to a city gate the Enter/Leave button shows.
  *  Must comfortably cover the fixed arrival spots on BOTH sides of the gate

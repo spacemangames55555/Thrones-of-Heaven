@@ -124,7 +124,9 @@ export const EXISTING_FAMILY_SPAWNERS: Record<string, string> = {
   'lesser-angels': "spawnAngel('lesser')",
 };
 
-/** Combat domain (→ placeholder tint) for the PRE-EXISTING mapped families. */
+/** Combat domain (→ placeholder tint) for the LIVE-SPAWNABLE families. The three
+ *  new roster families joined this map when their behavior variants shipped;
+ *  'corrupted-spirits' stays data-only (assigned to no built zone) on purpose. */
 export const EXISTING_FAMILY_DOMAIN: Record<string, CombatDomain> = {
   'corrupted-wildlife': 'physical',
   'evil-raiders': 'physical',
@@ -132,6 +134,9 @@ export const EXISTING_FAMILY_DOMAIN: Record<string, CombatDomain> = {
   'herald-angels': 'spiritual',
   'radiant-guardians': 'spiritual',
   'lesser-angels': 'spiritual',
+  'dark-casters': 'mental',
+  'veil-ambushers': 'mental',
+  'hollowed-brutes': 'spiritual',
 };
 
 /** LIVE pack size per mapped family (per zone activation; tunable gray-box). All
@@ -144,6 +149,9 @@ export const EXISTING_FAMILY_PACK: Record<string, number> = {
   'herald-angels': 3,
   'radiant-guardians': 5,
   'lesser-angels': 5,
+  'dark-casters': 5, // clear-beat target (vienna/paris) → ≥ EUROPE_CLEAR_KILLS
+  'veil-ambushers': 5, // clear-beat target (carpathian/alps/burgundy) → ≥ EUROPE_CLEAR_KILLS
+  'hollowed-brutes': 2, // HARD CAP: never more than BRUTE_PACK_CAP per pack (never a clear target)
 };
 
 /** Does a manifest enemyFamily id resolve to SOMETHING spawnable? */

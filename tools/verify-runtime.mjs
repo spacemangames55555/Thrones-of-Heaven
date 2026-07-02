@@ -145,6 +145,54 @@ try {
     });
     ok(`Europe: live-enemy cap holds across a 3-chunk crossing (peak ${capRun.peak})`, capRun.peak > 0 && capRun.peak <= 48, `peak=${capRun.peak} cap=48`);
 
+    // 3e. VEIL-AMBUSHER: spawns hidden (invisible, OUT of the townsfolk combat
+    // list → untargetable) and only reveals when the player enters the radius.
+    const amb = await page.evaluate(async () => {
+      const ms = window.__game.scene.getScene('MainScene');
+      // Reset: hop into the void so every zone despawns, then approach fresh.
+      ms.player.sprite.body.reset(ms.player.x + 9000, ms.player.y + 9000);
+      await new Promise((r) => setTimeout(r, 700));
+      const z = ms.europeSpawnZones.find((s) => s.points.some((p) => p.family === 'veil-ambushers'));
+      if (!z) return { found: false };
+      const pt = z.points.find((p) => p.family === 'veil-ambushers');
+      // Land near the marker but OUTSIDE the 140px trigger (homes ring ≤100px from it).
+      ms.player.sprite.body.reset(pt.x + 420, pt.y);
+      await new Promise((r) => setTimeout(r, 900)); // zone activates, pack spawns hidden
+      const recs = ms.europeAmbushers.filter((a) => Math.hypot(a.home.x - pt.x, a.home.y - pt.y) < 200);
+      const hiddenBefore = recs.length > 0 && recs.every((a) => a.state === 'hidden' && !a.t.sprite.visible);
+      const targetableBefore = recs.some((a) => ms.townsfolk.includes(a.t));
+      ms.player.sprite.body.reset(pt.x, pt.y); // step inside the trigger radius
+      await new Promise((r) => setTimeout(r, 600));
+      const revealed = recs.some((a) => a.state === 'burst' && a.t.sprite.visible && ms.townsfolk.includes(a.t));
+      return { found: true, spawned: recs.length, hiddenBefore, targetableBefore, revealed };
+    });
+    ok(
+      'veil-ambusher: hidden + untargetable until the trigger radius, then reveals',
+      amb.found && amb.hiddenBefore && !amb.targetableBefore && amb.revealed,
+      amb.found ? `spawned=${amb.spawned} hidden=${amb.hiddenBefore} preTargetable=${amb.targetableBefore} revealed=${amb.revealed}` : 'no ambusher zone found',
+    );
+
+    // 3f. HOLLOWED-BRUTE: pack size respects the hard 1–2 cap (per spawn point).
+    const brutes = await page.evaluate(async () => {
+      const ms = window.__game.scene.getScene('MainScene');
+      ms.player.sprite.body.reset(ms.player.x + 9000, ms.player.y + 9000); // despawn all
+      await new Promise((r) => setTimeout(r, 700));
+      const z = ms.europeSpawnZones.find((s) => s.points.some((p) => p.family === 'hollowed-brutes'));
+      if (!z) return { found: false };
+      ms.player.sprite.body.reset(z.center.x, z.center.y + 100);
+      await new Promise((r) => setTimeout(r, 900)); // zone activates, packs spawn
+      const pts = z.points.filter((p) => p.family === 'hollowed-brutes');
+      const perPack = pts.map(
+        (p) => ms.europeLive.filter((r) => r.family === 'hollowed-brutes' && r.entity.isAlive && Math.hypot(r.entity.x - p.x, r.entity.y - p.y) < 170).length,
+      );
+      return { found: true, perPack };
+    });
+    ok(
+      'hollowed-brute: every pack spawns 1–2, never more',
+      brutes.found && brutes.perPack.length > 0 && brutes.perPack.every((n) => n >= 1 && n <= 2),
+      brutes.found ? `packs=[${brutes.perPack.join(',')}]` : 'no brute zone found',
+    );
+
     await page.evaluate(() => window.__game.scene.getScene('MainScene').devTravelEarth());
     await page.waitForTimeout(2000);
     const afterEarth = await page.evaluate(() => {
@@ -155,6 +203,31 @@ try {
   } else {
     console.log('info  no europe world registered — skipping Europe checks');
   }
+
+  // 3g. DARK-CASTER: a REAL bolt from a live caster lands and applies its full
+  // debuff set (move slow + incoming-damage weaken + a stacking-DoT stack).
+  // Runs on Earth (the caster is a world-agnostic angel variant).
+  const caster = await page.evaluate(async () => {
+    const ms = window.__game.scene.getScene('MainScene');
+    const spot = ms.activeMap().nearestWalkableWorld(ms.player.x + 220, ms.player.y);
+    ms.spawnAngel('darkcaster', spot.x, spot.y);
+    const t0 = Date.now();
+    while (Date.now() - t0 < 9000) {
+      await new Promise((r) => setTimeout(r, 250));
+      if (ms.player.slowFactor < 1 && ms.casterDotStacks.length > 0) break;
+    }
+    return {
+      slow: ms.player.slowFactor,
+      stacks: ms.casterDotStacks.length,
+      weakened: ms.time.now < ms.casterWeakenUntil,
+      alive: !ms.playerDead,
+    };
+  });
+  ok(
+    'dark-caster: a real bolt applies slow + weaken + a DoT stack to its target',
+    caster.slow < 1 && caster.stacks > 0 && caster.weakened && caster.alive,
+    `slow=${caster.slow} stacks=${caster.stacks} weakened=${caster.weakened}`,
+  );
 
   // 4) THE GATE: zero page errors across everything above.
   ok('zero page errors during boot + travel', pageErrors.length === 0, pageErrors.slice(0, 3).join(' | '));
