@@ -39,8 +39,23 @@ export const WORLD_CALIBRATION: Record<string, WorldCalibration> = {
     origin: { lat: 50.12, lng: -126.96 },
     pixelsPerDegree: { x: 2426, y: 2453 },
   },
+  // EUROPE — the Delphi-march region world. Same pixels-per-degree as NA for a
+  // consistent travel feel. Logical span ~50° lng × ~34° lat (Murmansk to
+  // Delphi, London to Moscow) — far too large for one dense tilemap, so this
+  // world is SPARSE/CHUNKED: only stamped zone areas materialize as their own
+  // small chunk layers; the empty span renders as cheap void fill. See
+  // createSparseWorld in world-builder.ts.
+  europe: {
+    origin: { lat: 71.0, lng: -8.0 },
+    pixelsPerDegree: { x: 2426, y: 2453 },
+  },
   // Future region worlds (e.g. the Egypt map) get their own row, derived the
   // same way from that world's existing landmarks.
+};
+
+/** Logical spans (degrees east / south of origin) for SPARSE region worlds. */
+export const WORLD_SPAN_DEGREES: Record<string, { lng: number; lat: number }> = {
+  europe: { lng: 50, lat: 34 },
 };
 
 /** Convert a real-world anchor to LOCAL pixels on its region world's map. */

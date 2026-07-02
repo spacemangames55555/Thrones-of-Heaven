@@ -44,6 +44,10 @@ export class QuestChain {
   /** Quests already announced as unlocked, to keep 'unlocked' events one-shot. */
   private announced = new Set<string>();
 
+  /** The player's class, for classRequirement-gated quests (null = none set:
+   *  class-gated quests stay locked — the conservative default). */
+  private playerClass: string | null = null;
+
   /** UI refresh hook (status / objective changed). */
   onChange?: () => void;
   /** Discrete lifecycle events. */
@@ -58,13 +62,27 @@ export class QuestChain {
     return this.quests.get(id);
   }
 
+  /** Set the player's class so classRequirement-gated quests can unlock. */
+  setPlayerClass(className: string | null): void {
+    this.playerClass = className ? className.toLowerCase() : null;
+    this.onChange?.();
+  }
+
   /** Derived status for one quest. */
   status(id: string): QuestChainStatus {
     if (this.completed.has(id)) return 'complete';
     if (this.activeId === id) return 'active';
     const def = this.quests.get(id);
     if (!def) return 'locked';
-    return def.prerequisites.every((p) => this.completed.has(p)) ? 'available' : 'locked';
+    // Class gate: a quest reserved for one class stays locked for every other.
+    if (def.classRequirement && def.classRequirement.toLowerCase() !== this.playerClass) return 'locked';
+    // Each prerequisite slot: a plain quest id, or an anyOf group where ANY ONE
+    // completed id satisfies the slot. Ids of quests that aren't registered are
+    // simply never in the completed set → the slot reads as UNMET (never a crash).
+    const met = def.prerequisites.every((p) =>
+      typeof p === 'string' ? this.completed.has(p) : p.anyOf.some((a) => this.completed.has(a)),
+    );
+    return met ? 'available' : 'locked';
   }
 
   get activeQuest(): QuestDef | null {

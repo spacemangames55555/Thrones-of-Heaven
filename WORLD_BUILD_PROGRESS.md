@@ -20,3 +20,31 @@ source of truth; `world-builder.ts` stamps zones into region worlds;
 - [x] **idaho-holy-outpost** — done (pre-existing, hand-built — do not regenerate or modify). The Idaho Holy Outpost exists at `HOLY_OUTPOST_POSITION` on the widened map, with the Azazel-patron Act IV quests (`act4-*`) already in `QUEST_REGISTRY`.
 - [x] **ascension-march** — done (pre-existing, hand-built — do not regenerate or modify). The Act IV march is the existing assault chain (`act4-draw-them-down` → `act4-the-door-home`) with its layered angel encounters on the Idaho approach.
 - [x] **heaven-portal-sawtooth** — done (pre-existing, hand-built — do not regenerate or modify). The corrupted Holy-Outpost portal machine + the `act4-heaven` mask-drop beat and the Enter Heaven crossing already exist.
+
+### Europe — the Delphi march (sparse `europe` world; stamp in manifest order, one atomic commit per zone)
+
+- [ ] **rome-eternal-seat** — pending
+- [ ] **campania-shadow** — pending
+- [ ] **apulia-eastern-dock** — pending
+- [ ] **epirus-landing** — pending
+- [ ] **thessaloniki-outpost** — pending
+- [ ] **thermopylae-pass** — pending
+- [ ] **delphi-sanctuary** — pending
+- [ ] **murmansk-bone-harbor** — pending
+- [ ] **karelia-lakes** — pending
+- [ ] **smolensk-gate** — pending
+- [ ] **moscow-crystal-court** — pending
+- [ ] **bryansk-woodland** — pending
+- [ ] **kyiv-river-gate** — pending
+- [ ] **carpathian-crossing** — pending
+- [ ] **munich-anvil-hold** — pending
+- [ ] **tyrol-forge-road** — pending
+- [ ] **alps-high-pass** — pending
+- [ ] **vienna-river-muster** — pending
+- [ ] **belgrade-iron-river** — pending
+- [ ] **vardar-corridor** — pending
+- [ ] **london-grey-chorus** — pending
+- [ ] **kent-passage** — pending
+- [ ] **calais-landing** — pending
+- [ ] **paris-veiled-lights** — pending
+- [ ] **burgundy-vintners-road** — pending

@@ -1,6 +1,16 @@
-import type { QuestDef, ObjectiveDef, ObjectiveTrigger } from '../quest/questData';
+import type { QuestDef, QuestPrerequisite, ObjectiveDef, ObjectiveTrigger } from '../quest/questData';
 import { QUEST_XP_REWARD } from '../game/settings';
 import type { Zone, QuestBeat, QuestArchetype } from './world-manifest';
+
+/** What a caller may pass as a zone's entry gate: nothing, one quest id, or a
+ *  full prerequisite list (spine-chains.ts entries — may contain anyOf groups). */
+export type ZoneEntryPrerequisite = string | readonly QuestPrerequisite[] | null;
+
+const normalizeEntry = (entry: ZoneEntryPrerequisite): readonly QuestPrerequisite[] =>
+  entry === null ? [] : typeof entry === 'string' ? [entry] : entry;
+
+/** The five classes eu-06-style class-variant callback beats script for. */
+const CALLBACK_CLASSES = ['bard', 'priest', 'blacksmith', 'mage', 'necromancer'] as const;
 
 /**
  * QUEST FACTORY (Phase 0). Turns a manifest Zone's questChain into REAL
@@ -66,16 +76,26 @@ function objectiveForBeat(beat: QuestBeat, handAuthored: boolean): ObjectiveDef 
   };
 }
 
-/** Build ONE beat as a real QuestDef, chained to `prerequisite`. */
-export function questForBeat(zone: Zone, beat: QuestBeat, prerequisite: string | null): QuestDef {
+/** Build ONE beat as a real QuestDef, chained to the given prerequisite slots. */
+export function questForBeat(zone: Zone, beat: QuestBeat, prerequisites: readonly QuestPrerequisite[]): QuestDef {
   const handAuthored = beat.handAuthored === true || zone.handAuthored === true;
   const line = handAuthored
     ? placeholderProse(beat.id) // HAND_AUTHORED_TODO: prose written by the designer later
     : `${zone.displayName}: ${beat.summary}`;
+  // CLASS-VARIANT CALLBACK beats (eu-06 pattern — the manifest summary flags
+  // them): scaffold one HAND_AUTHORED_TODO placeholder per class; the dialogue
+  // layer (questLinesFor) selects by class and falls back to the shared line.
+  const wantsClassVariants = handAuthored && beat.summary.includes('class-variant');
+  const classVariants = wantsClassVariants
+    ? Object.fromEntries(CALLBACK_CLASSES.map((c) => [c, [`HAND_AUTHORED_TODO: ${beat.id} (${c}) — designer prose goes here.`]]))
+    : undefined;
   return {
     id: beat.id,
     title: beat.title,
-    prerequisites: prerequisite ? [prerequisite] : [],
+    prerequisites,
+    // Home-city Act I chains only ever activate for their native class.
+    ...(zone.homeClass ? { classRequirement: zone.homeClass.toLowerCase() } : {}),
+    ...(classVariants ? { classVariants } : {}),
     // Generated zones have no NPC givers yet; like the existing climax quests,
     // beats auto-activate when their prerequisite completes (forward march).
     autoActivate: true,
@@ -99,13 +119,13 @@ export function questForBeat(zone: Zone, beat: QuestBeat, prerequisite: string |
  * @returns the defs plus the LAST beat's id — the caller passes that as the
  *   next zone's entryPrerequisite to continue the spine.
  */
-export function buildZoneQuests(zone: Zone, entryPrerequisite: string | null): { defs: QuestDef[]; exitQuestId: string | null } {
+export function buildZoneQuests(zone: Zone, entryPrerequisite: ZoneEntryPrerequisite): { defs: QuestDef[]; exitQuestId: string | null } {
   const defs: QuestDef[] = [];
-  let prev = entryPrerequisite;
+  let prev: readonly QuestPrerequisite[] = normalizeEntry(entryPrerequisite);
   for (const beat of zone.questChain) {
     const def = questForBeat(zone, beat, prev);
     defs.push(def);
-    prev = def.id;
+    prev = [def.id];
   }
   return { defs, exitQuestId: defs.length ? defs[defs.length - 1].id : null };
 }

@@ -41,6 +41,7 @@ import { latLngToPixels } from './world-calibration';
 export const CONTINENT_WORLD: Record<string, string> = {
   'North America': 'earth',
   Africa: 'egypt',
+  Europe: 'europe',
 };
 
 /** The region world id a zone stamps into (throws on an unmapped continent). */
@@ -64,6 +65,21 @@ export const BIOME_PLACEHOLDER_TILE: Record<string, string> = {
   'portal-threshold': 'holy_ground',
   desert: 'dune_sand',
   'river-valley': 'irrigated_field',
+  // Europe (all existing walkable atlas keys — gray-box stand-ins):
+  'urban-temperate': 'urban',
+  'mediterranean-coast': 'beach',
+  'frozen-coast': 'beach',
+  taiga: 'montane',
+  'mixed-forest': 'forest',
+  'steppe-river': 'steppe',
+  'carpathian-pass': 'pass',
+  alpine: 'scabland',
+  'danube-river': 'grassland',
+  'balkan-highland': 'foothills',
+  'chalk-coast': 'beach',
+  'lowland-farmland': 'farmland',
+  'urban-river': 'urban',
+  'vineyard-hills': 'farmland',
 };
 
 export function placeholderTileForBiome(biome: string): string {
@@ -215,16 +231,53 @@ export interface TileStamper {
   terrainIdForKey(key: string): number;
 }
 
+/**
+ * One materialized chunk of a SPARSE world: a small standalone tile rect that
+ * renders as its OWN layer at its offset (exactly how the nested city sub-maps
+ * already render), so the huge logical plane is never allocated densely.
+ */
+export interface ZoneChunkPlan {
+  zoneId: string;
+  /** Chunk rect in LOCAL pixels on the sparse world's logical plane. */
+  x: number;
+  y: number;
+  widthPx: number;
+  heightPx: number;
+  tileKey: string;
+}
+
 export interface RegionWorld {
   regionId: string;
   calibration: WorldCalibration;
   /** Plans for every zone stamped into this world so far (Phase 0: stays empty). */
   stamped: ZoneStampPlan[];
+  /**
+   * Present on SPARSE worlds — region worlds whose logical span is far too
+   * large for one dense tilemap (Europe ≈ 3,800 × 2,600 tiles ≈ 10M cells;
+   * the dense stitcher + a single TilemapLayer cannot carry that). Stamped
+   * zones materialize as independent chunk layers; the empty span between
+   * them renders as a cheap flat void/terrain fill (camera background).
+   */
+  sparse?: { boundsPx: { w: number; h: number }; chunks: ZoneChunkPlan[] };
 }
 
-/** Open a region-world build handle (one seamless tilemap per march region). */
+/** Open a DENSE region-world build handle (one seamless tilemap, like the
+ *  existing Washington world — fine up to roughly the WA map's ~900k tiles). */
 export function createWorld(regionId: string, calibration: WorldCalibration): RegionWorld {
   return { regionId, calibration, stamped: [] };
+}
+
+/** Open a SPARSE region-world build handle (chunked stamping; see RegionWorld.sparse). */
+export function createSparseWorld(
+  regionId: string,
+  calibration: WorldCalibration,
+  spanDegrees: { lng: number; lat: number },
+): RegionWorld {
+  const boundsPx = {
+    w: spanDegrees.lng * calibration.pixelsPerDegree.x,
+    h: spanDegrees.lat * calibration.pixelsPerDegree.y,
+  };
+  return { regionId, calibration, stamped: [], sparse: { boundsPx, chunks: [] } };
 }
 
 /**
@@ -238,6 +291,26 @@ export function stampZone(world: RegionWorld, zone: Zone, stamper?: TileStamper)
     throw new Error(`Zone '${zone.id}' belongs to world '${worldIdForZone(zone)}', not '${world.regionId}'`);
   }
   const plan = planZoneStamp(zone, world.calibration);
+
+  // SPARSE world: the zone materializes as its own CHUNK (small standalone
+  // rect rendered as an independent layer at its offset) instead of painting
+  // into one huge shared tilemap. Bounds-check against the logical span.
+  if (world.sparse) {
+    const margin = 8; // tiles of fringe around the ground patch
+    const half = (plan.patch.radiusTiles + margin) * TILE_SIZE;
+    const b = world.sparse.boundsPx;
+    if (plan.centerPx.x < 0 || plan.centerPx.y < 0 || plan.centerPx.x > b.w || plan.centerPx.y > b.h) {
+      throw new Error(`Zone '${zone.id}' anchor falls outside sparse world '${world.regionId}' bounds`);
+    }
+    world.sparse.chunks.push({
+      zoneId: zone.id,
+      x: plan.centerPx.x - half,
+      y: plan.centerPx.y - half,
+      widthPx: half * 2,
+      heightPx: half * 2,
+      tileKey: plan.patch.tileKey,
+    });
+  }
 
   if (stamper) {
     // Placeholder ground patch (gray-box biome tile).

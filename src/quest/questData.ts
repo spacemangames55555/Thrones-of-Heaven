@@ -237,11 +237,30 @@ export interface QuestReward {
   readonly holyPower?: number;
 }
 
+/**
+ * ONE prerequisite slot: a quest id, or an ANY-OF group where completing any
+ * single listed id satisfies the slot (used where two spine branches merge into
+ * one shared quest). An id that references a quest not yet registered simply
+ * reads as UNMET — never an error.
+ */
+export type QuestPrerequisite = string | { readonly anyOf: readonly string[] };
+
 export interface QuestDef {
   readonly id: string;
   readonly title: string;
-  /** Quest ids that must ALL be COMPLETE before this quest becomes available (empty = from start). */
-  readonly prerequisites: readonly string[];
+  /** Prerequisite slots that must ALL be satisfied before this quest becomes
+   *  available (empty = from start). Each slot is a quest id or an anyOf group. */
+  readonly prerequisites: readonly QuestPrerequisite[];
+  /** Optional: only this class may see/activate the quest (home-city Act I
+   *  chains). Compared case-insensitively; when the chain has no player class
+   *  set, class-gated quests stay locked. */
+  readonly classRequirement?: string;
+  /**
+   * Optional per-class dialogue variants: className (lowercase) → lines. Readers
+   * use {@link questLinesFor}, which falls back to the shared lines when the
+   * player's class has no entry.
+   */
+  readonly classVariants?: Readonly<Record<string, readonly string[]>>;
   /** If true, the giver only OFFERS this quest while the player is corrupted (the descent gate). */
   readonly requiresCorruption?: boolean;
   /**
@@ -269,6 +288,17 @@ export interface QuestDef {
 
   /** Only for the angel-forced opening quest: line shown if "Accept" is tapped, then re-offer. */
   readonly forcedAcceptLines?: readonly string[];
+}
+
+/**
+ * Resolve dialogue with the optional CLASS-VARIANT layer: if the quest defines
+ * `classVariants` and the player's class has an entry, those lines win;
+ * otherwise the shared lines passed in are returned unchanged. Every existing
+ * quest has no classVariants, so this is a strict pass-through for them.
+ */
+export function questLinesFor(def: QuestDef, shared: readonly string[], className: string | null): readonly string[] {
+  const variant = className ? def.classVariants?.[className.toLowerCase()] : undefined;
+  return variant ?? shared;
 }
 
 /**
