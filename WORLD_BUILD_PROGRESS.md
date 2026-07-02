@@ -25,7 +25,7 @@ source of truth; `world-builder.ts` stamps zones into region worlds;
 
 - [x] **rome-eternal-seat** — done. First zone through the runtime bridge (sparse europe world registered in-game, chunk layers, gates, quest composition). Chain class-gated to Priest (playtest via DEV Class Override). TODOs: rom-01, rom-03 prose. Also fixed a create()-crash from the class-announcement wiring (announced before the quest UI existed).
 - [x] **campania-shadow** — done. Corridor chunk (mediterranean-coast placeholder); Rome↔Campania gate pair verified with a real crossing; 3 beats chained off rom-04. Note: cam-02's region-champion (Spiritual) spawns via the boss beat when combat wiring ships — marker only today.
-- [ ] **apulia-eastern-dock** — pending
+- [x] **apulia-eastern-dock** — done. Corridor chunk with the Adriatic dock pad (bridge tiles); Campania↔Apulia gates verified. Its sea gate to Epirus arrives with epirus-landing's commit (both endpoints must be built).
 - [ ] **epirus-landing** — pending
 - [ ] **thessaloniki-outpost** — pending
 - [ ] **thermopylae-pass** — pending

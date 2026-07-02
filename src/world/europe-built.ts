@@ -12,6 +12,7 @@ import { buildZoneQuests } from './quest-factory';
 export const EUROPE_BUILT_ZONES: string[] = [
   'rome-eternal-seat',
   'campania-shadow',
+  'apulia-eastern-dock',
 ];
 
 /**
