@@ -193,7 +193,68 @@ try {
       brutes.found ? `packs=[${brutes.perPack.join(',')}]` : 'no brute zone found',
     );
 
-    // 3g. STATUS EFFECTS DON'T CROSS WORLDS: take a real tagged caster hit while
+    // 3g. REGION CHAMPION (the boss engine): warping to a boss beat spawns the
+    // zone's champion with the spec'd name, domain tint and tier-scaled stats
+    // (alp-01 = The Pass Warden: Physical red, tier 3 → 600·3² = 5400 HP).
+    const champ = await page.evaluate(async () => {
+      const ms = window.__game.scene.getScene('MainScene');
+      if (ms.playerDead) ms.respawnPlayer();
+      ms.playerHealth.full();
+      // God-mode shield for the champion checks: the BOSS is under test, not the
+      // player — a pack spike-kill would (correctly) reset the encounter and flake
+      // the check. Cleared automatically by the later world travel (clearDots).
+      ms.playerHealth.shield = 1e9;
+      ms.devJumpToQuest('alp-01-pass-warden');
+      ms.playerHealth.shield = 1e9; // re-arm past the jump's heal path
+      await new Promise((r) => setTimeout(r, 2600)); // travel fade + chunk activation + spawn
+      const b = ms.championBoss;
+      if (!b) return { spawned: false };
+      return { spawned: true, name: b.name, tint: b.def.sprite.tint, hp: b.health.max };
+    });
+    ok(
+      'champion: boss-beat warp spawns it with spec name + domain tint + tier stats',
+      champ.spawned && champ.name === 'The Pass Warden' && champ.tint === 0xe04a3a && champ.hp === 5400,
+      champ.spawned ? `name=${champ.name} tint=0x${champ.tint.toString(16)} hp=${champ.hp}` : 'no champion spawned',
+    );
+
+    // ...its ONE signature move (charge) fires within a bounded window once engaged...
+    const move = await page.evaluate(async () => {
+      const ms = window.__game.scene.getScene('MainScene');
+      const b = ms.championBoss;
+      if (!b) return { fired: false };
+      const anchor = ms.europeBossAnchors[ms.championZoneId];
+      ms.player.sprite.body.reset(anchor.x + 120, anchor.y); // inside activation, outside melee
+      const t0 = Date.now();
+      let fired = false;
+      while (Date.now() - t0 < 9000) {
+        ms.playerHealth.full();
+        ms.playerHealth.shield = 1e9;
+        if (b.pending || b.charge) {
+          fired = true;
+          break;
+        }
+        await new Promise((r) => setTimeout(r, 90));
+      }
+      return { fired, active: b.isActive };
+    });
+    ok('champion: signature move fires within a bounded window', move.fired && move.active, `fired=${move.fired} active=${move.active}`);
+
+    // ...and a programmatic defeat completes the boss beat.
+    const defeat = await page.evaluate(async () => {
+      const ms = window.__game.scene.getScene('MainScene');
+      const b = ms.championBoss;
+      if (!b) return { done: false };
+      b.takeHit(9999999);
+      await new Promise((r) => setTimeout(r, 800));
+      return { done: true, status: ms.chain.status('alp-01-pass-warden'), cleared: ms.championBoss === undefined };
+    });
+    ok(
+      'champion: programmatic defeat completes the boss beat',
+      defeat.done && defeat.status === 'complete' && defeat.cleared,
+      defeat.done ? `status=${defeat.status} cleared=${defeat.cleared}` : 'no champion to defeat',
+    );
+
+    // 3h. STATUS EFFECTS DON'T CROSS WORLDS: take a real tagged caster hit while
     // still in Europe (slow + weaken + an active DoT stack), then travel to Earth
     // — the player must ARRIVE with zero Europe debuffs (clearDots rides every
     // applyWorldSwap, the same path as reset/load/death).
@@ -229,7 +290,7 @@ try {
     console.log('info  no europe world registered — skipping Europe checks');
   }
 
-  // 3h. DARK-CASTER: a REAL bolt from a live caster lands and applies its full
+  // 3i. DARK-CASTER: a REAL bolt from a live caster lands and applies its full
   // debuff set (move slow + incoming-damage weaken + a stacking-DoT stack).
   // Runs on Earth (the caster is a world-agnostic angel variant).
   const caster = await page.evaluate(async () => {
