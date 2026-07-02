@@ -47,7 +47,7 @@ source of truth; `world-builder.ts` stamps zones into region worlds;
 - [x] **moscow-crystal-court** — done. MAGE home city (per canon, Mage ≠ Wizard — this chain stays locked for Egypt's Wizard class and unlocks only for the future Mage). Gates to Smolensk; Bryansk link arrives next. TODOs: mos-01, mos-03 prose.
 - [x] **bryansk-woodland** — done. Mixed-forest corridor; gates to Moscow — the Mage spine now flows Moscow→Bryansk. Kyiv link (and the smo/bry anyOf merge) arrives with kyiv-river-gate next batch. bry-02 is loop-authored story (no TODO).
 - [x] **kyiv-river-gate** — done. Steppe-river city; the EASTERN MERGE is live — its entry anyOf(bry-02, smo-02) means either Russian road unlocks it, and it gates both ways to Bryansk AND Smolensk. kyi-01's region-champion (Mental) is a marker until combat wiring.
-- [ ] **carpathian-crossing** — pending
+- [x] **carpathian-crossing** — done. Carpathian-pass corridor; gates to Kyiv (Belgrade link arrives with its zone). The eastern trunk now runs Murmansk/Moscow→Kyiv→Carpathians.
 - [ ] **munich-anvil-hold** — pending
 - [ ] **tyrol-forge-road** — pending
 - [ ] **alps-high-pass** — pending
