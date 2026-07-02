@@ -19,6 +19,7 @@ export const EUROPE_BUILT_ZONES: string[] = [
   'delphi-sanctuary',
   'murmansk-bone-harbor',
   'karelia-lakes',
+  'smolensk-gate',
 ];
 
 /**
