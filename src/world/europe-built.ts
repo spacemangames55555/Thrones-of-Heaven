@@ -32,6 +32,7 @@ export const EUROPE_BUILT_ZONES: string[] = [
   'vardar-corridor',
   'london-grey-chorus',
   'kent-passage',
+  'calais-landing',
 ];
 
 /**

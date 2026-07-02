@@ -56,6 +56,6 @@ source of truth; `world-builder.ts` stamps zones into region worlds;
 - [x] **vardar-corridor** — done. Balkan-highland corridor; Belgrade↔Vardar↔Thessaloniki gates close the LAST link of the march trunk — var-02 (Thessaloniki's primary anyOf arm) is now earnable in-world. The eastern/central spines reach Azazel's muster on foot.
 - [x] **london-grey-chorus** — done. BARD home city (class unbuilt — chain locked until Bard ships or the dev override). Isolated until kent-passage. TODOs: lon-01, lon-03 prose.
 - [x] **kent-passage** — done. Chalk-coast corridor; London↔Kent gates. Its Channel dock activates with calais-landing (next).
-- [ ] **calais-landing** — pending
+- [x] **calais-landing** — done. The CHANNEL CROSSING is live — "Sail to…" dock gates both directions between Kent and Calais (the region's second sea gate).
 - [ ] **paris-veiled-lights** — pending
 - [ ] **burgundy-vintners-road** — pending
