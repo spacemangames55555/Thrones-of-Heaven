@@ -36,9 +36,16 @@ import { SAVE_VERSION, type SaveData } from '../save/SaveData';
 import { PortalDefense } from '../encounter/PortalDefense';
 import { buildHeavenMapData, HEAVEN_WIDTH, HEAVEN_HEIGHT, HEAVEN_CHERUB_SPAWNS, THRONE_POSITION } from '../map/heavenWorld';
 import { buildHellMapData, HELL_WIDTH, HELL_HEIGHT, HELL_DEMON_SPAWNS, SATAN_LAIR } from '../map/hellWorld';
-import { WORLD_EARTH, WORLD_HEAVEN, WORLD_HELL, WORLD_EGYPT, type WorldId, type WorldRuntime } from '../world/worlds';
+import { WORLD_EARTH, WORLD_HEAVEN, WORLD_HELL, WORLD_EGYPT, WORLD_EUROPE, type WorldId, type WorldRuntime, type WorldMapLike } from '../world/worlds';
 import { CITY_DEFS, CITY_FAIYUM, type CityDef } from '../world/cities';
 import { MANIFEST_CLASS_FOR, KNOWN_CLASS_NAMES } from '../world/class-canon';
+import { SparseWorldMap } from '../map/SparseWorldMap';
+import { WORLD_CALIBRATION, WORLD_SPAN_DEGREES } from '../world/world-calibration';
+import { createSparseWorld, stampZone, buildChunkMapData, type BuiltChunk } from '../world/world-builder';
+import { getZone } from '../world/world-manifest';
+import { EUROPE_BUILT_ZONES, buildEuropeQuestDefs } from '../world/europe-built';
+import { appendToRegistry } from '../world/quest-factory';
+import { ENEMY_ROSTER, DOMAIN_TINT } from '../world/enemy-roster';
 import { ProjectileSystem } from '../combat/ProjectileSystem';
 import { FloatingTextPool, CircleFxPool } from '../combat/FxPools';
 import { HazardField } from '../combat/HazardField';
@@ -693,6 +700,14 @@ export class MainScene extends Phaser.Scene {
   private cityGateAction: (() => void) | null = null;
   /** DEV: overrides the class announced to the quest chain (null = real class). */
   private devClassOverride: string | null = null;
+
+  // EUROPE — the sparse region world (chunked; see SparseWorldMap). Chunks are
+  // small standalone GameMaps; the void between them is walkable background.
+  private europeMap?: SparseWorldMap;
+  private europeColliders: Phaser.Physics.Arcade.Collider[] = [];
+  private europeGates: { x: number; y: number; label: string; dest: { x: number; y: number } }[] = [];
+  /** Where the NEXT world east goes (advanced by setupCities/setupEurope). */
+  private nextWorldOriginX = 0;
   // DEV "Test City Arrow": a fake objective target exercising the hierarchical
   // gate-waypoint chaining (0 off, 1 the mill inside, 2 a spot outside).
   private devArrowState = 0;
@@ -1069,10 +1084,16 @@ export class MainScene extends Phaser.Scene {
     // in the worldFx layer, so the main camera draws it and the UI camera ignores
     // it. Quest-givers: which NPC offers which quest ids (it offers the available
     // one); idleLines play when it has nothing to give.
-    this.chain = new QuestChain(QUEST_REGISTRY);
+    // The LIVE registry = the hand-authored chain (untouched) + the generated
+    // quests of every BUILT Europe zone appended after it (pure composition;
+    // ids are collision-guarded, unbuilt prerequisites read as UNMET).
+    this.chain = new QuestChain(appendToRegistry(QUEST_REGISTRY, buildEuropeQuestDefs()));
+    // Announce the class BEFORE hooking onChange: the quest UI (tracker) doesn't
+    // exist yet, and setPlayerClass fires onChange (this crashed create() when
+    // announced after the hookup — refreshQuestUi touched the not-yet-built HUD).
+    this.announcePlayerClass(); // classRequirement-gated quests unlock for this class
     this.chain.onChange = () => this.refreshQuestUi();
     this.chain.onEvent = (e) => this.handleQuestEvent(e);
-    this.announcePlayerClass(); // classRequirement-gated quests unlock for this class
     this.oregonSpirit = this.spirit.entities.find((e) => e.id === OREGON_SPIRIT_ID);
     // Quest-givers: the four Act I NPCs give the Enumclaw opening (one quest each,
     // unlocked in order by prerequisite); the home NPC gives the corruption beat
@@ -4060,7 +4081,7 @@ export class MainScene extends Phaser.Scene {
   // --- Heaven's Defenders: the Cherub / Cherubim ----------------------------
 
   /** The active world's map (Earth or Heaven) — for terrain-aware drops/queries. */
-  private activeMap(): GameMap {
+  private activeMap(): WorldMapLike {
     return this.worlds[this.activeWorld]?.map ?? this.map;
   }
 
@@ -5638,6 +5659,89 @@ export class MainScene extends Phaser.Scene {
       this.egyptArrivalPos.y = faiyum.outsideArrival.y;
       this.worldPos[WORLD_EGYPT] = { ...faiyum.outsideArrival };
     }
+
+    // EUROPE — the sparse region world (built zones only; chains further east).
+    this.setupEurope();
+  }
+
+  // --- Europe: the SPARSE region world (chunked stamping) ----------------------
+  //
+  // Each BUILT zone (EUROPE_BUILT_ZONES) materializes as its own small chunk
+  // GameMap at its calibrated offset inside one shared 'europe' coordinate
+  // space; the span between chunks is cheap walkable void. Transitions from
+  // connectsTo present as proximity GATES (dock/boat labels for seaGates) that
+  // fade-travel within the world — real content between zones comes later.
+
+  private setupEurope(): void {
+    if (EUROPE_BUILT_ZONES.length === 0) return;
+    const cal = WORLD_CALIBRATION[WORLD_EUROPE];
+    const span = WORLD_SPAN_DEGREES[WORLD_EUROPE];
+    const origin = { x: this.nextWorldOriginX, y: 0 };
+    const rw = createSparseWorld(WORLD_EUROPE, cal, span);
+
+    const chunkMaps: GameMap[] = [];
+    const built = new Map<string, { chunk: BuiltChunk; map: GameMap }>();
+    for (const id of EUROPE_BUILT_ZONES) {
+      const zone = getZone(id);
+      if (!zone) throw new Error(`Europe built list names unknown zone '${id}'`);
+      const plan = stampZone(rw, zone); // validates bounds + records the chunk
+      const chunk = buildChunkMapData(zone, plan, cal);
+      const map = new GameMap(this, chunk.data, [], { x: origin.x + chunk.originLocalPx.x, y: origin.y + chunk.originLocalPx.y }, { forceCpuLayer: true });
+      new CityMarkers(this, map); // the zone nameplate at its center
+      const collider = this.physics.add.collider(this.player.sprite, map.layer);
+      collider.active = false;
+      this.europeColliders.push(collider);
+      chunkMaps.push(map);
+      built.set(id, { chunk, map });
+
+      // Spawn markers (visual placeholders): one tinted disc per enemy family.
+      for (const m of plan.spawnMarkers) {
+        const domain = ENEMY_ROSTER[m.enemyFamily]?.domain;
+        const tint = domain ? DOMAIN_TINT[domain] : 0x9aa0a8; // neutral for pre-existing families
+        const mx = origin.x + m.x;
+        const my = origin.y + m.y;
+        this.add.circle(mx, my, 10, tint, 0.85).setDepth(6);
+        this.addHeavenLabel(mx, my - 16, m.enemyFamily, '#cfd6e0');
+      }
+    }
+
+    // Gates (second pass — both endpoints must be BUILT): the pad on A's edge
+    // toward B travels to B's pad toward A, nudged toward B's center.
+    for (const [id, { chunk }] of built) {
+      for (const g of chunk.gates) {
+        const other = built.get(g.toZoneId);
+        if (!other) continue; // neighbor not built yet — its gate arrives with its zone
+        const back = other.chunk.gates.find((og) => og.toZoneId === id);
+        const landing = back ?? { localPx: other.chunk.arrivalLocalPx };
+        const toC = other.chunk.centerLocalPx;
+        const dx = toC.x - landing.localPx.x;
+        const dy = toC.y - landing.localPx.y;
+        const len = Math.hypot(dx, dy) || 1;
+        const dest = {
+          x: origin.x + landing.localPx.x + (dx / len) * 64,
+          y: origin.y + landing.localPx.y + (dy / len) * 64,
+        };
+        const name = getZone(g.toZoneId)?.displayName ?? g.toZoneId;
+        const label = g.kind === 'sea-dock' ? `Sail to ${name}` : `Cross to ${name}`;
+        const gx = origin.x + g.localPx.x;
+        const gy = origin.y + g.localPx.y;
+        this.europeGates.push({ x: gx, y: gy, label, dest });
+        this.addHeavenLabel(gx, gy - 24, g.kind === 'sea-dock' ? `⚓ ${name}` : `→ ${name}`, '#ffe9a8');
+      }
+    }
+
+    // Register the world: arrival at the FIRST built zone's settlement (Rome).
+    const first = built.get(EUROPE_BUILT_ZONES[0])!;
+    const arrival = first.map.nearestWalkableWorld(origin.x + first.chunk.arrivalLocalPx.x, origin.y + first.chunk.arrivalLocalPx.y);
+    this.europeMap = new SparseWorldMap(origin, rw.sparse!.boundsPx, chunkMaps, () => ({ x: this.player.x, y: this.player.y }));
+    this.worlds[WORLD_EUROPE] = {
+      id: WORLD_EUROPE,
+      map: this.europeMap,
+      collider: this.europeColliders[0],
+      defaultArrival: arrival,
+    };
+    this.worldPos[WORLD_EUROPE] = { ...arrival };
+    this.nextWorldOriginX = origin.x + rw.sparse!.boundsPx.w + HEAVEN_WORLD_GAP;
   }
 
   // --- NESTED CITIES: the generic city sub-map system --------------------------
@@ -5652,6 +5756,8 @@ export class MainScene extends Phaser.Scene {
     for (const def of CITY_DEFS) {
       const parent = this.worlds[def.parentWorld]?.map;
       if (!parent) throw new Error(`City '${def.id}' registered before its parent world '${def.parentWorld}'`);
+      // Entrance stamps paint tiles — only DENSE (GameMap) parents support that.
+      if (!(parent instanceof GameMap)) throw new Error(`City '${def.id}': parent world '${def.parentWorld}' is not a dense map`);
 
       const cityMap = new GameMap(this, def.buildMap(), [], { x: originX, y: 0 }, { forceCpuLayer: true });
       originX += cityMap.pixelWidth + HEAVEN_WORLD_GAP;
@@ -5672,6 +5778,7 @@ export class MainScene extends Phaser.Scene {
       this.worldPos[def.id] = { ...insideArrival };
       this.cityRuntimes[def.id] = { def, map: cityMap, entrancePos, outsideArrival, insideArrival, gatePos };
     }
+    this.nextWorldOriginX = originX; // the next world east (Europe) starts here
   }
 
   /** Paint a city's walled-settlement stamp onto its parent map; returns the
@@ -5726,6 +5833,16 @@ export class MainScene extends Phaser.Scene {
           if (d <= CITY_GATE_RANGE) {
             show = { label: `Enter ${c.def.displayName}`, action: () => this.enterCity(id) };
             break;
+          }
+        }
+        // Europe zone-transition gates (Cross to… / Sail to…) share the slot.
+        if (!show && this.activeWorld === WORLD_EUROPE) {
+          for (const g of this.europeGates) {
+            const d = Phaser.Math.Distance.Between(this.player.x, this.player.y, g.x, g.y);
+            if (d <= CITY_GATE_RANGE) {
+              show = { label: g.label, action: () => this.travelToWorld(WORLD_EUROPE, g.dest, CITY_TRANSITION_MS) };
+              break;
+            }
           }
         }
       }
@@ -6455,8 +6572,10 @@ export class MainScene extends Phaser.Scene {
     this.activeWorld = worldId;
     const w = this.worlds[worldId];
 
-    // Only the active world's terrain collider is live.
+    // Only the active world's terrain collider is live. Europe (sparse) has one
+    // collider PER CHUNK — all of them follow the world's active state.
     for (const id of Object.keys(this.worlds)) this.worlds[id].collider.active = id === worldId;
+    for (const c of this.europeColliders) c.active = worldId === WORLD_EUROPE;
 
     // Bounds, camera, zoom all re-pointed at the active world.
     const b = w.map.bounds;
@@ -6543,6 +6662,12 @@ export class MainScene extends Phaser.Scene {
   private devTravelEarth(): void {
     if (this.activeWorld !== WORLD_EARTH) this.travelToWorld(WORLD_EARTH, this.worlds[WORLD_EARTH].defaultArrival);
   }
+  /** DEV: travel to Europe's first built zone (Rome) — works from anywhere. */
+  private devTravelEurope(): void {
+    const w = this.worlds[WORLD_EUROPE];
+    if (w) this.travelToWorld(WORLD_EUROPE, w.defaultArrival);
+  }
+
   /** DEV: travel to the Mount Sinai approach valley (Egypt's south-east Sinai). */
   private devTravelMtSinai(): void {
     const city = this.egyptMap.cities.find((c) => c.name.startsWith('Mount Sinai'));
@@ -7884,6 +8009,7 @@ export class MainScene extends Phaser.Scene {
       { label: 'Travel: Egypt', onPress: () => this.devTravelEgypt() },
       { label: 'Travel: Earth', onPress: () => this.devTravelEarth() },
       { label: 'Travel: Mt Sinai', onPress: () => this.devTravelMtSinai() },
+      { label: 'Travel: Europe (Rome)', onPress: () => this.devTravelEurope() },
       { label: 'Test City Arrow (cycle)', onPress: () => this.devCycleCityArrowTest() },
       { label: 'Complete Active Quest', onPress: () => this.chain.completeActive() },
       { label: 'Reset All Quests', onPress: () => this.devResetQuests() },
@@ -8142,7 +8268,9 @@ export class MainScene extends Phaser.Scene {
     while (guard++ < 32) {
       if (!this.chain.activeQuest) {
         // (1) Start the next available auto-activate quest, if any.
-        const next = QUEST_REGISTRY.find((d) => d.autoActivate && this.chain.status(d.id) === 'available');
+        // Scan the CHAIN's registry (hand-authored + composed Europe quests), not
+        // the base constant — same order/behavior for all existing content.
+        const next = this.chain.firstAvailableAuto();
         if (!next) break;
         this.acceptQuest(next.id);
       }
@@ -8179,7 +8307,7 @@ export class MainScene extends Phaser.Scene {
    *  update() — doors, interactions, arcs, angels, townsfolk. Nested CITIES are
    *  terrestrial too (their NPCs/doors work like any ground world). */
   private isTerrestrial(w: WorldId): boolean {
-    return w === WORLD_EARTH || w === WORLD_EGYPT || !!this.cityRuntimes[w];
+    return w === WORLD_EARTH || w === WORLD_EGYPT || w === WORLD_EUROPE || !!this.cityRuntimes[w];
   }
 
   /** Position the world marker on the current target and update the edge arrow. */

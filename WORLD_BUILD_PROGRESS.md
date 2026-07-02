@@ -23,7 +23,7 @@ source of truth; `world-builder.ts` stamps zones into region worlds;
 
 ### Europe — the Delphi march (sparse `europe` world; stamp in manifest order, one atomic commit per zone)
 
-- [ ] **rome-eternal-seat** — pending
+- [x] **rome-eternal-seat** — done. First zone through the runtime bridge (sparse europe world registered in-game, chunk layers, gates, quest composition). Chain class-gated to Priest (playtest via DEV Class Override). TODOs: rom-01, rom-03 prose. Also fixed a create()-crash from the class-announcement wiring (announced before the quest UI existed).
 - [ ] **campania-shadow** — pending
 - [ ] **apulia-eastern-dock** — pending
 - [ ] **epirus-landing** — pending

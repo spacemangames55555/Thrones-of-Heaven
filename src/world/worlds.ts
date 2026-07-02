@@ -1,4 +1,4 @@
-import type { GameMap } from '../map/GameMap';
+import type { TerrainType, CityMarker } from '../map/mapTypes';
 
 /**
  * Multi-world support. A WORLD is a separate map with its own tile data and
@@ -13,11 +13,30 @@ export const WORLD_EARTH: WorldId = 'earth';
 export const WORLD_HEAVEN: WorldId = 'heaven';
 export const WORLD_HELL: WorldId = 'hell';
 export const WORLD_EGYPT: WorldId = 'egypt';
+export const WORLD_EUROPE: WorldId = 'europe';
+
+/**
+ * The map surface a registered world must provide — everything world-agnostic
+ * code (world swap, readout, spawns, gates) actually calls. GameMap satisfies
+ * this structurally; SPARSE worlds (Europe) satisfy it with a chunked wrapper
+ * (SparseWorldMap) instead of one dense tilemap.
+ */
+export interface WorldMapLike {
+  readonly bounds: { x: number; y: number; width: number; height: number };
+  readonly tileSize: number;
+  /** The tile layer new spawns collide with (sparse worlds: the chunk under/nearest the player). */
+  readonly layer: Phaser.Tilemaps.TilemapLayerBase;
+  readonly cities: CityMarker[];
+  nearestCity(worldX: number, worldY: number): { city: CityMarker; distanceTiles: number };
+  terrainAtWorld(worldX: number, worldY: number): TerrainType | null;
+  isBlockedAtWorld(worldX: number, worldY: number): boolean;
+  nearestWalkableWorld(worldX: number, worldY: number, maxTiles?: number): { x: number; y: number };
+}
 
 /** A built, registered world: its map plus where to drop the player by default. */
 export interface WorldRuntime {
   readonly id: WorldId;
-  readonly map: GameMap;
+  readonly map: WorldMapLike;
   /** Player-vs-terrain collider for this world (toggled active with the world). */
   readonly collider: Phaser.Physics.Arcade.Collider;
   /** Fallback arrival point (world coords) when no remembered position exists. */

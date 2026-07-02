@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import type { GameMap } from '../map/GameMap';
+import type { WorldMapLike } from '../world/worlds';
 import type { Player } from '../entities/Player';
 import { getInsets, UI_MARGIN } from './uiLayout';
 
@@ -12,10 +12,10 @@ import { getInsets, UI_MARGIN } from './uiLayout';
 export class DebugReadout {
   private readonly scene: Phaser.Scene;
   private readonly text: Phaser.GameObjects.Text;
-  private readonly getMap: () => GameMap;
+  private readonly getMap: () => WorldMapLike;
   private readonly player: Player;
 
-  constructor(scene: Phaser.Scene, getMap: () => GameMap, player: Player) {
+  constructor(scene: Phaser.Scene, getMap: () => WorldMapLike, player: Player) {
     this.scene = scene;
     this.getMap = getMap;
     this.player = player;

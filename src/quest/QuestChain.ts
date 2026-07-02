@@ -105,6 +105,16 @@ export class QuestChain {
     return null;
   }
 
+  /** The first quest in registry order that is autoActivate and AVAILABLE now
+   *  (the climax-activation scan — covers composed/generated quests too). */
+  firstAvailableAuto(): QuestDef | null {
+    for (const id of this.order) {
+      const d = this.quests.get(id);
+      if (d?.autoActivate && this.status(id) === 'available') return d;
+    }
+    return null;
+  }
+
   /**
    * Accept an available quest → active (one active at a time). Returns false if a
    * quest is already active or this one isn't available.
