@@ -33,6 +33,7 @@ export const EUROPE_BUILT_ZONES: string[] = [
   'london-grey-chorus',
   'kent-passage',
   'calais-landing',
+  'paris-veiled-lights',
 ];
 
 /**

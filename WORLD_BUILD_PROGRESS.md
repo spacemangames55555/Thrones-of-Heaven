@@ -57,5 +57,5 @@ source of truth; `world-builder.ts` stamps zones into region worlds;
 - [x] **london-grey-chorus** — done. BARD home city (class unbuilt — chain locked until Bard ships or the dev override). Isolated until kent-passage. TODOs: lon-01, lon-03 prose.
 - [x] **kent-passage** — done. Chalk-coast corridor; London↔Kent gates. Its Channel dock activates with calais-landing (next).
 - [x] **calais-landing** — done. The CHANNEL CROSSING is live — "Sail to…" dock gates both directions between Kent and Calais (the region's second sea gate).
-- [ ] **paris-veiled-lights** — pending
+- [x] **paris-veiled-lights** — done. Urban-river city; Calais↔Paris gates. par-01 is loop-authored story (no TODO — its summary is the intent line).
 - [ ] **burgundy-vintners-road** — pending
