@@ -24,6 +24,9 @@ export class Player {
   readonly sprite: Phaser.Physics.Arcade.Sprite;
   /** Move-speed multiplier (1 = base). Skill passives/buffs + class base speed set this. */
   speedMultiplier = 1;
+  /** HOSTILE slow (1 = none). Multiplied on top of speedMultiplier so enemy slows
+   *  (dark-caster bolts) compose with — and never clobber — skill/class speed math. */
+  slowFactor = 1;
 
   constructor(scene: Phaser.Scene, x: number, y: number, classId: string = 'blacksmith') {
     Player.ensureTexture(scene);
@@ -58,7 +61,7 @@ export class Player {
       this.facingX = x;
       this.facingY = y;
     }
-    const s = RUN_SPEED * this.speedMultiplier;
+    const s = RUN_SPEED * this.speedMultiplier * this.slowFactor;
     this.sprite.setVelocity(x * s, y * s);
   }
 

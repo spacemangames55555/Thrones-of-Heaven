@@ -35,12 +35,21 @@ export class Townsfolk {
   onHitPortal?: () => void;
   onHitPlayer?: () => void;
 
-  private readonly speed = TOWNSFOLK_MOVE_TILES_PER_SEC * TILE_SIZE;
+  private readonly speed: number;
+  private readonly cooldownMs: number;
+  /** Max turn rate (rad/sec); Infinity = the classic instant snap toward the target. */
+  private readonly turnRadPerSec: number;
   private readonly tint: number;
   private nextAttackAt = 0;
   private dead = false;
   /** Fixed target point; null means target the player directly. */
   private targetPoint: { x: number; y: number } | null = null;
+  /** While time < holdUntil the body is planted (still hittable) — the brute's
+   *  telegraphed-windup freeze, set by the scene. 0 = never held. */
+  holdUntil = 0;
+  /** Current heading (rad) for turn-rate-limited variants. */
+  private heading: number | null = null;
+  private lastUpdateTime = 0;
 
   constructor(scene: Phaser.Scene, x: number, y: number, variant: TownsfolkVariant = 'townsperson') {
     this.id = `townsfolk-${NEXT_ID++}`;
@@ -48,6 +57,9 @@ export class Townsfolk {
     const cfg = TOWNSFOLK_VARIANTS[variant];
     this.xpReward = cfg.xpReward;
     this.tint = cfg.color;
+    this.speed = (cfg.moveTilesPerSec ?? TOWNSFOLK_MOVE_TILES_PER_SEC) * TILE_SIZE;
+    this.cooldownMs = cfg.attackCooldownMs ?? TOWNSFOLK_ATTACK_COOLDOWN_MS;
+    this.turnRadPerSec = cfg.turnRadPerSec ?? Infinity;
     Townsfolk.ensureTexture(scene);
     this.sprite = scene.physics.add.sprite(x, y, TEXTURE_KEY).setDepth(9);
     if (this.tint !== 0xffffff) this.sprite.setTint(this.tint);
@@ -98,6 +110,14 @@ export class Townsfolk {
   update(playerX: number, playerY: number, time: number): void {
     if (this.dead) return;
     const body = this.sprite.body as Phaser.Physics.Arcade.Body;
+    const dt = this.lastUpdateTime > 0 ? Math.min(0.1, (time - this.lastUpdateTime) / 1000) : 0.016;
+    this.lastUpdateTime = time;
+    // Windup hold (the brute's telegraph): planted in place, still hittable.
+    if (time < this.holdUntil) {
+      body.velocity.set(0, 0);
+      this.sprite.setFlipX(playerX < this.sprite.x);
+      return;
+    }
     const tx = this.targetPoint ? this.targetPoint.x : playerX;
     const ty = this.targetPoint ? this.targetPoint.y : playerY;
     const dPlayer = this.distanceTo(playerX, playerY);
@@ -112,20 +132,25 @@ export class Townsfolk {
       body.velocity.set(0, 0);
       this.sprite.setFlipX(playerX < this.sprite.x);
       if (time >= this.nextAttackAt) {
-        this.nextAttackAt = time + TOWNSFOLK_ATTACK_COOLDOWN_MS;
+        this.nextAttackAt = time + this.cooldownMs;
         this.onHitPlayer?.();
       }
     } else if (this.targetPoint && this.distanceTo(tx, ty) <= PORTAL_ATTACK_RANGE) {
       body.velocity.set(0, 0);
       this.sprite.setFlipX(tx < this.sprite.x);
       if (time >= this.nextAttackAt) {
-        this.nextAttackAt = time + TOWNSFOLK_ATTACK_COOLDOWN_MS;
+        this.nextAttackAt = time + this.cooldownMs;
         this.onHitPortal?.();
       }
     } else {
-      const a = Phaser.Math.Angle.Between(this.sprite.x, this.sprite.y, tx, ty);
+      const desired = Phaser.Math.Angle.Between(this.sprite.x, this.sprite.y, tx, ty);
+      // Turn-rate-limited variants (the brute) rotate their heading toward the
+      // target; everyone else keeps the classic instant snap.
+      const a = Number.isFinite(this.turnRadPerSec)
+        ? (this.heading = Phaser.Math.Angle.RotateTo(this.heading ?? desired, desired, this.turnRadPerSec * dt))
+        : desired;
       body.velocity.set(Math.cos(a) * this.speed, Math.sin(a) * this.speed);
-      this.sprite.setFlipX(tx < this.sprite.x);
+      this.sprite.setFlipX(Math.cos(a) < 0);
     }
   }
 

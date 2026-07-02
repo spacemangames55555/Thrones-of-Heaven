@@ -277,6 +277,21 @@ import {
   EUROPE_ENEMY_CAP,
   EUROPE_CLEAR_KILLS,
   EUROPE_HARVEST_KILLS,
+  CASTER_SLOW_MS,
+  CASTER_SLOW_FACTOR,
+  CASTER_WEAKEN_MS,
+  CASTER_WEAKEN_INCOMING,
+  CASTER_DOT_TICK_DAMAGE,
+  CASTER_DOT_TICK_MS,
+  CASTER_DOT_STACK_MS,
+  CASTER_DOT_MAX_STACKS,
+  AMBUSHER_TRIGGER_RADIUS,
+  AMBUSHER_BURST_MS,
+  BRUTE_TELEGRAPH_MS,
+  BRUTE_STRIKE_RADIUS,
+  BRUTE_STRIKE_DAMAGE,
+  BRUTE_HP_PER_TIER,
+  BRUTE_PACK_CAP,
   HOLY_TINT,
   HOLY_SLASH_COLOR,
   HOLY_DASH_COLOR,
@@ -734,6 +749,25 @@ export class MainScene extends Phaser.Scene {
   }[] = [];
   /** Kill progress per ACTIVE europe beat id (clear + eu-10 harvest counters). */
   private europeKillCounts: Record<string, number> = {};
+  // VEIL-AMBUSHERS: the hidden/reveal/burst/re-hide state machine. HIDDEN ambushers
+  // are invisible, physics-disabled and NOT in this.townsfolk — so the aggro
+  // hierarchy, taunts, pulls and every player hit path can't touch them pre-reveal.
+  private europeAmbushers: {
+    zoneId: string;
+    t: Townsfolk;
+    home: { x: number; y: number };
+    state: 'hidden' | 'burst';
+    burstEndsAt: number;
+  }[] = [];
+  /** DORMANT escort-proximity hook (Prompt D, the escort run, activates it): while
+   *  set, hidden ambushers ALSO reveal when the escort target nears their marker. */
+  private ambusherEscortTarget: { x: number; y: number } | null = null;
+  // DARK-CASTER on-hit debuffs on the PLAYER (reusing the existing slow/weaken
+  // models + the stacking-DoT shape; resolved per-frame in updateControlEffects).
+  private casterSlowUntil = 0;
+  private casterWeakenUntil = 0;
+  private casterDotStacks: number[] = []; // per-stack expiry times
+  private casterDotNextTickAt = 0;
   /** quest id → its manifest zone + beat (built once, lazily). */
   private europeBeatIndex?: Map<string, { zone: ManifestZone; beat: QuestBeat }>;
   /** Where the NEXT world east goes (advanced by setupCities/setupEurope). */
@@ -1009,7 +1043,7 @@ export class MainScene extends Phaser.Scene {
     // The reusable projectile system draws bolts into the world-FX layer (so the
     // UI camera ignores them). Enemy bolts damage the player; impacts spawn a poof.
     this.projectiles = new ProjectileSystem(this, this.map, this.worldFx);
-    this.projectiles.onPlayerHit = (dmg) => this.onProjectileHitPlayer(dmg);
+    this.projectiles.onPlayerHit = (dmg, tag) => this.onProjectileHitPlayer(dmg, tag);
     this.projectiles.onEnemyHit = (x, y, radius, dmg, hitSet) => this.resolveHolyBoltHit(x, y, radius, dmg, hitSet);
     this.projectiles.onImpact = (x, y, color) => this.spawnBoltImpact(x, y, color);
     // Splash bolts (Wizard's Combust + storm-empowered bolts) burst into an AoE on impact.
@@ -2752,6 +2786,12 @@ export class MainScene extends Phaser.Scene {
     this.dots = [];
     this.poisonWeakenUntil = 0;
     this.poisonWeakenFactor = 0;
+    // Hostile (dark-caster) debuffs on the player never survive a reset/load/death.
+    this.casterSlowUntil = 0;
+    this.casterWeakenUntil = 0;
+    this.casterDotStacks = [];
+    this.casterDotNextTickAt = 0;
+    if (this.player) this.player.slowFactor = 1;
     this.shieldUntil = 0;
     this.ankhArmedUntil = 0;
     if (this.playerHealth) this.playerHealth.shield = 0;
@@ -3457,8 +3497,26 @@ export class MainScene extends Phaser.Scene {
     if (this.time.now < this.intimidateWeakenUntil) weaken = Math.max(weaken, this.intimidateWeakenFactor);
     // Timed Ice/Poison weaken (Frostbite / Freezing Rain / Pestilence).
     if (this.time.now < this.poisonWeakenUntil) weaken = Math.max(weaken, this.poisonWeakenFactor);
-    // Apply: incoming = base × (1 - weaken).
-    if (this.playerHealth) this.playerHealth.incomingMultiplier = this.baseIncomingMult * (1 - weaken);
+    // HOSTILE debuffs on the PLAYER (dark-caster bolts): a move slow, a weaken
+    // that RAISES incoming damage, and the stacking DoT ticking per live stack.
+    const now = this.time.now;
+    this.player.slowFactor = now < this.casterSlowUntil ? CASTER_SLOW_FACTOR : 1;
+    const hostileIncoming = now < this.casterWeakenUntil ? CASTER_WEAKEN_INCOMING : 1;
+    if (this.casterDotStacks.length > 0) {
+      this.casterDotStacks = this.casterDotStacks.filter((until) => now < until);
+      if (this.casterDotStacks.length === 0) {
+        this.casterDotNextTickAt = 0;
+      } else if (now >= this.casterDotNextTickAt) {
+        this.casterDotNextTickAt = now + CASTER_DOT_TICK_MS;
+        if (!this.playerDead) {
+          const dealt = this.playerHealth.damage(CASTER_DOT_TICK_DAMAGE * this.casterDotStacks.length);
+          this.spawnDamageNumber(this.player.x, this.player.y - 26, dealt, '#8fa8ff');
+          if (this.playerHealth.isDead) this.onPlayerDeath();
+        }
+      }
+    }
+    // Apply: incoming = base × (1 - weaken) × hostile weaken (enemy-applied, ≥ 1).
+    if (this.playerHealth) this.playerHealth.incomingMultiplier = this.baseIncomingMult * (1 - weaken) * hostileIncoming;
     // OSTEO AURA (Necromancer): while unlocked and foes crowd you, their lowered defense
     // makes your strikes bite deeper — a player-damage amplifier (read by skillDamage/playerDamage).
     let osteo = 1;
@@ -3966,8 +4024,11 @@ export class MainScene extends Phaser.Scene {
           damage: v.projectileDamage,
           maxRange: v.projectileRange,
           faction: 'enemy',
-          color: 0xffe9a8,
+          // Dark-caster bolts are BLUE and tagged so onProjectileHitPlayer applies
+          // that family's slow/weaken + stacking DoT; every other angel unchanged.
+          color: variantKey === 'darkcaster' ? 0x7a9bff : 0xffe9a8,
           radius: HOLY_BOLT_RADIUS,
+          tag: variantKey === 'darkcaster' ? 'caster-bolt' : undefined,
         });
       }
     };
@@ -4060,14 +4121,27 @@ export class MainScene extends Phaser.Scene {
     });
   }
 
-  /** Damage the player when an enemy bolt connects. */
-  private onProjectileHitPlayer(damage: number): void {
+  /** Damage the player when an enemy bolt connects; tagged bolts route their
+   *  family's on-hit debuffs (the dark-caster's slow/weaken + stacking DoT). */
+  private onProjectileHitPlayer(damage: number, tag?: string): void {
     if (this.playerDead) return;
     const dealt = this.playerHealth.damage(damage);
     this.player.flash();
     this.spawnDamageNumber(this.player.x, this.player.y - 26, dealt, '#ffd27a');
     this.lastCombatTime = this.time.now;
+    if (tag === 'caster-bolt' && !this.playerHealth.isDead) this.applyCasterDebuffs();
     if (this.playerHealth.isDead) this.onPlayerDeath();
+  }
+
+  /** DARK-CASTER on-hit: refresh the slow + weaken windows and add a DoT stack
+   *  (capped) — all resolved per-frame by updateControlEffects. */
+  private applyCasterDebuffs(): void {
+    const now = this.time.now;
+    this.casterSlowUntil = now + CASTER_SLOW_MS;
+    this.casterWeakenUntil = now + CASTER_WEAKEN_MS;
+    this.casterDotStacks = this.casterDotStacks.filter((until) => now < until);
+    if (this.casterDotStacks.length < CASTER_DOT_MAX_STACKS) this.casterDotStacks.push(now + CASTER_DOT_STACK_MS);
+    if (this.casterDotNextTickAt === 0) this.casterDotNextTickAt = now + CASTER_DOT_TICK_MS;
   }
 
   /**
@@ -5932,6 +6006,7 @@ export class MainScene extends Phaser.Scene {
       if (!z.active && d < z.radiusPx + EUROPE_SPAWN_ACTIVATE_MARGIN) this.activateEuropeZone(z);
       else if (z.active && d > z.radiusPx + EUROPE_SPAWN_DEACTIVATE_MARGIN) this.deactivateEuropeZone(z.zoneId);
     }
+    this.updateEuropeAmbushers(); // the veil-ambusher hidden/burst/re-hide machine
     // Death sweep: count each kill once (clear/harvest objectives), then drop
     // the record — the entity arrays prune their own dead.
     for (const rec of this.europeLive) {
@@ -5952,7 +6027,9 @@ export class MainScene extends Phaser.Scene {
   private activateEuropeZone(z: (typeof this.europeSpawnZones)[number]): void {
     z.active = true;
     for (const p of z.points) {
-      const pack = EXISTING_FAMILY_PACK[p.family] ?? 3;
+      // HOLLOWED-BRUTES: a hard 1–2-per-pack ceiling, enforced here in spawn
+      // logic (not just in the pack-size data).
+      const pack = Math.min(EXISTING_FAMILY_PACK[p.family] ?? 3, p.family === 'hollowed-brutes' ? BRUTE_PACK_CAP : Infinity);
       if (this.europeLiveCount() + pack > EUROPE_ENEMY_CAP) continue; // cap holds
       const tint = DOMAIN_TINT[EXISTING_FAMILY_DOMAIN[p.family]];
       for (let i = 0; i < pack; i++) {
@@ -5979,13 +6056,18 @@ export class MainScene extends Phaser.Scene {
       }
     }
     this.europeLive = this.europeLive.filter((r) => r.zoneId !== zoneId);
+    // Drop the zone's ambusher records too (their townsfolk were just destroyed).
+    this.europeAmbushers = this.europeAmbushers.filter((a) => a.t.isAlive);
   }
 
   private deactivateAllEuropeZones(): void {
     for (const z of this.europeSpawnZones) if (z.active) this.deactivateEuropeZone(z.zoneId);
   }
 
-  /** One mapped-family enemy via its EXISTING spawner (see EXISTING_FAMILY_SPAWNERS). */
+  /** One mapped-family enemy via its EXISTING spawner (see EXISTING_FAMILY_SPAWNERS).
+   *  The three new families are behavior VARIANTS over those same spawners:
+   *  dark-caster = a kiting AngelEnemy variant, veil-ambusher / hollowed-brute =
+   *  Townsfolk variants with scene-driven extras. */
   private spawnEuropeEnemy(zoneId: string, family: string, x: number, y: number, tint: number): void {
     if (family === 'lesser-evil-scouts') {
       const d = this.spawnDemon(x, y, this.activeMap().layer);
@@ -5995,12 +6077,114 @@ export class MainScene extends Phaser.Scene {
       const t = this.spawnTownsfolk(x, y, null, family === 'corrupted-wildlife' ? 'wolf' : 'raider');
       t.sprite.setTint(tint);
       this.europeLive.push({ zoneId, family, kind: 'townsfolk', entity: t, counted: false });
+    } else if (family === 'dark-casters') {
+      // Low HP + ranged + native kiting (backs off inside preferred range); its
+      // tagged bolts apply the slow/weaken + stacking DoT in onProjectileHitPlayer.
+      const a = this.spawnAngel('darkcaster', x, y);
+      a.sprite.setTint(tint);
+      this.europeLive.push({ zoneId, family, kind: 'angel', entity: a, counted: false });
+    } else if (family === 'veil-ambushers') {
+      this.spawnEuropeAmbusher(zoneId, x, y);
+    } else if (family === 'hollowed-brutes') {
+      this.spawnEuropeBrute(zoneId, x, y);
     } else {
       const variant = family === 'herald-angels' ? 'herald' : family === 'radiant-guardians' ? 'warden' : 'lesser';
       const a = this.spawnAngel(variant, x, y);
       a.sprite.setTint(tint);
       this.europeLive.push({ zoneId, family, kind: 'angel', entity: a, counted: false });
     }
+  }
+
+  /** VEIL-AMBUSHER: spawned already HIDDEN at its marker (invisible, physics off,
+   *  outside this.townsfolk → outside the aggro hierarchy; taunts/pulls can't
+   *  touch it). updateEuropeAmbushers runs the reveal/burst/re-hide machine. */
+  private spawnEuropeAmbusher(zoneId: string, x: number, y: number): void {
+    const t = this.spawnTownsfolk(x, y, null, 'ambusher');
+    this.hideAmbusher(t);
+    this.europeLive.push({ zoneId, family: 'veil-ambushers', kind: 'townsfolk', entity: t, counted: false });
+    this.europeAmbushers.push({ zoneId, t, home: { x, y }, state: 'hidden', burstEndsAt: 0 });
+  }
+
+  /** Pull an ambusher OUT of the world's combat fabric: invisible, untargetable,
+   *  removed from this.townsfolk (no AI tick, no aggro, no hits). */
+  private hideAmbusher(t: Townsfolk): void {
+    this.townsfolk = this.townsfolk.filter((tf) => tf !== t);
+    t.sprite.setVisible(false);
+    (t.sprite.body as Phaser.Physics.Arcade.Body).enable = false;
+    t.halt();
+  }
+
+  /** HOLLOWED-BRUTE: slow move + turn (variant data), tier-scaled HP, and a
+   *  telegraphed heavy strike replacing the plain contact hit. Never flees —
+   *  the townsfolk chase AI has no flee state. */
+  private spawnEuropeBrute(zoneId: string, x: number, y: number): void {
+    const t = this.spawnTownsfolk(x, y, null, 'brute');
+    const tier = getZone(zoneId)?.tier ?? 1;
+    t.health.setMax(BRUTE_HP_PER_TIER * tier);
+    t.health.full();
+    t.sprite.setScale(1.35); // reads as the big slow threat even in gray-box
+    t.onHitPlayer = () => this.bruteBeginStrike(t);
+    this.europeLive.push({ zoneId, family: 'hollowed-brutes', kind: 'townsfolk', entity: t, counted: false });
+  }
+
+  /** The brute's heavy attack: plant in place, show the boss-style windup ring,
+   *  then the strike lands on everything… well, on the PLAYER if still inside. */
+  private bruteBeginStrike(t: Townsfolk): void {
+    if (!t.isAlive || this.playerDead) return;
+    const now = this.time.now;
+    t.holdUntil = now + BRUTE_TELEGRAPH_MS; // planted for the whole windup (still hittable)
+    const cx = t.x;
+    const cy = t.y;
+    this.bossTelegraph(cx, cy, BRUTE_STRIKE_RADIUS, BRUTE_TELEGRAPH_MS);
+    this.time.delayedCall(BRUTE_TELEGRAPH_MS, () => {
+      if (!t.isAlive || this.playerDead) return;
+      this.spawnSkillRing(cx, cy, BRUTE_STRIKE_RADIUS, 0x9a4ae0);
+      if (Phaser.Math.Distance.Between(this.player.x, this.player.y, cx, cy) <= BRUTE_STRIKE_RADIUS + 12) {
+        const dealt = this.playerHealth.damage(BRUTE_STRIKE_DAMAGE);
+        this.player.flash();
+        this.spawnDamageNumber(this.player.x, this.player.y - 26, dealt, '#c08aff');
+        this.lastCombatTime = this.time.now;
+        if (this.playerHealth.isDead) this.onPlayerDeath();
+      }
+    });
+  }
+
+  /** Per-frame (Europe only): the veil-ambusher hidden→burst→re-hide machine.
+   *  Hidden: reveal when the PLAYER (or, once Prompt D arms ambusherEscortTarget,
+   *  the escort) enters the trigger radius. Burst: full townsfolk chase AI for
+   *  AMBUSHER_BURST_MS. Then disengage back to the marker and re-hide. */
+  private updateEuropeAmbushers(): void {
+    if (this.europeAmbushers.some((a) => !a.t.isAlive)) {
+      this.europeAmbushers = this.europeAmbushers.filter((a) => a.t.isAlive);
+    }
+    const now = this.time.now;
+    for (const a of this.europeAmbushers) {
+      if (a.state === 'hidden') {
+        const playerNear = Phaser.Math.Distance.Between(this.player.x, this.player.y, a.home.x, a.home.y) <= AMBUSHER_TRIGGER_RADIUS;
+        // DORMANT escort hook: null until the escort run (Prompt D) sets a target.
+        const escortNear =
+          this.ambusherEscortTarget !== null &&
+          Phaser.Math.Distance.Between(this.ambusherEscortTarget.x, this.ambusherEscortTarget.y, a.home.x, a.home.y) <= AMBUSHER_TRIGGER_RADIUS;
+        if (playerNear || escortNear) this.revealAmbusher(a, now);
+      } else if (now >= a.burstEndsAt) {
+        // Burst window over: disengage — snap back to the marker and re-hide.
+        a.state = 'hidden';
+        a.t.sprite.setPosition(a.home.x, a.home.y);
+        (a.t.sprite.body as Phaser.Physics.Arcade.Body).reset(a.home.x, a.home.y);
+        this.hideAmbusher(a.t);
+      }
+    }
+  }
+
+  /** Reveal + burst: rejoin this.townsfolk (AI + targetable again) with a flash. */
+  private revealAmbusher(a: (typeof this.europeAmbushers)[number], now: number): void {
+    a.state = 'burst';
+    a.burstEndsAt = now + AMBUSHER_BURST_MS;
+    (a.t.sprite.body as Phaser.Physics.Arcade.Body).enable = true;
+    a.t.sprite.setVisible(true);
+    if (!this.townsfolk.includes(a.t)) this.townsfolk.push(a.t);
+    this.circleFx.show(a.t.x, a.t.y, 18, 0x3a6de0, { alpha: 0.8, toScale: 2.4, durationMs: 260 });
+    this.lastCombatTime = now;
   }
 
   /** quest id → its manifest zone+beat (lazy one-time index over WORLD). */

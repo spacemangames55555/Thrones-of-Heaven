@@ -29,6 +29,9 @@ export interface ProjectileSpawn {
   pierce?: number;
   /** Optional poison/DoT applied on impact (player bolts) — reusable for Toxic Bolt. */
   dotOnImpact?: { dmgPerTick: number; tickMs: number; durationMs: number; radius: number; color: number };
+  /** Optional origin tag passed through to onPlayerHit (e.g. 'caster-bolt' so the
+   *  scene can apply that family's on-hit debuffs). Purely additive metadata. */
+  tag?: string;
 }
 
 /** One pooled bolt: a glowing sprite plus its flight state. */
@@ -50,6 +53,7 @@ class Bolt {
   /** Enemies this bolt has already hit (pierce dedup; never re-hits the same one). */
   readonly hits = new Set<object>();
   dotOnImpact?: ProjectileSpawn['dotOnImpact'];
+  tag?: string;
 
   constructor(scene: Phaser.Scene, layer: Phaser.GameObjects.Layer) {
     this.sprite = scene.add.image(0, 0, TEXTURE_KEY).setDepth(13).setVisible(false);
@@ -74,6 +78,7 @@ class Bolt {
     this.pierce = Math.max(1, s.pierce ?? 1);
     this.hits.clear();
     this.dotOnImpact = s.dotOnImpact;
+    this.tag = s.tag;
     this.sprite
       .setPosition(s.x, s.y)
       .setTint(this.color)
@@ -102,8 +107,8 @@ export class ProjectileSystem {
   private readonly layer: Phaser.GameObjects.Layer;
   private readonly pool: Bolt[] = [];
 
-  /** Called when an ENEMY bolt strikes the player. */
-  onPlayerHit?: (damage: number) => void;
+  /** Called when an ENEMY bolt strikes the player (tag = the bolt's origin tag). */
+  onPlayerHit?: (damage: number, tag?: string) => void;
   /** Called for an ENEMY bolt each step: damage a player-ALLIED SUMMON within (x,y,radius);
    *  return true if one was hit so the bolt impacts/despawns. Lets a summoned tank (Ice
    *  Golem) intercept enemy fire aimed at it (the mirror of onEnemyHit for player bolts). */
@@ -183,7 +188,7 @@ export class ProjectileSystem {
         b.faction === 'enemy' &&
         Phaser.Math.Distance.Between(b.sprite.x, b.sprite.y, playerX, playerY) <= b.radius + playerRadius
       ) {
-        this.onPlayerHit?.(b.damage);
+        this.onPlayerHit?.(b.damage, b.tag);
         this.impact(b);
         continue;
       }
