@@ -24,7 +24,7 @@ source of truth; `world-builder.ts` stamps zones into region worlds;
 ### Europe — the Delphi march (sparse `europe` world; stamp in manifest order, one atomic commit per zone)
 
 - [x] **rome-eternal-seat** — done. First zone through the runtime bridge (sparse europe world registered in-game, chunk layers, gates, quest composition). Chain class-gated to Priest (playtest via DEV Class Override). TODOs: rom-01, rom-03 prose. Also fixed a create()-crash from the class-announcement wiring (announced before the quest UI existed).
-- [ ] **campania-shadow** — pending
+- [x] **campania-shadow** — done. Corridor chunk (mediterranean-coast placeholder); Rome↔Campania gate pair verified with a real crossing; 3 beats chained off rom-04. Note: cam-02's region-champion (Spiritual) spawns via the boss beat when combat wiring ships — marker only today.
 - [ ] **apulia-eastern-dock** — pending
 - [ ] **epirus-landing** — pending
 - [ ] **thessaloniki-outpost** — pending
