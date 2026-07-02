@@ -8,7 +8,9 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "smoke": "esbuild src/world/world-smoke.ts --bundle --format=esm --platform=node --outfile=node_modules/.cache/toh-smoke.mjs --log-level=warning && node node_modules/.cache/toh-smoke.mjs"
+    "smoke": "esbuild src/world/world-smoke.ts --bundle --format=esm --platform=node --outfile=node_modules/.cache/toh-smoke.mjs --log-level=warning && node node_modules/.cache/toh-smoke.mjs",
+    "verify:runtime": "node tools/verify-runtime.mjs",
+    "verify": "npm run build && npm run smoke && npm run verify:runtime"
   },
   "dependencies": {
     "phaser": "^4.2.0"

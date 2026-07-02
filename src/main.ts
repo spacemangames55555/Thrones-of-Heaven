@@ -11,6 +11,10 @@ import { viewportSize, type Insets } from './ui/uiLayout';
  * on phones — see src/game/config.ts for why Scale.NONE is used.
  */
 const game = new Phaser.Game(gameConfig);
+// Stable handle for the RUNTIME VERIFICATION GATE (tools/verify-runtime.mjs,
+// `npm run verify:runtime`): headless checks boot the real game through this.
+// Invisible to players; no UI, no behavior — do not remove.
+(window as unknown as { __game: Phaser.Game }).__game = game;
 
 // Build identifier — console-only, no on-screen overlay. __BUILD_ID__ is injected
 // at build time by Vite (commit short-hash when the host provides it, else an ISO

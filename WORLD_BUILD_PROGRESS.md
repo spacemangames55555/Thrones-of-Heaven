@@ -10,6 +10,11 @@ source of truth; `world-builder.ts` stamps zones into region worlds;
 - [ ] `npm run build` passes
 - [ ] Adjacency resolves in **both** directions (`npm run smoke` graph check)
 - [ ] Every quest beat passes the smoke check (instantiates + chains via QuestFactory)
+- [ ] **`npm run verify:runtime` passes** — the built game BOOTS headlessly at 428×926 with
+      zero page errors, every class gets a clean fresh start (no auto-started quests), the
+      Europe world renders its chunks, and a real gate crossing lands. Any change touching
+      live code paths is gated on this, not just tsc/build/smoke. (`npm run verify` chains
+      build + smoke + runtime.)
 - [ ] Hand-authored beats carry `HAND_AUTHORED_TODO` markers — **never invented prose**
 - [ ] One atomic commit per zone
 

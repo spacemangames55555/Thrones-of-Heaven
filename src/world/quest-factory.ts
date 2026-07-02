@@ -76,8 +76,13 @@ function objectiveForBeat(beat: QuestBeat, handAuthored: boolean): ObjectiveDef 
   };
 }
 
-/** Build ONE beat as a real QuestDef, chained to the given prerequisite slots. */
-export function questForBeat(zone: Zone, beat: QuestBeat, prerequisites: readonly QuestPrerequisite[]): QuestDef {
+/** Build ONE beat as a real QuestDef, chained to the given prerequisite slots.
+ *  `isFirstBeat` matters for HOME CITIES: their opening beat must NOT
+ *  auto-activate — a real class match (e.g. Necromancer + Murmansk) would
+ *  otherwise hijack the fresh-start Earth opening the moment the zone builds.
+ *  The class-start feature (later) accepts it explicitly; the rest of the
+ *  chain stays auto so completed beats flow forward. */
+export function questForBeat(zone: Zone, beat: QuestBeat, prerequisites: readonly QuestPrerequisite[], isFirstBeat = false): QuestDef {
   const handAuthored = beat.handAuthored === true || zone.handAuthored === true;
   const line = handAuthored
     ? placeholderProse(beat.id) // HAND_AUTHORED_TODO: prose written by the designer later
@@ -97,8 +102,9 @@ export function questForBeat(zone: Zone, beat: QuestBeat, prerequisites: readonl
     ...(zone.homeClass ? { classRequirement: zone.homeClass.toLowerCase() } : {}),
     ...(classVariants ? { classVariants } : {}),
     // Generated zones have no NPC givers yet; like the existing climax quests,
-    // beats auto-activate when their prerequisite completes (forward march).
-    autoActivate: true,
+    // beats auto-activate when their prerequisite completes (forward march) —
+    // EXCEPT a home city's opening beat (see the doc comment above).
+    autoActivate: !(isFirstBeat && zone.homeClass),
     objectives: [objectiveForBeat(beat, handAuthored)],
     npcInactiveLines: [line],
     npcActiveLines: [line],
@@ -122,8 +128,8 @@ export function questForBeat(zone: Zone, beat: QuestBeat, prerequisites: readonl
 export function buildZoneQuests(zone: Zone, entryPrerequisite: ZoneEntryPrerequisite): { defs: QuestDef[]; exitQuestId: string | null } {
   const defs: QuestDef[] = [];
   let prev: readonly QuestPrerequisite[] = normalizeEntry(entryPrerequisite);
-  for (const beat of zone.questChain) {
-    const def = questForBeat(zone, beat, prev);
+  for (let i = 0; i < zone.questChain.length; i++) {
+    const def = questForBeat(zone, zone.questChain[i], prev, i === 0);
     defs.push(def);
     prev = [def.id];
   }
