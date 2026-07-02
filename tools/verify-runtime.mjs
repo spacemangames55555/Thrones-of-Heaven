@@ -193,18 +193,43 @@ try {
       brutes.found ? `packs=[${brutes.perPack.join(',')}]` : 'no brute zone found',
     );
 
+    // 3g. STATUS EFFECTS DON'T CROSS WORLDS: take a real tagged caster hit while
+    // still in Europe (slow + weaken + an active DoT stack), then travel to Earth
+    // — the player must ARRIVE with zero Europe debuffs (clearDots rides every
+    // applyWorldSwap, the same path as reset/load/death).
+    const seeded = await page.evaluate(async () => {
+      const ms = window.__game.scene.getScene('MainScene');
+      // The earlier checks park the player inside live packs — revive/heal first,
+      // because a dead player ignores projectile hits by design.
+      if (ms.playerDead) ms.respawnPlayer();
+      ms.playerHealth.full();
+      ms.onProjectileHitPlayer(3, 'caster-bolt'); // the same entry point a live bolt uses
+      await new Promise((r) => setTimeout(r, 250)); // a control-effects frame → the slow applies
+      return { stacks: ms.casterDotStacks.length, slow: ms.player.slowFactor, weakened: ms.time.now < ms.casterWeakenUntil };
+    });
     await page.evaluate(() => window.__game.scene.getScene('MainScene').devTravelEarth());
     await page.waitForTimeout(2000);
     const afterEarth = await page.evaluate(() => {
       const ms = window.__game.scene.getScene('MainScene');
-      return { world: ms.activeWorld, live: ms.europeLiveCount() };
+      return {
+        world: ms.activeWorld,
+        live: ms.europeLiveCount(),
+        stacks: ms.casterDotStacks.length,
+        slow: ms.player.slowFactor,
+        weakened: ms.time.now < ms.casterWeakenUntil,
+      };
     });
     ok('Europe → Earth return works (and despawns all packs)', afterEarth.world === 'earth' && afterEarth.live === 0, `live=${afterEarth.live}`);
+    ok(
+      'world travel clears player debuffs: an active DoT does not cross to Earth',
+      seeded.stacks > 0 && seeded.slow < 1 && seeded.weakened && afterEarth.stacks === 0 && afterEarth.slow === 1 && !afterEarth.weakened,
+      `before: stacks=${seeded.stacks} slow=${seeded.slow} weakened=${seeded.weakened} → after: stacks=${afterEarth.stacks} slow=${afterEarth.slow} weakened=${afterEarth.weakened}`,
+    );
   } else {
     console.log('info  no europe world registered — skipping Europe checks');
   }
 
-  // 3g. DARK-CASTER: a REAL bolt from a live caster lands and applies its full
+  // 3h. DARK-CASTER: a REAL bolt from a live caster lands and applies its full
   // debuff set (move slow + incoming-damage weaken + a stacking-DoT stack).
   // Runs on Earth (the caster is a world-agnostic angel variant).
   const caster = await page.evaluate(async () => {
