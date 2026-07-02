@@ -20,6 +20,7 @@ export const EUROPE_BUILT_ZONES: string[] = [
   'murmansk-bone-harbor',
   'karelia-lakes',
   'smolensk-gate',
+  'moscow-crystal-court',
 ];
 
 /**

@@ -44,7 +44,7 @@ source of truth; `world-builder.ts` stamps zones into region worlds;
 - [x] **murmansk-bone-harbor** — done. Necromancer home city (frozen-coast placeholder, far-north chunk). The home-city guard proved out live: a REAL Necromancer fresh start stays on Earth with nothing auto-started; mur-01 waits for the class-start feature. Isolated until karelia-lakes builds. TODOs: mur-01, mur-03 prose.
 - [x] **karelia-lakes** — done. Taiga corridor linking Murmansk south (gates both ways across ~17k px of void — the longest crossing yet); beats chained off mur-04. The Necromancer spine flows Murmansk→Karelia.
 - [x] **smolensk-gate** — done. Mixed-forest corridor; gates to Karelia now, to Kyiv + Moscow when those build. smo-01's escort beat awaits combat wiring (marker only).
-- [ ] **moscow-crystal-court** — pending
+- [x] **moscow-crystal-court** — done. MAGE home city (per canon, Mage ≠ Wizard — this chain stays locked for Egypt's Wizard class and unlocks only for the future Mage). Gates to Smolensk; Bryansk link arrives next. TODOs: mos-01, mos-03 prose.
 - [ ] **bryansk-woodland** — pending
 - [ ] **kyiv-river-gate** — pending
 - [ ] **carpathian-crossing** — pending
