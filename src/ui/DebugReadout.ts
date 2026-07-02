@@ -6,16 +6,18 @@ import { getInsets, UI_MARGIN } from './uiLayout';
 /**
  * Small on-screen readout pinned to the camera (top-left, inside the safe
  * area): player world X/Y, the terrain type under the player, and nearest city.
+ * Reads the ACTIVE world's map each frame (via the provider) so terrain +
+ * nearest-city stay correct after a world transition (Egypt names Egyptian cities).
  */
 export class DebugReadout {
   private readonly scene: Phaser.Scene;
   private readonly text: Phaser.GameObjects.Text;
-  private readonly map: GameMap;
+  private readonly getMap: () => GameMap;
   private readonly player: Player;
 
-  constructor(scene: Phaser.Scene, map: GameMap, player: Player) {
+  constructor(scene: Phaser.Scene, getMap: () => GameMap, player: Player) {
     this.scene = scene;
-    this.map = map;
+    this.getMap = getMap;
     this.player = player;
 
     this.text = scene.add.text(0, 0, '', {
@@ -43,15 +45,17 @@ export class DebugReadout {
   }
 
   update(): void {
+    const map = this.getMap();
     const wx = Math.round(this.player.x);
     const wy = Math.round(this.player.y);
-    const terrain = this.map.terrainAtWorld(this.player.x, this.player.y);
-    const { city, distanceTiles } = this.map.nearestCity(this.player.x, this.player.y);
+    const terrain = map.terrainAtWorld(this.player.x, this.player.y);
+    // Heaven/Hell have no city markers — skip the line rather than index nothing.
+    let nearest = 'Nearest: —';
+    if (map.cities.length > 0) {
+      const { city, distanceTiles } = map.nearestCity(this.player.x, this.player.y);
+      nearest = `Nearest: ${city.name} (${Math.round(distanceTiles)} tiles)`;
+    }
 
-    this.text.setText([
-      `X ${wx}   Y ${wy}`,
-      `Terrain: ${terrain ? terrain.name : '—'}`,
-      `Nearest: ${city.name} (${Math.round(distanceTiles)} tiles)`,
-    ]);
+    this.text.setText([`X ${wx}   Y ${wy}`, `Terrain: ${terrain ? terrain.name : '—'}`, nearest]);
   }
 }

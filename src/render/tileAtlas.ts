@@ -88,6 +88,14 @@ export const ATLAS_TILES: AtlasTileDef[] = [
   { key: 'ember_rock', color: '#3a241a', pattern: 'speckle' }, // ember-flecked rock (walk)
   { key: 'lava', color: '#e0531a', pattern: 'noise' }, // glowing lava (BLOCKS — impassable)
   { key: 'hell_void', color: '#0a0606', pattern: 'flat' }, // chasm edge (blocks)
+  // --- egypt tiles (the fourth world — desert Nile valley; appended so every
+  //     existing terrain keeps its atlas frame and Earth/Heaven/Hell are unaffected) ---
+  { key: 'dune_sand', color: '#e2c07a', pattern: 'noise' }, // open desert dune (walk)
+  { key: 'nile_water', color: '#2e7fb8', pattern: 'water' }, // the Nile (BLOCKS — cross at bridges)
+  { key: 'irrigated_field', color: '#7fae3f', pattern: 'rows' }, // delta / riverbank cropland (walk)
+  { key: 'palm_oasis', color: '#3c8f4e', pattern: 'speckle' }, // palm grove / oasis green (walk)
+  { key: 'reed_marsh', color: '#6f9a5a', pattern: 'noise' }, // delta reed marsh (walk)
+  { key: 'wadi_rock', color: '#8a6f4d', pattern: 'speckle' }, // rocky wadi outcrop (BLOCKS)
 ];
 
 /** Total atlas cells, including the reserved empty frame 0. */

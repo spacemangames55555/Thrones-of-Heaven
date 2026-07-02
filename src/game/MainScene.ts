@@ -36,7 +36,7 @@ import { SAVE_VERSION, type SaveData } from '../save/SaveData';
 import { PortalDefense } from '../encounter/PortalDefense';
 import { buildHeavenMapData, HEAVEN_WIDTH, HEAVEN_HEIGHT, HEAVEN_CHERUB_SPAWNS, THRONE_POSITION } from '../map/heavenWorld';
 import { buildHellMapData, HELL_WIDTH, HELL_HEIGHT, HELL_DEMON_SPAWNS, SATAN_LAIR } from '../map/hellWorld';
-import { WORLD_EARTH, WORLD_HEAVEN, WORLD_HELL, type WorldId, type WorldRuntime } from '../world/worlds';
+import { WORLD_EARTH, WORLD_HEAVEN, WORLD_HELL, WORLD_EGYPT, type WorldId, type WorldRuntime } from '../world/worlds';
 import { ProjectileSystem } from '../combat/ProjectileSystem';
 import { FloatingTextPool, CircleFxPool } from '../combat/FxPools';
 import { HazardField } from '../combat/HazardField';
@@ -281,6 +281,7 @@ import { buildTown, type TownFeatures, type DoorFeature } from '../town/TownBuil
 import { PORTLAND_TOWN, PORTLAND_NPC_LINES, SEATTLE_DRUID_TOWN } from '../town/townData';
 import type { WashingtonMap } from '../map/mapTypes';
 import washingtonMap from '../map/washington.map.json';
+import egyptMapJson from '../map/egypt.map.json';
 
 // Proximity ranges in px, tuned for 32px tiles.
 const DOOR_TRIGGER = 20; // < one tile (32) so returning one tile out doesn't re-enter
@@ -666,6 +667,11 @@ export class MainScene extends Phaser.Scene {
   private heavenReturnFromHellPos = { x: 0, y: 0 }; // where Hell→Heaven drops the player
   private demons: Demon[] = [];
 
+  // Egypt: the fourth world — a TERRESTRIAL map (runs the Earth-style per-frame
+  // path), built via the same multi-world system at a further coordinate offset.
+  private egyptMap!: GameMap;
+  private egyptArrivalPos = { x: 0, y: 0 }; // the Faiyum oasis village (the map's spawn)
+
   private heavenMap!: GameMap;
   private heavenReturnPortal!: HeavenPortal;
   private heavenArrivalPos = { x: 0, y: 0 };
@@ -944,7 +950,9 @@ export class MainScene extends Phaser.Scene {
     // it (intercept). New summons are routed past the UI camera + given a terrain collider.
     this.summons = new AlliedSummonManager(this);
     this.summons.onSpawn = (s) => {
-      this.physics.add.collider(s.sprite, this.map.layer);
+      // Collide with the world the summon is cast IN (summons never travel worlds —
+      // they're cleared on every world swap), so Egypt casts hit Egypt terrain.
+      this.physics.add.collider(s.sprite, this.activeMap().layer);
       this.uiCamera?.ignore(s.objects());
     };
     // ATTACKER summons (skeletons, the Dark Matter Monster) find + hit enemies through the
@@ -1146,7 +1154,7 @@ export class MainScene extends Phaser.Scene {
     // Talk/Corrupt; they never contend — the grove has no NPC). Hidden until in range.
     this.burnButton = new TouchButton(this, 'Burn the Grove', () => this.tryArcAction());
     this.zoomControls = new ZoomControls(this, cam, this.map.pixelWidth, this.map.pixelHeight);
-    this.readout = new DebugReadout(this, this.map, this.player);
+    this.readout = new DebugReadout(this, () => this.activeMap(), this.player);
     // DEV-only live perf readout (FPS / frame-time + entity, effect + pool counts) so
     // the under-load behaviour is observable on a phone. Gated by DEV_MODE.
     if (DEV_MODE) this.perfReadout = new PerfReadout(this, () => this.perfLines());
@@ -1305,26 +1313,30 @@ export class MainScene extends Phaser.Scene {
       this.player.setDirection(dir.x, dir.y);
     }
 
-    // World-gated systems: all Earth content (NPCs, enemies, quests, encounters,
-    // pickups) ticks only while Earth is the active world. Heaven is empty — its
-    // only per-frame logic is the return-gate proximity. Movement, dash, zoom, the
-    // HUD, regen and projectiles are world-agnostic and run for both.
-    if (this.activeWorld === WORLD_EARTH) {
+    // World-gated systems: TERRESTRIAL worlds (Earth, Egypt) run the full ground-
+    // world path — doors, interactions, arcs, angels, townsfolk — while the
+    // Earth-anchored one-shots (Uriel, Seattle, the rift, the Sasquatch, portal
+    // defense, the Holy-Outpost guardian machine) stay Earth-only. Heaven is
+    // empty — its only per-frame logic is the return-gate proximity. Movement,
+    // dash, zoom, the HUD, regen and projectiles are world-agnostic.
+    if (this.isTerrestrial(this.activeWorld)) {
       this.checkDoors();
-      this.checkUrielArrival(); // Act II finale: scripted Uriel scene back in the square
-      this.checkSeattleIntro(); // first time in the Druid city: a one-shot intro narration
-      this.checkRiftSceneStart(); // FINALE: reaching the N-Oregon rift begins the rift scene
       this.updateArc(); // descent-arc completion watcher (before interactions so a
       // "return to the outpost" completes before the patron auto-offers the next quest)
       if (this.isDashing()) this.talkButton.setVisible(false);
       else this.checkInteractions();
-      const sqTarget = this.enemyAggroTarget(this.sasquatch, this.sasquatch.x, this.sasquatch.y); // hierarchy/golem aggro
-      this.sasquatch.update(sqTarget.x, sqTarget.y, this.time.now);
-      this.updateSwarmers();
       this.updateAngels();
       this.updateTownsfolk(); // prune dead first so the wave manager sees the live count
-      this.portalDefense.update(this.time.now);
-      this.updateGuardianEncounter();
+      if (this.activeWorld === WORLD_EARTH) {
+        this.checkUrielArrival(); // Act II finale: scripted Uriel scene back in the square
+        this.checkSeattleIntro(); // first time in the Druid city: a one-shot intro narration
+        this.checkRiftSceneStart(); // FINALE: reaching the N-Oregon rift begins the rift scene
+        const sqTarget = this.enemyAggroTarget(this.sasquatch, this.sasquatch.x, this.sasquatch.y); // hierarchy/golem aggro
+        this.sasquatch.update(sqTarget.x, sqTarget.y, this.time.now);
+        this.updateSwarmers();
+        this.portalDefense.update(this.time.now);
+        this.updateGuardianEncounter();
+      }
     } else if (this.activeWorld === WORLD_HEAVEN) {
       // Interactions run in Heaven too — Azazel stands at the arrival for Act IV
       // 4.10's talk (Earth interactables are all out of range here).
@@ -3784,7 +3796,7 @@ export class MainScene extends Phaser.Scene {
       const r = 36 + Math.random() * 34;
       const s = new SpiritSwarmer(this, cx + Math.cos(a) * r, cy + Math.sin(a) * r);
       s.onContact = () => this.onSwarmerContact(s);
-      this.physics.add.collider(s.sprite, this.map.layer);
+      this.physics.add.collider(s.sprite, this.activeMap().layer);
       s.setRevealed(this.spirit.isActive());
       this.uiCamera?.ignore(s.sprite); // runtime world object: keep it off the UI camera
       this.swarmers.push(s);
@@ -3853,7 +3865,7 @@ export class MainScene extends Phaser.Scene {
         });
       }
     };
-    this.physics.add.collider(a.sprite, this.map.layer);
+    this.physics.add.collider(a.sprite, this.activeMap().layer); // the world it spawns IN
     this.uiCamera?.ignore(a.objects()); // runtime world objects: keep off the UI camera
     this.angels.push(a);
     return a;
@@ -5192,7 +5204,7 @@ export class MainScene extends Phaser.Scene {
     t.setTarget(target);
     if (target) t.onHitPortal = () => this.damagePortal(TOWNSFOLK_PORTAL_DAMAGE);
     t.onHitPlayer = () => this.onTownsfolkHitPlayer(t);
-    this.physics.add.collider(t.sprite, this.map.layer);
+    this.physics.add.collider(t.sprite, this.activeMap().layer); // the world it spawns IN
     this.uiCamera?.ignore(t.sprite); // runtime world object: keep off the UI camera
     this.townsfolk.push(t);
     return t;
@@ -5518,6 +5530,43 @@ export class MainScene extends Phaser.Scene {
 
     this.seedHellDemons();
     this.spawnAvailableSin(); // place the first unlocked Sin (Wrath) — dormant until approached
+    // EGYPT — the fourth world (built at a further offset; needs hellMap's bounds).
+    this.setupEgypt();
+  }
+
+  // --- Egypt: the fourth world — a second TERRESTRIAL map ---------------------
+  //
+  // Registered with the same multi-world system as Heaven/Hell (a GameMap at a
+  // further coordinate offset), but unlike those it runs the Earth-style
+  // per-frame path (doors, interactions, arcs, angels, townsfolk) — see the
+  // isTerrestrial branch in update(). Content (quests, NPCs, class start) comes
+  // later; for now it is a fully traversable world reachable via dev travel.
+
+  private setupEgypt(): void {
+    const hb = this.hellMap.bounds;
+    const origin = { x: hb.x + this.hellMap.pixelWidth + HEAVEN_WORLD_GAP, y: 0 };
+    // forceCpuLayer: like Heaven/Hell, a map at a non-zero world origin must use
+    // the CPU TilemapLayer (the GPU layer double-applies the offset — see GameMap).
+    this.egyptMap = new GameMap(this, egyptMapJson as unknown as WashingtonMap, [], origin, { forceCpuLayer: true });
+
+    // Arrival: the Faiyum oasis village site (the map's authored spawn tile) —
+    // the future home-village country for the Egypt questline.
+    this.egyptArrivalPos = { ...this.egyptMap.spawnWorld };
+
+    // City nameplates (Alexandria, Cairo, Suez, the Sinai towns, …) — same
+    // world-space markers Earth uses; they also feed the nearest-city readout.
+    new CityMarkers(this, this.egyptMap);
+
+    const egyptCollider = this.physics.add.collider(this.player.sprite, this.egyptMap.layer);
+    egyptCollider.active = false;
+
+    this.worlds[WORLD_EGYPT] = {
+      id: WORLD_EGYPT,
+      map: this.egyptMap,
+      collider: egyptCollider,
+      defaultArrival: this.egyptArrivalPos,
+    };
+    this.worldPos[WORLD_EGYPT] = { ...this.egyptArrivalPos };
   }
 
   /** Infernal props: jagged spires (collision) + the distant Satan's Lair marker. */
@@ -6193,9 +6242,12 @@ export class MainScene extends Phaser.Scene {
     this.clearDots();
 
     // Pause Earth's live enemy bodies while away (so collideWorldBounds can't yank
-    // them into the other region); resume them on return.
+    // them into the other region); resume them on return. Pause only when LEAVING
+    // Earth — a later non-Earth → non-Earth hop (Heaven→Hell, Egypt→Heaven) must
+    // not re-scan, or it would reset the remembered list to empty (the bodies are
+    // already disabled and get skipped) and Earth's enemies would never resume.
     if (worldId === WORLD_EARTH) this.resumeEarthBodies();
-    else this.pauseEarthBodies();
+    else if (this.activeWorld === WORLD_EARTH) this.pauseEarthBodies();
 
     this.activeWorld = worldId;
     const w = this.worlds[worldId];
@@ -6276,6 +6328,15 @@ export class MainScene extends Phaser.Scene {
   }
   private devToggleWorld(): void {
     this.travelToWorld(this.activeWorld === WORLD_EARTH ? WORLD_HEAVEN : WORLD_EARTH);
+  }
+  /** DEV: travel to Egypt, landing at the Faiyum village (its default arrival). */
+  private devTravelEgypt(): void {
+    if (this.activeWorld !== WORLD_EGYPT) this.travelToWorld(WORLD_EGYPT, this.egyptArrivalPos);
+  }
+  /** DEV: travel to Earth, landing at Enumclaw (Earth's default arrival — distinct
+   *  from devReturnToEarth, which lands at the Idaho Heaven-portal return spot). */
+  private devTravelEarth(): void {
+    if (this.activeWorld !== WORLD_EARTH) this.travelToWorld(WORLD_EARTH, this.worlds[WORLD_EARTH].defaultArrival);
   }
 
   private static ensureHeavenPropTextures(scene: Phaser.Scene): void {
@@ -6702,7 +6763,7 @@ export class MainScene extends Phaser.Scene {
     for (let i = 0; i < n; i++) {
       const a = (Math.PI * 2 * i) / n + Math.random() * 0.5;
       const r = 50 + Math.random() * 40;
-      const d = this.spawnDemon(center.x + Math.cos(a) * r, center.y + Math.sin(a) * r, this.map.layer);
+      const d = this.spawnDemon(center.x + Math.cos(a) * r, center.y + Math.sin(a) * r, this.activeMap().layer);
       this.arcEnemies.push(d);
     }
   }
@@ -7582,6 +7643,8 @@ export class MainScene extends Phaser.Scene {
       { label: 'Go to Heaven', onPress: () => this.devGoToHeaven() },
       { label: 'Return to Earth', onPress: () => this.devReturnToEarth() },
       { label: 'Toggle World', onPress: () => this.devToggleWorld() },
+      { label: 'Travel: Egypt', onPress: () => this.devTravelEgypt() },
+      { label: 'Travel: Earth', onPress: () => this.devTravelEarth() },
       { label: 'Complete Active Quest', onPress: () => this.chain.completeActive() },
       { label: 'Reset All Quests', onPress: () => this.devResetQuests() },
       { label: 'Save Now', onPress: () => this.manualSave() },
@@ -7865,9 +7928,17 @@ export class MainScene extends Phaser.Scene {
     }
   }
 
-  /** Forward-march ordering of the worlds (Earth → Heaven → Hell) for quest catch-up. */
+  /** Forward-march ordering of the worlds (terrestrial → Heaven → Hell) for quest
+   *  catch-up. Egypt sits WITH Earth at order 0: being there never fast-forwards
+   *  the chain past Earth objectives (nor vice versa). */
   private worldOrder(w: WorldId): number {
-    return w === WORLD_EARTH ? 0 : w === WORLD_HEAVEN ? 1 : 2;
+    return this.isTerrestrial(w) ? 0 : w === WORLD_HEAVEN ? 1 : 2;
+  }
+
+  /** Terrestrial (ground-level, Earth-like) worlds run the full per-frame path in
+   *  update() — doors, interactions, arcs, angels, townsfolk. */
+  private isTerrestrial(w: WorldId): boolean {
+    return w === WORLD_EARTH || w === WORLD_EGYPT;
   }
 
   /** Position the world marker on the current target and update the edge arrow. */
@@ -7899,17 +7970,22 @@ export class MainScene extends Phaser.Scene {
       return this.resolveTarget(obj.target);
     }
     // No active quest → the pre-accept pointer to the next OFFERABLE quest's giver.
-    // Givers live on Earth, so this only applies on Earth (auto-activating climax
-    // quests have no giver and need no pre-accept pointer).
-    if (this.activeWorld !== WORLD_EARTH) return null;
+    // Givers live in TERRESTRIAL worlds (all on Earth today; Egypt givers come with
+    // its questline), so this applies in any terrestrial world — but only points at
+    // givers standing in the ACTIVE world (no cross-world arrows). Auto-activating
+    // climax quests have no giver and need no pre-accept pointer.
+    if (!this.isTerrestrial(this.activeWorld)) return null;
     // Act II finale: between Q7 and Uriel's arrival, point the player back to the square.
-    if (this.urielPending && !this.urielArrived) {
+    if (this.activeWorld === WORLD_EARTH && this.urielPending && !this.urielArrived) {
       return { x: this.town.spawn.x, y: this.town.spawn.y, label: 'Return to Enumclaw' };
     }
+    const b = this.activeMap().bounds;
     for (const g of this.questGivers) {
       const offer = this.offerableQuest(g);
       if (offer) {
         const p = g.pos();
+        // Skip a giver who lives in a different world's coordinate region.
+        if (p.x < b.x || p.x > b.x + b.width || p.y < b.y || p.y > b.y + b.height) continue;
         return { x: p.x, y: p.y, label: offer.preAcceptHint };
       }
     }

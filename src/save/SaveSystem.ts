@@ -136,6 +136,12 @@ function migrate(data: SaveData): SaveData {
     //     them anymore). Idempotent (delete-if-present).
     for (const id of RETIRED_FINALE_IDS) completed.delete(id);
   }
+  if (data.saveVersion < 11) {
+    // v10→v11 — EGYPT (the fourth world) registered. No data changes: the world
+    // registry + remembered positions are already open Records (a v10 save simply
+    // has no 'egypt' entry until the player travels there), and no quest ids
+    // changed. The bump just marks saves as from a build that knows Egypt.
+  }
   if (data.quests) data.quests.completed = [...completed];
   data.saveVersion = SAVE_VERSION;
   return data;
