@@ -104,9 +104,54 @@ try {
       });
       ok('Europe: a real gate crossing lands', crossed.shown && crossed.d < 8, crossed.shown ? `d=${crossed.d.toFixed(1)}` : 'button never appeared');
     }
+    // 3b. PER-CHUNK SPAWNS: entering a chunk materializes its packs...
+    await page.waitForTimeout(800);
+    const liveAtRome = await page.evaluate(() => window.__game.scene.getScene('MainScene').europeLiveCount());
+    ok('Europe: entering a chunk materializes its spawns', liveAtRome > 0, `${liveAtRome} live at arrival`);
+    // ...and leaving despawns them (teleport deep into the void, past hysteresis).
+    const liveAfterLeave = await page.evaluate(async () => {
+      const ms = window.__game.scene.getScene('MainScene');
+      ms.player.sprite.body.reset(ms.player.x + 6000, ms.player.y + 6000);
+      await new Promise((r) => setTimeout(r, 900));
+      return ms.europeLiveCount();
+    });
+    ok('Europe: leaving a chunk despawns/pools its enemies', liveAfterLeave === 0, `${liveAfterLeave} live after leaving`);
+
+    // 3c. KILL OBJECTIVE: jump to a clear beat, kill its family, quest completes.
+    const clear = await page.evaluate(async () => {
+      const ms = window.__game.scene.getScene('MainScene');
+      ms.devJumpToQuest('rom-02-catacomb-vermin'); // clear: corrupted-wildlife in Rome
+      await new Promise((r) => setTimeout(r, 1200)); // chunk activates + packs spawn
+      const wildlife = ms.europeLive.filter((rec) => rec.family === 'corrupted-wildlife' && rec.entity.isAlive);
+      for (const rec of wildlife.slice(0, 5)) rec.entity.takeHit(99999);
+      await new Promise((r) => setTimeout(r, 900)); // death sweep + trigger
+      return { spawned: wildlife.length, status: ms.chain.status('rom-02-catacomb-vermin') };
+    });
+    ok('Europe: kills increment the active clear objective to completion', clear.spawned >= 5 && clear.status === 'complete', `spawned=${clear.spawned} status=${clear.status}`);
+
+    // 3d. ENTITY CAP during a multi-chunk crossing (rome → campania → apulia).
+    const capRun = await page.evaluate(async () => {
+      const ms = window.__game.scene.getScene('MainScene');
+      let peak = 0;
+      const zones = ms.europeSpawnZones.slice(0, 3);
+      for (const z of zones) {
+        ms.player.sprite.body.reset(z.center.x, z.center.y + 200);
+        for (let i = 0; i < 8; i++) {
+          await new Promise((r) => setTimeout(r, 120));
+          peak = Math.max(peak, ms.europeLiveCount());
+        }
+      }
+      return { peak };
+    });
+    ok(`Europe: live-enemy cap holds across a 3-chunk crossing (peak ${capRun.peak})`, capRun.peak > 0 && capRun.peak <= 48, `peak=${capRun.peak} cap=48`);
+
     await page.evaluate(() => window.__game.scene.getScene('MainScene').devTravelEarth());
     await page.waitForTimeout(2000);
-    ok('Europe → Earth return works', (await page.evaluate(() => window.__game.scene.getScene('MainScene').activeWorld)) === 'earth');
+    const afterEarth = await page.evaluate(() => {
+      const ms = window.__game.scene.getScene('MainScene');
+      return { world: ms.activeWorld, live: ms.europeLiveCount() };
+    });
+    ok('Europe → Earth return works (and despawns all packs)', afterEarth.world === 'earth' && afterEarth.live === 0, `live=${afterEarth.live}`);
   } else {
     console.log('info  no europe world registered — skipping Europe checks');
   }

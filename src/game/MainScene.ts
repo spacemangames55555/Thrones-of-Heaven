@@ -45,7 +45,9 @@ import { createSparseWorld, stampZone, buildChunkMapData, type BuiltChunk } from
 import { getZone, WORLD } from '../world/world-manifest';
 import { EUROPE_BUILT_ZONES, buildEuropeQuestDefs } from '../world/europe-built';
 import { appendToRegistry } from '../world/quest-factory';
-import { ENEMY_ROSTER, DOMAIN_TINT } from '../world/enemy-roster';
+import { ENEMY_ROSTER, DOMAIN_TINT, EXISTING_FAMILY_DOMAIN, EXISTING_FAMILY_PACK } from '../world/enemy-roster';
+import { triggerForBeat } from '../world/quest-factory';
+import type { Zone as ManifestZone, QuestBeat } from '../world/world-manifest';
 import { ProjectileSystem } from '../combat/ProjectileSystem';
 import { FloatingTextPool, CircleFxPool } from '../combat/FxPools';
 import { HazardField } from '../combat/HazardField';
@@ -270,6 +272,11 @@ import {
   WORLD_TRANSITION_COOLDOWN_MS,
   CITY_TRANSITION_MS,
   CITY_GATE_RANGE,
+  EUROPE_SPAWN_ACTIVATE_MARGIN,
+  EUROPE_SPAWN_DEACTIVATE_MARGIN,
+  EUROPE_ENEMY_CAP,
+  EUROPE_CLEAR_KILLS,
+  EUROPE_HARVEST_KILLS,
   HOLY_TINT,
   HOLY_SLASH_COLOR,
   HOLY_DASH_COLOR,
@@ -708,6 +715,27 @@ export class MainScene extends Phaser.Scene {
   private europeGates: { x: number; y: number; label: string; dest: { x: number; y: number } }[] = [];
   /** Per-zone arrival points (the spot south of each chunk's settlement). */
   private europeZoneArrivals: Record<string, { x: number; y: number }> = {};
+  // PER-CHUNK SPAWN ACTIVATION (mapped families only): enemies materialize when
+  // the player nears a zone's chunk and despawn (with hysteresis) on exit, so 25
+  // zones of markers never become 25 zones of live entities. See updateEuropeSpawns.
+  private europeSpawnZones: {
+    zoneId: string;
+    center: { x: number; y: number };
+    radiusPx: number; // half the chunk size (activation margins add to this)
+    points: { family: string; x: number; y: number }[];
+    active: boolean;
+  }[] = [];
+  private europeLive: {
+    zoneId: string;
+    family: string;
+    kind: 'townsfolk' | 'demon' | 'angel';
+    entity: { readonly isAlive: boolean; destroy(): void; takeHit(amount: number): number };
+    counted: boolean;
+  }[] = [];
+  /** Kill progress per ACTIVE europe beat id (clear + eu-10 harvest counters). */
+  private europeKillCounts: Record<string, number> = {};
+  /** quest id → its manifest zone + beat (built once, lazily). */
+  private europeBeatIndex?: Map<string, { zone: ManifestZone; beat: QuestBeat }>;
   /** Where the NEXT world east goes (advanced by setupCities/setupEurope). */
   private nextWorldOriginX = 0;
   // DEV "Test City Arrow": a fake objective target exercising the hierarchical
@@ -1381,6 +1409,7 @@ export class MainScene extends Phaser.Scene {
       if (this.isDashing()) this.talkButton.setVisible(false);
       else this.checkInteractions();
       this.updateCityGates(); // AFTER interactions: Talk keeps the shared slot
+      if (this.activeWorld === WORLD_EUROPE) this.updateEuropeSpawns(); // per-chunk packs
       this.updateAngels();
       this.updateTownsfolk(); // prune dead first so the wave manager sees the live count
       if (this.activeWorld === WORLD_EARTH) {
@@ -5700,15 +5729,30 @@ export class MainScene extends Phaser.Scene {
         origin.y + chunk.arrivalLocalPx.y,
       );
 
-      // Spawn markers (visual placeholders): one tinted disc per enemy family.
+      // Spawn markers: MAPPED families (wolf/raider/demon/angel spawners exist)
+      // become LIVE spawn points, materialized per-chunk by updateEuropeSpawns.
+      // NEW roster families (dark-casters etc.) stay visual markers until their
+      // AI wiring ships.
+      const zoneSpawnPoints: { family: string; x: number; y: number }[] = [];
       for (const m of plan.spawnMarkers) {
-        const domain = ENEMY_ROSTER[m.enemyFamily]?.domain;
-        const tint = domain ? DOMAIN_TINT[domain] : 0x9aa0a8; // neutral for pre-existing families
         const mx = origin.x + m.x;
         const my = origin.y + m.y;
+        if (m.enemyFamily in EXISTING_FAMILY_DOMAIN) {
+          zoneSpawnPoints.push({ family: m.enemyFamily, x: mx, y: my });
+          continue;
+        }
+        const domain = ENEMY_ROSTER[m.enemyFamily]?.domain;
+        const tint = domain ? DOMAIN_TINT[domain] : 0x9aa0a8;
         this.add.circle(mx, my, 10, tint, 0.85).setDepth(6);
         this.addHeavenLabel(mx, my - 16, m.enemyFamily, '#cfd6e0');
       }
+      this.europeSpawnZones.push({
+        zoneId: id,
+        center: { x: origin.x + chunk.centerLocalPx.x, y: origin.y + chunk.centerLocalPx.y },
+        radiusPx: chunk.data.width * 16, // half the chunk (tiles * 32 / 2)
+        points: zoneSpawnPoints,
+        active: false,
+      });
     }
 
     // Gates (second pass — both endpoints must be BUILT): the pad on A's edge
@@ -5875,6 +5919,123 @@ export class MainScene extends Phaser.Scene {
     if (!c || this.transitioning || this.time.now < this.worldCooldownUntil) return;
     this.cityGateButton.setVisible(false);
     this.travelToWorld(c.def.parentWorld, c.outsideArrival, CITY_TRANSITION_MS);
+  }
+
+  // --- EUROPE per-chunk spawn activation + kill objectives ---------------------
+
+  /** Materialize/despawn Europe packs by player proximity (hysteresis), sweep
+   *  deaths into the kill counters, and enforce the live-enemy cap. Runs every
+   *  frame ONLY while Europe is the active world (25 distance checks — trivial). */
+  private updateEuropeSpawns(): void {
+    for (const z of this.europeSpawnZones) {
+      const d = Phaser.Math.Distance.Between(this.player.x, this.player.y, z.center.x, z.center.y);
+      if (!z.active && d < z.radiusPx + EUROPE_SPAWN_ACTIVATE_MARGIN) this.activateEuropeZone(z);
+      else if (z.active && d > z.radiusPx + EUROPE_SPAWN_DEACTIVATE_MARGIN) this.deactivateEuropeZone(z.zoneId);
+    }
+    // Death sweep: count each kill once (clear/harvest objectives), then drop
+    // the record — the entity arrays prune their own dead.
+    for (const rec of this.europeLive) {
+      if (!rec.counted && !rec.entity.isAlive) {
+        rec.counted = true;
+        this.onEuropeEnemyKilled(rec.family, rec.zoneId);
+      }
+    }
+    this.europeLive = this.europeLive.filter((r) => r.entity.isAlive || !r.counted);
+  }
+
+  private europeLiveCount(): number {
+    return this.europeLive.filter((r) => r.entity.isAlive).length;
+  }
+
+  /** Spawn every mapped-family pack for one zone (cap-guarded: a pack that would
+   *  break EUROPE_ENEMY_CAP is skipped whole, never split). */
+  private activateEuropeZone(z: (typeof this.europeSpawnZones)[number]): void {
+    z.active = true;
+    for (const p of z.points) {
+      const pack = EXISTING_FAMILY_PACK[p.family] ?? 3;
+      if (this.europeLiveCount() + pack > EUROPE_ENEMY_CAP) continue; // cap holds
+      const tint = DOMAIN_TINT[EXISTING_FAMILY_DOMAIN[p.family]];
+      for (let i = 0; i < pack; i++) {
+        const ang = (Math.PI * 2 * i) / pack;
+        const r = 60 + (i % 2) * 40;
+        const spot = this.activeMap().nearestWalkableWorld(p.x + Math.cos(ang) * r, p.y + Math.sin(ang) * r);
+        this.spawnEuropeEnemy(z.zoneId, p.family, spot.x, spot.y, tint);
+      }
+    }
+  }
+
+  /** Despawn (pool away) every live entity a zone spawned. */
+  private deactivateEuropeZone(zoneId: string): void {
+    const z = this.europeSpawnZones.find((s) => s.zoneId === zoneId);
+    if (z) z.active = false;
+    for (const rec of this.europeLive) {
+      if (rec.zoneId !== zoneId) continue;
+      if (rec.entity.isAlive) {
+        rec.entity.destroy();
+        // Remove from the per-kind update arrays so nothing ticks a destroyed body.
+        if (rec.kind === 'angel') this.angels = this.angels.filter((a) => (a as unknown) !== rec.entity);
+        else if (rec.kind === 'townsfolk') this.townsfolk = this.townsfolk.filter((t) => (t as unknown) !== rec.entity);
+        else this.demons = this.demons.filter((dm) => (dm as unknown) !== rec.entity);
+      }
+    }
+    this.europeLive = this.europeLive.filter((r) => r.zoneId !== zoneId);
+  }
+
+  private deactivateAllEuropeZones(): void {
+    for (const z of this.europeSpawnZones) if (z.active) this.deactivateEuropeZone(z.zoneId);
+  }
+
+  /** One mapped-family enemy via its EXISTING spawner (see EXISTING_FAMILY_SPAWNERS). */
+  private spawnEuropeEnemy(zoneId: string, family: string, x: number, y: number, tint: number): void {
+    if (family === 'lesser-evil-scouts') {
+      const d = this.spawnDemon(x, y, this.activeMap().layer);
+      d.sprite.setTint(tint);
+      this.europeLive.push({ zoneId, family, kind: 'demon', entity: d, counted: false });
+    } else if (family === 'corrupted-wildlife' || family === 'evil-raiders') {
+      const t = this.spawnTownsfolk(x, y, null, family === 'corrupted-wildlife' ? 'wolf' : 'raider');
+      t.sprite.setTint(tint);
+      this.europeLive.push({ zoneId, family, kind: 'townsfolk', entity: t, counted: false });
+    } else {
+      const variant = family === 'herald-angels' ? 'herald' : family === 'radiant-guardians' ? 'warden' : 'lesser';
+      const a = this.spawnAngel(variant, x, y);
+      a.sprite.setTint(tint);
+      this.europeLive.push({ zoneId, family, kind: 'angel', entity: a, counted: false });
+    }
+  }
+
+  /** quest id → its manifest zone+beat (lazy one-time index over WORLD). */
+  private europeBeatForQuest(questId: string | undefined | null): { zone: ManifestZone; beat: QuestBeat } | null {
+    if (!questId) return null;
+    if (!this.europeBeatIndex) {
+      this.europeBeatIndex = new Map();
+      for (const z of WORLD) for (const b of z.questChain) this.europeBeatIndex.set(b.id, { zone: z, beat: b });
+    }
+    return this.europeBeatIndex.get(questId) ?? null;
+  }
+
+  /** Kill credit → the ACTIVE europe beat, mirroring the NA arc pattern (count
+   *  toward a threshold, live tracker suffix, trigger fires at the goal):
+   *  'clear' beats count kills of their enemyFamily (or any zone family when
+   *  unset) INSIDE their zone; the eu-10 portal_approach harvest counts
+   *  radiant-guardian / lesser-angel kills. */
+  private onEuropeEnemyKilled(family: string, zoneId: string): void {
+    const q = this.chain.activeQuest;
+    const hit = this.europeBeatForQuest(q?.id);
+    if (!q || !hit || hit.zone.id !== zoneId) return;
+    const { beat } = hit;
+    let need = 0;
+    if (beat.archetype === 'clear') {
+      if (beat.enemyFamily && beat.enemyFamily !== family) return;
+      need = EUROPE_CLEAR_KILLS;
+    } else if (beat.archetype === 'portal_approach' && (family === 'radiant-guardians' || family === 'lesser-angels')) {
+      need = EUROPE_HARVEST_KILLS;
+    } else {
+      return;
+    }
+    const n = (this.europeKillCounts[beat.id] ?? 0) + 1;
+    this.europeKillCounts[beat.id] = n;
+    this.refreshQuestUi(); // live "(kills x/y)" suffix, like the NA arc counters
+    if (n >= need) this.notifyQuest(triggerForBeat(beat) as ObjectiveTrigger);
   }
 
   /**
@@ -6574,6 +6735,9 @@ export class MainScene extends Phaser.Scene {
     // already disabled and get skipped) and Earth's enemies would never resume.
     if (worldId === WORLD_EARTH) this.resumeEarthBodies();
     else if (this.activeWorld === WORLD_EARTH) this.pauseEarthBodies();
+
+    // Europe's chunk packs never travel: leaving the world despawns them all.
+    if (this.activeWorld === WORLD_EUROPE && worldId !== WORLD_EUROPE) this.deactivateAllEuropeZones();
 
     this.activeWorld = worldId;
     const w = this.worlds[worldId];
@@ -8319,6 +8483,14 @@ export class MainScene extends Phaser.Scene {
 
   /** A live "(N left)" / "(Holy Power x/y)" suffix for arc objectives (Act I + descent). */
   private arcProgressSuffix(): string {
+    // Europe kill counters (clear / eu-10 harvest) show the same live style.
+    const eu = this.europeBeatForQuest(this.chain.activeQuest?.id);
+    if (eu && eu.beat.archetype === 'clear') {
+      return `  (kills ${Math.min(this.europeKillCounts[eu.beat.id] ?? 0, EUROPE_CLEAR_KILLS)}/${EUROPE_CLEAR_KILLS})`;
+    }
+    if (eu && eu.beat.archetype === 'portal_approach') {
+      return `  (light ${Math.min(this.europeKillCounts[eu.beat.id] ?? 0, EUROPE_HARVEST_KILLS)}/${EUROPE_HARVEST_KILLS})`;
+    }
     if (!this.isArcActive()) return '';
     if (this.arcMode === 'defeat') {
       const left = this.arcEnemies.filter((e) => e.isAlive).length;

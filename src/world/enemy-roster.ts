@@ -114,12 +114,36 @@ export function makeRegionChampion(name: string, domain: CombatDomain, tier: Tie
 // ── Pre-existing manifest families → the game systems that already spawn them ─
 
 export const EXISTING_FAMILY_SPAWNERS: Record<string, string> = {
-  'corrupted-wildlife': 'Act I wildlife spawners (wolves / sea-lion pattern)',
-  'lesser-evil-scouts': 'demon + swarm-pack spawners',
-  'evil-raiders': 'raider townsfolk-variant spawners',
-  'herald-angels': "spawnAngelVariant('herald')",
-  'radiant-guardians': 'guardian (FlamingSword) spawners',
-  'lesser-angels': "spawnAngelVariant('lesser')",
+  'corrupted-wildlife': "townsfolk variant 'wolf' (Act I wildlife pattern)",
+  'lesser-evil-scouts': 'spawnDemon (demon chase AI)',
+  'evil-raiders': "townsfolk variant 'raider'",
+  'herald-angels': "spawnAngel('herald')",
+  // Gray-box stand-in: warden angels play the radiant-guardian role in Europe
+  // (the FlamingSword guardian class stays bound to Earth's portal machine).
+  'radiant-guardians': "spawnAngel('warden')",
+  'lesser-angels': "spawnAngel('lesser')",
+};
+
+/** Combat domain (→ placeholder tint) for the PRE-EXISTING mapped families. */
+export const EXISTING_FAMILY_DOMAIN: Record<string, CombatDomain> = {
+  'corrupted-wildlife': 'physical',
+  'evil-raiders': 'physical',
+  'lesser-evil-scouts': 'mental',
+  'herald-angels': 'spiritual',
+  'radiant-guardians': 'spiritual',
+  'lesser-angels': 'spiritual',
+};
+
+/** LIVE pack size per mapped family (per zone activation; tunable gray-box). All
+ *  clear-beat target families spawn ≥ EUROPE_CLEAR_KILLS so one pack can finish
+ *  a clear objective without forcing a leave-and-return respawn. */
+export const EXISTING_FAMILY_PACK: Record<string, number> = {
+  'corrupted-wildlife': 6,
+  'evil-raiders': 5,
+  'lesser-evil-scouts': 5,
+  'herald-angels': 3,
+  'radiant-guardians': 5,
+  'lesser-angels': 5,
 };
 
 /** Does a manifest enemyFamily id resolve to SOMETHING spawnable? */

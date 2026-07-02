@@ -1663,6 +1663,19 @@ export const WORLD_TRANSITION_MS = 540;
 export const WORLD_TRANSITION_COOLDOWN_MS = 1200;
 /** NESTED CITIES: the quicker fade used entering/leaving a city sub-map (ms). */
 export const CITY_TRANSITION_MS = 300;
+// --- EUROPE per-chunk spawn activation (combat gray-box) ----------------------
+/** Chunk spawns MATERIALIZE when the player is this close to the chunk edge (px). */
+export const EUROPE_SPAWN_ACTIVATE_MARGIN = 700;
+/** ...and DESPAWN when this far beyond it (hysteresis so gates don't thrash). */
+export const EUROPE_SPAWN_DEACTIVATE_MARGIN = 1400;
+/** Hard cap on simultaneously LIVE Europe enemies (a pack is skipped, never split). */
+export const EUROPE_ENEMY_CAP = 48;
+/** Kills of the beat's family (in its zone) needed to finish a 'clear' beat. */
+export const EUROPE_CLEAR_KILLS = 5;
+/** Guardian/lesser-angel kills needed for the eu-10 harvest (mirrors the NA
+ *  plunder-style harvest: kill count + live tracker suffix). */
+export const EUROPE_HARVEST_KILLS = 8;
+
 /** NESTED CITIES: how close (px) to a city gate the Enter/Leave button shows.
  *  Must comfortably cover the fixed arrival spots on BOTH sides of the gate
  *  (inside ~96px, outside ~64px) so the button is available right on arrival. */
