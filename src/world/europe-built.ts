@@ -18,6 +18,7 @@ export const EUROPE_BUILT_ZONES: string[] = [
   'thermopylae-pass',
   'delphi-sanctuary',
   'murmansk-bone-harbor',
+  'karelia-lakes',
 ];
 
 /**
