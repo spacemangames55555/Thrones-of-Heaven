@@ -27,6 +27,7 @@ export const EUROPE_BUILT_ZONES: string[] = [
   'munich-anvil-hold',
   'tyrol-forge-road',
   'alps-high-pass',
+  'vienna-river-muster',
 ];
 
 /**

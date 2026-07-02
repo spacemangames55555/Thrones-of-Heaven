@@ -51,7 +51,7 @@ source of truth; `world-builder.ts` stamps zones into region worlds;
 - [x] **munich-anvil-hold** — done. BLACKSMITH home city — the highest-stakes guard test (Blacksmith is the game's DEFAULT class): a real Blacksmith fresh start stays clean on Earth, mun-01 waits for class-start. Isolated until tyrol-forge-road (next). TODOs: mun-01, mun-03 prose.
 - [x] **tyrol-forge-road** — done. Alpine corridor; Munich↔Tyrol gates open the Blacksmith spine. tyr-02's escort is a marker until combat wiring.
 - [x] **alps-high-pass** — done. The Brenner summit corridor; gates to Tyrol (Burgundy + Vienna links arrive with theirs). Entry anyOf(bur-02, tyr-03) — the tyr arm is live now, the Bard-road arm activates when Burgundy builds. alp-01's region-champion (Physical) is a marker.
-- [ ] **vienna-river-muster** — pending
+- [x] **vienna-river-muster** — done. Danube city; Alps↔Vienna gates — the Blacksmith spine now runs Munich→Tyrol→Alps→Vienna. Belgrade link (and the vie/car anyOf merge) arrives with belgrade-iron-river next batch.
 - [ ] **belgrade-iron-river** — pending
 - [ ] **vardar-corridor** — pending
 - [ ] **london-grey-chorus** — pending
