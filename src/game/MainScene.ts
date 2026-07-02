@@ -24,7 +24,7 @@ import { Cherub } from '../entities/Cherub';
 import { HellPortal } from '../entities/HellPortal';
 import { Demon } from '../entities/Demon';
 import { Boss } from '../boss/Boss';
-import type { BossDef, BossHooks } from '../boss/bossTypes';
+import type { BossAttack, BossDef, BossHooks } from '../boss/bossTypes';
 import { MICHAEL_DEF, TEST_BOSS_DEF, SEMYAZA_DEF } from '../boss/bossData';
 import { SIN_DEFS } from '../boss/sinsData';
 import { SinGauntlet } from '../boss/SinGauntlet';
@@ -45,7 +45,9 @@ import { createSparseWorld, stampZone, buildChunkMapData, type BuiltChunk } from
 import { getZone, WORLD } from '../world/world-manifest';
 import { EUROPE_BUILT_ZONES, buildEuropeQuestDefs } from '../world/europe-built';
 import { appendToRegistry } from '../world/quest-factory';
-import { ENEMY_ROSTER, DOMAIN_TINT, EXISTING_FAMILY_DOMAIN, EXISTING_FAMILY_PACK } from '../world/enemy-roster';
+import { ENEMY_ROSTER, DOMAIN_TINT, EXISTING_FAMILY_DOMAIN, EXISTING_FAMILY_PACK, makeRegionChampion } from '../world/enemy-roster';
+import type { CombatDomain } from '../world/enemy-roster';
+import { CHAMPION_SPECS } from '../world/champion-specs';
 import { triggerForBeat } from '../world/quest-factory';
 import type { Zone as ManifestZone, QuestBeat } from '../world/world-manifest';
 import { ProjectileSystem } from '../combat/ProjectileSystem';
@@ -675,6 +677,7 @@ export class MainScene extends Phaser.Scene {
     hazard: (boss, x, y, radius, damage, lifetimeMs, telegraphMs, cap) => this.hazards.spawn(boss.id, x, y, radius, damage, lifetimeMs, telegraphMs, cap),
     hellfireWarn: (cx, cy, arenaR, safe, safeR, durationMs) => this.hellfireWarn(cx, cy, arenaR, safe, safeR, durationMs),
     hellfireBurst: (cx, cy, arenaR, safe, safeR, damage) => this.hellfireBurst(cx, cy, arenaR, safe, safeR, damage),
+    beam: (boss, tx, ty, damage, durationMs, tickMs, range) => this.bossBeamStart(boss, tx, ty, damage, durationMs, tickMs, range),
   };
   /** Live SHIELD bubbles, keyed by boss id (Pride's invuln-window visual). */
   private readonly bossShields = new Map<string, Phaser.GameObjects.Arc>();
@@ -762,6 +765,20 @@ export class MainScene extends Phaser.Scene {
   /** DORMANT escort-proximity hook (Prompt D, the escort run, activates it): while
    *  set, hidden ambushers ALSO reveal when the escort target nears their marker. */
   private ambusherEscortTarget: { x: number; y: number } | null = null;
+  // REGION CHAMPIONS: one boss-engine instance per boss beat (champion-specs.ts).
+  // At most ONE champion is live at a time — the active boss beat's, spawned at
+  // its zone's boss anchor while that chunk is active, despawned/reset on leave/
+  // death/beat change. Defeat completes the beat.
+  private championBoss?: Boss;
+  private championBeatId: string | null = null;
+  private championZoneId: string | null = null;
+  /** The live champion's summoned adds (zone-family enemies via spawnEuropeEnemy),
+   *  tracked so each summon wave respects the add cap. */
+  private championAdds: { isAlive: boolean }[] = [];
+  /** Per-zone champion spawn anchors (north of the settlement, mirroring arrival). */
+  private europeBossAnchors: Record<string, { x: number; y: number }> = {};
+  /** Live enemy-cast beams (the 'beam' boss pattern; drawn in the channel style). */
+  private bossBeams: { g: Phaser.GameObjects.Graphics; boss: Boss; dirX: number; dirY: number; range: number; until: number; nextTickAt: number; tickMs: number; damage: number }[] = [];
   // DARK-CASTER on-hit debuffs on the PLAYER (reusing the existing slow/weaken
   // models + the stacking-DoT shape; resolved per-frame in updateControlEffects).
   private casterSlowUntil = 0;
@@ -1471,6 +1488,7 @@ export class MainScene extends Phaser.Scene {
     // (leashed), and the pickup/projectile systems carry items in any world.
     this.updateCherubs();
     this.updateBosses();
+    this.updateBossBeams(); // enemy-cast channel beams (the champion's signature)
     this.updateDemons();
     this.updateGodJudgment();
     this.summons.update(this.player.x, this.player.y, this.time.now, this.summonCombat); // tanks follow, attackers hunt + prune
@@ -3744,6 +3762,7 @@ export class MainScene extends Phaser.Scene {
     this.summons.clear(); // allied summons don't survive the player's death
     this.clearSpellHazards();
     this.clearDots();
+    this.despawnEuropeChampion(); // death resets a champion encounter cleanly
     this.lastCombatTime = -1e9;
     this.playerDead = false;
     this.controls.setEnabled(true);
@@ -4441,6 +4460,28 @@ export class MainScene extends Phaser.Scene {
 
   /** Boss summon hook: spawn up to the cap, tracked per boss, near the boss (on walkable tiles). */
   private summonForBoss(bossId: string, bx: number, by: number, bossName: string, enemy: string, count: number, cap: number): void {
+    // REGION CHAMPIONS ('europe-zone:<zoneId>'): adds are the ZONE's own families,
+    // spawned through the pooled Europe spawner — they join europeLive (despawned
+    // with the chunk, counted by kill objectives) and respect EUROPE_ENEMY_CAP.
+    if (enemy.startsWith('europe-zone:')) {
+      const zoneId = enemy.slice('europe-zone:'.length);
+      const fams = (getZone(zoneId)?.enemyFamilies ?? []).filter((f) => f in EXISTING_FAMILY_DOMAIN);
+      this.championAdds = this.championAdds.filter((a) => a.isAlive);
+      const room = Math.max(0, EUROPE_ENEMY_CAP - this.europeLiveCount());
+      const n = Math.min(count, cap - this.championAdds.length, room, fams.length === 0 ? 0 : count);
+      const map = this.activeMap();
+      for (let i = 0; i < n; i++) {
+        const fam = fams[i % fams.length];
+        const a = Math.random() * Math.PI * 2;
+        const r = 90 + Math.random() * 50;
+        const spot = map.nearestWalkableWorld(bx + Math.cos(a) * r, by + Math.sin(a) * r);
+        this.spawnEuropeEnemy(zoneId, fam, spot.x, spot.y, DOMAIN_TINT[EXISTING_FAMILY_DOMAIN[fam]]);
+        const rec = this.europeLive[this.europeLive.length - 1];
+        if (rec && rec.zoneId === zoneId) this.championAdds.push(rec.entity);
+      }
+      if (n > 0) this.showBanner(`${bossName} summons reinforcements!`, 1400);
+      return;
+    }
     let adds = (this.bossAdds.get(bossId) ?? []).filter((a) => a.isAlive);
     const n = Math.min(count, cap - adds.length);
     if (n > 0) {
@@ -4501,6 +4542,18 @@ export class MainScene extends Phaser.Scene {
       this.onSinDefeated(sinIndex); // advance the gauntlet + unlock/mark the next Sin
     } else if (boss === this.dragonBoss || boss === this.beastBoss || boss === this.satanBoss) {
       this.onTrinityBossDefeated(boss); // advance the staged Trinity (Dragon → Beast → Satan → ending)
+    } else if (boss.def.onDefeatHook?.startsWith('europe-champion:')) {
+      // REGION CHAMPION: defeat completes its boss beat (the factory trigger).
+      const beatId = boss.def.onDefeatHook.slice('europe-champion:'.length);
+      this.showBanner(`${boss.name} defeated!`, 2400);
+      const hit = this.europeBeatForQuest(beatId);
+      if (hit && this.chain.activeQuest?.id === beatId) this.notifyQuest(triggerForBeat(hit.beat) as ObjectiveTrigger);
+      if (this.championBoss === boss) {
+        this.championBoss = undefined;
+        this.championBeatId = null;
+        this.championZoneId = null;
+        this.championAdds = [];
+      }
     } else {
       this.showBanner(`${boss.name} defeated!`, 2400);
     }
@@ -5803,6 +5856,21 @@ export class MainScene extends Phaser.Scene {
         origin.y + chunk.arrivalLocalPx.y,
       );
 
+      // BOSS ANCHOR: mirror the (south) arrival to the settlement's NORTH side —
+      // where a boss beat's region champion spawns. Marked when the zone has one.
+      const bossAnchor = map.nearestWalkableWorld(
+        origin.x + chunk.centerLocalPx.x,
+        origin.y + chunk.centerLocalPx.y - (chunk.arrivalLocalPx.y - chunk.centerLocalPx.y),
+      );
+      this.europeBossAnchors[id] = bossAnchor;
+      const bossBeat = zone.questChain.find((b) => b.id in CHAMPION_SPECS);
+      if (bossBeat) {
+        const spec = CHAMPION_SPECS[bossBeat.id];
+        const tint = DOMAIN_TINT[spec.domain.toLowerCase() as CombatDomain];
+        this.add.circle(bossAnchor.x, bossAnchor.y, 14, tint, 0.5).setStrokeStyle(2, tint, 0.95).setDepth(6);
+        this.addHeavenLabel(bossAnchor.x, bossAnchor.y - 22, `☠ ${spec.name}`, '#e6d6ff');
+      }
+
       // Spawn markers: MAPPED families (wolf/raider/demon/angel spawners exist)
       // become LIVE spawn points, materialized per-chunk by updateEuropeSpawns.
       // NEW roster families (dark-casters etc.) stay visual markers until their
@@ -6007,6 +6075,7 @@ export class MainScene extends Phaser.Scene {
       else if (z.active && d > z.radiusPx + EUROPE_SPAWN_DEACTIVATE_MARGIN) this.deactivateEuropeZone(z.zoneId);
     }
     this.updateEuropeAmbushers(); // the veil-ambusher hidden/burst/re-hide machine
+    this.updateEuropeChampion(); // the active boss beat's region champion
     // Death sweep: count each kill once (clear/harvest objectives), then drop
     // the record — the entity arrays prune their own dead.
     for (const rec of this.europeLive) {
@@ -6062,6 +6131,7 @@ export class MainScene extends Phaser.Scene {
 
   private deactivateAllEuropeZones(): void {
     for (const z of this.europeSpawnZones) if (z.active) this.deactivateEuropeZone(z.zoneId);
+    this.despawnEuropeChampion(); // the champion never outlives its chunk / the world
   }
 
   /** One mapped-family enemy via its EXISTING spawner (see EXISTING_FAMILY_SPAWNERS).
@@ -6185,6 +6255,168 @@ export class MainScene extends Phaser.Scene {
     if (!this.townsfolk.includes(a.t)) this.townsfolk.push(a.t);
     this.circleFx.show(a.t.x, a.t.y, 18, 0x3a6de0, { alpha: 0.8, toScale: 2.4, durationMs: 260 });
     this.lastCombatTime = now;
+  }
+
+  // --- REGION CHAMPIONS: the boss engine's Europe instances --------------------
+  //
+  // ONE template (the generic Boss controller + makeRegionChampion stats), N data
+  // rows (champion-specs.ts). A champion exists only while its boss beat is the
+  // ACTIVE quest and its zone chunk is active; leaving the chunk, dying, or the
+  // beat changing despawns it and the encounter resets cleanly (fresh instance,
+  // full HP, next approach). Defeat completes the beat.
+
+  /** Per-frame (Europe only): keep the live champion in sync with the active beat. */
+  private updateEuropeChampion(): void {
+    const q = this.chain.activeQuest;
+    const spec = q ? CHAMPION_SPECS[q.id] : undefined;
+    if (spec && q && !this.playerDead) {
+      const hit = this.europeBeatForQuest(q.id);
+      const zone = hit ? this.europeSpawnZones.find((z) => z.zoneId === hit.zone.id) : undefined;
+      if (zone?.active && this.championBeatId !== q.id) {
+        this.despawnEuropeChampion();
+        this.spawnEuropeChampion(q.id, spec);
+        return;
+      }
+    }
+    if (this.championBoss) {
+      const zone = this.europeSpawnZones.find((z) => z.zoneId === this.championZoneId);
+      const beatStillActive = !!spec && q?.id === this.championBeatId;
+      if (!beatStillActive || this.playerDead || !zone?.active) this.despawnEuropeChampion();
+    }
+  }
+
+  /** Instantiate the boss beat's champion at its zone's boss anchor. */
+  private spawnEuropeChampion(beatId: string, spec: (typeof CHAMPION_SPECS)[string]): void {
+    const hit = this.europeBeatForQuest(beatId);
+    if (!hit) return;
+    const zoneId = hit.zone.id;
+    const anchor = this.europeBossAnchors[zoneId];
+    if (!anchor) return;
+    // The shipped template: elite stats scaled by the ZONE's tier, tinted by domain.
+    const domain = spec.domain.toLowerCase() as CombatDomain;
+    const signature = spec.move === 'aoe-slam' ? 'ground-slam' : spec.move;
+    const champ = makeRegionChampion(spec.name, domain, hit.zone.tier, signature);
+    const def = this.championDef(beatId, zoneId, champ.name, champ.tint, champ.stats, champ.tier, signature);
+    const boss = this.spawnBoss(def, anchor.x, anchor.y, this.activeMap().layer);
+    this.championBoss = boss;
+    this.championBeatId = beatId;
+    this.championZoneId = zoneId;
+    this.championAdds = [];
+  }
+
+  /** Build the champion's BossDef: melee up close + its ONE signature move on a cycle. */
+  private championDef(
+    beatId: string,
+    zoneId: string,
+    name: string,
+    tint: number,
+    stats: { hp: number; damage: number; speed: number },
+    tier: number,
+    signature: 'charge' | 'summon-adds' | 'channel-beam' | 'ground-slam',
+  ): BossDef {
+    const attacks: BossAttack[] = [{ kind: 'melee', damage: Math.round(stats.damage * 0.5), cooldownMs: 1300, range: 48 }];
+    if (signature === 'charge') {
+      attacks.push({ kind: 'charge', damage: stats.damage, cooldownMs: 4600, range: 420, speed: 620, telegraphMs: 700 });
+    } else if (signature === 'ground-slam') {
+      attacks.push({ kind: 'slam', damage: stats.damage, cooldownMs: 4600, range: 210, radius: 130, telegraphMs: 950 });
+    } else if (signature === 'channel-beam') {
+      attacks.push({ kind: 'beam', damage: Math.max(4, Math.round(stats.damage * 0.25)), cooldownMs: 5200, range: 460, telegraphMs: 900, durationMs: 1800 });
+    }
+    return {
+      id: `champion-${beatId}`,
+      name,
+      world: WORLD_EUROPE,
+      placement: { x: 0, y: 0 }, // spawned at the zone's boss anchor, not a fixed placement
+      sprite: { key: 'champion', scale: 1.6, tint }, // gray-box body (test-boss drawer), domain tint
+      maxHP: stats.hp,
+      moveTilesPerSec: stats.speed / 32, // championStats speed is px/sec; defs take tiles/sec
+      meleeRange: 48,
+      preferredRange: signature === 'channel-beam' ? 260 : 60,
+      leashRange: 1000,
+      activationRange: 520,
+      phases: [
+        {
+          fromRatio: 1,
+          attacks,
+          // 'summon-adds' champions call in 2–3 of the ZONE's own families per wave.
+          summon: signature === 'summon-adds' ? { enemy: `europe-zone:${zoneId}`, count: 3, cap: 3, cadenceMs: 9000 } : undefined,
+        },
+      ],
+      xpReward: 60 * tier,
+      holyPowerDrop: 0,
+      onDefeatHook: `europe-champion:${beatId}`,
+    };
+  }
+
+  /** Remove the live champion (leave/death/beat change): fresh encounter next time. */
+  private despawnEuropeChampion(): void {
+    const b = this.championBoss;
+    this.championBoss = undefined;
+    this.championBeatId = null;
+    this.championZoneId = null;
+    this.championAdds = [];
+    if (!b) return;
+    if (b.isAlive) {
+      this.clearBossAdds(b.id);
+      this.hazards.clearBoss(b.id);
+      b.destroy(); // beams it cast die on the next updateBossBeams sweep
+      this.bosses = this.bosses.filter((x) => x !== b);
+    }
+  }
+
+  // --- ENEMY-CAST BEAM (the 'beam' boss pattern; the channel system, reversed) --
+
+  /** Start a beam: direction locked at cast toward (tx,ty), drawn + ticked per frame. */
+  private bossBeamStart(bossRef: { id: string }, tx: number, ty: number, damage: number, durationMs: number, tickMs: number, range: number): void {
+    const boss = this.bosses.find((b) => b.id === bossRef.id);
+    if (!boss || !boss.isAlive) return;
+    const ang = Math.atan2(ty - boss.y, tx - boss.x);
+    const g = this.add.graphics().setDepth(12);
+    this.worldFx.add(g);
+    const now = this.time.now;
+    this.bossBeams.push({ g, boss, dirX: Math.cos(ang), dirY: Math.sin(ang), range, until: now + durationMs, nextTickAt: now, tickMs, damage });
+  }
+
+  /** Per-frame: redraw live beams from their boss along the locked direction and
+   *  tick damage while the player stands in the line. Ends on duration/boss death. */
+  private updateBossBeams(): void {
+    if (this.bossBeams.length === 0) return;
+    const now = this.time.now;
+    for (const beam of this.bossBeams) {
+      if (now >= beam.until || !beam.boss.isAlive) {
+        beam.g.destroy();
+        continue;
+      }
+      const x1 = beam.boss.x;
+      const y1 = beam.boss.y;
+      const x2 = x1 + beam.dirX * beam.range;
+      const y2 = y1 + beam.dirY * beam.range;
+      // The channel-beam visual language (outer glow + bright core + nodes).
+      const pulse = 0.6 + 0.4 * Math.sin(now / 60);
+      beam.g.clear();
+      beam.g.lineStyle(8, 0x2a3a7a, 0.45);
+      beam.g.lineBetween(x1, y1, x2, y2);
+      beam.g.lineStyle(3, 0x6c9aff, 0.95);
+      beam.g.lineBetween(x1, y1, x2, y2);
+      beam.g.fillStyle(0xc7d9ff, pulse);
+      beam.g.fillCircle(x1, y1, 5);
+      if (!this.playerDead && now >= beam.nextTickAt) {
+        beam.nextTickAt = now + beam.tickMs;
+        // Point-to-segment distance: is the player standing in the beam corridor?
+        const px = this.player.x - x1;
+        const py = this.player.y - y1;
+        const t = Phaser.Math.Clamp((px * beam.dirX + py * beam.dirY) / beam.range, 0, 1);
+        const d = Math.hypot(px - beam.dirX * beam.range * t, py - beam.dirY * beam.range * t);
+        if (d <= 26) {
+          const dealt = this.playerHealth.damage(beam.damage);
+          this.player.flash();
+          this.spawnDamageNumber(this.player.x, this.player.y - 26, dealt, '#8fa8ff');
+          this.lastCombatTime = now;
+          if (this.playerHealth.isDead) this.onPlayerDeath();
+        }
+      }
+    }
+    this.bossBeams = this.bossBeams.filter((b) => now < b.until && b.boss.isAlive);
   }
 
   /** quest id → its manifest zone+beat (lazy one-time index over WORLD). */

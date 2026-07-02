@@ -317,6 +317,8 @@ export class Boss {
         return dist <= atk.range; // drop a lingering zone at the player when in reach
       case 'hellfire':
         return dist <= atk.range; // erupt the whole arena while the player is inside it
+      case 'beam':
+        return dist <= atk.range && this.hooks.lineOfSight(this.x, this.y, px, py);
     }
   }
 
@@ -378,8 +380,10 @@ export class Boss {
       }
       case 'barrage':
       case 'slam':
-      case 'charge': {
-        // SPECIAL: telegraph first, then resolve in update().
+      case 'charge':
+      case 'beam': {
+        // SPECIAL: telegraph first, then resolve in update(). A beam telegraphs at
+        // the BOSS (the wind-up is the tell; the direction locks when it fires).
         const tele = atk.telegraphMs ?? 600;
         this.pending = { attack: atk, at: time + tele, tx: px, ty: py };
         const tr = atk.kind === 'slam' ? atk.radius ?? 120 : 40;
@@ -407,6 +411,10 @@ export class Boss {
       this.pop(1.2);
     } else if (atk.kind === 'slam') {
       this.hooks.slam(this.x, this.y, atk.radius ?? 120, atk.damage);
+    } else if (atk.kind === 'beam') {
+      // Direction locked at the wind-up's aim point; the scene runs the beam window.
+      this.hooks.beam(this, pending.tx, pending.ty, atk.damage, atk.durationMs ?? 1600, 250, atk.range);
+      this.pop(1.12);
     } else if (atk.kind === 'charge') {
       const a = Phaser.Math.Angle.Between(this.x, this.y, pending.tx, pending.ty);
       // Dash velocity: a per-attack speed if given, else the legacy moveSpeed × 2.4.

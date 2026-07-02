@@ -19,7 +19,9 @@ export type BossAttackKind =
   | 'mirror' // REACTIVE: "answers" the player — return volley to ranged, mimic-dash to a dash
   | 'shield' // DEFENSIVE: a telegraphed invulnerability window (damage blocked), then vulnerable
   | 'hazard' // ZONE-CONTROL: drops a lingering ground hazard at the player that accumulates
-  | 'hellfire'; // FINALE: a telegraphed FULL-ARENA eruption — survive only inside the marked SAFE ZONES
+  | 'hellfire' // FINALE: a telegraphed FULL-ARENA eruption — survive only inside the marked SAFE ZONES
+  | 'beam'; // CHANNEL: a telegraphed enemy-cast beam (the player channel system, reversed) —
+//            locks a direction at the player on wind-up end, then ticks damage along the line
 
 export interface BossAttack {
   readonly kind: BossAttackKind;
@@ -43,7 +45,8 @@ export interface BossAttack {
   readonly telegraphMs?: number;
   /** 'mirror' dash-mimic velocity (px/sec) when it answers a player dash. */
   readonly dashSpeed?: number;
-  /** 'shield' invuln-window length, or 'hazard' zone lifetime (ms; 0 = whole fight). */
+  /** 'shield' invuln-window length, 'hazard' zone lifetime (ms; 0 = whole fight),
+   *  or 'beam' channel length (how long the beam stays up and ticking). */
   readonly durationMs?: number;
   /** 'hazard' max concurrent zones for this boss (oldest recycled past the cap). */
   readonly cap?: number;
@@ -132,4 +135,9 @@ export interface BossHooks {
   /** HELLFIRE detonation: the arena erupts — damage the player UNLESS they're inside
    *  a safe zone. Clears the warning visuals. */
   hellfireBurst(centerX: number, centerY: number, arenaRadius: number, safe: { x: number; y: number }[], safeRadius: number, damage: number): void;
+  /** ENEMY-CAST BEAM (the channel system, reversed): fire a beam from the boss toward
+   *  (tx,ty), direction LOCKED at cast, `range` long, ticking `damage` every `tickMs`
+   *  on the player while they stand in the line, for `durationMs`. The scene draws it
+   *  with the channel-beam visual language and ends it early if the boss dies. */
+  beam(boss: { id: string; x: number; y: number }, tx: number, ty: number, damage: number, durationMs: number, tickMs: number, range: number): void;
 }
