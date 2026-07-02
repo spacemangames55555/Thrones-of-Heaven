@@ -391,7 +391,7 @@ export const WORLD: Zone[] = [
     anchor: { lat: 39.5, lng: 20.27 }, region: 'Greece', continent: 'Europe',
     pantheon: 'Greek', homeClass: null, tier: 3, act: 'ACT_III', levelRange: [30, 36],
     biome: 'mediterranean-coast', enemyFamilies: ['evil-raiders', 'hollowed-brutes'],
-    connectsTo: ['apulia-eastern-dock', 'thermopylae-pass'], seaGates: ['apulia-eastern-dock'],
+    connectsTo: ['apulia-eastern-dock', 'thessaloniki-outpost'], seaGates: ['apulia-eastern-dock'],
     onHeavenApproach: false, heavenApproachOrder: null, portalSite: false, handAuthored: false,
     questChain: [
       { id: 'epi-01-contested-landing', archetype: 'clear', title: 'The Contested Shore',
@@ -405,7 +405,7 @@ export const WORLD: Zone[] = [
     anchor: { lat: 40.64, lng: 22.94 }, region: 'Greece', continent: 'Europe',
     pantheon: 'Angelic (contested)', homeClass: null, tier: 4, act: 'ACT_IV', levelRange: [36, 40],
     biome: 'holy-highland', enemyFamilies: ['herald-angels', 'radiant-guardians'],
-    connectsTo: ['vardar-corridor', 'thermopylae-pass'],
+    connectsTo: ['vardar-corridor', 'thermopylae-pass', 'epirus-landing'],
     onHeavenApproach: true, heavenApproachOrder: 1, portalSite: false, handAuthored: true,
     questChain: [
       { id: 'eu-01-azazel-welcome', archetype: 'story', title: 'A Warm Hand at the Muster',
@@ -421,7 +421,7 @@ export const WORLD: Zone[] = [
     pantheon: 'Angelic (contested)', homeClass: null, tier: 5, act: 'ACT_IV', levelRange: [40, 44],
     biome: 'holy-highland',
     enemyFamilies: ['herald-angels', 'radiant-guardians', 'lesser-angels'],
-    connectsTo: ['thessaloniki-outpost', 'epirus-landing', 'delphi-sanctuary'],
+    connectsTo: ['thessaloniki-outpost', 'delphi-sanctuary'],
     onHeavenApproach: true, heavenApproachOrder: 2, portalSite: false, handAuthored: false,
     questChain: [
       { id: 'eu-03-herald-truth-1', archetype: 'story', title: 'The Herald at the Gates',
