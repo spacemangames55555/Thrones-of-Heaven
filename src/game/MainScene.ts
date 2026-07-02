@@ -294,6 +294,12 @@ import {
   BRUTE_STRIKE_DAMAGE,
   BRUTE_HP_PER_TIER,
   BRUTE_PACK_CAP,
+  ESCORT_NPC_HP,
+  ESCORT_NPC_TILES_PER_SEC,
+  ESCORT_WAVE_SIZE,
+  ESCORT_WAVE_HIT_DAMAGE,
+  ESCORT_RETRY_MS,
+  ESCORT_ARRIVE_RADIUS,
   HOLY_TINT,
   HOLY_SLASH_COLOR,
   HOLY_DASH_COLOR,
@@ -762,9 +768,31 @@ export class MainScene extends Phaser.Scene {
     state: 'hidden' | 'burst';
     burstEndsAt: number;
   }[] = [];
-  /** DORMANT escort-proximity hook (Prompt D, the escort run, activates it): while
-   *  set, hidden ambushers ALSO reveal when the escort target nears their marker. */
+  /** Escort-proximity hook (ARMED by the escort runs in ambusher zones): while
+   *  set, hidden ambushers ALSO reveal when the escort target nears their marker.
+   *  Null between escorts — the hook idles dormant exactly as it shipped. */
   private ambusherEscortTarget: { x: number; y: number } | null = null;
+  // EUROPE ESCORTS: ONE implementation serving every 'escort'-archetype beat.
+  // A convoy NPC spawns near the player when the beat is active + its chunk is
+  // active, walks a straight gray-box route east across the chunk, and is hit
+  // by 1–2 ambush waves of the zone's own families. Arrival completes the beat;
+  // convoy death resets the encounter for a clean retry (no permanent failure).
+  private escort?: {
+    beatId: string;
+    zoneId: string;
+    npcSprite: Phaser.Physics.Arcade.Sprite;
+    npcHealth: Health;
+    npcBar: HealthBar;
+    start: { x: number; y: number };
+    end: { x: number; y: number };
+    wavesFired: number;
+    /** Wave attackers steered at the moving convoy (townsfolk 'portal' pattern). */
+    waveAttackers: Townsfolk[];
+    /** Zone families include veil-ambushers → the escort-proximity hook is armed. */
+    hasAmbushers: boolean;
+  };
+  /** Earliest time a fresh convoy may spawn after a death (the retry breather). */
+  private escortRetryAt = 0;
   // REGION CHAMPIONS: one boss-engine instance per boss beat (champion-specs.ts).
   // At most ONE champion is live at a time — the active boss beat's, spawned at
   // its zone's boss anchor while that chunk is active, despawned/reset on leave/
@@ -6076,6 +6104,7 @@ export class MainScene extends Phaser.Scene {
     }
     this.updateEuropeAmbushers(); // the veil-ambusher hidden/burst/re-hide machine
     this.updateEuropeChampion(); // the active boss beat's region champion
+    this.updateEuropeEscort(); // the active escort beat's convoy run
     // Death sweep: count each kill once (clear/harvest objectives), then drop
     // the record — the entity arrays prune their own dead.
     for (const rec of this.europeLive) {
@@ -6132,6 +6161,7 @@ export class MainScene extends Phaser.Scene {
   private deactivateAllEuropeZones(): void {
     for (const z of this.europeSpawnZones) if (z.active) this.deactivateEuropeZone(z.zoneId);
     this.despawnEuropeChampion(); // the champion never outlives its chunk / the world
+    this.despawnEuropeEscort(); // nor does a convoy run
   }
 
   /** One mapped-family enemy via its EXISTING spawner (see EXISTING_FAMILY_SPAWNERS).
@@ -6417,6 +6447,206 @@ export class MainScene extends Phaser.Scene {
       }
     }
     this.bossBeams = this.bossBeams.filter((b) => now < b.until && b.boss.isAlive);
+  }
+
+  // --- EUROPE ESCORTS: one convoy implementation for every escort beat ---------
+
+  /** Per-frame (Europe only): keep the convoy run in sync with the active beat. */
+  private updateEuropeEscort(): void {
+    const q = this.chain.activeQuest;
+    const hit = this.europeBeatForQuest(q?.id);
+    const isEscort = !!q && !!hit && hit.beat.archetype === 'escort';
+    const zone = hit ? this.europeSpawnZones.find((z) => z.zoneId === hit.zone.id) : undefined;
+
+    if (this.escort) {
+      // Beat changed / chunk left / player died → clean reset (a retry on return).
+      if (!isEscort || q?.id !== this.escort.beatId || this.playerDead || !zone?.active) {
+        this.despawnEuropeEscort();
+        return;
+      }
+      this.driveEscort(this.escort);
+      return;
+    }
+    if (isEscort && zone?.active && !this.playerDead && this.time.now >= this.escortRetryAt) {
+      this.spawnEuropeEscort(q.id, hit.zone.id, zone);
+    }
+  }
+
+  /** Spawn the convoy NPC near the player; route = straight east across the chunk. */
+  private spawnEuropeEscort(beatId: string, zoneId: string, zone: (typeof this.europeSpawnZones)[number]): void {
+    MainScene.ensureConvoyTexture(this);
+    const map = this.activeMap();
+    const spot = map.nearestWalkableWorld(this.player.x + 48, this.player.y - 8);
+    const sprite = this.physics.add.sprite(spot.x, spot.y, 'convoy-npc').setDepth(9);
+    (sprite.body as Phaser.Physics.Arcade.Body).setSize(22, 18);
+    this.physics.add.collider(sprite, map.layer);
+    const bar = new HealthBar(this, 44, 6, 9);
+    bar.setRatio(1);
+    bar.setVisible(true);
+    this.uiCamera?.ignore([sprite, ...bar.objects()]);
+    // Endpoint: the same southern latitude as the zone arrival, out at the chunk's
+    // eastern side — a straight-ish path that never crosses the settlement walls.
+    const arrivalY = this.europeZoneArrivals[zoneId]?.y ?? spot.y;
+    const end = map.nearestWalkableWorld(zone.center.x + zone.radiusPx * 0.7, arrivalY);
+    const fams = getZone(zoneId)?.enemyFamilies ?? [];
+    this.escort = {
+      beatId,
+      zoneId,
+      npcSprite: sprite,
+      npcHealth: new Health(ESCORT_NPC_HP),
+      npcBar: bar,
+      start: { x: spot.x, y: spot.y },
+      end,
+      wavesFired: 0,
+      waveAttackers: [],
+      hasAmbushers: fams.includes('veil-ambushers'),
+    };
+    this.showBanner('Escort the convoy east!', 2000);
+  }
+
+  /** Per-frame convoy drive: death → retry reset; arrival → beat completes; else
+   *  march east, arm the ambusher hook, steer attackers, and fire ambush waves. */
+  private driveEscort(e: NonNullable<typeof this.escort>): void {
+    // Convoy death: reset the encounter for a clean retry — never a fail state.
+    if (e.npcHealth.isDead) {
+      this.showBanner('The convoy has fallen — regroup and try again!', 2400);
+      this.escortRetryAt = this.time.now + ESCORT_RETRY_MS;
+      this.despawnEuropeEscort();
+      return;
+    }
+    // Arrival: the beat completes (its factory trigger), the run cleans up.
+    const dEnd = Phaser.Math.Distance.Between(e.npcSprite.x, e.npcSprite.y, e.end.x, e.end.y);
+    if (dEnd <= ESCORT_ARRIVE_RADIUS) {
+      this.showBanner('The convoy arrives!', 2200);
+      if (this.chain.activeQuest?.id === e.beatId) {
+        const hit = this.europeBeatForQuest(e.beatId);
+        if (hit) this.notifyQuest(triggerForBeat(hit.beat) as ObjectiveTrigger);
+      }
+      this.despawnEuropeEscort();
+      return;
+    }
+    // March toward the endpoint (a straight gray-box route).
+    const a = Phaser.Math.Angle.Between(e.npcSprite.x, e.npcSprite.y, e.end.x, e.end.y);
+    const speed = ESCORT_NPC_TILES_PER_SEC * 32;
+    (e.npcSprite.body as Phaser.Physics.Arcade.Body).velocity.set(Math.cos(a) * speed, Math.sin(a) * speed);
+    e.npcSprite.setFlipX(Math.cos(a) < 0);
+    e.npcBar.setPosition(e.npcSprite.x - 22, e.npcSprite.y - 26);
+    e.npcBar.setRatio(e.npcHealth.ratio);
+
+    const convoyPos = { x: e.npcSprite.x, y: e.npcSprite.y };
+    // Ambusher zones: ARM the escort-proximity hook (Prompt B's dormant seam) —
+    // hidden ambushers along the route reveal as the convoy passes them.
+    if (e.hasAmbushers) {
+      this.ambusherEscortTarget = convoyPos;
+      // Revealed ambushers during an escort hunt the CONVOY, not the player.
+      for (const rec of this.europeAmbushers) {
+        if (rec.state !== 'burst' || !rec.t.isAlive) continue;
+        rec.t.setTarget(convoyPos);
+        if (!rec.t.onHitPortal) rec.t.onHitPortal = () => this.convoyHit(ESCORT_WAVE_HIT_DAMAGE);
+      }
+    }
+    // Steer wave attackers at the moving convoy (the portal-defense pattern with
+    // a walking "portal": strike it in range, strike the player if intercepted).
+    for (const t of e.waveAttackers) if (t.isAlive) t.setTarget(convoyPos);
+
+    // 1–2 ambush waves at route-progress thresholds.
+    const total = Phaser.Math.Distance.Between(e.start.x, e.start.y, e.end.x, e.end.y) || 1;
+    const progress = Phaser.Math.Clamp(1 - dEnd / total, 0, 1);
+    const thresholds = [0.3, 0.65];
+    if (e.wavesFired < thresholds.length && progress >= thresholds[e.wavesFired]) {
+      e.wavesFired++;
+      this.spawnEscortWave(e);
+    }
+  }
+
+  /** One ambush wave from the ZONE's own families. Melee (townsfolk-kind) families
+   *  spawn steered at the convoy; angel-only zones fall back to the pooled spawner
+   *  (harassers around the run). Cap-respecting and pooled via europeLive. */
+  private spawnEscortWave(e: NonNullable<typeof this.escort>): void {
+    const fams = (getZone(e.zoneId)?.enemyFamilies ?? []).filter((f) => f in EXISTING_FAMILY_DOMAIN);
+    if (fams.length === 0) return;
+    const melee = fams.filter((f) => f === 'corrupted-wildlife' || f === 'evil-raiders' || f === 'hollowed-brutes');
+    const fam = melee[(e.wavesFired - 1) % Math.max(1, melee.length)] ?? fams[0];
+    let n = fam === 'hollowed-brutes' ? Math.min(ESCORT_WAVE_SIZE, BRUTE_PACK_CAP) : ESCORT_WAVE_SIZE;
+    n = Math.min(n, Math.max(0, EUROPE_ENEMY_CAP - this.europeLiveCount()));
+    if (n <= 0) return;
+    this.showBanner('Ambush!', 1400);
+    const map = this.activeMap();
+    const tint = DOMAIN_TINT[EXISTING_FAMILY_DOMAIN[fam]];
+    for (let i = 0; i < n; i++) {
+      const ang = Math.random() * Math.PI * 2;
+      const spot = map.nearestWalkableWorld(e.npcSprite.x + Math.cos(ang) * 150, e.npcSprite.y + Math.sin(ang) * 150);
+      if (melee.includes(fam)) {
+        // Direct convoy attackers: townsfolk with the convoy as their (moving) target.
+        const variant = fam === 'corrupted-wildlife' ? 'wolf' : fam === 'hollowed-brutes' ? 'brute' : 'raider';
+        const t = this.spawnTownsfolk(spot.x, spot.y, { x: e.npcSprite.x, y: e.npcSprite.y }, variant);
+        t.sprite.setTint(tint);
+        t.onHitPortal = () => this.convoyHit(ESCORT_WAVE_HIT_DAMAGE);
+        this.europeLive.push({ zoneId: e.zoneId, family: fam, kind: 'townsfolk', entity: t, counted: false });
+        e.waveAttackers.push(t);
+      } else {
+        // Non-melee families (angel-only zones): pooled harassers around the run.
+        this.spawnEuropeEnemy(e.zoneId, fam, spot.x, spot.y, tint);
+      }
+    }
+  }
+
+  /** A wave attacker's strike lands on the convoy. */
+  private convoyHit(damage: number): void {
+    const e = this.escort;
+    if (!e || e.npcHealth.isDead) return;
+    e.npcHealth.damage(damage);
+    this.spawnDamageNumber(e.npcSprite.x, e.npcSprite.y - 24, damage, '#ffb0a0');
+    e.npcSprite.setTint(0xff6a5a);
+    this.time.delayedCall(90, () => {
+      if (this.escort === e) e.npcSprite.clearTint();
+    });
+    this.lastCombatTime = this.time.now;
+  }
+
+  /** Tear the escort run down (death/arrival/leave/beat change) — clean state. */
+  private despawnEuropeEscort(): void {
+    const e = this.escort;
+    if (!e) return;
+    this.escort = undefined;
+    this.ambusherEscortTarget = null; // the hook returns to dormant between runs
+    // Surviving attackers revert to ordinary player-hunting zone enemies.
+    for (const t of e.waveAttackers) {
+      if (t.isAlive) {
+        t.setTarget(null);
+        t.onHitPortal = undefined;
+      }
+    }
+    for (const rec of this.europeAmbushers) {
+      if (rec.t.isAlive) {
+        rec.t.setTarget(null);
+        rec.t.onHitPortal = undefined;
+      }
+    }
+    for (const o of e.npcBar.objects()) o.destroy();
+    e.npcSprite.destroy();
+  }
+
+  /** Gray-box convoy body: a covered wagon (dark outline, tan tarp, two wheels). */
+  private static ensureConvoyTexture(scene: Phaser.Scene): void {
+    if (scene.textures.exists('convoy-npc')) return;
+    const w = 34;
+    const h = 28;
+    const g = scene.make.graphics({ x: 0, y: 0 }, false);
+    g.fillStyle(0x14100c, 1); // outline
+    g.fillRoundedRect(2, 6, w - 4, h - 12, 5);
+    g.fillStyle(0xd9c28a, 1); // tan tarp
+    g.fillRoundedRect(4, 8, w - 8, h - 16, 4);
+    g.fillStyle(0x5a3a20, 1); // cart bed
+    g.fillRect(4, h - 10, w - 8, 4);
+    g.fillStyle(0x14100c, 1); // wheels
+    g.fillCircle(9, h - 5, 4.5);
+    g.fillCircle(w - 9, h - 5, 4.5);
+    g.fillStyle(0x8a6a3a, 1);
+    g.fillCircle(9, h - 5, 2);
+    g.fillCircle(w - 9, h - 5, 2);
+    g.generateTexture('convoy-npc', w, h);
+    g.destroy();
   }
 
   /** quest id → its manifest zone+beat (lazy one-time index over WORLD). */

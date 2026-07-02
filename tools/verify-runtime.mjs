@@ -10,6 +10,14 @@
 //   • zone gates missing or a gate crossing not landing,
 //   • world travel (Europe <-> Earth) breaking.
 //
+// HARNESS CONTRACT (hardening pass): every check ESTABLISHES its own
+// preconditions — alive, healed, god-mode shield, known location/quest state —
+// via window.__ready() / window.__ensureEscort() before acting, and asserts
+// its setup LOUDLY: a check whose setup fails must FAIL the gate, never
+// silently skip or vacuously pass. (A debuff-seed that no-op'd on a dead
+// player, and Europe checks skipping when the world failed to register, were
+// exactly this class of rot.)
+//
 // Self-contained: builds nothing (run `npm run build` first — `npm run verify`
 // chains it), starts its own preview server on :4174, exits nonzero on any
 // failure. Requires the window.__game handle exported by src/main.ts.
@@ -75,8 +83,35 @@ try {
     ok(`fresh start (${cls}): Earth, no auto-started quest`, s.world === 'earth' && s.active === null, `world=${s.world} active=${s.active}`);
   }
 
-  // 3) The Europe sparse world (when built zones exist): travel, chunks, gates.
+  // HARNESS HELPERS (the precondition contract). __ready(): revive + heal +
+  // god-mode absorb shield — checks test SYSTEMS, not the player's survival;
+  // an unnoticed mid-check death corrupts everything after it (the respawn
+  // relocates the player and correctly resets encounters). __ensureEscort():
+  // (re)establish a live escort run for a beat regardless of what earlier
+  // checks left behind. Defined AFTER the last page navigation.
+  await page.evaluate(() => {
+    window.__ready = () => {
+      const ms = window.__game.scene.getScene('MainScene');
+      if (ms.playerDead) ms.respawnPlayer();
+      ms.playerHealth.full();
+      ms.playerHealth.shield = 1e9;
+      return ms;
+    };
+    window.__ensureEscort = async (beatId) => {
+      const ms = window.__ready();
+      if (!ms.escort || ms.escort.beatId !== beatId || ms.chain.activeQuest?.id !== beatId) {
+        ms.devJumpToQuest(beatId);
+        ms.playerHealth.shield = 1e9; // re-arm past the jump's heal path
+        await new Promise((r) => setTimeout(r, 2600)); // travel + chunk activation + spawn
+      }
+      return ms;
+    };
+  });
+
+  // 3) The Europe sparse world: travel, chunks, gates. Europe SHIPPED — if the
+  // world failed to register, that is a loud FAIL, never a silent skip.
   const hasEurope = await page.evaluate(() => !!window.__game.scene.getScene('MainScene').worlds['europe']);
+  ok('Europe: sparse world registered (permanent since the region shipped)', hasEurope, hasEurope ? '25 built zones expected' : 'setupEurope registered no world — every Europe check below is unrunnable');
   if (hasEurope) {
     await page.evaluate(() => window.__game.scene.getScene('MainScene').devTravelEurope());
     await page.waitForTimeout(2200);
@@ -90,79 +125,89 @@ try {
       };
     });
     ok('Europe: travel lands on a rendered chunk', r.world === 'europe' && r.chunks >= 1 && r.onChunk, `chunks=${r.chunks}`);
-    ok('Europe: gates come in pairs (both directions)', r.gates % 2 === 0, `${r.gates} gates`);
-    if (r.gates >= 2) {
-      const crossed = await page.evaluate(async () => {
-        const ms = window.__game.scene.getScene('MainScene');
-        const g = ms.europeGates[0];
-        ms.player.sprite.body.reset(g.x, g.y + 20);
-        await new Promise((res) => setTimeout(res, 600));
-        if (!ms.cityGateButton.isVisible) return { shown: false };
-        ms.cityGateAction?.();
-        await new Promise((res) => setTimeout(res, 1600));
-        return { shown: true, d: Math.hypot(ms.player.x - g.dest.x, ms.player.y - g.dest.y) };
-      });
-      ok('Europe: a real gate crossing lands', crossed.shown && crossed.d < 8, crossed.shown ? `d=${crossed.d.toFixed(1)}` : 'button never appeared');
-    }
-    // 3b. PER-CHUNK SPAWNS: entering a chunk materializes its packs...
-    await page.waitForTimeout(800);
-    const liveAtRome = await page.evaluate(() => window.__game.scene.getScene('MainScene').europeLiveCount());
-    ok('Europe: entering a chunk materializes its spawns', liveAtRome > 0, `${liveAtRome} live at arrival`);
+    ok('Europe: gates exist and come in pairs (both directions)', r.gates >= 2 && r.gates % 2 === 0, `${r.gates} gates`);
+    // A real gate crossing — runs UNCONDITIONALLY (no gates = a loud fail here too).
+    const crossed = await page.evaluate(async () => {
+      const ms = window.__ready();
+      const g = ms.europeGates[0];
+      if (!g) return { shown: false, reason: 'no gates registered' };
+      ms.player.sprite.body.reset(g.x, g.y + 20);
+      await new Promise((res) => setTimeout(res, 600));
+      if (!ms.cityGateButton.isVisible) return { shown: false, reason: 'button never appeared' };
+      ms.cityGateAction?.();
+      await new Promise((res) => setTimeout(res, 1600));
+      return { shown: true, d: Math.hypot(ms.player.x - g.dest.x, ms.player.y - g.dest.y) };
+    });
+    ok('Europe: a real gate crossing lands', crossed.shown && crossed.d < 8, crossed.shown ? `d=${crossed.d.toFixed(1)}` : crossed.reason);
+
+    // 3b. PER-CHUNK SPAWNS: standing in a chunk materializes its packs (self-
+    // establishing: teleports to zone 1's chunk rather than trusting the
+    // crossing above to have left the player anywhere useful)...
+    const liveAt = await page.evaluate(async () => {
+      const ms = window.__ready();
+      const z = ms.europeSpawnZones[0];
+      if (!z) return -1;
+      ms.player.sprite.body.reset(z.center.x, z.center.y + 200);
+      await new Promise((res) => setTimeout(res, 900));
+      return ms.europeLiveCount();
+    });
+    ok('Europe: entering a chunk materializes its spawns', liveAt > 0, `${liveAt} live in zone 1`);
     // ...and leaving despawns them (teleport deep into the void, past hysteresis).
     const liveAfterLeave = await page.evaluate(async () => {
-      const ms = window.__game.scene.getScene('MainScene');
+      const ms = window.__ready();
       ms.player.sprite.body.reset(ms.player.x + 6000, ms.player.y + 6000);
-      await new Promise((r) => setTimeout(r, 900));
+      await new Promise((res) => setTimeout(res, 900));
       return ms.europeLiveCount();
     });
     ok('Europe: leaving a chunk despawns/pools its enemies', liveAfterLeave === 0, `${liveAfterLeave} live after leaving`);
 
     // 3c. KILL OBJECTIVE: jump to a clear beat, kill its family, quest completes.
     const clear = await page.evaluate(async () => {
-      const ms = window.__game.scene.getScene('MainScene');
+      const ms = window.__ready();
       ms.devJumpToQuest('rom-02-catacomb-vermin'); // clear: corrupted-wildlife in Rome
-      await new Promise((r) => setTimeout(r, 1200)); // chunk activates + packs spawn
+      ms.playerHealth.shield = 1e9; // re-arm past the jump's heal path
+      await new Promise((res) => setTimeout(res, 1200)); // chunk activates + packs spawn
       const wildlife = ms.europeLive.filter((rec) => rec.family === 'corrupted-wildlife' && rec.entity.isAlive);
       for (const rec of wildlife.slice(0, 5)) rec.entity.takeHit(99999);
-      await new Promise((r) => setTimeout(r, 900)); // death sweep + trigger
+      await new Promise((res) => setTimeout(res, 900)); // death sweep + trigger
       return { spawned: wildlife.length, status: ms.chain.status('rom-02-catacomb-vermin') };
     });
     ok('Europe: kills increment the active clear objective to completion', clear.spawned >= 5 && clear.status === 'complete', `spawned=${clear.spawned} status=${clear.status}`);
 
     // 3d. ENTITY CAP during a multi-chunk crossing (rome → campania → apulia).
     const capRun = await page.evaluate(async () => {
-      const ms = window.__game.scene.getScene('MainScene');
+      const ms = window.__ready();
       let peak = 0;
       const zones = ms.europeSpawnZones.slice(0, 3);
       for (const z of zones) {
         ms.player.sprite.body.reset(z.center.x, z.center.y + 200);
         for (let i = 0; i < 8; i++) {
-          await new Promise((r) => setTimeout(r, 120));
+          await new Promise((res) => setTimeout(res, 120));
           peak = Math.max(peak, ms.europeLiveCount());
         }
       }
-      return { peak };
+      return { zones: zones.length, peak };
     });
-    ok(`Europe: live-enemy cap holds across a 3-chunk crossing (peak ${capRun.peak})`, capRun.peak > 0 && capRun.peak <= 48, `peak=${capRun.peak} cap=48`);
+    ok(`Europe: live-enemy cap holds across a 3-chunk crossing (peak ${capRun.peak})`, capRun.zones === 3 && capRun.peak > 0 && capRun.peak <= 48, `zones=${capRun.zones} peak=${capRun.peak} cap=48`);
 
     // 3e. VEIL-AMBUSHER: spawns hidden (invisible, OUT of the townsfolk combat
     // list → untargetable) and only reveals when the player enters the radius.
     const amb = await page.evaluate(async () => {
-      const ms = window.__game.scene.getScene('MainScene');
+      const ms = window.__ready();
       // Reset: hop into the void so every zone despawns, then approach fresh.
       ms.player.sprite.body.reset(ms.player.x + 9000, ms.player.y + 9000);
-      await new Promise((r) => setTimeout(r, 700));
+      await new Promise((res) => setTimeout(res, 700));
       const z = ms.europeSpawnZones.find((s) => s.points.some((p) => p.family === 'veil-ambushers'));
       if (!z) return { found: false };
       const pt = z.points.find((p) => p.family === 'veil-ambushers');
       // Land near the marker but OUTSIDE the 140px trigger (homes ring ≤100px from it).
       ms.player.sprite.body.reset(pt.x + 420, pt.y);
-      await new Promise((r) => setTimeout(r, 900)); // zone activates, pack spawns hidden
+      await new Promise((res) => setTimeout(res, 900)); // zone activates, pack spawns hidden
       const recs = ms.europeAmbushers.filter((a) => Math.hypot(a.home.x - pt.x, a.home.y - pt.y) < 200);
       const hiddenBefore = recs.length > 0 && recs.every((a) => a.state === 'hidden' && !a.t.sprite.visible);
       const targetableBefore = recs.some((a) => ms.townsfolk.includes(a.t));
       ms.player.sprite.body.reset(pt.x, pt.y); // step inside the trigger radius
-      await new Promise((r) => setTimeout(r, 600));
+      await new Promise((res) => setTimeout(res, 600));
       const revealed = recs.some((a) => a.state === 'burst' && a.t.sprite.visible && ms.townsfolk.includes(a.t));
       return { found: true, spawned: recs.length, hiddenBefore, targetableBefore, revealed };
     });
@@ -174,16 +219,16 @@ try {
 
     // 3f. HOLLOWED-BRUTE: pack size respects the hard 1–2 cap (per spawn point).
     const brutes = await page.evaluate(async () => {
-      const ms = window.__game.scene.getScene('MainScene');
+      const ms = window.__ready();
       ms.player.sprite.body.reset(ms.player.x + 9000, ms.player.y + 9000); // despawn all
-      await new Promise((r) => setTimeout(r, 700));
+      await new Promise((res) => setTimeout(res, 700));
       const z = ms.europeSpawnZones.find((s) => s.points.some((p) => p.family === 'hollowed-brutes'));
       if (!z) return { found: false };
       ms.player.sprite.body.reset(z.center.x, z.center.y + 100);
-      await new Promise((r) => setTimeout(r, 900)); // zone activates, packs spawn
+      await new Promise((res) => setTimeout(res, 900)); // zone activates, packs spawn
       const pts = z.points.filter((p) => p.family === 'hollowed-brutes');
       const perPack = pts.map(
-        (p) => ms.europeLive.filter((r) => r.family === 'hollowed-brutes' && r.entity.isAlive && Math.hypot(r.entity.x - p.x, r.entity.y - p.y) < 170).length,
+        (p) => ms.europeLive.filter((rec) => rec.family === 'hollowed-brutes' && rec.entity.isAlive && Math.hypot(rec.entity.x - p.x, rec.entity.y - p.y) < 170).length,
       );
       return { found: true, perPack };
     });
@@ -197,16 +242,10 @@ try {
     // zone's champion with the spec'd name, domain tint and tier-scaled stats
     // (alp-01 = The Pass Warden: Physical red, tier 3 → 600·3² = 5400 HP).
     const champ = await page.evaluate(async () => {
-      const ms = window.__game.scene.getScene('MainScene');
-      if (ms.playerDead) ms.respawnPlayer();
-      ms.playerHealth.full();
-      // God-mode shield for the champion checks: the BOSS is under test, not the
-      // player — a pack spike-kill would (correctly) reset the encounter and flake
-      // the check. Cleared automatically by the later world travel (clearDots).
-      ms.playerHealth.shield = 1e9;
+      const ms = window.__ready();
       ms.devJumpToQuest('alp-01-pass-warden');
       ms.playerHealth.shield = 1e9; // re-arm past the jump's heal path
-      await new Promise((r) => setTimeout(r, 2600)); // travel fade + chunk activation + spawn
+      await new Promise((res) => setTimeout(res, 2600)); // travel fade + chunk activation + spawn
       const b = ms.championBoss;
       if (!b) return { spawned: false };
       return { spawned: true, name: b.name, tint: b.def.sprite.tint, hp: b.health.max };
@@ -219,7 +258,7 @@ try {
 
     // ...its ONE signature move (charge) fires within a bounded window once engaged...
     const move = await page.evaluate(async () => {
-      const ms = window.__game.scene.getScene('MainScene');
+      const ms = window.__ready();
       const b = ms.championBoss;
       if (!b) return { fired: false };
       const anchor = ms.europeBossAnchors[ms.championZoneId];
@@ -233,7 +272,7 @@ try {
           fired = true;
           break;
         }
-        await new Promise((r) => setTimeout(r, 90));
+        await new Promise((res) => setTimeout(res, 90));
       }
       return { fired, active: b.isActive };
     });
@@ -241,11 +280,11 @@ try {
 
     // ...and a programmatic defeat completes the boss beat.
     const defeat = await page.evaluate(async () => {
-      const ms = window.__game.scene.getScene('MainScene');
+      const ms = window.__ready();
       const b = ms.championBoss;
       if (!b) return { done: false };
       b.takeHit(9999999);
-      await new Promise((r) => setTimeout(r, 800));
+      await new Promise((res) => setTimeout(res, 800));
       return { done: true, status: ms.chain.status('alp-01-pass-warden'), cleared: ms.championBoss === undefined };
     });
     ok(
@@ -254,18 +293,75 @@ try {
       defeat.done ? `status=${defeat.status} cleared=${defeat.cleared}` : 'no champion to defeat',
     );
 
-    // 3h. STATUS EFFECTS DON'T CROSS WORLDS: take a real tagged caster hit while
+    // 3h. ESCORT (one implementation, eight beats): warping to an escort beat
+    // spawns a convoy near the player and it walks its route. apu-01 is the
+    // target on purpose: apulia's families include veil-ambushers, so this
+    // also proves the escort-proximity hook arms.
+    const esc = await page.evaluate(async () => {
+      const ms = await window.__ensureEscort('apu-01-pilgrim-escort');
+      const e = ms.escort;
+      if (!e) return { spawned: false };
+      const near = Math.hypot(e.npcSprite.x - ms.player.x, e.npcSprite.y - ms.player.y);
+      const x0 = e.npcSprite.x;
+      const y0 = e.npcSprite.y;
+      await new Promise((res) => setTimeout(res, 1100));
+      const moved = Math.hypot(e.npcSprite.x - x0, e.npcSprite.y - y0);
+      return { spawned: true, near, moved, hooked: e.hasAmbushers, status: ms.chain.status('apu-01-pilgrim-escort') };
+    });
+    ok(
+      'escort: beat warp spawns the convoy near the player and it moves',
+      esc.spawned && esc.near < 400 && esc.moved > 30 && esc.hooked && esc.status === 'active',
+      esc.spawned ? `near=${esc.near.toFixed(0)}px moved=${esc.moved.toFixed(0)}px escortHookArmed=${esc.hooked}` : 'no convoy spawned',
+    );
+
+    // ...a scripted convoy death resets the run for a clean retry (fresh
+    // full-HP convoy, beat still active — no permanent failure state)...
+    const escReset = await page.evaluate(async () => {
+      const ms = await window.__ensureEscort('apu-01-pilgrim-escort');
+      const e = ms.escort;
+      if (!e) return { had: false };
+      const oldSprite = e.npcSprite;
+      e.npcHealth.damage(1e9); // scripted convoy death
+      await new Promise((res) => setTimeout(res, 500));
+      const despawned = ms.escort === undefined;
+      await new Promise((res) => setTimeout(res, 3400)); // past the retry breather
+      const fresh = !!ms.escort && ms.escort.npcSprite !== oldSprite && ms.escort.npcHealth.current === ms.escort.npcHealth.max;
+      return { had: true, despawned, fresh, status: ms.chain.status('apu-01-pilgrim-escort') };
+    });
+    ok(
+      'escort: scripted convoy death resets the run for a clean retry',
+      escReset.had && escReset.despawned && escReset.fresh && escReset.status === 'active',
+      escReset.had ? `despawned=${escReset.despawned} freshConvoy=${escReset.fresh} status=${escReset.status}` : 'no active escort to kill',
+    );
+
+    // ...and the convoy reaching the endpoint completes the beat.
+    const escDone = await page.evaluate(async () => {
+      const ms = await window.__ensureEscort('apu-01-pilgrim-escort');
+      const e = ms.escort;
+      if (!e) return { had: false };
+      e.npcSprite.body.reset(e.end.x - 70, e.end.y); // walk the last stretch in
+      const t0 = Date.now();
+      while (Date.now() - t0 < 7000) {
+        ms.playerHealth.shield = 1e9;
+        if (ms.chain.status('apu-01-pilgrim-escort') === 'complete') break;
+        await new Promise((res) => setTimeout(res, 120));
+      }
+      return { had: true, status: ms.chain.status('apu-01-pilgrim-escort'), cleaned: ms.escort === undefined };
+    });
+    ok(
+      'escort: convoy arrival completes the beat (and the run cleans up)',
+      escDone.had && escDone.status === 'complete' && escDone.cleaned,
+      escDone.had ? `status=${escDone.status} cleaned=${escDone.cleaned}` : 'no active escort to finish',
+    );
+
+    // 3i. STATUS EFFECTS DON'T CROSS WORLDS: take a real tagged caster hit while
     // still in Europe (slow + weaken + an active DoT stack), then travel to Earth
     // — the player must ARRIVE with zero Europe debuffs (clearDots rides every
     // applyWorldSwap, the same path as reset/load/death).
     const seeded = await page.evaluate(async () => {
-      const ms = window.__game.scene.getScene('MainScene');
-      // The earlier checks park the player inside live packs — revive/heal first,
-      // because a dead player ignores projectile hits by design.
-      if (ms.playerDead) ms.respawnPlayer();
-      ms.playerHealth.full();
+      const ms = window.__ready(); // alive + healed: a dead player ignores hits by design
       ms.onProjectileHitPlayer(3, 'caster-bolt'); // the same entry point a live bolt uses
-      await new Promise((r) => setTimeout(r, 250)); // a control-effects frame → the slow applies
+      await new Promise((res) => setTimeout(res, 250)); // a control-effects frame → the slow applies
       return { stacks: ms.casterDotStacks.length, slow: ms.player.slowFactor, weakened: ms.time.now < ms.casterWeakenUntil };
     });
     await page.evaluate(() => window.__game.scene.getScene('MainScene').devTravelEarth());
@@ -286,20 +382,18 @@ try {
       seeded.stacks > 0 && seeded.slow < 1 && seeded.weakened && afterEarth.stacks === 0 && afterEarth.slow === 1 && !afterEarth.weakened,
       `before: stacks=${seeded.stacks} slow=${seeded.slow} weakened=${seeded.weakened} → after: stacks=${afterEarth.stacks} slow=${afterEarth.slow} weakened=${afterEarth.weakened}`,
     );
-  } else {
-    console.log('info  no europe world registered — skipping Europe checks');
   }
 
-  // 3i. DARK-CASTER: a REAL bolt from a live caster lands and applies its full
+  // 3j. DARK-CASTER: a REAL bolt from a live caster lands and applies its full
   // debuff set (move slow + incoming-damage weaken + a stacking-DoT stack).
   // Runs on Earth (the caster is a world-agnostic angel variant).
   const caster = await page.evaluate(async () => {
-    const ms = window.__game.scene.getScene('MainScene');
+    const ms = window.__ready(); // alive + shielded: debuffs apply regardless of absorbed damage
     const spot = ms.activeMap().nearestWalkableWorld(ms.player.x + 220, ms.player.y);
     ms.spawnAngel('darkcaster', spot.x, spot.y);
     const t0 = Date.now();
     while (Date.now() - t0 < 9000) {
-      await new Promise((r) => setTimeout(r, 250));
+      await new Promise((res) => setTimeout(res, 250));
       if (ms.player.slowFactor < 1 && ms.casterDotStacks.length > 0) break;
     }
     return {

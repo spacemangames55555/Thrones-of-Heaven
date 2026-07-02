@@ -1741,6 +1741,20 @@ export const BRUTE_STRIKE_COOLDOWN_MS = 2600;
 export const BRUTE_HP_PER_TIER = 220; // maxHP = this * zone tier
 export const BRUTE_PACK_CAP = 2;
 
+// --- Europe ESCORT beats (one implementation serving all eight beats) -------
+/** Convoy NPC health pool (ambush waves chip at it; death = clean retry). */
+export const ESCORT_NPC_HP = 140;
+/** Convoy walk speed (tiles/sec) — slower than the player, so guarding is possible. */
+export const ESCORT_NPC_TILES_PER_SEC = 3.2;
+/** Enemies per ambush wave (clamped by the Europe entity cap + brute pack cap). */
+export const ESCORT_WAVE_SIZE = 3;
+/** Damage one wave attacker's strike deals to the CONVOY. */
+export const ESCORT_WAVE_HIT_DAMAGE = 8;
+/** Pause after a convoy death before a fresh convoy spawns for the retry (ms). */
+export const ESCORT_RETRY_MS = 2500;
+/** Distance (px) to the endpoint that counts as ARRIVED (the beat completes). */
+export const ESCORT_ARRIVE_RADIUS = 44;
+
 /** NESTED CITIES: how close (px) to a city gate the Enter/Leave button shows.
  *  Must comfortably cover the fixed arrival spots on BOTH sides of the gate
  *  (inside ~96px, outside ~64px) so the button is available right on arrival. */
