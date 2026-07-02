@@ -34,6 +34,7 @@ export const EUROPE_BUILT_ZONES: string[] = [
   'kent-passage',
   'calais-landing',
   'paris-veiled-lights',
+  'burgundy-vintners-road',
 ];
 
 /**

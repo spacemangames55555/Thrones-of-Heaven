@@ -58,4 +58,6 @@ source of truth; `world-builder.ts` stamps zones into region worlds;
 - [x] **kent-passage** — done. Chalk-coast corridor; London↔Kent gates. Its Channel dock activates with calais-landing (next).
 - [x] **calais-landing** — done. The CHANNEL CROSSING is live — "Sail to…" dock gates both directions between Kent and Calais (the region's second sea gate).
 - [x] **paris-veiled-lights** — done. Urban-river city; Calais↔Paris gates. par-01 is loop-authored story (no TODO — its summary is the intent line).
-- [ ] **burgundy-vintners-road** — pending
+- [x] **burgundy-vintners-road** — done. Vineyard-hills corridor; Paris↔Burgundy and Burgundy↔Alps gates close the Bard road into the Alps — and with it the WHOLE REGION: all 25 zones built, 50 gates (all 25 manifest connections, both directions), every spine converging on Thessaloniki → Thermopylae → Delphi.
+
+**EUROPE REGION COMPLETE** — 25/25 zones stamped and quest-registered. Remaining for later phases: hand-authored prose (all HAND_AUTHORED_TODOs), combat wiring for clear/escort/boss/portal_approach beats (spawn markers today), the class-start feature (home-city openers are manual-start), and the Delphi portal machine.
