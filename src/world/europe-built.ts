@@ -30,6 +30,7 @@ export const EUROPE_BUILT_ZONES: string[] = [
   'vienna-river-muster',
   'belgrade-iron-river',
   'vardar-corridor',
+  'london-grey-chorus',
 ];
 
 /**

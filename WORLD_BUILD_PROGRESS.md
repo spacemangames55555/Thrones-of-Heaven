@@ -54,7 +54,7 @@ source of truth; `world-builder.ts` stamps zones into region worlds;
 - [x] **vienna-river-muster** — done. Danube city; Alps↔Vienna gates — the Blacksmith spine now runs Munich→Tyrol→Alps→Vienna. Belgrade link (and the vie/car anyOf merge) arrives with belgrade-iron-river next batch.
 - [x] **belgrade-iron-river** — done. Balkan city at the confluence; the DANUBE MERGE is live — entry anyOf(vie-02, car-02), gates both ways to Vienna AND the Carpathians. The German and Russian roads now meet here. bel-02's region-champion (Physical) is a marker.
 - [x] **vardar-corridor** — done. Balkan-highland corridor; Belgrade↔Vardar↔Thessaloniki gates close the LAST link of the march trunk — var-02 (Thessaloniki's primary anyOf arm) is now earnable in-world. The eastern/central spines reach Azazel's muster on foot.
-- [ ] **london-grey-chorus** — pending
+- [x] **london-grey-chorus** — done. BARD home city (class unbuilt — chain locked until Bard ships or the dev override). Isolated until kent-passage. TODOs: lon-01, lon-03 prose.
 - [ ] **kent-passage** — pending
 - [ ] **calais-landing** — pending
 - [ ] **paris-veiled-lights** — pending
