@@ -38,6 +38,7 @@ import { buildHeavenMapData, HEAVEN_WIDTH, HEAVEN_HEIGHT, HEAVEN_CHERUB_SPAWNS, 
 import { buildHellMapData, HELL_WIDTH, HELL_HEIGHT, HELL_DEMON_SPAWNS, SATAN_LAIR } from '../map/hellWorld';
 import { WORLD_EARTH, WORLD_HEAVEN, WORLD_HELL, WORLD_EGYPT, type WorldId, type WorldRuntime } from '../world/worlds';
 import { CITY_DEFS, CITY_FAIYUM, type CityDef } from '../world/cities';
+import { MANIFEST_CLASS_FOR, KNOWN_CLASS_NAMES } from '../world/class-canon';
 import { ProjectileSystem } from '../combat/ProjectileSystem';
 import { FloatingTextPool, CircleFxPool } from '../combat/FxPools';
 import { HazardField } from '../combat/HazardField';
@@ -690,6 +691,8 @@ export class MainScene extends Phaser.Scene {
   > = {};
   private cityGateButton!: TouchButton; // shared "Enter <City>" / "Leave <City>" contextual button
   private cityGateAction: (() => void) | null = null;
+  /** DEV: overrides the class announced to the quest chain (null = real class). */
+  private devClassOverride: string | null = null;
   // DEV "Test City Arrow": a fake objective target exercising the hierarchical
   // gate-waypoint chaining (0 off, 1 the mill inside, 2 a spot outside).
   private devArrowState = 0;
@@ -1069,6 +1072,7 @@ export class MainScene extends Phaser.Scene {
     this.chain = new QuestChain(QUEST_REGISTRY);
     this.chain.onChange = () => this.refreshQuestUi();
     this.chain.onEvent = (e) => this.handleQuestEvent(e);
+    this.announcePlayerClass(); // classRequirement-gated quests unlock for this class
     this.oregonSpirit = this.spirit.entities.find((e) => e.id === OREGON_SPIRIT_ID);
     // Quest-givers: the four Act I NPCs give the Enumclaw opening (one quest each,
     // unlocked in order by prerequisite); the home NPC gives the corruption beat
@@ -1733,7 +1737,28 @@ export class MainScene extends Phaser.Scene {
     this.playerHealth.setMax(this.skillAdjustedMaxHP());
     this.playerHealth.full();
     this.refreshLoadoutBar();
+    this.announcePlayerClass(); // re-announce so class-gated quests re-evaluate
     this.showBanner(`Class: ${classId}`, 1400);
+  }
+
+  /**
+   * Tell the quest chain which class the player is, for classRequirement-gated
+   * quests (home-city chains). The DEV override (below) wins when set, so gated
+   * chains like Rome's can be playtested before their classes exist. The
+   * internal id → manifest name mapping lives in world/class-canon.ts (canon:
+   * Mage and Wizard are permanently distinct classes).
+   */
+  private announcePlayerClass(): void {
+    this.chain.setPlayerClass(this.devClassOverride ?? MANIFEST_CLASS_FOR[this.classId] ?? this.classId);
+  }
+
+  /** DEV: cycle the announced-class override — none → each known class → none. */
+  private devCycleClassOverride(): void {
+    const names = KNOWN_CLASS_NAMES;
+    const i = this.devClassOverride === null ? -1 : names.indexOf(this.devClassOverride);
+    this.devClassOverride = i + 1 >= names.length ? null : names[i + 1];
+    this.announcePlayerClass();
+    this.showBanner(`DEV class override: ${this.devClassOverride ?? 'none (real class)'}`, 1600);
   }
 
   /** DEV: toggle the light aim-assist on/off (Piece 2) for isolating the feel. */
@@ -7798,6 +7823,7 @@ export class MainScene extends Phaser.Scene {
       { label: 'Set Class: Wizard', onPress: () => this.devSetClass('wizard') },
       { label: 'Set Class: Blacksmith', onPress: () => this.devSetClass('blacksmith') },
       { label: 'Set Class: Necromancer', onPress: () => this.devSetClass('necromancer') },
+      { label: 'Class Override (cycle)', onPress: () => this.devCycleClassOverride() },
       { label: 'Unlock Summons Tree', onPress: () => this.devUnlockSummons() },
       { label: 'Reset Skill Trees', onPress: () => this.resetSkillTrees() },
       // Act IV enemy variants — spawn one next to the player to eyeball look/stats.
