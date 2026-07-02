@@ -37,6 +37,7 @@ import { PortalDefense } from '../encounter/PortalDefense';
 import { buildHeavenMapData, HEAVEN_WIDTH, HEAVEN_HEIGHT, HEAVEN_CHERUB_SPAWNS, THRONE_POSITION } from '../map/heavenWorld';
 import { buildHellMapData, HELL_WIDTH, HELL_HEIGHT, HELL_DEMON_SPAWNS, SATAN_LAIR } from '../map/hellWorld';
 import { WORLD_EARTH, WORLD_HEAVEN, WORLD_HELL, WORLD_EGYPT, type WorldId, type WorldRuntime } from '../world/worlds';
+import { CITY_DEFS, CITY_FAIYUM, type CityDef } from '../world/cities';
 import { ProjectileSystem } from '../combat/ProjectileSystem';
 import { FloatingTextPool, CircleFxPool } from '../combat/FxPools';
 import { HazardField } from '../combat/HazardField';
@@ -259,6 +260,8 @@ import {
   EARTH_RETURN_OFFSET,
   WORLD_TRANSITION_MS,
   WORLD_TRANSITION_COOLDOWN_MS,
+  CITY_TRANSITION_MS,
+  CITY_GATE_RANGE,
   HOLY_TINT,
   HOLY_SLASH_COLOR,
   HOLY_DASH_COLOR,
@@ -276,7 +279,7 @@ import {
   AIM_ASSIST_CONE_ANGLE,
   AIM_ASSIST_MAX_RANGE,
 } from './settings';
-import { TOWN_TILES } from '../town/townTiles';
+import { TOWN_TILES, TownTileId } from '../town/townTiles';
 import { buildTown, type TownFeatures, type DoorFeature } from '../town/TownBuilder';
 import { PORTLAND_TOWN, PORTLAND_NPC_LINES, SEATTLE_DRUID_TOWN } from '../town/townData';
 import type { WashingtonMap } from '../map/mapTypes';
@@ -670,7 +673,27 @@ export class MainScene extends Phaser.Scene {
   // Egypt: the fourth world — a TERRESTRIAL map (runs the Earth-style per-frame
   // path), built via the same multi-world system at a further coordinate offset.
   private egyptMap!: GameMap;
-  private egyptArrivalPos = { x: 0, y: 0 }; // the Faiyum oasis village (the map's spawn)
+  private egyptArrivalPos = { x: 0, y: 0 }; // just outside the Faiyum village gate
+
+  // NESTED CITIES: each CityDef becomes a small registered world; the runtime
+  // resolves its gate/arrival world positions once at setup. See world/cities.ts.
+  private cityRuntimes: Record<
+    WorldId,
+    {
+      def: CityDef;
+      map: GameMap;
+      entrancePos: { x: number; y: number }; // the gate ON the parent map
+      outsideArrival: { x: number; y: number }; // where "Leave" drops the player
+      insideArrival: { x: number; y: number }; // where "Enter" drops the player
+      gatePos: { x: number; y: number }; // the exit gate INSIDE the city
+    }
+  > = {};
+  private cityGateButton!: TouchButton; // shared "Enter <City>" / "Leave <City>" contextual button
+  private cityGateAction: (() => void) | null = null;
+  // DEV "Test City Arrow": a fake objective target exercising the hierarchical
+  // gate-waypoint chaining (0 off, 1 the mill inside, 2 a spot outside).
+  private devArrowState = 0;
+  private devArrowTarget: { world: WorldId; x: number; y: number; label: string } | null = null;
 
   private heavenMap!: GameMap;
   private heavenReturnPortal!: HeavenPortal;
@@ -1150,6 +1173,9 @@ export class MainScene extends Phaser.Scene {
     // the ending's one-way home) keep their established walk-in behavior.
     this.enterHeavenButton = new TouchButton(this, 'Enter Heaven', () => this.enterHeavenPortal());
     this.returnEarthButton = new TouchButton(this, 'Return to Earth', () => this.returnToEarthPortal());
+    // NESTED CITIES: the shared Enter/Leave gate button (same contextual slot;
+    // proximity-gated in updateCityGates, so it never contends with Talk).
+    this.cityGateButton = new TouchButton(this, 'Enter Village', () => this.cityGateAction?.());
     // Act II Q6: the proximity "Burn the Grove" action (same bottom-centre slot as
     // Talk/Corrupt; they never contend — the grove has no NPC). Hidden until in range.
     this.burnButton = new TouchButton(this, 'Burn the Grove', () => this.tryArcAction());
@@ -1263,6 +1289,7 @@ export class MainScene extends Phaser.Scene {
       this.corruptButton.setVisible(false);
       this.enterHeavenButton.setVisible(false);
       this.returnEarthButton.setVisible(false);
+      this.cityGateButton.setVisible(false);
       this.readout.update();
       return;
     }
@@ -1280,6 +1307,7 @@ export class MainScene extends Phaser.Scene {
       this.corruptButton.setVisible(false);
       this.enterHeavenButton.setVisible(false);
       this.returnEarthButton.setVisible(false);
+      this.cityGateButton.setVisible(false);
       this.sasquatch.halt();
       this.haltSwarmers();
       this.haltAngels();
@@ -1325,6 +1353,7 @@ export class MainScene extends Phaser.Scene {
       // "return to the outpost" completes before the patron auto-offers the next quest)
       if (this.isDashing()) this.talkButton.setVisible(false);
       else this.checkInteractions();
+      this.updateCityGates(); // AFTER interactions: Talk keeps the shared slot
       this.updateAngels();
       this.updateTownsfolk(); // prune dead first so the wave manager sees the live count
       if (this.activeWorld === WORLD_EARTH) {
@@ -5547,10 +5576,12 @@ export class MainScene extends Phaser.Scene {
     const origin = { x: hb.x + this.hellMap.pixelWidth + HEAVEN_WORLD_GAP, y: 0 };
     // forceCpuLayer: like Heaven/Hell, a map at a non-zero world origin must use
     // the CPU TilemapLayer (the GPU layer double-applies the offset — see GameMap).
-    this.egyptMap = new GameMap(this, egyptMapJson as unknown as WashingtonMap, [], origin, { forceCpuLayer: true });
+    // TOWN_TILES ride along as extra tiles so city-entrance stamps (walls/gates)
+    // can be painted onto this map at runtime, exactly like Earth's towns.
+    this.egyptMap = new GameMap(this, egyptMapJson as unknown as WashingtonMap, TOWN_TILES, origin, { forceCpuLayer: true });
 
-    // Arrival: the Faiyum oasis village site (the map's authored spawn tile) —
-    // the future home-village country for the Egypt questline.
+    // Arrival: the Faiyum village site (re-pointed to just OUTSIDE the village
+    // gate once setupCities has stamped the walled settlement, below).
     this.egyptArrivalPos = { ...this.egyptMap.spawnWorld };
 
     // City nameplates (Alexandria, Cairo, Suez, the Sinai towns, …) — same
@@ -5567,6 +5598,153 @@ export class MainScene extends Phaser.Scene {
       defaultArrival: this.egyptArrivalPos,
     };
     this.worldPos[WORLD_EGYPT] = { ...this.egyptArrivalPos };
+
+    // The Mount Sinai approach label sits in the map data; nothing else to place
+    // here — the stone-ring marker site is baked into the generated tiles.
+
+    // NESTED CITIES (needs the Egypt world registered — cities chain east of it).
+    this.setupCities();
+    // Egypt's arrival now lands just OUTSIDE the Faiyum village gate (the village
+    // interior is its own sub-map; mutate in place — the registry + worldPos
+    // reference this object).
+    const faiyum = this.cityRuntimes[CITY_FAIYUM];
+    if (faiyum) {
+      this.egyptArrivalPos.x = faiyum.outsideArrival.x;
+      this.egyptArrivalPos.y = faiyum.outsideArrival.y;
+      this.worldPos[WORLD_EGYPT] = { ...faiyum.outsideArrival };
+    }
+  }
+
+  // --- NESTED CITIES: the generic city sub-map system --------------------------
+  //
+  // Every CityDef in world/cities.ts becomes a small registered WORLD (CPU layer,
+  // chained east past the last world) plus a compact walled-settlement stamp on
+  // its parent map. Enter/Leave both run travelToWorld with FIXED arrivals and a
+  // quick fade. Adding a city = adding a CityDef; no code here changes.
+
+  private setupCities(): void {
+    let originX = this.egyptMap.bounds.x + this.egyptMap.pixelWidth + HEAVEN_WORLD_GAP;
+    for (const def of CITY_DEFS) {
+      const parent = this.worlds[def.parentWorld]?.map;
+      if (!parent) throw new Error(`City '${def.id}' registered before its parent world '${def.parentWorld}'`);
+
+      const cityMap = new GameMap(this, def.buildMap(), [], { x: originX, y: 0 }, { forceCpuLayer: true });
+      originX += cityMap.pixelWidth + HEAVEN_WORLD_GAP;
+      new CityMarkers(this, cityMap); // interior nameplates (The Mill / The Well / the gate)
+
+      const collider = this.physics.add.collider(this.player.sprite, cityMap.layer);
+      collider.active = false;
+
+      const entrancePos = this.stampCityEntrance(parent, def);
+      const insideArrival = cityMap.tileToWorldCenter(def.insideArrivalTile.x, def.insideArrivalTile.y);
+      const gatePos = cityMap.tileToWorldCenter(def.gateTile.x, def.gateTile.y);
+      const outsideArrival = {
+        x: entrancePos.x,
+        y: entrancePos.y + parent.tileSize * def.outsideArrivalOffsetTiles,
+      };
+
+      this.worlds[def.id] = { id: def.id, map: cityMap, collider, defaultArrival: insideArrival };
+      this.worldPos[def.id] = { ...insideArrival };
+      this.cityRuntimes[def.id] = { def, map: cityMap, entrancePos, outsideArrival, insideArrival, gatePos };
+    }
+  }
+
+  /** Paint a city's walled-settlement stamp onto its parent map; returns the
+   *  gate's world position (the "Enter" proximity anchor). */
+  private stampCityEntrance(parent: GameMap, def: CityDef): { x: number; y: number } {
+    const legend: Record<string, number> = {
+      W: TownTileId.building, // wall mass (blocks)
+      G: TownTileId.ground,
+      P: TownTileId.road,
+      D: TownTileId.door, // the gate (walkable; exactly one per stamp)
+    };
+    let gate: { x: number; y: number } | null = null;
+    def.entranceStamp.forEach((line, row) => {
+      for (let col = 0; col < line.length; col++) {
+        const ch = line[col];
+        if (ch === '.') continue;
+        const id = legend[ch];
+        if (id === undefined) throw new Error(`Unknown city-entrance cell '${ch}' in '${def.id}'`);
+        const tx = def.entranceAnchorTile.x + col;
+        const ty = def.entranceAnchorTile.y + row;
+        parent.setTileId(tx, ty, id);
+        if (ch === 'D') gate = parent.tileToWorldCenter(tx, ty);
+      }
+    });
+    parent.commitEdits();
+    if (!gate) throw new Error(`City '${def.id}' entrance stamp has no gate 'D'`);
+    return gate;
+  }
+
+  /** Per-frame (terrestrial worlds): show Enter/Leave at city gates. Runs AFTER
+   *  checkInteractions so the Talk prompt keeps priority in the shared slot. */
+  private updateCityGates(): void {
+    let show: { label: string; action: () => void } | null = null;
+    const free =
+      !this.transitioning &&
+      this.time.now >= this.worldCooldownUntil &&
+      !this.dialogue.isOpen() &&
+      !this.isDashing() &&
+      !this.talkButton.isVisible;
+    if (free) {
+      const here = this.cityRuntimes[this.activeWorld];
+      if (here) {
+        // Inside a city: the exit gate.
+        const d = Phaser.Math.Distance.Between(this.player.x, this.player.y, here.gatePos.x, here.gatePos.y);
+        if (d <= CITY_GATE_RANGE) show = { label: `Leave ${here.def.displayName}`, action: () => this.leaveCity(here.def.id) };
+      } else {
+        // On a parent world: any city entrance in range.
+        for (const id of Object.keys(this.cityRuntimes)) {
+          const c = this.cityRuntimes[id];
+          if (c.def.parentWorld !== this.activeWorld) continue;
+          const d = Phaser.Math.Distance.Between(this.player.x, this.player.y, c.entrancePos.x, c.entrancePos.y);
+          if (d <= CITY_GATE_RANGE) {
+            show = { label: `Enter ${c.def.displayName}`, action: () => this.enterCity(id) };
+            break;
+          }
+        }
+      }
+    }
+    if (show) {
+      this.cityGateButton.setLabel(show.label);
+      this.cityGateAction = show.action;
+      this.cityGateButton.setVisible(true);
+    } else {
+      this.cityGateButton.setVisible(false);
+      this.cityGateAction = null;
+    }
+  }
+
+  private enterCity(cityId: WorldId): void {
+    const c = this.cityRuntimes[cityId];
+    if (!c || this.transitioning || this.time.now < this.worldCooldownUntil) return;
+    this.cityGateButton.setVisible(false);
+    this.travelToWorld(cityId, c.insideArrival, CITY_TRANSITION_MS);
+  }
+
+  private leaveCity(cityId: WorldId): void {
+    const c = this.cityRuntimes[cityId];
+    if (!c || this.transitioning || this.time.now < this.worldCooldownUntil) return;
+    this.cityGateButton.setVisible(false);
+    this.travelToWorld(c.def.parentWorld, c.outsideArrival, CITY_TRANSITION_MS);
+  }
+
+  /**
+   * HIERARCHICAL ARROW WAYPOINT toward a target in another world, or null when
+   * the city hierarchy can't route there (existing cross-world behavior: no
+   * arrow). Player inside a city + target elsewhere → the city's EXIT gate; the
+   * target inside a city whose parent is the active world → that city's
+   * ENTRANCE gate on this map.
+   */
+  private cityWaypointToward(targetWorld: WorldId): { x: number; y: number; label: string } | null {
+    if (targetWorld === this.activeWorld) return null;
+    const here = this.cityRuntimes[this.activeWorld];
+    if (here) return { x: here.gatePos.x, y: here.gatePos.y, label: `Leave ${here.def.displayName}` };
+    const target = this.cityRuntimes[targetWorld];
+    if (target && target.def.parentWorld === this.activeWorld) {
+      return { x: target.entrancePos.x, y: target.entrancePos.y, label: target.def.displayName };
+    }
+    return null;
   }
 
   /** Infernal props: jagged spires (collision) + the distant Satan's Lair marker. */
@@ -6189,7 +6367,7 @@ export class MainScene extends Phaser.Scene {
    * collider, zoom, player placement), then fade back in. `arrival` overrides the
    * world's remembered position (the portals pass explicit arrival points).
    */
-  private travelToWorld(worldId: WorldId, arrival?: { x: number; y: number }): void {
+  private travelToWorld(worldId: WorldId, arrival?: { x: number; y: number }, durationMs = WORLD_TRANSITION_MS): void {
     if (this.transitioning) return;
     const target = this.worlds[worldId];
     if (!target) return;
@@ -6200,7 +6378,7 @@ export class MainScene extends Phaser.Scene {
     this.controls.setEnabled(false);
     this.player.setDirection(0, 0);
 
-    const half = WORLD_TRANSITION_MS / 2;
+    const half = durationMs / 2;
     this.fadeOverlay.setVisible(true).setAlpha(0);
     this.tweens.add({
       targets: this.fadeOverlay,
@@ -6275,6 +6453,7 @@ export class MainScene extends Phaser.Scene {
     this.corruptButton.setVisible(false);
     this.enterHeavenButton.setVisible(false);
     this.returnEarthButton.setVisible(false);
+    this.cityGateButton.setVisible(false);
   }
 
   /** Disable every currently-live Earth enemy body; remember them for resume. */
@@ -6329,14 +6508,47 @@ export class MainScene extends Phaser.Scene {
   private devToggleWorld(): void {
     this.travelToWorld(this.activeWorld === WORLD_EARTH ? WORLD_HEAVEN : WORLD_EARTH);
   }
-  /** DEV: travel to Egypt, landing at the Faiyum village (its default arrival). */
+  /** DEV: travel to Egypt's Faiyum arrival (works from anywhere — including
+   *  elsewhere IN Egypt; the same fade just repositions the player). */
   private devTravelEgypt(): void {
-    if (this.activeWorld !== WORLD_EGYPT) this.travelToWorld(WORLD_EGYPT, this.egyptArrivalPos);
+    this.travelToWorld(WORLD_EGYPT, this.egyptArrivalPos);
   }
   /** DEV: travel to Earth, landing at Enumclaw (Earth's default arrival — distinct
    *  from devReturnToEarth, which lands at the Idaho Heaven-portal return spot). */
   private devTravelEarth(): void {
     if (this.activeWorld !== WORLD_EARTH) this.travelToWorld(WORLD_EARTH, this.worlds[WORLD_EARTH].defaultArrival);
+  }
+  /** DEV: travel to the Mount Sinai approach valley (Egypt's south-east Sinai). */
+  private devTravelMtSinai(): void {
+    const city = this.egyptMap.cities.find((c) => c.name.startsWith('Mount Sinai'));
+    if (!city) return;
+    // Land a little up the approach valley (north-west of the site) so the walk
+    // IN passes the stone ring; snap to walkable in case of rock.
+    const p = this.egyptMap.tileToWorldCenter(city.tx - 6, city.ty - 6);
+    const dest = this.egyptMap.nearestWalkableWorld(p.x, p.y, 14);
+    this.travelToWorld(WORLD_EGYPT, dest);
+  }
+  /** DEV "Test City Arrow": cycle the fake objective — OFF → the MILL inside the
+   *  Faiyum village → a desert spot OUTSIDE it → OFF. Exercises the hierarchical
+   *  gate waypoints without a real Egypt quest. */
+  private devCycleCityArrowTest(): void {
+    const fai = this.cityRuntimes[CITY_FAIYUM];
+    if (!fai) return;
+    this.devArrowState = (this.devArrowState + 1) % 3;
+    if (this.devArrowState === 1) {
+      const mill = fai.map.cities.find((c) => c.name === 'The Mill');
+      const p = mill ? fai.map.tileToWorldCenter(mill.tx, mill.ty + 4) : fai.insideArrival;
+      this.devArrowTarget = { world: fai.def.id, x: p.x, y: p.y, label: 'DEV: The Mill' };
+      this.showBanner('City-arrow test 1/2: target = THE MILL (inside the village)', 2200);
+    } else if (this.devArrowState === 2) {
+      // A spot out in the desert, well outside the village walls.
+      const p = { x: fai.entrancePos.x + 900, y: fai.entrancePos.y - 500 };
+      this.devArrowTarget = { world: fai.def.parentWorld, x: p.x, y: p.y, label: 'DEV: Desert spot' };
+      this.showBanner('City-arrow test 2/2: target = a spot OUTSIDE the village', 2200);
+    } else {
+      this.devArrowTarget = null;
+      this.showBanner('City-arrow test OFF', 1400);
+    }
   }
 
   private static ensureHeavenPropTextures(scene: Phaser.Scene): void {
@@ -7645,6 +7857,8 @@ export class MainScene extends Phaser.Scene {
       { label: 'Toggle World', onPress: () => this.devToggleWorld() },
       { label: 'Travel: Egypt', onPress: () => this.devTravelEgypt() },
       { label: 'Travel: Earth', onPress: () => this.devTravelEarth() },
+      { label: 'Travel: Mt Sinai', onPress: () => this.devTravelMtSinai() },
+      { label: 'Test City Arrow (cycle)', onPress: () => this.devCycleCityArrowTest() },
       { label: 'Complete Active Quest', onPress: () => this.chain.completeActive() },
       { label: 'Reset All Quests', onPress: () => this.devResetQuests() },
       { label: 'Save Now', onPress: () => this.manualSave() },
@@ -7936,9 +8150,10 @@ export class MainScene extends Phaser.Scene {
   }
 
   /** Terrestrial (ground-level, Earth-like) worlds run the full per-frame path in
-   *  update() — doors, interactions, arcs, angels, townsfolk. */
+   *  update() — doors, interactions, arcs, angels, townsfolk. Nested CITIES are
+   *  terrestrial too (their NPCs/doors work like any ground world). */
   private isTerrestrial(w: WorldId): boolean {
-    return w === WORLD_EARTH || w === WORLD_EGYPT;
+    return w === WORLD_EARTH || w === WORLD_EGYPT || !!this.cityRuntimes[w];
   }
 
   /** Position the world marker on the current target and update the edge arrow. */
@@ -7961,12 +8176,25 @@ export class MainScene extends Phaser.Scene {
    * already render in any world; only this gate was Earth-only before).
    */
   private currentMarkerTarget(): { x: number; y: number; label: string } | null {
+    // DEV "Test City Arrow": a fake objective exercising the hierarchical gate
+    // waypoints without a real quest (cycled from the dev panel; dev-only).
+    if (this.devArrowTarget) {
+      const t = this.devArrowTarget;
+      if (t.world === this.activeWorld) return { x: t.x, y: t.y, label: t.label };
+      return this.cityWaypointToward(t.world);
+    }
     // Active quest → its current objective's world target, if we're in its world.
     const active = this.chain.activeQuest;
     if (active) {
       const obj = this.chain.activeObjectiveDef;
       if (!obj || !obj.target) return null;
-      if (TARGET_WORLD[obj.target] !== this.activeWorld) return null; // don't point across worlds
+      if (TARGET_WORLD[obj.target] !== this.activeWorld) {
+        // HIERARCHICAL WAYPOINT CHAINING: a target inside a nested city routes
+        // via the city gates (entrance from the parent map; the exit gate from
+        // inside). Non-city cross-world targets keep today's behavior (null —
+        // no cross-world arrows between Earth/Heaven/Hell).
+        return this.cityWaypointToward(TARGET_WORLD[obj.target]);
+      }
       return this.resolveTarget(obj.target);
     }
     // No active quest → the pre-accept pointer to the next OFFERABLE quest's giver.

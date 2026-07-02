@@ -297,6 +297,26 @@ for (const ny of [0.455, 0.6, 0.8]) {
   });
 }
 
+// THE STONE RING at Saint Catherine — a placeholder marker structure so the
+// Mount Sinai site is unmistakable ON FOOT (the future outpost + Heaven-portal
+// home): a ring of standing stones (blocking wadi rock) around a paved floor,
+// with walk-in gaps at the four compass points. Painted AFTER the roads so the
+// road carver can't chew through the stones (the roads dead-end at its edge).
+{
+  const R = 4;
+  disc(ST_CATHERINE.x, ST_CATHERINE.y, R - 1, T.pass); // the paved floor
+  for (let a = 0; a < 32; a++) {
+    const ang = (Math.PI * 2 * a) / 32;
+    // Wide walk-in gaps on the N/S/E/W axes.
+    const nearAxis = Math.min(
+      Math.abs(Math.sin(ang)), // E/W gap
+      Math.abs(Math.cos(ang)), // N/S gap
+    );
+    if (nearAxis < 0.35) continue;
+    put(ST_CATHERINE.x + Math.round(Math.cos(ang) * R), ST_CATHERINE.y + Math.round(Math.sin(ang) * R), T.wadi_rock);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // 7) SPAWN + CITY MARKERS
 // ---------------------------------------------------------------------------
@@ -315,7 +335,7 @@ const cities = [
   { name: 'Nekhel', tx: NEKHEL.x, ty: NEKHEL.y },
   { name: 'Dahab', tx: DAHAB.x, ty: DAHAB.y },
   { name: 'El-Tor', tx: EL_TOR.x, ty: EL_TOR.y },
-  { name: 'Saint Catherine', tx: ST_CATHERINE.x, ty: ST_CATHERINE.y },
+  { name: 'Mount Sinai (Saint Catherine)', tx: ST_CATHERINE.x, ty: ST_CATHERINE.y },
 ];
 
 // ---------------------------------------------------------------------------

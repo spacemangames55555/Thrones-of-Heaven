@@ -1661,3 +1661,9 @@ export const EARTH_RETURN_OFFSET = { dx: 0, dy: 140 };
 export const WORLD_TRANSITION_MS = 540;
 /** Grace period (ms) after a transition during which portal triggers are ignored (prevents bounce-back). */
 export const WORLD_TRANSITION_COOLDOWN_MS = 1200;
+/** NESTED CITIES: the quicker fade used entering/leaving a city sub-map (ms). */
+export const CITY_TRANSITION_MS = 300;
+/** NESTED CITIES: how close (px) to a city gate the Enter/Leave button shows.
+ *  Must comfortably cover the fixed arrival spots on BOTH sides of the gate
+ *  (inside ~96px, outside ~64px) so the button is available right on arrival. */
+export const CITY_GATE_RANGE = 120;
