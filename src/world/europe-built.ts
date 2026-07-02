@@ -15,6 +15,7 @@ export const EUROPE_BUILT_ZONES: string[] = [
   'apulia-eastern-dock',
   'epirus-landing',
   'thessaloniki-outpost',
+  'thermopylae-pass',
 ];
 
 /**
