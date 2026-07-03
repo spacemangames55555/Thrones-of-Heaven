@@ -145,6 +145,7 @@ import {
   SASQUATCH_DAMAGE,
   DEV_GRANT_XP_CHUNK,
   DEV_MODE,
+  DEV_ZONE_LABEL_MAX_ZOOM,
   MAX_FLOATING_TEXTS,
   MAX_CIRCLE_FX,
   DMG_PER_LEVEL,
@@ -793,6 +794,9 @@ export class MainScene extends Phaser.Scene {
   };
   /** Earliest time a fresh convoy may spawn after a death (the retry breather). */
   private escortRetryAt = 0;
+  /** DEV overlay: big zone-name labels over Europe chunks, shown only at low zoom
+   *  (the zoomed-out continent view is unreadable without them). DEV_MODE-only. */
+  private europeZoneLabels: Phaser.GameObjects.Text[] = [];
   // REGION CHAMPIONS: one boss-engine instance per boss beat (champion-specs.ts).
   // At most ONE champion is live at a time — the active boss beat's, spawned at
   // its zone's boss anchor while that chunk is active, despawned/reset on leave/
@@ -5899,6 +5903,23 @@ export class MainScene extends Phaser.Scene {
         this.addHeavenLabel(bossAnchor.x, bossAnchor.y - 22, `☠ ${spec.name}`, '#e6d6ff');
       }
 
+      // DEV overlay: a big zone-name label over the chunk, shown only at LOW zoom
+      // (see updateEuropeSpawns) — the zoomed-out continent view needs names.
+      if (DEV_MODE) {
+        const label = this.add
+          .text(origin.x + chunk.centerLocalPx.x, origin.y + chunk.centerLocalPx.y, zone.displayName, {
+            fontFamily: 'system-ui, sans-serif',
+            fontSize: '26px',
+            color: '#fff3c4',
+            fontStyle: 'bold',
+          })
+          .setOrigin(0.5)
+          .setStroke('#101830', 8)
+          .setDepth(45)
+          .setVisible(false);
+        this.europeZoneLabels.push(label);
+      }
+
       // Spawn markers: MAPPED families (wolf/raider/demon/angel spawners exist)
       // become LIVE spawn points, materialized per-chunk by updateEuropeSpawns.
       // NEW roster families (dark-casters etc.) stay visual markers until their
@@ -6105,6 +6126,16 @@ export class MainScene extends Phaser.Scene {
     this.updateEuropeAmbushers(); // the veil-ambusher hidden/burst/re-hide machine
     this.updateEuropeChampion(); // the active boss beat's region champion
     this.updateEuropeEscort(); // the active escort beat's convoy run
+    // DEV overlay: at low zoom the chunks are unreadable — show big zone-name
+    // labels at constant SCREEN size so the zoomed-out view reads as a map.
+    if (this.europeZoneLabels.length > 0) {
+      const zoom = this.cameras.main.zoom;
+      const show = zoom <= DEV_ZONE_LABEL_MAX_ZOOM;
+      for (const l of this.europeZoneLabels) {
+        if (l.visible !== show) l.setVisible(show);
+        if (show) l.setScale(0.55 / zoom);
+      }
+    }
     // Death sweep: count each kill once (clear/harvest objectives), then drop
     // the record — the entity arrays prune their own dead.
     for (const rec of this.europeLive) {

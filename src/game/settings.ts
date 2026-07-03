@@ -94,6 +94,10 @@ export const ZOOM_OUT_MARGIN = 1.08;
 // dev reset). Flip this to false for a shipping build to remove every dev tool in
 // one place. Gameplay is unaffected either way.
 export const DEV_MODE: boolean = true;
+/** DEV overlay: when the camera zoom drops to/below this, Europe shows big
+ *  zone-name labels over each chunk (constant screen size) — the zoomed-out
+ *  continent view is unreadable without them. DEV_MODE-only objects. */
+export const DEV_ZONE_LABEL_MAX_ZOOM = 0.5;
 
 // --- Transient combat FX pools (perf) --------------------------------------
 //
