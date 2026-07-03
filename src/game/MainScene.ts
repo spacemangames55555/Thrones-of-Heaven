@@ -1518,6 +1518,8 @@ export class MainScene extends Phaser.Scene {
     // World-agnostic: Cherubs/Michael (Heaven), Demons (Hell), the God-judgment
     // gate, projectiles + pickups all run for every world — distant enemies idle
     // (leashed), and the pickup/projectile systems carry items in any world.
+    // Each enemy loop applies the WORLD-RESIDENT TICK GATE internally: only
+    // residents of the ACTIVE world tick; everyone else is fully paused.
     this.updateCherubs();
     this.updateBosses();
     this.updateBossBeams(); // enemy-cast channel beams (the champion's signature)
@@ -3801,15 +3803,19 @@ export class MainScene extends Phaser.Scene {
   }
 
   private regenTick(delta: number): void {
+    // Aggro flags of PAUSED foreign residents are frozen (their update no longer
+    // runs), so only same-world residents may hold the player in combat — a
+    // Hell demon left mid-fight must not suppress regen in Europe.
+    const local = (x: number): boolean => this.isActiveWorldResident(x);
     const enemiesEngaged =
-      this.sasquatch.isAggro ||
-      this.swarmers.some((s) => s.isAggro) ||
-      this.angels.some((a) => a.isAggro) ||
-      this.townsfolk.length > 0 ||
-      this.guardians.some((g) => g.isAggro) ||
-      this.cherubs.some((c) => c.isAggro) ||
-      this.demons.some((d) => d.isAggro) ||
-      this.bosses.some((b) => b.isAggro);
+      (this.sasquatch.isAggro && local(this.sasquatch.x)) ||
+      this.swarmers.some((s) => s.isAggro && local(s.x)) ||
+      this.angels.some((a) => a.isAggro && local(a.x)) ||
+      this.townsfolk.some((t) => t.isAlive && local(t.x)) ||
+      this.guardians.some((g) => g.isAggro && local(g.x)) ||
+      this.cherubs.some((c) => c.isAggro && local(c.x)) ||
+      this.demons.some((d) => d.isAggro && local(d.x)) ||
+      this.bosses.some((b) => b.isAggro && local(b.x));
     if (enemiesEngaged) this.lastCombatTime = this.time.now;
     const outOfCombat = !enemiesEngaged && this.time.now - this.lastCombatTime > PLAYER_HP_REGEN_DELAY_MS;
     if (outOfCombat && this.playerHealth.current < this.playerHealth.max) {
@@ -4092,6 +4098,7 @@ export class MainScene extends Phaser.Scene {
   /** Drive each angel with line-of-sight from the scene, then prune the dead. */
   private updateAngels(): void {
     for (const a of this.angels) {
+      if (!this.isActiveWorldResident(a.x)) continue; // world-resident pause: foreign residents don't tick
       const t = this.enemyAggroTarget(a, a.x, a.y); // continuous hierarchy aggro (summons > player)
       const los = this.hasLineOfSight(a.x, a.y, t.x, t.y);
       a.update(t.x, t.y, this.time.now, los);
@@ -4277,6 +4284,7 @@ export class MainScene extends Phaser.Scene {
    *  the chosen target so they aim/kite a summon they're pulled onto, not just the player). */
   private updateCherubs(): void {
     for (const c of this.cherubs) {
+      if (!this.isActiveWorldResident(c.x)) continue; // world-resident pause: foreign residents don't tick
       const t = this.enemyAggroTarget(c, c.x, c.y);
       const los = this.hasLineOfSight(c.x, c.y, t.x, t.y);
       c.update(t.x, t.y, this.time.now, los);
@@ -4450,6 +4458,7 @@ export class MainScene extends Phaser.Scene {
         b.halt();
         continue;
       }
+      if (!this.isActiveWorldResident(b.x)) continue; // world-resident pause: foreign residents don't tick
       if (!b.isActive && b.isAlive && b.distanceTo(this.player.x, this.player.y) <= b.def.activationRange) b.activate();
       b.update(this.player.x, this.player.y, this.time.now);
     }
@@ -4624,9 +4633,10 @@ export class MainScene extends Phaser.Scene {
     this.scale.on(Phaser.Scale.Events.RESIZE, layout);
   }
 
-  /** Show the bar for the boss the player is currently engaged with (active + near). */
+  /** Show the bar for the boss the player is currently engaged with (active + near).
+   *  Residency-gated: a paused foreign boss's frozen isAggro must never show here. */
   private refreshBossBar(): void {
-    const boss = this.bosses.find((b) => b.isAggro);
+    const boss = this.bosses.find((b) => b.isAggro && this.isActiveWorldResident(b.x));
     const show = boss !== undefined;
     this.bossBarBg.setVisible(show);
     this.bossBar.setVisible(show);
@@ -5479,6 +5489,7 @@ export class MainScene extends Phaser.Scene {
    *  the summon aggro hierarchy via enemyAggroTarget (summons pull them off the player too). */
   private updateTownsfolk(): void {
     for (const t of this.townsfolk) {
+      if (!this.isActiveWorldResident(t.x)) continue; // world-resident pause: foreign residents don't tick
       const tgt = this.enemyAggroTarget(t, t.x, t.y);
       t.update(tgt.x, tgt.y, this.time.now);
     }
@@ -6780,6 +6791,7 @@ export class MainScene extends Phaser.Scene {
    *  are the other BOSS-ADD type — they obey the summon aggro hierarchy via enemyAggroTarget. */
   private updateDemons(): void {
     for (const d of this.demons) {
+      if (!this.isActiveWorldResident(d.x)) continue; // world-resident pause: foreign residents don't tick
       const t = this.enemyAggroTarget(d, d.x, d.y);
       d.update(t.x, t.y, this.time.now);
     }
@@ -7405,13 +7417,10 @@ export class MainScene extends Phaser.Scene {
     this.clearSpellHazards();
     this.clearDots();
 
-    // Pause Earth's live enemy bodies while away (so collideWorldBounds can't yank
-    // them into the other region); resume them on return. Pause only when LEAVING
-    // Earth — a later non-Earth → non-Earth hop (Heaven→Hell, Egypt→Heaven) must
-    // not re-scan, or it would reset the remembered list to empty (the bodies are
-    // already disabled and get skipped) and Earth's enemies would never resume.
-    if (worldId === WORLD_EARTH) this.resumeEarthBodies();
-    else if (this.activeWorld === WORLD_EARTH) this.pauseEarthBodies();
+    // WORLD-RESIDENT PAUSE: resume the destination's residents, pause everyone
+    // else (bodies here; update ticks via isActiveWorldResident in each loop).
+    // One rule on every swap — dev travel and city enter/leave included.
+    this.applyResidentPause(worldId);
 
     // Europe's chunk packs never travel: leaving the world despawns them all.
     if (this.activeWorld === WORLD_EUROPE && worldId !== WORLD_EUROPE) this.deactivateAllEuropeZones();
@@ -7448,31 +7457,72 @@ export class MainScene extends Phaser.Scene {
   }
 
   /** Disable every currently-live Earth enemy body; remember them for resume. */
-  private pauseEarthBodies(): void {
-    this.pausedBodies = [];
-    const sprites: (Phaser.Physics.Arcade.Sprite | undefined)[] = [
-      this.sasquatch.isAlive ? this.sasquatch.sprite : undefined,
-      ...this.swarmers.filter((s) => s.isAlive).map((s) => s.sprite),
-      ...this.angels.filter((a) => a.isAlive).map((a) => a.sprite),
-      ...this.townsfolk.filter((t) => t.isAlive).map((t) => t.sprite),
-      ...this.guardians.filter((g) => g.isAlive).map((g) => g.sprite),
-    ];
-    for (const s of sprites) {
-      const body = s?.body as Phaser.Physics.Arcade.Body | undefined;
-      if (body && body.enable) {
-        body.enable = false;
-        this.pausedBodies.push(body);
-      }
+  // --- WORLD-RESIDENT PAUSE ----------------------------------------------------
+  //
+  // ONE rule, applied on every applyWorldSwap path (dev travel included): an
+  // enemy RESIDES in the world whose X-band contains it (worlds chain east in
+  // one shared coordinate space, so X alone identifies residency). Residents of
+  // any world other than the active one are fully paused — physics body off
+  // (here) and no update tick (each update loop gates per entity through
+  // isActiveWorldResident) — and resume when the player enters their world.
+  // This REPLACES the old Earth-only pause bolt-on, and covers the latent case
+  // of the angel/townsfolk arrays ticking in any terrestrial world.
+
+  /** X-band per registered world. Built lazily; rebuilt if a world registers late. */
+  private worldBandsCache: { id: WorldId; x0: number; x1: number }[] = [];
+  private worldBands(): { id: WorldId; x0: number; x1: number }[] {
+    const ids = Object.keys(this.worlds);
+    if (this.worldBandsCache.length !== ids.length) {
+      this.worldBandsCache = ids.map((id) => {
+        const b = this.worlds[id].map.bounds;
+        return { id, x0: b.x, x1: b.x + b.width };
+      });
     }
+    return this.worldBandsCache;
   }
 
-  /** Re-enable the Earth enemy bodies paused on departure (skipping any destroyed since). */
-  private resumeEarthBodies(): void {
+  /** The world whose X-band contains x, or null in a gap between worlds. */
+  private worldAtX(x: number): WorldId | null {
+    for (const b of this.worldBands()) if (x >= b.x0 && x <= b.x1) return b.id;
+    return null;
+  }
+
+  /** THE TICK GATE: true when x lies in the ACTIVE world's band. Unattributable
+   *  positions (the void gaps) count as local — never strand an entity. */
+  private isActiveWorldResident(x: number): boolean {
+    const home = this.worldAtX(x);
+    return home === null || home === this.activeWorld;
+  }
+
+  /** Body half of the pause: disable every live foreign resident's body; resume
+   *  exactly what THIS rule disabled before (never a body another system owns —
+   *  a hidden ambusher, a stun freeze, a corpse — those stay untouched). */
+  private applyResidentPause(active: WorldId): void {
     for (const b of this.pausedBodies) {
       const go = b.gameObject as Phaser.GameObjects.GameObject | undefined;
       if (go && go.active) b.enable = true;
     }
     this.pausedBodies = [];
+    const residents = [
+      this.sasquatch,
+      ...this.swarmers,
+      ...this.angels,
+      ...this.townsfolk,
+      ...this.guardians,
+      ...this.cherubs,
+      ...this.demons,
+      ...this.bosses,
+    ];
+    for (const e of residents) {
+      if (!e || !e.isAlive) continue;
+      const body = e.sprite.body as Phaser.Physics.Arcade.Body | undefined;
+      if (!body || !body.enable) continue; // already disabled — not ours to manage
+      const home = this.worldAtX(e.sprite.x);
+      if (home !== null && home !== active) {
+        body.enable = false;
+        this.pausedBodies.push(body);
+      }
+    }
   }
 
   /** Full-screen fade rectangle for transitions (UI partition → covers HUD too). */
