@@ -41,7 +41,10 @@ import type { WashingtonMap, TerrainType } from '../map/mapTypes';
  */
 export const CONTINENT_WORLD: Record<string, string> = {
   'North America': 'earth',
-  Africa: 'egypt',
+  // AFRICA is its own sparse region world (the Rift march). The hand-built
+  // EGYPT world remains a separate dense map — the manifest's Cairo zone is
+  // PRE-EXISTING there (never stamped) and linked by a cross-world gate.
+  Africa: 'africa',
   Europe: 'europe',
 };
 
@@ -81,6 +84,17 @@ export const BIOME_PLACEHOLDER_TILE: Record<string, string> = {
   'lowland-farmland': 'farmland',
   'urban-river': 'urban',
   'vineyard-hills': 'farmland',
+  // Africa (existing walkable atlas keys — gray-box stand-ins):
+  'nile-delta': 'irrigated_field',
+  'nile-valley': 'irrigated_field',
+  'nile-cataract': 'pass',
+  'desert-highland': 'dune_sand',
+  marsh: 'grassland',
+  'lake-shore': 'beach',
+  savanna: 'steppe',
+  'rainforest-river': 'rainforest',
+  'deep-rainforest': 'rainforest',
+  'volcanic-highland': 'scabland',
 };
 
 export function placeholderTileForBiome(biome: string): string {

@@ -49,6 +49,13 @@ export const WORLD_CALIBRATION: Record<string, WorldCalibration> = {
     origin: { lat: 71.0, lng: -8.0 },
     pixelsPerDegree: { x: 2426, y: 2453 },
   },
+  // AFRICA — the Rift-march region world (Cairo/Kinshasa to Olduvai). Same
+  // pixels-per-degree as earth/europe for a consistent travel feel; SPARSE like
+  // Europe. Origin sits NW of every zone anchor (Cairo 30.04N, Kinshasa 15.31E).
+  africa: {
+    origin: { lat: 32.0, lng: 13.0 },
+    pixelsPerDegree: { x: 2426, y: 2453 },
+  },
   // Future region worlds (e.g. the Egypt map) get their own row, derived the
   // same way from that world's existing landmarks.
 };
@@ -56,6 +63,8 @@ export const WORLD_CALIBRATION: Record<string, WorldCalibration> = {
 /** Logical spans (degrees east / south of origin) for SPARSE region worlds. */
 export const WORLD_SPAN_DEGREES: Record<string, { lng: number; lat: number }> = {
   europe: { lng: 50, lat: 34 },
+  // Africa: 13E→38E covers Serengeti (35.49E); 32N→-6S covers Kinshasa (-4.32).
+  africa: { lng: 25, lat: 38 },
 };
 
 /** Convert a real-world anchor to LOCAL pixels on its region world's map. */

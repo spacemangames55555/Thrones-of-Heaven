@@ -32,12 +32,13 @@ export class SparseWorldMap implements WorldMapLike {
     chunks: GameMap[],
     focus: () => { x: number; y: number },
   ) {
-    if (chunks.length === 0) throw new Error('SparseWorldMap needs at least one chunk');
+    // ZERO chunks is legal: a region world can register before any zone is
+    // stamped (Africa pre-build) — its whole span is walkable void until then.
     this.origin = origin;
     this.sizePx = sizePx;
     this.chunks = chunks;
     this.focus = focus;
-    this.tileSize = chunks[0].tileSize;
+    this.tileSize = chunks[0]?.tileSize ?? 32;
   }
 
   get bounds(): { x: number; y: number; width: number; height: number } {
@@ -55,6 +56,7 @@ export class SparseWorldMap implements WorldMapLike {
 
   /** The chunk under the follow point, else the nearest one (for spawn colliders). */
   get layer(): Phaser.Tilemaps.TilemapLayerBase {
+    if (this.chunks.length === 0) throw new Error('SparseWorldMap.layer: no chunks stamped yet (nothing spawns in an empty region world)');
     const p = this.focus();
     const here = this.chunkAt(p.x, p.y);
     if (here) return here.layer;

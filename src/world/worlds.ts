@@ -14,6 +14,7 @@ export const WORLD_HEAVEN: WorldId = 'heaven';
 export const WORLD_HELL: WorldId = 'hell';
 export const WORLD_EGYPT: WorldId = 'egypt';
 export const WORLD_EUROPE: WorldId = 'europe';
+export const WORLD_AFRICA: WorldId = 'africa';
 
 /**
  * The map surface a registered world must provide — everything world-agnostic
@@ -37,8 +38,10 @@ export interface WorldMapLike {
 export interface WorldRuntime {
   readonly id: WorldId;
   readonly map: WorldMapLike;
-  /** Player-vs-terrain collider for this world (toggled active with the world). */
-  readonly collider: Phaser.Physics.Arcade.Collider;
+  /** Player-vs-terrain collider (toggled active with the world). OPTIONAL: a
+   *  sparse region world with no stamped chunks yet (Africa pre-build) has none
+   *  — its whole span is walkable void until zones are stamped. */
+  readonly collider?: Phaser.Physics.Arcade.Collider;
   /** Fallback arrival point (world coords) when no remembered position exists. */
   readonly defaultArrival: { x: number; y: number };
 }
