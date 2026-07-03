@@ -124,13 +124,16 @@ export const EXISTING_FAMILY_SPAWNERS: Record<string, string> = {
   'lesser-angels': "spawnAngel('lesser')",
 };
 
-/** Combat domain (→ placeholder tint) for the LIVE-SPAWNABLE families. The three
- *  new roster families joined this map when their behavior variants shipped;
+/** Combat domain for the LIVE-SPAWNABLE families (canon table: the domain-tint
+ *  audit). Drives the placeholder body tint for ground families; the ANGELIC
+ *  families keep their existing angel look — their entry here gates live
+ *  spawning + marker color only, never a sprite tint (see spawnEuropeEnemy).
+ *  The three new roster families joined when their behavior variants shipped;
  *  'corrupted-spirits' stays data-only (assigned to no built zone) on purpose. */
 export const EXISTING_FAMILY_DOMAIN: Record<string, CombatDomain> = {
   'corrupted-wildlife': 'physical',
   'evil-raiders': 'physical',
-  'lesser-evil-scouts': 'mental',
+  'lesser-evil-scouts': 'physical', // CANON FIX: was mis-mapped 'mental' (blue scouts on Rome)
   'herald-angels': 'spiritual',
   'radiant-guardians': 'spiritual',
   'lesser-angels': 'spiritual',

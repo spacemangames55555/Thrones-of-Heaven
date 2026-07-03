@@ -3402,7 +3402,9 @@ export class MainScene extends Phaser.Scene {
       `dem ${this.demons.length} ang ${this.angels.length} twn ${this.townsfolk.length} swm ${this.swarmers.length} bos ${this.bosses.length}`,
       `bolts ${this.projectiles.count}  dots ${this.dots.length}`,
       `dmg# ${this.floatingText.activeCount}/${this.floatingText.size}  circ ${this.circleFx.activeCount}/${this.circleFx.size}`,
-      `worldFx ${this.worldFx.list.length}`,
+      // live = actually visible FX; pooled = hidden recycled pool members (the
+      // old single number over-read as "active" — see the Rome diagnostic).
+      `worldFx live ${this.worldFx.list.filter((o) => (o as Phaser.GameObjects.Sprite).visible !== false).length} + pooled ${this.worldFx.list.filter((o) => (o as Phaser.GameObjects.Sprite).visible === false).length}`,
     ];
   }
 
@@ -6230,9 +6232,10 @@ export class MainScene extends Phaser.Scene {
     } else if (family === 'hollowed-brutes') {
       this.spawnEuropeBrute(zoneId, x, y);
     } else {
+      // ANGELIC families keep their existing angel look — canon says no domain
+      // tint on them (their EXISTING_FAMILY_DOMAIN entry gates spawning only).
       const variant = family === 'herald-angels' ? 'herald' : family === 'radiant-guardians' ? 'warden' : 'lesser';
       const a = this.spawnAngel(variant, x, y);
-      a.sprite.setTint(tint);
       this.europeLive.push({ zoneId, family, kind: 'angel', entity: a, counted: false });
     }
   }
