@@ -354,7 +354,76 @@ try {
       escDone.had ? `status=${escDone.status} cleaned=${escDone.cleaned}` : 'no active escort to finish',
     );
 
-    // 3i. STATUS EFFECTS DON'T CROSS WORLDS: take a real tagged caster hit while
+    // 3i. WORLD-RESIDENT PAUSE: an enemy resides in the world whose X-band holds
+    // it. Standing in Europe, ZERO foreign residents may tick and ZERO foreign
+    // bodies may be enabled; entering a world resumes exactly its own residents.
+    // Uses applyWorldSwap directly — the single funnel every travel path shares.
+    const pause = await page.evaluate(async () => {
+      const ms = window.__ready();
+      const bands = Object.entries(ms.worlds).map(([id, w]) => ({ id, x0: w.map.bounds.x, x1: w.map.bounds.x + w.map.bounds.width }));
+      const homeOf = (x) => bands.find((b) => x >= b.x0 && x <= b.x1)?.id ?? 'void';
+      const arrays = () => [...ms.townsfolk, ...ms.angels, ...ms.demons, ...ms.swarmers, ...ms.cherubs, ...ms.guardians, ...ms.bosses, ms.sasquatch].filter((e) => e && e.isAlive);
+      const sample = async () => {
+        const updated = new Set();
+        const wrapped = [];
+        for (const e of arrays()) {
+          const proto = Object.getPrototypeOf(e);
+          if (proto.__diagWrapped || typeof proto.update !== 'function') continue;
+          const orig = proto.update;
+          proto.update = function (...args) {
+            updated.add(this);
+            return orig.apply(this, args);
+          };
+          proto.__diagWrapped = true;
+          wrapped.push([proto, orig]);
+        }
+        await new Promise((r) => setTimeout(r, 300)); // several frames
+        for (const [p, o] of wrapped) {
+          p.update = o;
+          delete p.__diagWrapped;
+        }
+        const live = arrays();
+        return {
+          world: ms.activeWorld,
+          foreignTicking: live.filter((e) => updated.has(e) && homeOf(e.sprite.x) !== ms.activeWorld).length,
+          foreignBodies: live.filter((e) => e.sprite?.body?.enable && homeOf(e.sprite.x) !== ms.activeWorld).length,
+          localTicking: live.filter((e) => updated.has(e) && homeOf(e.sprite.x) === ms.activeWorld).length,
+        };
+      };
+      const inEurope = await sample();
+      ms.applyWorldSwap('heaven', ms.worlds['heaven'].defaultArrival);
+      await new Promise((r) => setTimeout(r, 400));
+      const inHeaven = await sample();
+      ms.applyWorldSwap('hell', ms.worlds['hell'].defaultArrival);
+      await new Promise((r) => setTimeout(r, 400));
+      const inHell = await sample();
+      ms.applyWorldSwap('europe', ms.worlds['europe'].defaultArrival);
+      await new Promise((r) => setTimeout(r, 400));
+      const backEurope = await sample();
+      return { inEurope, inHeaven, inHell, backEurope };
+    });
+    ok(
+      'world-resident pause: in Europe, zero foreign residents tick + zero foreign bodies enabled',
+      pause.inEurope.world === 'europe' && pause.inEurope.foreignTicking === 0 && pause.inEurope.foreignBodies === 0,
+      JSON.stringify(pause.inEurope),
+    );
+    ok(
+      'world-resident pause: Heaven entry resumes Michael + the cherubs (and only them)',
+      pause.inHeaven.world === 'heaven' && pause.inHeaven.localTicking >= 7 && pause.inHeaven.foreignTicking === 0 && pause.inHeaven.foreignBodies === 0,
+      JSON.stringify(pause.inHeaven),
+    );
+    ok(
+      'world-resident pause: Hell entry resumes the demons + the Sin (and only them)',
+      pause.inHell.world === 'hell' && pause.inHell.localTicking >= 7 && pause.inHell.foreignTicking === 0 && pause.inHell.foreignBodies === 0,
+      JSON.stringify(pause.inHell),
+    );
+    ok(
+      'world-resident pause: returning to Europe re-pauses everyone else',
+      pause.backEurope.world === 'europe' && pause.backEurope.foreignTicking === 0 && pause.backEurope.foreignBodies === 0,
+      JSON.stringify(pause.backEurope),
+    );
+
+    // 3j. STATUS EFFECTS DON'T CROSS WORLDS: take a real tagged caster hit while
     // still in Europe (slow + weaken + an active DoT stack), then travel to Earth
     // — the player must ARRIVE with zero Europe debuffs (clearDots rides every
     // applyWorldSwap, the same path as reset/load/death).
@@ -384,7 +453,7 @@ try {
     );
   }
 
-  // 3j. DARK-CASTER: a REAL bolt from a live caster lands and applies its full
+  // 3k. DARK-CASTER: a REAL bolt from a live caster lands and applies its full
   // debuff set (move slow + incoming-damage weaken + a stacking-DoT stack).
   // Runs on Earth (the caster is a world-agnostic angel variant).
   const caster = await page.evaluate(async () => {
