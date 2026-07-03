@@ -36,12 +36,13 @@ import { SAVE_VERSION, type SaveData } from '../save/SaveData';
 import { PortalDefense } from '../encounter/PortalDefense';
 import { buildHeavenMapData, HEAVEN_WIDTH, HEAVEN_HEIGHT, HEAVEN_CHERUB_SPAWNS, THRONE_POSITION } from '../map/heavenWorld';
 import { buildHellMapData, HELL_WIDTH, HELL_HEIGHT, HELL_DEMON_SPAWNS, SATAN_LAIR } from '../map/hellWorld';
-import { WORLD_EARTH, WORLD_HEAVEN, WORLD_HELL, WORLD_EGYPT, WORLD_EUROPE, type WorldId, type WorldRuntime, type WorldMapLike } from '../world/worlds';
+import { WORLD_EARTH, WORLD_HEAVEN, WORLD_HELL, WORLD_EGYPT, WORLD_EUROPE, WORLD_AFRICA, type WorldId, type WorldRuntime, type WorldMapLike } from '../world/worlds';
+import { AFRICA_BUILT_ZONES, buildAfricaQuestDefs, PREBUILT_ZONE_WORLD } from '../world/africa-built';
 import { CITY_DEFS, CITY_FAIYUM, type CityDef } from '../world/cities';
 import { MANIFEST_CLASS_FOR, KNOWN_CLASS_NAMES } from '../world/class-canon';
 import { SparseWorldMap } from '../map/SparseWorldMap';
 import { WORLD_CALIBRATION, WORLD_SPAN_DEGREES } from '../world/world-calibration';
-import { createSparseWorld, stampZone, buildChunkMapData, type BuiltChunk } from '../world/world-builder';
+import { createSparseWorld, stampZone, buildChunkMapData, planZoneStamp, CONTINENT_WORLD, type BuiltChunk } from '../world/world-builder';
 import { getZone, WORLD } from '../world/world-manifest';
 import { EUROPE_BUILT_ZONES, buildEuropeQuestDefs } from '../world/europe-built';
 import { appendToRegistry } from '../world/quest-factory';
@@ -733,24 +734,31 @@ export class MainScene extends Phaser.Scene {
   /** DEV: overrides the class announced to the quest chain (null = real class). */
   private devClassOverride: string | null = null;
 
-  // EUROPE — the sparse region world (chunked; see SparseWorldMap). Chunks are
-  // small standalone GameMaps; the void between them is walkable background.
+  // REGION WORLDS — the sparse chunked worlds (Europe today, Africa next; see
+  // SparseWorldMap). Chunks are small standalone GameMaps; the void between
+  // them is walkable background. All the region machinery below (live registry,
+  // spawn activation, gates, champions, escorts) is WORLD-KEYED and shared.
   private europeMap?: SparseWorldMap;
-  private europeColliders: Phaser.Physics.Arcade.Collider[] = [];
-  private europeGates: { x: number; y: number; label: string; dest: { x: number; y: number } }[] = [];
+  private africaMap?: SparseWorldMap;
+  /** Which registered worlds run the region pipeline (spawn zones, gates…). */
+  private regionWorldIds = new Set<WorldId>();
+  /** Per-chunk terrain colliders, each bound to its OWN region world. */
+  private regionColliders: { c: Phaser.Physics.Arcade.Collider; worldId: WorldId }[] = [];
+  /** Proximity travel gates. destWorld makes a gate CROSS-WORLD (Egypt↔Africa). */
+  private regionGates: { x: number; y: number; label: string; dest: { x: number; y: number }; destWorld: WorldId }[] = [];
   /** Per-zone arrival points (the spot south of each chunk's settlement). */
-  private europeZoneArrivals: Record<string, { x: number; y: number }> = {};
+  private regionZoneArrivals: Record<string, { x: number; y: number }> = {};
   // PER-CHUNK SPAWN ACTIVATION (mapped families only): enemies materialize when
   // the player nears a zone's chunk and despawn (with hysteresis) on exit, so 25
-  // zones of markers never become 25 zones of live entities. See updateEuropeSpawns.
-  private europeSpawnZones: {
+  // zones of markers never become 25 zones of live entities. See updateRegionSpawns.
+  private regionSpawnZones: {
     zoneId: string;
     center: { x: number; y: number };
     radiusPx: number; // half the chunk size (activation margins add to this)
     points: { family: string; x: number; y: number }[];
     active: boolean;
   }[] = [];
-  private europeLive: {
+  private regionLive: {
     zoneId: string;
     family: string;
     kind: 'townsfolk' | 'demon' | 'angel';
@@ -758,11 +766,11 @@ export class MainScene extends Phaser.Scene {
     counted: boolean;
   }[] = [];
   /** Kill progress per ACTIVE europe beat id (clear + eu-10 harvest counters). */
-  private europeKillCounts: Record<string, number> = {};
+  private regionKillCounts: Record<string, number> = {};
   // VEIL-AMBUSHERS: the hidden/reveal/burst/re-hide state machine. HIDDEN ambushers
   // are invisible, physics-disabled and NOT in this.townsfolk — so the aggro
   // hierarchy, taunts, pulls and every player hit path can't touch them pre-reveal.
-  private europeAmbushers: {
+  private regionAmbushers: {
     zoneId: string;
     t: Townsfolk;
     home: { x: number; y: number };
@@ -796,7 +804,7 @@ export class MainScene extends Phaser.Scene {
   private escortRetryAt = 0;
   /** DEV overlay: big zone-name labels over Europe chunks, shown only at low zoom
    *  (the zoomed-out continent view is unreadable without them). DEV_MODE-only. */
-  private europeZoneLabels: Phaser.GameObjects.Text[] = [];
+  private regionZoneLabels: Phaser.GameObjects.Text[] = [];
   // REGION CHAMPIONS: one boss-engine instance per boss beat (champion-specs.ts).
   // At most ONE champion is live at a time — the active boss beat's, spawned at
   // its zone's boss anchor while that chunk is active, despawned/reset on leave/
@@ -804,11 +812,11 @@ export class MainScene extends Phaser.Scene {
   private championBoss?: Boss;
   private championBeatId: string | null = null;
   private championZoneId: string | null = null;
-  /** The live champion's summoned adds (zone-family enemies via spawnEuropeEnemy),
+  /** The live champion's summoned adds (zone-family enemies via spawnRegionEnemy),
    *  tracked so each summon wave respects the add cap. */
   private championAdds: { isAlive: boolean }[] = [];
   /** Per-zone champion spawn anchors (north of the settlement, mirroring arrival). */
-  private europeBossAnchors: Record<string, { x: number; y: number }> = {};
+  private regionBossAnchors: Record<string, { x: number; y: number }> = {};
   /** Live enemy-cast beams (the 'beam' boss pattern; drawn in the channel style). */
   private bossBeams: { g: Phaser.GameObjects.Graphics; boss: Boss; dirX: number; dirY: number; range: number; until: number; nextTickAt: number; tickMs: number; damage: number }[] = [];
   // DARK-CASTER on-hit debuffs on the PLAYER (reusing the existing slow/weaken
@@ -818,7 +826,7 @@ export class MainScene extends Phaser.Scene {
   private casterDotStacks: number[] = []; // per-stack expiry times
   private casterDotNextTickAt = 0;
   /** quest id → its manifest zone + beat (built once, lazily). */
-  private europeBeatIndex?: Map<string, { zone: ManifestZone; beat: QuestBeat }>;
+  private regionBeatIndex?: Map<string, { zone: ManifestZone; beat: QuestBeat }>;
   /** Where the NEXT world east goes (advanced by setupCities/setupEurope). */
   private nextWorldOriginX = 0;
   // DEV "Test City Arrow": a fake objective target exercising the hierarchical
@@ -1200,7 +1208,7 @@ export class MainScene extends Phaser.Scene {
     // The LIVE registry = the hand-authored chain (untouched) + the generated
     // quests of every BUILT Europe zone appended after it (pure composition;
     // ids are collision-guarded, unbuilt prerequisites read as UNMET).
-    this.chain = new QuestChain(appendToRegistry(QUEST_REGISTRY, buildEuropeQuestDefs()));
+    this.chain = new QuestChain(appendToRegistry(QUEST_REGISTRY, [...buildEuropeQuestDefs(), ...buildAfricaQuestDefs()]));
     // Announce the class BEFORE hooking onChange: the quest UI (tracker) doesn't
     // exist yet, and setPlayerClass fires onChange (this crashed create() when
     // announced after the hookup — refreshQuestUi touched the not-yet-built HUD).
@@ -1492,7 +1500,7 @@ export class MainScene extends Phaser.Scene {
       if (this.isDashing()) this.talkButton.setVisible(false);
       else this.checkInteractions();
       this.updateCityGates(); // AFTER interactions: Talk keeps the shared slot
-      if (this.activeWorld === WORLD_EUROPE) this.updateEuropeSpawns(); // per-chunk packs
+      if (this.regionWorldIds.has(this.activeWorld)) this.updateRegionSpawns(); // per-chunk packs (any region world)
       this.updateAngels();
       this.updateTownsfolk(); // prune dead first so the wave manager sees the live count
       if (this.activeWorld === WORLD_EARTH) {
@@ -3798,7 +3806,7 @@ export class MainScene extends Phaser.Scene {
     this.summons.clear(); // allied summons don't survive the player's death
     this.clearSpellHazards();
     this.clearDots();
-    this.despawnEuropeChampion(); // death resets a champion encounter cleanly
+    this.despawnRegionChampion(); // death resets a champion encounter cleanly
     this.lastCombatTime = -1e9;
     this.playerDead = false;
     this.controls.setEnabled(true);
@@ -4503,14 +4511,14 @@ export class MainScene extends Phaser.Scene {
 
   /** Boss summon hook: spawn up to the cap, tracked per boss, near the boss (on walkable tiles). */
   private summonForBoss(bossId: string, bx: number, by: number, bossName: string, enemy: string, count: number, cap: number): void {
-    // REGION CHAMPIONS ('europe-zone:<zoneId>'): adds are the ZONE's own families,
-    // spawned through the pooled Europe spawner — they join europeLive (despawned
+    // REGION CHAMPIONS ('region-zone:<zoneId>'): adds are the ZONE's own families,
+    // spawned through the pooled Europe spawner — they join regionLive (despawned
     // with the chunk, counted by kill objectives) and respect EUROPE_ENEMY_CAP.
-    if (enemy.startsWith('europe-zone:')) {
-      const zoneId = enemy.slice('europe-zone:'.length);
+    if (enemy.startsWith('region-zone:')) {
+      const zoneId = enemy.slice('region-zone:'.length);
       const fams = (getZone(zoneId)?.enemyFamilies ?? []).filter((f) => f in EXISTING_FAMILY_DOMAIN);
       this.championAdds = this.championAdds.filter((a) => a.isAlive);
-      const room = Math.max(0, EUROPE_ENEMY_CAP - this.europeLiveCount());
+      const room = Math.max(0, EUROPE_ENEMY_CAP - this.regionLiveCount());
       const n = Math.min(count, cap - this.championAdds.length, room, fams.length === 0 ? 0 : count);
       const map = this.activeMap();
       for (let i = 0; i < n; i++) {
@@ -4518,8 +4526,8 @@ export class MainScene extends Phaser.Scene {
         const a = Math.random() * Math.PI * 2;
         const r = 90 + Math.random() * 50;
         const spot = map.nearestWalkableWorld(bx + Math.cos(a) * r, by + Math.sin(a) * r);
-        this.spawnEuropeEnemy(zoneId, fam, spot.x, spot.y, DOMAIN_TINT[EXISTING_FAMILY_DOMAIN[fam]]);
-        const rec = this.europeLive[this.europeLive.length - 1];
+        this.spawnRegionEnemy(zoneId, fam, spot.x, spot.y, DOMAIN_TINT[EXISTING_FAMILY_DOMAIN[fam]]);
+        const rec = this.regionLive[this.regionLive.length - 1];
         if (rec && rec.zoneId === zoneId) this.championAdds.push(rec.entity);
       }
       if (n > 0) this.showBanner(`${bossName} summons reinforcements!`, 1400);
@@ -4585,11 +4593,11 @@ export class MainScene extends Phaser.Scene {
       this.onSinDefeated(sinIndex); // advance the gauntlet + unlock/mark the next Sin
     } else if (boss === this.dragonBoss || boss === this.beastBoss || boss === this.satanBoss) {
       this.onTrinityBossDefeated(boss); // advance the staged Trinity (Dragon → Beast → Satan → ending)
-    } else if (boss.def.onDefeatHook?.startsWith('europe-champion:')) {
+    } else if (boss.def.onDefeatHook?.startsWith('region-champion:')) {
       // REGION CHAMPION: defeat completes its boss beat (the factory trigger).
-      const beatId = boss.def.onDefeatHook.slice('europe-champion:'.length);
+      const beatId = boss.def.onDefeatHook.slice('region-champion:'.length);
       this.showBanner(`${boss.name} defeated!`, 2400);
-      const hit = this.europeBeatForQuest(beatId);
+      const hit = this.regionBeatForQuest(beatId);
       if (hit && this.chain.activeQuest?.id === beatId) this.notifyQuest(triggerForBeat(hit.beat) as ObjectiveTrigger);
       if (this.championBoss === boss) {
         this.championBoss = undefined;
@@ -5865,6 +5873,10 @@ export class MainScene extends Phaser.Scene {
 
     // EUROPE — the sparse region world (built zones only; chains further east).
     this.setupEurope();
+
+    // AFRICA — the Rift-march sparse world (no zones stamped yet: walkable
+    // void + the Egypt↔Africa cross-world gate pair until the build runs).
+    this.setupAfrica();
   }
 
   // --- Europe: the SPARSE region world (chunked stamping) ----------------------
@@ -5893,10 +5905,10 @@ export class MainScene extends Phaser.Scene {
       new CityMarkers(this, map); // the zone nameplate at its center
       const collider = this.physics.add.collider(this.player.sprite, map.layer);
       collider.active = false;
-      this.europeColliders.push(collider);
+      this.regionColliders.push({ c: collider, worldId: WORLD_EUROPE });
       chunkMaps.push(map);
       built.set(id, { chunk, map });
-      this.europeZoneArrivals[id] = map.nearestWalkableWorld(
+      this.regionZoneArrivals[id] = map.nearestWalkableWorld(
         origin.x + chunk.arrivalLocalPx.x,
         origin.y + chunk.arrivalLocalPx.y,
       );
@@ -5907,7 +5919,7 @@ export class MainScene extends Phaser.Scene {
         origin.x + chunk.centerLocalPx.x,
         origin.y + chunk.centerLocalPx.y - (chunk.arrivalLocalPx.y - chunk.centerLocalPx.y),
       );
-      this.europeBossAnchors[id] = bossAnchor;
+      this.regionBossAnchors[id] = bossAnchor;
       const bossBeat = zone.questChain.find((b) => b.id in CHAMPION_SPECS);
       if (bossBeat) {
         const spec = CHAMPION_SPECS[bossBeat.id];
@@ -5917,7 +5929,7 @@ export class MainScene extends Phaser.Scene {
       }
 
       // DEV overlay: a big zone-name label over the chunk, shown only at LOW zoom
-      // (see updateEuropeSpawns) — the zoomed-out continent view needs names.
+      // (see updateRegionSpawns) — the zoomed-out continent view needs names.
       if (DEV_MODE) {
         const label = this.add
           .text(origin.x + chunk.centerLocalPx.x, origin.y + chunk.centerLocalPx.y, zone.displayName, {
@@ -5930,11 +5942,11 @@ export class MainScene extends Phaser.Scene {
           .setStroke('#101830', 8)
           .setDepth(45)
           .setVisible(false);
-        this.europeZoneLabels.push(label);
+        this.regionZoneLabels.push(label);
       }
 
       // Spawn markers: MAPPED families (wolf/raider/demon/angel spawners exist)
-      // become LIVE spawn points, materialized per-chunk by updateEuropeSpawns.
+      // become LIVE spawn points, materialized per-chunk by updateRegionSpawns.
       // NEW roster families (dark-casters etc.) stay visual markers until their
       // AI wiring ships.
       const zoneSpawnPoints: { family: string; x: number; y: number }[] = [];
@@ -5950,7 +5962,7 @@ export class MainScene extends Phaser.Scene {
         this.add.circle(mx, my, 10, tint, 0.85).setDepth(6);
         this.addHeavenLabel(mx, my - 16, m.enemyFamily, '#cfd6e0');
       }
-      this.europeSpawnZones.push({
+      this.regionSpawnZones.push({
         zoneId: id,
         center: { x: origin.x + chunk.centerLocalPx.x, y: origin.y + chunk.centerLocalPx.y },
         radiusPx: chunk.data.width * 16, // half the chunk (tiles * 32 / 2)
@@ -5979,7 +5991,7 @@ export class MainScene extends Phaser.Scene {
         const label = g.kind === 'sea-dock' ? `Sail to ${name}` : `Cross to ${name}`;
         const gx = origin.x + g.localPx.x;
         const gy = origin.y + g.localPx.y;
-        this.europeGates.push({ x: gx, y: gy, label, dest });
+        this.regionGates.push({ x: gx, y: gy, label, dest, destWorld: WORLD_EUROPE });
         this.addHeavenLabel(gx, gy - 24, g.kind === 'sea-dock' ? `⚓ ${name}` : `→ ${name}`, '#ffe9a8');
       }
     }
@@ -5991,11 +6003,64 @@ export class MainScene extends Phaser.Scene {
     this.worlds[WORLD_EUROPE] = {
       id: WORLD_EUROPE,
       map: this.europeMap,
-      collider: this.europeColliders[0],
+      collider: this.regionColliders[0]?.c,
       defaultArrival: arrival,
     };
     this.worldPos[WORLD_EUROPE] = { ...arrival };
+    this.regionWorldIds.add(WORLD_EUROPE); // Europe runs the shared region pipeline
     this.nextWorldOriginX = origin.x + rw.sparse!.boundsPx.w + HEAVEN_WORLD_GAP;
+  }
+
+  /**
+   * AFRICA — the Rift-march sparse region world, in the next X-band east. NO
+   * zones are stamped yet: the whole span registers as walkable void (chunks
+   * arrive with the Africa build runs), plus the first manifest-driven
+   * CROSS-WORLD gate pair linking the hand-built Egypt map to the future
+   * Luxor chunk. Cairo is PRE-EXISTING (the Egypt world) and never stamped.
+   */
+  private setupAfrica(): void {
+    const cal = WORLD_CALIBRATION[WORLD_AFRICA];
+    const span = WORLD_SPAN_DEGREES[WORLD_AFRICA];
+    const origin = { x: this.nextWorldOriginX, y: 0 };
+    const rw = createSparseWorld(WORLD_AFRICA, cal, span);
+    this.africaMap = new SparseWorldMap(origin, rw.sparse!.boundsPx, [], () => ({ x: this.player.x, y: this.player.y }));
+
+    // LUXOR anchor, computed from the manifest calibration WITHOUT stamping —
+    // the Africa side of the gate pair + the world's default arrival, so the
+    // crossing lands where the Luxor chunk will materialize.
+    const luxor = getZone('luxor-valley-of-kings');
+    if (!luxor) throw new Error("setupAfrica: manifest zone 'luxor-valley-of-kings' missing");
+    const luxorPx = planZoneStamp(luxor, cal).centerPx;
+    const luxorPos = { x: origin.x + luxorPx.x, y: origin.y + luxorPx.y };
+
+    this.worlds[WORLD_AFRICA] = { id: WORLD_AFRICA, map: this.africaMap, defaultArrival: luxorPos };
+    this.worldPos[WORLD_AFRICA] = { ...luxorPos };
+    this.regionWorldIds.add(WORLD_AFRICA);
+    this.nextWorldOriginX = origin.x + rw.sparse!.boundsPx.w + HEAVEN_WORLD_GAP;
+
+    // CROSS-WORLD GATE PAIR (Egypt ↔ Africa). The Egypt-side pad is ADDED
+    // additively at the SOUTH edge of the Egypt map, mid-width — the Nile's
+    // southern exit, upriver toward Luxor. No Egypt tiles change.
+    const eb = this.egyptMap.bounds;
+    const egyptPad = this.egyptMap.nearestWalkableWorld(eb.x + eb.width * 0.5, eb.y + eb.height - 96, 60);
+    const egyptReturn = this.egyptMap.nearestWalkableWorld(egyptPad.x, egyptPad.y - 80, 60);
+    const africaGate = { x: luxorPos.x, y: luxorPos.y + 140 };
+    this.regionGates.push({
+      x: egyptPad.x,
+      y: egyptPad.y,
+      label: 'Cross to Luxor (Valley of the Kings)',
+      dest: { x: africaGate.x, y: africaGate.y + 60 },
+      destWorld: WORLD_AFRICA,
+    });
+    this.addHeavenLabel(egyptPad.x, egyptPad.y - 24, '→ Luxor (Valley of the Kings)', '#ffe9a8');
+    this.regionGates.push({
+      x: africaGate.x,
+      y: africaGate.y,
+      label: 'Cross to Egypt (The Nile Crown)',
+      dest: egyptReturn,
+      destWorld: WORLD_EGYPT,
+    });
+    this.addHeavenLabel(africaGate.x, africaGate.y - 24, '→ Egypt (The Nile Crown)', '#ffe9a8');
   }
 
   // --- NESTED CITIES: the generic city sub-map system --------------------------
@@ -6089,12 +6154,14 @@ export class MainScene extends Phaser.Scene {
             break;
           }
         }
-        // Europe zone-transition gates (Cross to… / Sail to…) share the slot.
-        if (!show && this.activeWorld === WORLD_EUROPE) {
-          for (const g of this.europeGates) {
+        // Region zone-transition gates (Cross to… / Sail to…) share the slot.
+        // Scanned in EVERY terrestrial world — a gate can be cross-world
+        // (Egypt↔Africa), so its pad may sit on a dense hand-built map too.
+        if (!show) {
+          for (const g of this.regionGates) {
             const d = Phaser.Math.Distance.Between(this.player.x, this.player.y, g.x, g.y);
             if (d <= CITY_GATE_RANGE) {
-              show = { label: g.label, action: () => this.travelToWorld(WORLD_EUROPE, g.dest, CITY_TRANSITION_MS) };
+              show = { label: g.label, action: () => this.travelToWorld(g.destWorld, g.dest, CITY_TRANSITION_MS) };
               break;
             }
           }
@@ -6130,64 +6197,64 @@ export class MainScene extends Phaser.Scene {
   /** Materialize/despawn Europe packs by player proximity (hysteresis), sweep
    *  deaths into the kill counters, and enforce the live-enemy cap. Runs every
    *  frame ONLY while Europe is the active world (25 distance checks — trivial). */
-  private updateEuropeSpawns(): void {
-    for (const z of this.europeSpawnZones) {
+  private updateRegionSpawns(): void {
+    for (const z of this.regionSpawnZones) {
       const d = Phaser.Math.Distance.Between(this.player.x, this.player.y, z.center.x, z.center.y);
-      if (!z.active && d < z.radiusPx + EUROPE_SPAWN_ACTIVATE_MARGIN) this.activateEuropeZone(z);
-      else if (z.active && d > z.radiusPx + EUROPE_SPAWN_DEACTIVATE_MARGIN) this.deactivateEuropeZone(z.zoneId);
+      if (!z.active && d < z.radiusPx + EUROPE_SPAWN_ACTIVATE_MARGIN) this.activateRegionZone(z);
+      else if (z.active && d > z.radiusPx + EUROPE_SPAWN_DEACTIVATE_MARGIN) this.deactivateRegionZone(z.zoneId);
     }
-    this.updateEuropeAmbushers(); // the veil-ambusher hidden/burst/re-hide machine
-    this.updateEuropeChampion(); // the active boss beat's region champion
-    this.updateEuropeEscort(); // the active escort beat's convoy run
+    this.updateRegionAmbushers(); // the veil-ambusher hidden/burst/re-hide machine
+    this.updateRegionChampion(); // the active boss beat's region champion
+    this.updateRegionEscort(); // the active escort beat's convoy run
     // DEV overlay: at low zoom the chunks are unreadable — show big zone-name
     // labels at constant SCREEN size so the zoomed-out view reads as a map.
-    if (this.europeZoneLabels.length > 0) {
+    if (this.regionZoneLabels.length > 0) {
       const zoom = this.cameras.main.zoom;
       const show = zoom <= DEV_ZONE_LABEL_MAX_ZOOM;
-      for (const l of this.europeZoneLabels) {
+      for (const l of this.regionZoneLabels) {
         if (l.visible !== show) l.setVisible(show);
         if (show) l.setScale(0.55 / zoom);
       }
     }
     // Death sweep: count each kill once (clear/harvest objectives), then drop
     // the record — the entity arrays prune their own dead.
-    for (const rec of this.europeLive) {
+    for (const rec of this.regionLive) {
       if (!rec.counted && !rec.entity.isAlive) {
         rec.counted = true;
-        this.onEuropeEnemyKilled(rec.family, rec.zoneId);
+        this.onRegionEnemyKilled(rec.family, rec.zoneId);
       }
     }
-    this.europeLive = this.europeLive.filter((r) => r.entity.isAlive || !r.counted);
+    this.regionLive = this.regionLive.filter((r) => r.entity.isAlive || !r.counted);
   }
 
-  private europeLiveCount(): number {
-    return this.europeLive.filter((r) => r.entity.isAlive).length;
+  private regionLiveCount(): number {
+    return this.regionLive.filter((r) => r.entity.isAlive).length;
   }
 
   /** Spawn every mapped-family pack for one zone (cap-guarded: a pack that would
    *  break EUROPE_ENEMY_CAP is skipped whole, never split). */
-  private activateEuropeZone(z: (typeof this.europeSpawnZones)[number]): void {
+  private activateRegionZone(z: (typeof this.regionSpawnZones)[number]): void {
     z.active = true;
     for (const p of z.points) {
       // HOLLOWED-BRUTES: a hard 1–2-per-pack ceiling, enforced here in spawn
       // logic (not just in the pack-size data).
       const pack = Math.min(EXISTING_FAMILY_PACK[p.family] ?? 3, p.family === 'hollowed-brutes' ? BRUTE_PACK_CAP : Infinity);
-      if (this.europeLiveCount() + pack > EUROPE_ENEMY_CAP) continue; // cap holds
+      if (this.regionLiveCount() + pack > EUROPE_ENEMY_CAP) continue; // cap holds
       const tint = DOMAIN_TINT[EXISTING_FAMILY_DOMAIN[p.family]];
       for (let i = 0; i < pack; i++) {
         const ang = (Math.PI * 2 * i) / pack;
         const r = 60 + (i % 2) * 40;
         const spot = this.activeMap().nearestWalkableWorld(p.x + Math.cos(ang) * r, p.y + Math.sin(ang) * r);
-        this.spawnEuropeEnemy(z.zoneId, p.family, spot.x, spot.y, tint);
+        this.spawnRegionEnemy(z.zoneId, p.family, spot.x, spot.y, tint);
       }
     }
   }
 
   /** Despawn (pool away) every live entity a zone spawned. */
-  private deactivateEuropeZone(zoneId: string): void {
-    const z = this.europeSpawnZones.find((s) => s.zoneId === zoneId);
+  private deactivateRegionZone(zoneId: string): void {
+    const z = this.regionSpawnZones.find((s) => s.zoneId === zoneId);
     if (z) z.active = false;
-    for (const rec of this.europeLive) {
+    for (const rec of this.regionLive) {
       if (rec.zoneId !== zoneId) continue;
       if (rec.entity.isAlive) {
         rec.entity.destroy();
@@ -6197,38 +6264,38 @@ export class MainScene extends Phaser.Scene {
         else this.demons = this.demons.filter((dm) => (dm as unknown) !== rec.entity);
       }
     }
-    this.europeLive = this.europeLive.filter((r) => r.zoneId !== zoneId);
+    this.regionLive = this.regionLive.filter((r) => r.zoneId !== zoneId);
     // Drop the zone's ambusher records too (their townsfolk were just destroyed).
-    this.europeAmbushers = this.europeAmbushers.filter((a) => a.t.isAlive);
+    this.regionAmbushers = this.regionAmbushers.filter((a) => a.t.isAlive);
   }
 
-  private deactivateAllEuropeZones(): void {
-    for (const z of this.europeSpawnZones) if (z.active) this.deactivateEuropeZone(z.zoneId);
-    this.despawnEuropeChampion(); // the champion never outlives its chunk / the world
-    this.despawnEuropeEscort(); // nor does a convoy run
+  private deactivateAllRegionZones(): void {
+    for (const z of this.regionSpawnZones) if (z.active) this.deactivateRegionZone(z.zoneId);
+    this.despawnRegionChampion(); // the champion never outlives its chunk / the world
+    this.despawnRegionEscort(); // nor does a convoy run
   }
 
   /** One mapped-family enemy via its EXISTING spawner (see EXISTING_FAMILY_SPAWNERS).
    *  The three new families are behavior VARIANTS over those same spawners:
    *  dark-caster = a kiting AngelEnemy variant, veil-ambusher / hollowed-brute =
    *  Townsfolk variants with scene-driven extras. */
-  private spawnEuropeEnemy(zoneId: string, family: string, x: number, y: number, tint: number): void {
+  private spawnRegionEnemy(zoneId: string, family: string, x: number, y: number, tint: number): void {
     if (family === 'lesser-evil-scouts') {
       const d = this.spawnDemon(x, y, this.activeMap().layer);
       d.sprite.setTint(tint);
-      this.europeLive.push({ zoneId, family, kind: 'demon', entity: d, counted: false });
+      this.regionLive.push({ zoneId, family, kind: 'demon', entity: d, counted: false });
     } else if (family === 'corrupted-wildlife' || family === 'evil-raiders') {
       const t = this.spawnTownsfolk(x, y, null, family === 'corrupted-wildlife' ? 'wolf' : 'raider');
       t.sprite.setTint(tint);
-      this.europeLive.push({ zoneId, family, kind: 'townsfolk', entity: t, counted: false });
+      this.regionLive.push({ zoneId, family, kind: 'townsfolk', entity: t, counted: false });
     } else if (family === 'dark-casters') {
       // Low HP + ranged + native kiting (backs off inside preferred range); its
       // tagged bolts apply the slow/weaken + stacking DoT in onProjectileHitPlayer.
       const a = this.spawnAngel('darkcaster', x, y);
       a.sprite.setTint(tint);
-      this.europeLive.push({ zoneId, family, kind: 'angel', entity: a, counted: false });
+      this.regionLive.push({ zoneId, family, kind: 'angel', entity: a, counted: false });
     } else if (family === 'veil-ambushers') {
-      this.spawnEuropeAmbusher(zoneId, x, y);
+      this.spawnRegionAmbusher(zoneId, x, y);
     } else if (family === 'hollowed-brutes') {
       this.spawnEuropeBrute(zoneId, x, y);
     } else {
@@ -6236,18 +6303,18 @@ export class MainScene extends Phaser.Scene {
       // tint on them (their EXISTING_FAMILY_DOMAIN entry gates spawning only).
       const variant = family === 'herald-angels' ? 'herald' : family === 'radiant-guardians' ? 'warden' : 'lesser';
       const a = this.spawnAngel(variant, x, y);
-      this.europeLive.push({ zoneId, family, kind: 'angel', entity: a, counted: false });
+      this.regionLive.push({ zoneId, family, kind: 'angel', entity: a, counted: false });
     }
   }
 
   /** VEIL-AMBUSHER: spawned already HIDDEN at its marker (invisible, physics off,
    *  outside this.townsfolk → outside the aggro hierarchy; taunts/pulls can't
-   *  touch it). updateEuropeAmbushers runs the reveal/burst/re-hide machine. */
-  private spawnEuropeAmbusher(zoneId: string, x: number, y: number): void {
+   *  touch it). updateRegionAmbushers runs the reveal/burst/re-hide machine. */
+  private spawnRegionAmbusher(zoneId: string, x: number, y: number): void {
     const t = this.spawnTownsfolk(x, y, null, 'ambusher');
     this.hideAmbusher(t);
-    this.europeLive.push({ zoneId, family: 'veil-ambushers', kind: 'townsfolk', entity: t, counted: false });
-    this.europeAmbushers.push({ zoneId, t, home: { x, y }, state: 'hidden', burstEndsAt: 0 });
+    this.regionLive.push({ zoneId, family: 'veil-ambushers', kind: 'townsfolk', entity: t, counted: false });
+    this.regionAmbushers.push({ zoneId, t, home: { x, y }, state: 'hidden', burstEndsAt: 0 });
   }
 
   /** Pull an ambusher OUT of the world's combat fabric: invisible, untargetable,
@@ -6269,7 +6336,7 @@ export class MainScene extends Phaser.Scene {
     t.health.full();
     t.sprite.setScale(1.35); // reads as the big slow threat even in gray-box
     t.onHitPlayer = () => this.bruteBeginStrike(t);
-    this.europeLive.push({ zoneId, family: 'hollowed-brutes', kind: 'townsfolk', entity: t, counted: false });
+    this.regionLive.push({ zoneId, family: 'hollowed-brutes', kind: 'townsfolk', entity: t, counted: false });
   }
 
   /** The brute's heavy attack: plant in place, show the boss-style windup ring,
@@ -6298,12 +6365,12 @@ export class MainScene extends Phaser.Scene {
    *  Hidden: reveal when the PLAYER (or, once Prompt D arms ambusherEscortTarget,
    *  the escort) enters the trigger radius. Burst: full townsfolk chase AI for
    *  AMBUSHER_BURST_MS. Then disengage back to the marker and re-hide. */
-  private updateEuropeAmbushers(): void {
-    if (this.europeAmbushers.some((a) => !a.t.isAlive)) {
-      this.europeAmbushers = this.europeAmbushers.filter((a) => a.t.isAlive);
+  private updateRegionAmbushers(): void {
+    if (this.regionAmbushers.some((a) => !a.t.isAlive)) {
+      this.regionAmbushers = this.regionAmbushers.filter((a) => a.t.isAlive);
     }
     const now = this.time.now;
-    for (const a of this.europeAmbushers) {
+    for (const a of this.regionAmbushers) {
       if (a.state === 'hidden') {
         const playerNear = Phaser.Math.Distance.Between(this.player.x, this.player.y, a.home.x, a.home.y) <= AMBUSHER_TRIGGER_RADIUS;
         // DORMANT escort hook: null until the escort run (Prompt D) sets a target.
@@ -6322,7 +6389,7 @@ export class MainScene extends Phaser.Scene {
   }
 
   /** Reveal + burst: rejoin this.townsfolk (AI + targetable again) with a flash. */
-  private revealAmbusher(a: (typeof this.europeAmbushers)[number], now: number): void {
+  private revealAmbusher(a: (typeof this.regionAmbushers)[number], now: number): void {
     a.state = 'burst';
     a.burstEndsAt = now + AMBUSHER_BURST_MS;
     (a.t.sprite.body as Phaser.Physics.Arcade.Body).enable = true;
@@ -6341,31 +6408,31 @@ export class MainScene extends Phaser.Scene {
   // full HP, next approach). Defeat completes the beat.
 
   /** Per-frame (Europe only): keep the live champion in sync with the active beat. */
-  private updateEuropeChampion(): void {
+  private updateRegionChampion(): void {
     const q = this.chain.activeQuest;
     const spec = q ? CHAMPION_SPECS[q.id] : undefined;
     if (spec && q && !this.playerDead) {
-      const hit = this.europeBeatForQuest(q.id);
-      const zone = hit ? this.europeSpawnZones.find((z) => z.zoneId === hit.zone.id) : undefined;
+      const hit = this.regionBeatForQuest(q.id);
+      const zone = hit ? this.regionSpawnZones.find((z) => z.zoneId === hit.zone.id) : undefined;
       if (zone?.active && this.championBeatId !== q.id) {
-        this.despawnEuropeChampion();
-        this.spawnEuropeChampion(q.id, spec);
+        this.despawnRegionChampion();
+        this.spawnRegionChampion(q.id, spec);
         return;
       }
     }
     if (this.championBoss) {
-      const zone = this.europeSpawnZones.find((z) => z.zoneId === this.championZoneId);
+      const zone = this.regionSpawnZones.find((z) => z.zoneId === this.championZoneId);
       const beatStillActive = !!spec && q?.id === this.championBeatId;
-      if (!beatStillActive || this.playerDead || !zone?.active) this.despawnEuropeChampion();
+      if (!beatStillActive || this.playerDead || !zone?.active) this.despawnRegionChampion();
     }
   }
 
   /** Instantiate the boss beat's champion at its zone's boss anchor. */
-  private spawnEuropeChampion(beatId: string, spec: (typeof CHAMPION_SPECS)[string]): void {
-    const hit = this.europeBeatForQuest(beatId);
+  private spawnRegionChampion(beatId: string, spec: (typeof CHAMPION_SPECS)[string]): void {
+    const hit = this.regionBeatForQuest(beatId);
     if (!hit) return;
     const zoneId = hit.zone.id;
-    const anchor = this.europeBossAnchors[zoneId];
+    const anchor = this.regionBossAnchors[zoneId];
     if (!anchor) return;
     // The shipped template: elite stats scaled by the ZONE's tier, tinted by domain.
     const domain = spec.domain.toLowerCase() as CombatDomain;
@@ -6400,7 +6467,7 @@ export class MainScene extends Phaser.Scene {
     return {
       id: `champion-${beatId}`,
       name,
-      world: WORLD_EUROPE,
+      world: this.activeWorld, // champions spawn in their beat's region world
       placement: { x: 0, y: 0 }, // spawned at the zone's boss anchor, not a fixed placement
       sprite: { key: 'champion', scale: 1.6, tint }, // gray-box body (test-boss drawer), domain tint
       maxHP: stats.hp,
@@ -6414,17 +6481,17 @@ export class MainScene extends Phaser.Scene {
           fromRatio: 1,
           attacks,
           // 'summon-adds' champions call in 2–3 of the ZONE's own families per wave.
-          summon: signature === 'summon-adds' ? { enemy: `europe-zone:${zoneId}`, count: 3, cap: 3, cadenceMs: 9000 } : undefined,
+          summon: signature === 'summon-adds' ? { enemy: `region-zone:${zoneId}`, count: 3, cap: 3, cadenceMs: 9000 } : undefined,
         },
       ],
       xpReward: 60 * tier,
       holyPowerDrop: 0,
-      onDefeatHook: `europe-champion:${beatId}`,
+      onDefeatHook: `region-champion:${beatId}`,
     };
   }
 
   /** Remove the live champion (leave/death/beat change): fresh encounter next time. */
-  private despawnEuropeChampion(): void {
+  private despawnRegionChampion(): void {
     const b = this.championBoss;
     this.championBoss = undefined;
     this.championBeatId = null;
@@ -6497,28 +6564,28 @@ export class MainScene extends Phaser.Scene {
   // --- EUROPE ESCORTS: one convoy implementation for every escort beat ---------
 
   /** Per-frame (Europe only): keep the convoy run in sync with the active beat. */
-  private updateEuropeEscort(): void {
+  private updateRegionEscort(): void {
     const q = this.chain.activeQuest;
-    const hit = this.europeBeatForQuest(q?.id);
+    const hit = this.regionBeatForQuest(q?.id);
     const isEscort = !!q && !!hit && hit.beat.archetype === 'escort';
-    const zone = hit ? this.europeSpawnZones.find((z) => z.zoneId === hit.zone.id) : undefined;
+    const zone = hit ? this.regionSpawnZones.find((z) => z.zoneId === hit.zone.id) : undefined;
 
     if (this.escort) {
       // Beat changed / chunk left / player died → clean reset (a retry on return).
       if (!isEscort || q?.id !== this.escort.beatId || this.playerDead || !zone?.active) {
-        this.despawnEuropeEscort();
+        this.despawnRegionEscort();
         return;
       }
       this.driveEscort(this.escort);
       return;
     }
     if (isEscort && zone?.active && !this.playerDead && this.time.now >= this.escortRetryAt) {
-      this.spawnEuropeEscort(q.id, hit.zone.id, zone);
+      this.spawnRegionEscort(q.id, hit.zone.id, zone);
     }
   }
 
   /** Spawn the convoy NPC near the player; route = straight east across the chunk. */
-  private spawnEuropeEscort(beatId: string, zoneId: string, zone: (typeof this.europeSpawnZones)[number]): void {
+  private spawnRegionEscort(beatId: string, zoneId: string, zone: (typeof this.regionSpawnZones)[number]): void {
     MainScene.ensureConvoyTexture(this);
     const map = this.activeMap();
     const spot = map.nearestWalkableWorld(this.player.x + 48, this.player.y - 8);
@@ -6531,7 +6598,7 @@ export class MainScene extends Phaser.Scene {
     this.uiCamera?.ignore([sprite, ...bar.objects()]);
     // Endpoint: the same southern latitude as the zone arrival, out at the chunk's
     // eastern side — a straight-ish path that never crosses the settlement walls.
-    const arrivalY = this.europeZoneArrivals[zoneId]?.y ?? spot.y;
+    const arrivalY = this.regionZoneArrivals[zoneId]?.y ?? spot.y;
     const end = map.nearestWalkableWorld(zone.center.x + zone.radiusPx * 0.7, arrivalY);
     const fams = getZone(zoneId)?.enemyFamilies ?? [];
     this.escort = {
@@ -6556,7 +6623,7 @@ export class MainScene extends Phaser.Scene {
     if (e.npcHealth.isDead) {
       this.showBanner('The convoy has fallen — regroup and try again!', 2400);
       this.escortRetryAt = this.time.now + ESCORT_RETRY_MS;
-      this.despawnEuropeEscort();
+      this.despawnRegionEscort();
       return;
     }
     // Arrival: the beat completes (its factory trigger), the run cleans up.
@@ -6564,10 +6631,10 @@ export class MainScene extends Phaser.Scene {
     if (dEnd <= ESCORT_ARRIVE_RADIUS) {
       this.showBanner('The convoy arrives!', 2200);
       if (this.chain.activeQuest?.id === e.beatId) {
-        const hit = this.europeBeatForQuest(e.beatId);
+        const hit = this.regionBeatForQuest(e.beatId);
         if (hit) this.notifyQuest(triggerForBeat(hit.beat) as ObjectiveTrigger);
       }
-      this.despawnEuropeEscort();
+      this.despawnRegionEscort();
       return;
     }
     // March toward the endpoint (a straight gray-box route).
@@ -6584,7 +6651,7 @@ export class MainScene extends Phaser.Scene {
     if (e.hasAmbushers) {
       this.ambusherEscortTarget = convoyPos;
       // Revealed ambushers during an escort hunt the CONVOY, not the player.
-      for (const rec of this.europeAmbushers) {
+      for (const rec of this.regionAmbushers) {
         if (rec.state !== 'burst' || !rec.t.isAlive) continue;
         rec.t.setTarget(convoyPos);
         if (!rec.t.onHitPortal) rec.t.onHitPortal = () => this.convoyHit(ESCORT_WAVE_HIT_DAMAGE);
@@ -6606,14 +6673,14 @@ export class MainScene extends Phaser.Scene {
 
   /** One ambush wave from the ZONE's own families. Melee (townsfolk-kind) families
    *  spawn steered at the convoy; angel-only zones fall back to the pooled spawner
-   *  (harassers around the run). Cap-respecting and pooled via europeLive. */
+   *  (harassers around the run). Cap-respecting and pooled via regionLive. */
   private spawnEscortWave(e: NonNullable<typeof this.escort>): void {
     const fams = (getZone(e.zoneId)?.enemyFamilies ?? []).filter((f) => f in EXISTING_FAMILY_DOMAIN);
     if (fams.length === 0) return;
     const melee = fams.filter((f) => f === 'corrupted-wildlife' || f === 'evil-raiders' || f === 'hollowed-brutes');
     const fam = melee[(e.wavesFired - 1) % Math.max(1, melee.length)] ?? fams[0];
     let n = fam === 'hollowed-brutes' ? Math.min(ESCORT_WAVE_SIZE, BRUTE_PACK_CAP) : ESCORT_WAVE_SIZE;
-    n = Math.min(n, Math.max(0, EUROPE_ENEMY_CAP - this.europeLiveCount()));
+    n = Math.min(n, Math.max(0, EUROPE_ENEMY_CAP - this.regionLiveCount()));
     if (n <= 0) return;
     this.showBanner('Ambush!', 1400);
     const map = this.activeMap();
@@ -6627,11 +6694,11 @@ export class MainScene extends Phaser.Scene {
         const t = this.spawnTownsfolk(spot.x, spot.y, { x: e.npcSprite.x, y: e.npcSprite.y }, variant);
         t.sprite.setTint(tint);
         t.onHitPortal = () => this.convoyHit(ESCORT_WAVE_HIT_DAMAGE);
-        this.europeLive.push({ zoneId: e.zoneId, family: fam, kind: 'townsfolk', entity: t, counted: false });
+        this.regionLive.push({ zoneId: e.zoneId, family: fam, kind: 'townsfolk', entity: t, counted: false });
         e.waveAttackers.push(t);
       } else {
         // Non-melee families (angel-only zones): pooled harassers around the run.
-        this.spawnEuropeEnemy(e.zoneId, fam, spot.x, spot.y, tint);
+        this.spawnRegionEnemy(e.zoneId, fam, spot.x, spot.y, tint);
       }
     }
   }
@@ -6650,7 +6717,7 @@ export class MainScene extends Phaser.Scene {
   }
 
   /** Tear the escort run down (death/arrival/leave/beat change) — clean state. */
-  private despawnEuropeEscort(): void {
+  private despawnRegionEscort(): void {
     const e = this.escort;
     if (!e) return;
     this.escort = undefined;
@@ -6662,7 +6729,7 @@ export class MainScene extends Phaser.Scene {
         t.onHitPortal = undefined;
       }
     }
-    for (const rec of this.europeAmbushers) {
+    for (const rec of this.regionAmbushers) {
       if (rec.t.isAlive) {
         rec.t.setTarget(null);
         rec.t.onHitPortal = undefined;
@@ -6695,13 +6762,13 @@ export class MainScene extends Phaser.Scene {
   }
 
   /** quest id → its manifest zone+beat (lazy one-time index over WORLD). */
-  private europeBeatForQuest(questId: string | undefined | null): { zone: ManifestZone; beat: QuestBeat } | null {
+  private regionBeatForQuest(questId: string | undefined | null): { zone: ManifestZone; beat: QuestBeat } | null {
     if (!questId) return null;
-    if (!this.europeBeatIndex) {
-      this.europeBeatIndex = new Map();
-      for (const z of WORLD) for (const b of z.questChain) this.europeBeatIndex.set(b.id, { zone: z, beat: b });
+    if (!this.regionBeatIndex) {
+      this.regionBeatIndex = new Map();
+      for (const z of WORLD) for (const b of z.questChain) this.regionBeatIndex.set(b.id, { zone: z, beat: b });
     }
-    return this.europeBeatIndex.get(questId) ?? null;
+    return this.regionBeatIndex.get(questId) ?? null;
   }
 
   /** Kill credit → the ACTIVE europe beat, mirroring the NA arc pattern (count
@@ -6709,9 +6776,9 @@ export class MainScene extends Phaser.Scene {
    *  'clear' beats count kills of their enemyFamily (or any zone family when
    *  unset) INSIDE their zone; the eu-10 portal_approach harvest counts
    *  radiant-guardian / lesser-angel kills. */
-  private onEuropeEnemyKilled(family: string, zoneId: string): void {
+  private onRegionEnemyKilled(family: string, zoneId: string): void {
     const q = this.chain.activeQuest;
-    const hit = this.europeBeatForQuest(q?.id);
+    const hit = this.regionBeatForQuest(q?.id);
     if (!q || !hit || hit.zone.id !== zoneId) return;
     const { beat } = hit;
     let need = 0;
@@ -6723,8 +6790,8 @@ export class MainScene extends Phaser.Scene {
     } else {
       return;
     }
-    const n = (this.europeKillCounts[beat.id] ?? 0) + 1;
-    this.europeKillCounts[beat.id] = n;
+    const n = (this.regionKillCounts[beat.id] ?? 0) + 1;
+    this.regionKillCounts[beat.id] = n;
     this.refreshQuestUi(); // live "(kills x/y)" suffix, like the NA arc counters
     if (n >= need) this.notifyQuest(triggerForBeat(beat) as ObjectiveTrigger);
   }
@@ -7425,16 +7492,19 @@ export class MainScene extends Phaser.Scene {
     // One rule on every swap — dev travel and city enter/leave included.
     this.applyResidentPause(worldId);
 
-    // Europe's chunk packs never travel: leaving the world despawns them all.
-    if (this.activeWorld === WORLD_EUROPE && worldId !== WORLD_EUROPE) this.deactivateAllEuropeZones();
+    // A region world's chunk packs never travel: leaving it despawns them all.
+    if (this.regionWorldIds.has(this.activeWorld) && worldId !== this.activeWorld) this.deactivateAllRegionZones();
 
     this.activeWorld = worldId;
     const w = this.worlds[worldId];
 
-    // Only the active world's terrain collider is live. Europe (sparse) has one
-    // collider PER CHUNK — all of them follow the world's active state.
-    for (const id of Object.keys(this.worlds)) this.worlds[id].collider.active = id === worldId;
-    for (const c of this.europeColliders) c.active = worldId === WORLD_EUROPE;
+    // Only the active world's terrain collider is live. Sparse region worlds
+    // have one collider PER CHUNK — each follows its OWN world's active state.
+    for (const id of Object.keys(this.worlds)) {
+      const c = this.worlds[id].collider;
+      if (c) c.active = id === worldId;
+    }
+    for (const rc of this.regionColliders) rc.c.active = worldId === rc.worldId;
 
     // Bounds, camera, zoom all re-pointed at the active world.
     const b = w.map.bounds;
@@ -9120,7 +9190,7 @@ export class MainScene extends Phaser.Scene {
    */
   private devJumpToFactoryBeat(targetId: string, def: QuestDef): void {
     const zone = WORLD.find((z) => z.questChain.some((b) => b.id === targetId));
-    if (!zone || !EUROPE_BUILT_ZONES.includes(zone.id)) return;
+    if (!zone || !(EUROPE_BUILT_ZONES.includes(zone.id) || AFRICA_BUILT_ZONES.includes(zone.id))) return;
 
     // Class gate: satisfy it via the dev override if needed, and say so.
     if (def.classRequirement) {
@@ -9151,10 +9221,13 @@ export class MainScene extends Phaser.Scene {
     this.chain.load({ completed: [...completed], activeId: null, activeObjective: 0 });
 
     // Travel to the beat's zone (synchronous; we may be paused under the tab).
-    const dest = this.europeZoneArrivals[zone.id] ?? this.worlds[WORLD_EUROPE]?.defaultArrival;
+    // PRE-EXISTING zones (Cairo → the hand-built Egypt world) travel to their
+    // real world; everything else goes to its continent's region world.
+    const targetWorld = (PREBUILT_ZONE_WORLD[zone.id] ?? CONTINENT_WORLD[zone.continent]) as WorldId;
+    const dest = this.regionZoneArrivals[zone.id] ?? this.worlds[targetWorld]?.defaultArrival;
     if (dest) {
-      if (this.activeWorld !== WORLD_EUROPE) {
-        this.applyWorldSwap(WORLD_EUROPE, dest);
+      if (this.activeWorld !== targetWorld) {
+        this.applyWorldSwap(targetWorld, dest);
       } else {
         this.cancelDash();
         this.player.sprite.setPosition(dest.x, dest.y);
@@ -9214,12 +9287,12 @@ export class MainScene extends Phaser.Scene {
   /** A live "(N left)" / "(Holy Power x/y)" suffix for arc objectives (Act I + descent). */
   private arcProgressSuffix(): string {
     // Europe kill counters (clear / eu-10 harvest) show the same live style.
-    const eu = this.europeBeatForQuest(this.chain.activeQuest?.id);
+    const eu = this.regionBeatForQuest(this.chain.activeQuest?.id);
     if (eu && eu.beat.archetype === 'clear') {
-      return `  (kills ${Math.min(this.europeKillCounts[eu.beat.id] ?? 0, EUROPE_CLEAR_KILLS)}/${EUROPE_CLEAR_KILLS})`;
+      return `  (kills ${Math.min(this.regionKillCounts[eu.beat.id] ?? 0, EUROPE_CLEAR_KILLS)}/${EUROPE_CLEAR_KILLS})`;
     }
     if (eu && eu.beat.archetype === 'portal_approach') {
-      return `  (light ${Math.min(this.europeKillCounts[eu.beat.id] ?? 0, EUROPE_HARVEST_KILLS)}/${EUROPE_HARVEST_KILLS})`;
+      return `  (light ${Math.min(this.regionKillCounts[eu.beat.id] ?? 0, EUROPE_HARVEST_KILLS)}/${EUROPE_HARVEST_KILLS})`;
     }
     if (!this.isArcActive()) return '';
     if (this.arcMode === 'defeat') {
@@ -9301,7 +9374,7 @@ export class MainScene extends Phaser.Scene {
    *  update() — doors, interactions, arcs, angels, townsfolk. Nested CITIES are
    *  terrestrial too (their NPCs/doors work like any ground world). */
   private isTerrestrial(w: WorldId): boolean {
-    return w === WORLD_EARTH || w === WORLD_EGYPT || w === WORLD_EUROPE || !!this.cityRuntimes[w];
+    return w === WORLD_EARTH || w === WORLD_EGYPT || w === WORLD_EUROPE || w === WORLD_AFRICA || !!this.cityRuntimes[w];
   }
 
   /** Position the world marker on the current target and update the edge arrow. */

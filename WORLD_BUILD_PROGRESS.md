@@ -63,3 +63,31 @@ source of truth; `world-builder.ts` stamps zones into region worlds;
 **EUROPE REGION COMPLETE** — 25/25 zones stamped and quest-registered. Remaining for later phases: hand-authored prose (all HAND_AUTHORED_TODOs), the class-start feature (home-city openers are manual-start), and the Delphi portal machine.
 
 **COMBAT ACTIVATION (mapped families):** corrupted-wildlife/evil-raiders (wolf/raider townsfolk), lesser-evil-scouts (demons), herald/warden/lesser angels now spawn LIVE per-chunk (activate ≈700px from the chunk edge, despawn at ≈1400px, cap 48 — observed peak 11 on a 3-chunk crossing). Clear beats count family kills in-zone (5) and eu-10's harvest counts guardian/lesser-angel kills (8), both with live tracker suffixes mirroring the NA arc counters. NEW families (dark-casters, veil-ambushers, hollowed-brutes, corrupted-spirits) and region-champions stay markers until their AI run. Escort/fetch/story beats remain structural.
+
+### Africa — the Rift march (sparse `africa` world; stamp in manifest order, one atomic commit per zone)
+
+> SETUP RUN (no zones stamped): the `africa` sparse world is registered in the
+> next X-band east (origin 32.0°N 13.0°E, same px/degree as earth/europe, span
+> 25°×38°). The Europe pipeline was generalized to be world-keyed (region live
+> registry, spawn activation, gates, champions, escorts) — Africa reuses it
+> as-is. The first CROSS-WORLD gate pair is live: the Egypt map's south-edge
+> Nile-exit pad ↔ the future Luxor chunk anchor ("Cross to…" both ways).
+> EGYPT FINDINGS (cai-01..04): the hand-built Egypt world has NO existing
+> quests/NPCs, so path (b) was taken — cai-01..cai-04 register as NEW factory
+> beats, class-gated (Wizard), manual-start. Their objectives complete via
+> their factory triggers today; binding them to live Egypt spawns/locations is
+> the Cairo integration build run's job.
+
+- [x] **cairo-nile-crown** — done (pre-existing, hand-built — never stamp). Corresponds to the existing Egypt world + Faiyum, exactly as Seattle corresponds to the Washington map. Chain registered (Wizard-gated, manual-start): cai-01 mentor / cai-02 clear / cai-03 discovery / cai-04 first-evil. TODOs: cai-01, cai-03 prose.
+- [ ] **luxor-valley-of-kings** — pending (first stamp of the Africa build runs; the cross-world gate already lands at its anchor).
+- [ ] **aswan-first-cataract** — pending.
+- [ ] **nubia-black-pyramids** — pending (nub-01 Kushite Sentinel champion registered in champion-specs).
+- [ ] **sudd-drowned-road** — pending.
+- [ ] **victoria-source** — pending (the Nile/Congo merge: entry anyOf(sud-02, vir-02)).
+- [ ] **serengeti-long-grass** — pending (ser-02 Rift Warden champion registered).
+- [ ] **ngorongoro-outpost** — pending (Act IV patron outpost, hand-authored beats).
+- [ ] **rift-descent** — pending (8-beat Act IV march; af-06 callback needs TWO class-variant scripts: Wizard / Witch Doctor).
+- [ ] **olduvai-cradle** — pending (portal site; structure only until the portal machine phase).
+- [ ] **kinshasa-river-drum** — pending (WITCH DOCTOR home city — class kit unbuilt; chain locked until it ships or the dev override).
+- [ ] **ituri-green-cathedral** — pending (itu-02 Canopy King champion registered).
+- [ ] **virunga-smoke-mountains** — pending.

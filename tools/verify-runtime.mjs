@@ -119,9 +119,9 @@ try {
       const ms = window.__game.scene.getScene('MainScene');
       return {
         world: ms.activeWorld,
-        chunks: ms.europeColliders.length,
+        chunks: ms.regionColliders.length,
         onChunk: ms.activeMap().terrainAtWorld(ms.player.x, ms.player.y) !== null,
-        gates: ms.europeGates.length,
+        gates: ms.regionGates.length,
       };
     });
     ok('Europe: travel lands on a rendered chunk', r.world === 'europe' && r.chunks >= 1 && r.onChunk, `chunks=${r.chunks}`);
@@ -129,7 +129,7 @@ try {
     // A real gate crossing — runs UNCONDITIONALLY (no gates = a loud fail here too).
     const crossed = await page.evaluate(async () => {
       const ms = window.__ready();
-      const g = ms.europeGates[0];
+      const g = ms.regionGates[0];
       if (!g) return { shown: false, reason: 'no gates registered' };
       ms.player.sprite.body.reset(g.x, g.y + 20);
       await new Promise((res) => setTimeout(res, 600));
@@ -145,11 +145,11 @@ try {
     // crossing above to have left the player anywhere useful)...
     const liveAt = await page.evaluate(async () => {
       const ms = window.__ready();
-      const z = ms.europeSpawnZones[0];
+      const z = ms.regionSpawnZones[0];
       if (!z) return -1;
       ms.player.sprite.body.reset(z.center.x, z.center.y + 200);
       await new Promise((res) => setTimeout(res, 900));
-      return ms.europeLiveCount();
+      return ms.regionLiveCount();
     });
     ok('Europe: entering a chunk materializes its spawns', liveAt > 0, `${liveAt} live in zone 1`);
     // ...and leaving despawns them (teleport deep into the void, past hysteresis).
@@ -157,7 +157,7 @@ try {
       const ms = window.__ready();
       ms.player.sprite.body.reset(ms.player.x + 6000, ms.player.y + 6000);
       await new Promise((res) => setTimeout(res, 900));
-      return ms.europeLiveCount();
+      return ms.regionLiveCount();
     });
     ok('Europe: leaving a chunk despawns/pools its enemies', liveAfterLeave === 0, `${liveAfterLeave} live after leaving`);
 
@@ -167,7 +167,7 @@ try {
       ms.devJumpToQuest('rom-02-catacomb-vermin'); // clear: corrupted-wildlife in Rome
       ms.playerHealth.shield = 1e9; // re-arm past the jump's heal path
       await new Promise((res) => setTimeout(res, 1200)); // chunk activates + packs spawn
-      const wildlife = ms.europeLive.filter((rec) => rec.family === 'corrupted-wildlife' && rec.entity.isAlive);
+      const wildlife = ms.regionLive.filter((rec) => rec.family === 'corrupted-wildlife' && rec.entity.isAlive);
       for (const rec of wildlife.slice(0, 5)) rec.entity.takeHit(99999);
       await new Promise((res) => setTimeout(res, 900)); // death sweep + trigger
       return { spawned: wildlife.length, status: ms.chain.status('rom-02-catacomb-vermin') };
@@ -178,12 +178,12 @@ try {
     const capRun = await page.evaluate(async () => {
       const ms = window.__ready();
       let peak = 0;
-      const zones = ms.europeSpawnZones.slice(0, 3);
+      const zones = ms.regionSpawnZones.slice(0, 3);
       for (const z of zones) {
         ms.player.sprite.body.reset(z.center.x, z.center.y + 200);
         for (let i = 0; i < 8; i++) {
           await new Promise((res) => setTimeout(res, 120));
-          peak = Math.max(peak, ms.europeLiveCount());
+          peak = Math.max(peak, ms.regionLiveCount());
         }
       }
       return { zones: zones.length, peak };
@@ -197,13 +197,13 @@ try {
       // Reset: hop into the void so every zone despawns, then approach fresh.
       ms.player.sprite.body.reset(ms.player.x + 9000, ms.player.y + 9000);
       await new Promise((res) => setTimeout(res, 700));
-      const z = ms.europeSpawnZones.find((s) => s.points.some((p) => p.family === 'veil-ambushers'));
+      const z = ms.regionSpawnZones.find((s) => s.points.some((p) => p.family === 'veil-ambushers'));
       if (!z) return { found: false };
       const pt = z.points.find((p) => p.family === 'veil-ambushers');
       // Land near the marker but OUTSIDE the 140px trigger (homes ring ≤100px from it).
       ms.player.sprite.body.reset(pt.x + 420, pt.y);
       await new Promise((res) => setTimeout(res, 900)); // zone activates, pack spawns hidden
-      const recs = ms.europeAmbushers.filter((a) => Math.hypot(a.home.x - pt.x, a.home.y - pt.y) < 200);
+      const recs = ms.regionAmbushers.filter((a) => Math.hypot(a.home.x - pt.x, a.home.y - pt.y) < 200);
       const hiddenBefore = recs.length > 0 && recs.every((a) => a.state === 'hidden' && !a.t.sprite.visible);
       const targetableBefore = recs.some((a) => ms.townsfolk.includes(a.t));
       ms.player.sprite.body.reset(pt.x, pt.y); // step inside the trigger radius
@@ -222,13 +222,13 @@ try {
       const ms = window.__ready();
       ms.player.sprite.body.reset(ms.player.x + 9000, ms.player.y + 9000); // despawn all
       await new Promise((res) => setTimeout(res, 700));
-      const z = ms.europeSpawnZones.find((s) => s.points.some((p) => p.family === 'hollowed-brutes'));
+      const z = ms.regionSpawnZones.find((s) => s.points.some((p) => p.family === 'hollowed-brutes'));
       if (!z) return { found: false };
       ms.player.sprite.body.reset(z.center.x, z.center.y + 100);
       await new Promise((res) => setTimeout(res, 900)); // zone activates, packs spawn
       const pts = z.points.filter((p) => p.family === 'hollowed-brutes');
       const perPack = pts.map(
-        (p) => ms.europeLive.filter((rec) => rec.family === 'hollowed-brutes' && rec.entity.isAlive && Math.hypot(rec.entity.x - p.x, rec.entity.y - p.y) < 170).length,
+        (p) => ms.regionLive.filter((rec) => rec.family === 'hollowed-brutes' && rec.entity.isAlive && Math.hypot(rec.entity.x - p.x, rec.entity.y - p.y) < 170).length,
       );
       return { found: true, perPack };
     });
@@ -261,7 +261,7 @@ try {
       const ms = window.__ready();
       const b = ms.championBoss;
       if (!b) return { fired: false };
-      const anchor = ms.europeBossAnchors[ms.championZoneId];
+      const anchor = ms.regionBossAnchors[ms.championZoneId];
       ms.player.sprite.body.reset(anchor.x + 120, anchor.y); // inside activation, outside melee
       const t0 = Date.now();
       let fired = false;
@@ -439,7 +439,7 @@ try {
       const ms = window.__game.scene.getScene('MainScene');
       return {
         world: ms.activeWorld,
-        live: ms.europeLiveCount(),
+        live: ms.regionLiveCount(),
         stacks: ms.casterDotStacks.length,
         slow: ms.player.slowFactor,
         weakened: ms.time.now < ms.casterWeakenUntil,
@@ -476,6 +476,79 @@ try {
     'dark-caster: a real bolt applies slow + weaken + a DoT stack to its target',
     caster.slow < 1 && caster.stacks > 0 && caster.weakened && caster.alive,
     `slow=${caster.slow} stacks=${caster.stacks} weakened=${caster.weakened}`,
+  );
+
+  // 3l. AFRICA RESIDENCY: the X-band residency rule must cover the NEW world —
+  // verified, not assumed. An entity relocated into Africa's band stops
+  // ticking while the player is elsewhere, resumes on Africa entry, and is
+  // fully re-paused (tick + body) on leaving.
+  const africaPause = await page.evaluate(async () => {
+    const ms = window.__ready();
+    if (!ms.worlds['africa']) return { registered: false };
+    const spot = ms.activeMap().nearestWalkableWorld(ms.player.x + 260, ms.player.y);
+    const a = ms.spawnAngel('darkcaster', spot.x, spot.y); // born on Earth (spawn needs a dense layer)
+    const dest = ms.worlds['africa'].defaultArrival;
+    // Release the world-bounds clamp first — Earth's physics bounds would snap
+    // the body back to Earth's edge on the next step, keeping it an Earth resident.
+    a.sprite.setCollideWorldBounds(false);
+    a.sprite.body.reset(dest.x + 150, dest.y); // relocate: an AFRICA resident by X-band
+    const sample = async () => {
+      const proto = Object.getPrototypeOf(a);
+      const orig = proto.update;
+      let ticked = false;
+      proto.update = function (...args) {
+        if (this === a) ticked = true;
+        return orig.apply(this, args);
+      };
+      await new Promise((res) => setTimeout(res, 300));
+      proto.update = orig;
+      return ticked;
+    };
+    const tickedFromEarth = await sample();
+    ms.applyWorldSwap('africa', dest);
+    await new Promise((res) => setTimeout(res, 300));
+    const tickedInAfrica = await sample();
+    const bodyInAfrica = a.sprite.body.enable;
+    ms.applyWorldSwap('earth', ms.worlds['earth'].defaultArrival);
+    await new Promise((res) => setTimeout(res, 300));
+    const tickedAfterLeave = await sample();
+    const bodyAfterLeave = a.sprite.body.enable;
+    a.destroy();
+    return { registered: true, tickedFromEarth, tickedInAfrica, bodyInAfrica, tickedAfterLeave, bodyAfterLeave };
+  });
+  ok(
+    'africa: X-band residency pauses its residents elsewhere and resumes on entry',
+    africaPause.registered && !africaPause.tickedFromEarth && africaPause.tickedInAfrica && africaPause.bodyInAfrica && !africaPause.tickedAfterLeave && !africaPause.bodyAfterLeave,
+    JSON.stringify(africaPause),
+  );
+
+  // 3m. CROSS-WORLD GATE (Egypt ↔ Africa): the first manifest-driven gate pair
+  // — the Nile-exit pad on the Egypt map crosses to the Luxor anchor and back.
+  const xgate = await page.evaluate(async () => {
+    const ms = window.__ready();
+    const toAfrica = ms.regionGates.find((g) => g.destWorld === 'africa');
+    const toEgypt = ms.regionGates.find((g) => g.destWorld === 'egypt');
+    if (!toAfrica || !toEgypt) return { found: false };
+    ms.applyWorldSwap('egypt', { x: toAfrica.x, y: toAfrica.y + 10 }); // stand on the Egypt pad
+    await new Promise((res) => setTimeout(res, 1600)); // past the world-transition cooldown
+    if (!ms.cityGateButton.isVisible) return { found: true, shown: false, step: 'egypt pad button never appeared' };
+    ms.cityGateAction?.();
+    await new Promise((res) => setTimeout(res, 1800)); // fade travel
+    const inAfrica = ms.activeWorld === 'africa';
+    const dA = Math.hypot(ms.player.x - toAfrica.dest.x, ms.player.y - toAfrica.dest.y);
+    ms.player.sprite.body.reset(toEgypt.x, toEgypt.y + 10); // stand on the Africa-side gate
+    await new Promise((res) => setTimeout(res, 1600));
+    if (!ms.cityGateButton.isVisible) return { found: true, shown: false, step: 'africa gate button never appeared', inAfrica, dA };
+    ms.cityGateAction?.();
+    await new Promise((res) => setTimeout(res, 1800));
+    const backEgypt = ms.activeWorld === 'egypt';
+    const dE = Math.hypot(ms.player.x - toEgypt.dest.x, ms.player.y - toEgypt.dest.y);
+    return { found: true, shown: true, inAfrica, dA: +dA.toFixed(1), backEgypt, dE: +dE.toFixed(1) };
+  });
+  ok(
+    'cross-world gate: the Egypt ↔ Africa crossing lands both ways',
+    xgate.found && xgate.shown && xgate.inAfrica && xgate.dA < 8 && xgate.backEgypt && xgate.dE < 8,
+    JSON.stringify(xgate),
   );
 
   // 4) THE GATE: zero page errors across everything above.

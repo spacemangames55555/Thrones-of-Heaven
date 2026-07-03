@@ -24,4 +24,16 @@ export const ENTRY_PREREQUISITES: Record<string, EntryPrereq> = {
   'calais-landing': ['ken-02-passage-papers'],
   'paris-veiled-lights': ['cal-02-beach-raiders'],
   'burgundy-vintners-road': ['par-02-catacomb-casters'],
+  // ── AFRICA — the Rift march (append-only) ──
+  'luxor-valley-of-kings': ['cai-04-first-evil'],
+  'aswan-first-cataract': ['lux-02-relic-south'],
+  'nubia-black-pyramids': ['asw-02-gate-of-nubia'],
+  'sudd-drowned-road': ['nub-02-pyramid-fields'],
+  'ituri-green-cathedral': ['kin-04-first-evil'],
+  'virunga-smoke-mountains': ['itu-03-lakes-medicine'],
+  'victoria-source': [{ anyOf: ['sud-02-through-the-reeds', 'vir-02-refugees-to-the-lake'] }],
+  'serengeti-long-grass': ['vic-02-caravan-south'],
+  'ngorongoro-outpost': ['ser-02-rift-warden'],
+  'rift-descent': ['af-02-first-harvest'],
+  'olduvai-cradle': ['af-10-final-harvest'],
 };

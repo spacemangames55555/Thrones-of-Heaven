@@ -7,5 +7,9 @@ export const CHAMPION_SPECS: Record<string, {
   'kyi-01-river-gate-tyrant':  { name: 'The River Gate Tyrant',  domain: 'Mental',    move: 'channel-beam' },
   'alp-01-pass-warden':        { name: 'The Pass Warden',        domain: 'Physical',  move: 'charge' },
   'bel-02-confluence-warlord': { name: 'The Confluence Warlord', domain: 'Physical',  move: 'summon-adds' },
+  // ── AFRICA — the Rift march (append-only) ──
+  'nub-01-kushite-sentinel': { name: 'The Kushite Sentinel', domain: 'Spiritual', move: 'aoe-slam' },
+  'itu-02-canopy-king':      { name: 'The Canopy King',      domain: 'Mental',    move: 'summon-adds' },
+  'ser-02-rift-warden':      { name: 'The Rift Warden',      domain: 'Physical',  move: 'charge' },
 };
 // Note: all four signature moves are deliberately exercised exactly once in Europe.
