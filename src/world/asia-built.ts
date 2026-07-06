@@ -18,6 +18,7 @@ export const ASIA_BUILT_ZONES: string[] = [
   'kunlun-ascent',
   'kunlun-jade-court',
   'kyoto-thousand-gates',
+  'setouchi-inland-sea',
 ];
 
 /** Generated QuestDefs for every BUILT Asia zone (same factory as Europe/Africa). */
