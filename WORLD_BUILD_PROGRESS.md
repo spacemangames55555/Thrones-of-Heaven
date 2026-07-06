@@ -90,7 +90,9 @@ source of truth; `world-builder.ts` stamps zones into region worlds;
 - [x] **olduvai-cradle** — done. The portal terminal chunk (portal-threshold, small footprint); Rift↔Olduvai gates. NO portal machine built (structure only) — af-11 (mask drop) + af-12 (threshold) are HAND_AUTHORED_TODO structural beats. The Rift march is walkable end to end: Cairo/Egypt → Luxor → … → Olduvai.
 - [x] **kinshasa-river-drum** — done. WITCH DOCTOR home city (rainforest-river; class kit unbuilt — the chain is class-gated + manual-start and unlocks via the dev override until the kit ships). Fresh starts verified clean (the home-city guard). Isolated until Ituri (next). TODOs: kin-01, kin-03 prose.
 - [x] **ituri-green-cathedral** — done. Deep-rainforest corridor; Kinshasa↔Ituri gates open the Witch Doctor spine. itu-02 THE CANOPY KING (Mental, summon-adds — calls in the zone's own wildlife/ambushers) live at the boss anchor; itu-03 fetch chains toward the lakes.
-- [ ] **virunga-smoke-mountains** — pending.
+- [x] **virunga-smoke-mountains** — done. Volcanic-highland corridor; Ituri↔Virunga AND Virunga↔Victoria gates close the Congo road — vir-02's escort makes Victoria's second anyOf arm earnable, and with it the WHOLE REGION: all 12 stampable zones built (13 with pre-existing Cairo), every spine converging on Ngorongoro → the Rift → Olduvai.
+
+**AFRICA REGION COMPLETE** — 13/13 zones (Cairo pre-existing/hand-built, 12 stamped + quest-registered, all PLAYABLE in one pass: live spawns, champions, escorts, kill objectives). Remaining for later phases: hand-authored prose (all HAND_AUTHORED_TODOs), the Wizard/Witch-Doctor class-start feature, and the Olduvai portal machine.
 
 **GROUND LAYER (sparse worlds):** Europe + Africa now draw REAL continents
 beneath their chunks — a bundled 720×360 land/water + coarse-biome raster

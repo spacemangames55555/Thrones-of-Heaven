@@ -23,6 +23,7 @@ export const AFRICA_BUILT_ZONES: string[] = [
   'olduvai-cradle',
   'kinshasa-river-drum',
   'ituri-green-cathedral',
+  'virunga-smoke-mountains',
 ];
 
 /** Zones whose CONTENT lives in a pre-existing hand-built world (never stamped):
