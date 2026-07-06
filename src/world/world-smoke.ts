@@ -24,7 +24,7 @@ declare const process: { exit(code: number): never };
 import { WORLD } from './world-manifest';
 import { WORLD_CALIBRATION, WORLD_SPAN_DEGREES } from './world-calibration';
 import { validateWorldGraph, worldIdForZone, planZoneStamp, createWorld, createSparseWorld, stampZone } from './world-builder';
-import { buildZoneQuests, appendToRegistry } from './quest-factory';
+import { buildZoneQuests, appendToRegistry, CALLBACK_CLASSES_BY_CONTINENT } from './quest-factory';
 import { ENTRY_PREREQUISITES } from './spine-chains';
 import { familyResolves } from './enemy-roster';
 import { QUEST_REGISTRY, type QuestDef } from '../quest/questData';
@@ -129,10 +129,13 @@ for (const zone of WORLD) {
         throw new Error(`home-city beat '${beat.id}' is missing classRequirement '${zone.homeClass}'`);
       }
       if (beat.summary.includes('class-variant')) {
+        // One TODO variant per class in the beat's CONTINENT callback list
+        // (Europe 5, Africa 2 — the factory's map is the single source of truth).
+        const expected = (CALLBACK_CLASSES_BY_CONTINENT[zone.continent] ?? []).length;
         const variants = defs[i].classVariants ?? {};
         const names = Object.keys(variants);
         const allTodo = names.every((c) => variants[c][0].includes(`HAND_AUTHORED_TODO: ${beat.id}`));
-        if (names.length !== 5 || !allTodo) throw new Error(`class-variant beat '${beat.id}' should scaffold 5 TODO variants (got ${names.length})`);
+        if (names.length !== expected || !allTodo) throw new Error(`class-variant beat '${beat.id}' should scaffold ${expected} TODO variants (got ${names.length})`);
       }
     }
     allGenerated.push(...defs);

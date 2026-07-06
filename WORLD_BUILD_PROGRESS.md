@@ -86,7 +86,7 @@ source of truth; `world-builder.ts` stamps zones into region worlds;
 - [x] **victoria-source** — done. Lake-shore city — THE NILE/CONGO MERGE: entry anyOf(sud-02, vir-02); the sud arm is earnable now, the Congo arm activates when Virunga builds. Sudd↔Victoria gates (Virunga + Serengeti links arrive with theirs). vic-01 loop-authored story; vic-02 escort out of the lake city.
 - [x] **serengeti-long-grass** — done. Savanna corridor; Victoria↔Serengeti gates. ser-01 clear; ser-02 THE RIFT WARDEN (Physical, charge) live at the boss anchor — Ngorongoro's entry prerequisite.
 - [x] **ngorongoro-outpost** — done. Act IV holy-highland outpost (walled footprint); Serengeti↔Ngorongoro gates. af-01 (Azazel's patron arrival) is structural with HAND_AUTHORED_TODO prose; af-02 harvests radiant-guardian light (angel packs live). The Rift march is open to the crater rim.
-- [ ] **rift-descent** — pending (8-beat Act IV march; af-06 callback needs TWO class-variant scripts: Wizard / Witch Doctor).
+- [x] **rift-descent** — done. The 8-beat Act IV march down the Rift wall (holy-highland); Ngorongoro↔Rift gates; angel packs + af-08's Kneeling Angel boss beat live; af-10 harvest counts guardian/lesser-angel kills. af-06 scaffolds TWO class-variant TODOs (wizard / witchdoctor) — the factory's callback classes are now PER CONTINENT (Europe keeps its five; smoke asserts the per-continent count). TODOs: af-03, af-06 ×2, af-07, af-09 prose.
 - [ ] **olduvai-cradle** — pending (portal site; structure only until the portal machine phase).
 - [ ] **kinshasa-river-drum** — pending (WITCH DOCTOR home city — class kit unbuilt; chain locked until it ships or the dev override).
 - [ ] **ituri-green-cathedral** — pending (itu-02 Canopy King champion registered).

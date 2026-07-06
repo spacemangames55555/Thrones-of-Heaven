@@ -19,6 +19,7 @@ export const AFRICA_BUILT_ZONES: string[] = [
   'victoria-source',
   'serengeti-long-grass',
   'ngorongoro-outpost',
+  'rift-descent',
 ];
 
 /** Zones whose CONTENT lives in a pre-existing hand-built world (never stamped):

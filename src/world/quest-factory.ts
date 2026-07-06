@@ -9,8 +9,13 @@ export type ZoneEntryPrerequisite = string | readonly QuestPrerequisite[] | null
 const normalizeEntry = (entry: ZoneEntryPrerequisite): readonly QuestPrerequisite[] =>
   entry === null ? [] : typeof entry === 'string' ? [entry] : entry;
 
-/** The five classes eu-06-style class-variant callback beats script for. */
-const CALLBACK_CLASSES = ['bard', 'priest', 'blacksmith', 'mage', 'necromancer'] as const;
+/** Regional-callback variant classes PER CONTINENT (the eu-06 / af-06 pattern):
+ *  each region's callback beat scripts one variant per class whose road
+ *  converges there. Unknown continents scaffold no variants (loudly nothing). */
+export const CALLBACK_CLASSES_BY_CONTINENT: Record<string, readonly string[]> = {
+  Europe: ['bard', 'priest', 'blacksmith', 'mage', 'necromancer'],
+  Africa: ['wizard', 'witchdoctor'],
+};
 
 /**
  * QUEST FACTORY (Phase 0). Turns a manifest Zone's questChain into REAL
@@ -91,8 +96,9 @@ export function questForBeat(zone: Zone, beat: QuestBeat, prerequisites: readonl
   // them): scaffold one HAND_AUTHORED_TODO placeholder per class; the dialogue
   // layer (questLinesFor) selects by class and falls back to the shared line.
   const wantsClassVariants = handAuthored && beat.summary.includes('class-variant');
-  const classVariants = wantsClassVariants
-    ? Object.fromEntries(CALLBACK_CLASSES.map((c) => [c, [`HAND_AUTHORED_TODO: ${beat.id} (${c}) — designer prose goes here.`]]))
+  const callbackClasses = CALLBACK_CLASSES_BY_CONTINENT[zone.continent] ?? [];
+  const classVariants = wantsClassVariants && callbackClasses.length > 0
+    ? Object.fromEntries(callbackClasses.map((c) => [c, [`HAND_AUTHORED_TODO: ${beat.id} (${c}) — designer prose goes here.`]]))
     : undefined;
   return {
     id: beat.id,
