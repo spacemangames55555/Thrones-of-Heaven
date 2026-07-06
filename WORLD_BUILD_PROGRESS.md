@@ -85,7 +85,7 @@ source of truth; `world-builder.ts` stamps zones into region worlds;
 - [x] **sudd-drowned-road** — done. Marsh corridor; Nubia↔Sudd gates (the longest Nile-road crossing). sud-01 clears the reed ambushers; sud-02 escort runs the caravan through the marsh — its arm of Victoria's anyOf entry is now earnable.
 - [x] **victoria-source** — done. Lake-shore city — THE NILE/CONGO MERGE: entry anyOf(sud-02, vir-02); the sud arm is earnable now, the Congo arm activates when Virunga builds. Sudd↔Victoria gates (Virunga + Serengeti links arrive with theirs). vic-01 loop-authored story; vic-02 escort out of the lake city.
 - [x] **serengeti-long-grass** — done. Savanna corridor; Victoria↔Serengeti gates. ser-01 clear; ser-02 THE RIFT WARDEN (Physical, charge) live at the boss anchor — Ngorongoro's entry prerequisite.
-- [ ] **ngorongoro-outpost** — pending (Act IV patron outpost, hand-authored beats).
+- [x] **ngorongoro-outpost** — done. Act IV holy-highland outpost (walled footprint); Serengeti↔Ngorongoro gates. af-01 (Azazel's patron arrival) is structural with HAND_AUTHORED_TODO prose; af-02 harvests radiant-guardian light (angel packs live). The Rift march is open to the crater rim.
 - [ ] **rift-descent** — pending (8-beat Act IV march; af-06 callback needs TWO class-variant scripts: Wizard / Witch Doctor).
 - [ ] **olduvai-cradle** — pending (portal site; structure only until the portal machine phase).
 - [ ] **kinshasa-river-drum** — pending (WITCH DOCTOR home city — class kit unbuilt; chain locked until it ships or the dev override).
