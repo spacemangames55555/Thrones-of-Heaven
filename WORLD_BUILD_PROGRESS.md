@@ -130,7 +130,7 @@ atlantean). Build order = manifest order:
 - [x] kunlun-jade-court — done. Portal terminal chunk (portal-threshold, small footprint); Ascent↔Jade Court gates. NO portal machine built — as-11 (mask drop) + as-12 (threshold) are HAND_AUTHORED_TODO structural beats. The Monk road is walkable Lhasa → Jade Court.
 - [x] kyoto-thousand-gates — done. Samurai home city stamped in Japan (class-gated manual-start chain; fresh starts verified clean). Isolated until the Inland Sea (next). TODOs: kyo-01, kyo-03 prose.
 - [x] setouchi-inland-sea — done. Coastal corridor; Kyoto↔Inland Sea gates open the Samurai spine; set-01 raider clear live; the Shanghai sea-dock (boat-door) arrives when Shanghai builds.
-- [ ] shanghai-eastern-dock — city; sea-gate back to the Inland Sea
+- [x] shanghai-eastern-dock — done. Mainland dock city; the Inland Sea↔Shanghai SEA-DOCK pair (boat-doors) materializes — Japan connects to the mainland; sha-01 dock escort + sha-02 caster clear live.
 - [ ] three-gorges-river-teeth — corridor; The Gorge Witch champion (gor-01)
 - [ ] sichuan-red-basin — corridor; provisions for the climb
 - [ ] bali-drowned-crown — Atlantean home city (Act I chain bal-01..04; island)
