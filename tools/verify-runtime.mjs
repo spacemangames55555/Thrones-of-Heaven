@@ -621,6 +621,57 @@ try {
   );
   ok('ground: dense hand-built worlds have NO ground layer', groundRun.has && groundRun.denseClean, 'earth/egypt/heaven/hell/faiyum clean');
 
+  // 3o. CAIRO ACT I (the Wizard's home chain, live in the hand-built Egypt
+  // world): cai-01..04 complete END TO END via real play actions — the
+  // Keeper's proximity talk, five delta-wolf kills, the rot-site walk-in, the
+  // gate-boss kill. Setup mirrors a fresh Wizard start (chain wiped + class
+  // announced — the same state the fresh-start checks prove clean); Faiyum and
+  // the Egypt terrain must be intact afterwards (the binding is additive-only).
+  const cairo = await page.evaluate(async () => {
+    const ms = window.__ready();
+    const wait = (t) => new Promise((res) => setTimeout(res, t));
+    ms.devClassOverride = 'Wizard'; // the chain is Wizard-gated (Wizard ≠ Mage, canon)
+    ms.announcePlayerClass();
+    // Fresh-chain precondition: earlier checks leave auto-activated beats live,
+    // and accept() refuses while ANY quest is active. A wiped chain is exactly
+    // the fresh-start state; nothing auto-starts from it (cai-01 is manual).
+    ms.chain.load({ completed: [], activeId: null, activeObjective: 0 });
+    ms.applyWorldSwap('egypt', ms.worlds['egypt'].defaultArrival);
+    await wait(1700);
+    // cai-01 — stand before the Keeper; the talk button must offer itself.
+    ms.player.sprite.body.reset(ms.cairoMentorPos.x + 50, ms.cairoMentorPos.y);
+    await wait(500);
+    const mentorButton = ms.cairoMentorButton.isVisible;
+    ms.cairoMentorTalk();
+    await wait(300);
+    const s1 = ms.chain.status('cai-01-mentor');
+    // cai-02 — five REAL delta-wolf deaths, swept through the shared clear path.
+    const wolves = ms.cairoLive.filter((r) => !r.bossBeatId && r.entity.isAlive).slice(0, 5);
+    for (const w of wolves) w.entity.takeHit(999999);
+    await wait(700);
+    const s2 = ms.chain.status('cai-02-first-blood');
+    // cai-03 — walk onto the rot site on the river road.
+    ms.player.sprite.body.reset(ms.cairoDiscoveryPos.x, ms.cairoDiscoveryPos.y);
+    await wait(700);
+    const s3 = ms.chain.status('cai-03-discovery');
+    // cai-04 — fell the boosted scout at the city gates.
+    const boss = ms.cairoLive.find((r) => r.bossBeatId && r.entity.isAlive);
+    if (boss) boss.entity.takeHit(999999);
+    await wait(700);
+    const s4 = ms.chain.status('cai-04-first-evil');
+    // Additive-only proof: Faiyum still registered, the Egypt terrain still real.
+    const faiyumIntact = !!ms.cityRuntimes['city-faiyum'] && !!ms.worlds['city-faiyum'];
+    const egyptIntact = ms.egyptMap.terrainAtWorld(ms.egyptArrivalPos.x, ms.egyptArrivalPos.y) !== null;
+    ms.devClassOverride = null;
+    ms.announcePlayerClass();
+    return { mentorButton, wolves: wolves.length, s1, s2, s3, s4, faiyumIntact, egyptIntact };
+  });
+  ok(
+    'cairo act i: cai-01..04 complete end to end by hand in the Egypt world',
+    cairo.mentorButton && cairo.wolves === 5 && cairo.s1 === 'complete' && cairo.s2 === 'complete' && cairo.s3 === 'complete' && cairo.s4 === 'complete' && cairo.faiyumIntact && cairo.egyptIntact,
+    JSON.stringify(cairo),
+  );
+
   // 4) THE GATE: zero page errors across everything above.
   ok('zero page errors during boot + travel', pageErrors.length === 0, pageErrors.slice(0, 3).join(' | '));
 } finally {
