@@ -16,6 +16,7 @@ export const ASIA_BUILT_ZONES: string[] = [
   'hoh-xil-roof-of-world',
   'kunlun-jade-gate',
   'kunlun-ascent',
+  'kunlun-jade-court',
 ];
 
 /** Generated QuestDefs for every BUILT Asia zone (same factory as Europe/Africa). */
