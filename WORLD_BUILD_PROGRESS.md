@@ -128,7 +128,7 @@ atlantean). Build order = manifest order:
 - [x] kunlun-jade-gate — done. Act IV holy-highland outpost (walled footprint); Hoh Xil↔Jade Gate gates; angel packs live; as-02 light-harvest live. as-01 (Azazel patron arrival) structural TODO.
 - [x] kunlun-ascent — done. The 8-beat Act IV pillar march; Jade Gate↔Ascent gates; as-04 clear + as-05 light convoy escort + as-10 final harvest live; as-06 scaffolds THREE class-variant TODOs (monk/samurai/atlantean). TODOs: as-03, as-06 ×3, as-07, as-09 prose.
 - [x] kunlun-jade-court — done. Portal terminal chunk (portal-threshold, small footprint); Ascent↔Jade Court gates. NO portal machine built — as-11 (mask drop) + as-12 (threshold) are HAND_AUTHORED_TODO structural beats. The Monk road is walkable Lhasa → Jade Court.
-- [ ] kyoto-thousand-gates — Samurai home city (Act I chain kyo-01..04)
+- [x] kyoto-thousand-gates — done. Samurai home city stamped in Japan (class-gated manual-start chain; fresh starts verified clean). Isolated until the Inland Sea (next). TODOs: kyo-01, kyo-03 prose.
 - [ ] setouchi-inland-sea — corridor; sea-gate to Shanghai
 - [ ] shanghai-eastern-dock — city; sea-gate back to the Inland Sea
 - [ ] three-gorges-river-teeth — corridor; The Gorge Witch champion (gor-01)
