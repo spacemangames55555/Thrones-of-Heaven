@@ -15,6 +15,9 @@ export const WORLD_HELL: WorldId = 'hell';
 export const WORLD_EGYPT: WorldId = 'egypt';
 export const WORLD_EUROPE: WorldId = 'europe';
 export const WORLD_AFRICA: WorldId = 'africa';
+/** The ONE whole-planet sparse region world (Europe + Africa consolidated at
+ *  true Earth positions; later continents stamp into it too). */
+export const WORLD_GLOBE: WorldId = 'globe';
 
 /**
  * The map surface a registered world must provide — everything world-agnostic

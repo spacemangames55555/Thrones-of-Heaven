@@ -56,6 +56,15 @@ export const WORLD_CALIBRATION: Record<string, WorldCalibration> = {
     origin: { lat: 32.0, lng: 13.0 },
     pixelsPerDegree: { x: 2426, y: 2453 },
   },
+  // GLOBE — Europe + Africa CONSOLIDATED into one whole-planet sparse world at
+  // TRUE Earth positions through this single calibration. Origin is the
+  // planet's usable top-left (85°N 180°W); same pixels-per-degree as earth/
+  // europe so travel feel is unchanged. The bundled Natural-Earth ground
+  // raster is already whole-planet, so no new ground data is needed.
+  globe: {
+    origin: { lat: 85.0, lng: -180.0 },
+    pixelsPerDegree: { x: 2426, y: 2453 },
+  },
   // Future region worlds (e.g. the Egypt map) get their own row, derived the
   // same way from that world's existing landmarks.
 };
@@ -65,6 +74,8 @@ export const WORLD_SPAN_DEGREES: Record<string, { lng: number; lat: number }> = 
   europe: { lng: 50, lat: 34 },
   // Africa: 13E→38E covers Serengeti (35.49E); 32N→-6S covers Kinshasa (-4.32).
   africa: { lng: 25, lat: 38 },
+  // Globe: the whole planet (85°N..85°S, 180°W..180°E) — every future zone fits.
+  globe: { lng: 360, lat: 170 },
 };
 
 /** Convert a real-world anchor to LOCAL pixels on its region world's map. */

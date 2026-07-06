@@ -41,11 +41,13 @@ import type { WashingtonMap, TerrainType } from '../map/mapTypes';
  */
 export const CONTINENT_WORLD: Record<string, string> = {
   'North America': 'earth',
-  // AFRICA is its own sparse region world (the Rift march). The hand-built
-  // EGYPT world remains a separate dense map — the manifest's Cairo zone is
-  // PRE-EXISTING there (never stamped) and linked by a cross-world gate.
-  Africa: 'africa',
-  Europe: 'europe',
+  // EUROPE + AFRICA are CONSOLIDATED into the one whole-planet 'globe' sparse
+  // world at true Earth positions (they share walkable ground — no gate
+  // between them). The hand-built EGYPT world remains a separate dense map —
+  // the manifest's Cairo zone is PRE-EXISTING there (never stamped) and
+  // linked by a cross-world gate at the Nile's southern exit.
+  Africa: 'globe',
+  Europe: 'globe',
 };
 
 /** The region world id a zone stamps into (throws on an unmapped continent). */

@@ -78,8 +78,8 @@ for (const zone of WORLD) {
   }
 }
 {
-  const eu = regionWorlds.get('europe');
-  if (eu?.sparse) pass(`europe sparse world: ${eu.sparse.chunks.length} chunks planned inside ${eu.sparse.boundsPx.w.toFixed(0)}x${eu.sparse.boundsPx.h.toFixed(0)}px span (no dense allocation)`);
+  const globe = regionWorlds.get('globe');
+  if (globe?.sparse) pass(`globe sparse world: ${globe.sparse.chunks.length} chunks planned inside ${globe.sparse.boundsPx.w.toFixed(0)}x${globe.sparse.boundsPx.h.toFixed(0)}px span (no dense allocation)`);
 }
 
 // 3) Spine-chain table: keys are zones; every id (incl. anyOf members) is a real beat.

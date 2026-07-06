@@ -36,14 +36,14 @@ import { SAVE_VERSION, type SaveData } from '../save/SaveData';
 import { PortalDefense } from '../encounter/PortalDefense';
 import { buildHeavenMapData, HEAVEN_WIDTH, HEAVEN_HEIGHT, HEAVEN_CHERUB_SPAWNS, THRONE_POSITION } from '../map/heavenWorld';
 import { buildHellMapData, HELL_WIDTH, HELL_HEIGHT, HELL_DEMON_SPAWNS, SATAN_LAIR } from '../map/hellWorld';
-import { WORLD_EARTH, WORLD_HEAVEN, WORLD_HELL, WORLD_EGYPT, WORLD_EUROPE, WORLD_AFRICA, type WorldId, type WorldRuntime, type WorldMapLike } from '../world/worlds';
+import { WORLD_EARTH, WORLD_HEAVEN, WORLD_HELL, WORLD_EGYPT, WORLD_GLOBE, type WorldId, type WorldRuntime, type WorldMapLike } from '../world/worlds';
 import { AFRICA_BUILT_ZONES, buildAfricaQuestDefs, PREBUILT_ZONE_WORLD } from '../world/africa-built';
 import { GroundLayer } from '../map/GroundLayer';
 import { CITY_DEFS, CITY_FAIYUM, type CityDef } from '../world/cities';
 import { MANIFEST_CLASS_FOR, KNOWN_CLASS_NAMES } from '../world/class-canon';
 import { SparseWorldMap } from '../map/SparseWorldMap';
 import { WORLD_CALIBRATION, WORLD_SPAN_DEGREES } from '../world/world-calibration';
-import { createSparseWorld, stampZone, buildChunkMapData, planZoneStamp, CONTINENT_WORLD, type BuiltChunk } from '../world/world-builder';
+import { createSparseWorld, stampZone, buildChunkMapData, CONTINENT_WORLD, type BuiltChunk } from '../world/world-builder';
 import { getZone, WORLD } from '../world/world-manifest';
 import { EUROPE_BUILT_ZONES, buildEuropeQuestDefs } from '../world/europe-built';
 import { appendToRegistry } from '../world/quest-factory';
@@ -744,8 +744,7 @@ export class MainScene extends Phaser.Scene {
   // SparseWorldMap). Chunks are small standalone GameMaps; the void between
   // them is walkable background. All the region machinery below (live registry,
   // spawn activation, gates, champions, escorts) is WORLD-KEYED and shared.
-  private europeMap?: SparseWorldMap;
-  private africaMap?: SparseWorldMap;
+  private globeMap?: SparseWorldMap;
   /** Which registered worlds run the region pipeline (spawn zones, gates…). */
   private regionWorldIds = new Set<WorldId>();
   /** GROUND LAYER per sparse region world (real continents under the chunks).
@@ -5894,55 +5893,86 @@ export class MainScene extends Phaser.Scene {
       this.worldPos[WORLD_EGYPT] = { ...faiyum.outsideArrival };
     }
 
-    // EUROPE — the sparse region world (built zones only; chains further east).
-    this.setupEurope();
-
-    // AFRICA — the Rift-march sparse world (no zones stamped yet: walkable
-    // void + the Egypt↔Africa cross-world gate pair until the build runs).
-    this.setupAfrica();
+    // GLOBE — the one whole-planet sparse region world (Europe + Africa
+    // consolidated at true Earth positions; chains further east).
+    this.setupGlobe();
 
     // CAIRO ACT I LIVE BINDING — additive Wizard-chain content in Egypt.
     this.setupCairoBinding();
   }
 
-  // --- Europe: the SPARSE region world (chunked stamping) ----------------------
+  // --- GLOBE: the ONE whole-planet SPARSE region world -------------------------
   //
-  // Each BUILT zone (EUROPE_BUILT_ZONES) materializes as its own small chunk
-  // GameMap at its calibrated offset inside one shared 'europe' coordinate
-  // space; the span between chunks is cheap walkable void. Transitions from
-  // connectsTo present as proximity GATES (dock/boat labels for seaGates) that
-  // fade-travel within the world — real content between zones comes later.
+  // Europe + Africa CONSOLIDATED: every generated zone (EUROPE_BUILT_ZONES +
+  // AFRICA_BUILT_ZONES) materializes as its own small chunk GameMap at its
+  // TRUE manifest lat/lng through the one shared calibration, inside a single
+  // planet-wide coordinate space; the span between chunks is cheap walkable
+  // void over the real ground raster (water blocks). The continents therefore
+  // share walkable ground — no Europe↔Africa gate. NA seeds + Cairo stay
+  // pre-existing in their hand-built worlds (never stamped; empty ground at
+  // the globe's NA position is expected). Future continents just append.
 
-  private setupEurope(): void {
-    if (EUROPE_BUILT_ZONES.length === 0) return;
-    const cal = WORLD_CALIBRATION[WORLD_EUROPE];
-    const span = WORLD_SPAN_DEGREES[WORLD_EUROPE];
+  private setupGlobe(): void {
+    const zoneIds = [...EUROPE_BUILT_ZONES, ...AFRICA_BUILT_ZONES].filter((id) => !PREBUILT_ZONE_WORLD[id]);
+    if (zoneIds.length === 0) return;
+    const cal = WORLD_CALIBRATION[WORLD_GLOBE];
+    const span = WORLD_SPAN_DEGREES[WORLD_GLOBE];
     const origin = { x: this.nextWorldOriginX, y: 0 };
-    const rw = createSparseWorld(WORLD_EUROPE, cal, span);
+    const rw = createSparseWorld(WORLD_GLOBE, cal, span);
 
-    // GROUND LAYER: the real continents (Natural-Earth raster through this
-    // world's calibration) drawn beneath every chunk. Water blocks the void.
+    // GROUND LAYER: the real planet (the whole-Earth Natural-Earth raster
+    // through this world's calibration) drawn beneath every chunk.
     const ground = new GroundLayer(this, origin, cal, rw.sparse!.boundsPx);
-    this.groundLayers.set(WORLD_EUROPE, ground);
+    this.groundLayers.set(WORLD_GLOBE, ground);
 
+    // Stamp every built zone; gates rebuild from the manifest in ONE shared
+    // pass (all endpoints live in the same `built` map now).
     const chunkMaps: GameMap[] = [];
     const built = new Map<string, { chunk: BuiltChunk; map: GameMap }>();
-    for (const id of EUROPE_BUILT_ZONES) this.stampRegionZoneChunk(WORLD_EUROPE, rw, origin, id, chunkMaps, built);
-    this.buildRegionGates(WORLD_EUROPE, origin, built);
+    for (const id of zoneIds) this.stampRegionZoneChunk(WORLD_GLOBE, rw, origin, id, chunkMaps, built);
+    this.buildRegionGates(WORLD_GLOBE, origin, built);
 
     // Register the world: arrival at the FIRST built zone's settlement (Rome).
     const first = built.get(EUROPE_BUILT_ZONES[0])!;
     const arrival = first.map.nearestWalkableWorld(origin.x + first.chunk.arrivalLocalPx.x, origin.y + first.chunk.arrivalLocalPx.y);
-    this.europeMap = new SparseWorldMap(origin, rw.sparse!.boundsPx, chunkMaps, () => ({ x: this.player.x, y: this.player.y }), (x, y) => ground.isWaterAtWorld(x, y));
-    this.worlds[WORLD_EUROPE] = {
-      id: WORLD_EUROPE,
-      map: this.europeMap,
-      collider: this.regionColliders[0]?.c,
+    this.globeMap = new SparseWorldMap(origin, rw.sparse!.boundsPx, chunkMaps, () => ({ x: this.player.x, y: this.player.y }), (x, y) => ground.isWaterAtWorld(x, y));
+    this.worlds[WORLD_GLOBE] = {
+      id: WORLD_GLOBE,
+      map: this.globeMap,
+      collider: this.regionColliders.find((rc) => rc.worldId === WORLD_GLOBE)?.c,
       defaultArrival: arrival,
     };
-    this.worldPos[WORLD_EUROPE] = { ...arrival };
-    this.regionWorldIds.add(WORLD_EUROPE); // Europe runs the shared region pipeline
+    this.worldPos[WORLD_GLOBE] = { ...arrival };
+    this.regionWorldIds.add(WORLD_GLOBE); // the globe runs the shared region pipeline
     this.nextWorldOriginX = origin.x + rw.sparse!.boundsPx.w + HEAVEN_WORLD_GAP;
+
+    // CROSS-WORLD GATE PAIR (Egypt ↔ Luxor) — the same manifest-driven pair as
+    // before the consolidation: the Egypt-side pad is ADDED additively at the
+    // SOUTH edge of the Egypt map, mid-width (the Nile's southern exit,
+    // upriver toward Luxor); no Egypt tiles change. The globe side now lands
+    // at Luxor's TRUE planet position.
+    const eb = this.egyptMap.bounds;
+    const egyptPad = this.egyptMap.nearestWalkableWorld(eb.x + eb.width * 0.5, eb.y + eb.height - 96, 60);
+    const egyptReturn = this.egyptMap.nearestWalkableWorld(egyptPad.x, egyptPad.y - 80, 60);
+    const luxorArrival = this.regionZoneArrivals['luxor-valley-of-kings'];
+    if (!luxorArrival) throw new Error("setupGlobe: 'luxor-valley-of-kings' must be stamped — the Egypt gate lands there");
+    const globeGate = this.globeMap.nearestWalkableWorld(luxorArrival.x + 120, luxorArrival.y + 40);
+    this.regionGates.push({
+      x: egyptPad.x,
+      y: egyptPad.y,
+      label: 'Cross to Luxor (Valley of the Kings)',
+      dest: this.globeMap.nearestWalkableWorld(globeGate.x, globeGate.y + 50),
+      destWorld: WORLD_GLOBE,
+    });
+    this.addHeavenLabel(egyptPad.x, egyptPad.y - 24, '→ Luxor (Valley of the Kings)', '#ffe9a8');
+    this.regionGates.push({
+      x: globeGate.x,
+      y: globeGate.y,
+      label: 'Cross to Egypt (The Nile Crown)',
+      dest: egyptReturn,
+      destWorld: WORLD_EGYPT,
+    });
+    this.addHeavenLabel(globeGate.x, globeGate.y - 24, '→ Egypt (The Nile Crown)', '#ffe9a8');
   }
 
   /**
@@ -6058,77 +6088,6 @@ export class MainScene extends Phaser.Scene {
         this.addHeavenLabel(gx, gy - 24, g.kind === 'sea-dock' ? `⚓ ${name}` : `→ ${name}`, '#ffe9a8');
       }
     }
-  }
-
-  /**
-   * AFRICA — the Rift-march sparse region world, in the next X-band east. NO
-   * zones are stamped yet: the whole span registers as walkable void (chunks
-   * arrive with the Africa build runs), plus the first manifest-driven
-   * CROSS-WORLD gate pair linking the hand-built Egypt map to the future
-   * Luxor chunk. Cairo is PRE-EXISTING (the Egypt world) and never stamped.
-   */
-  private setupAfrica(): void {
-    const cal = WORLD_CALIBRATION[WORLD_AFRICA];
-    const span = WORLD_SPAN_DEGREES[WORLD_AFRICA];
-    const origin = { x: this.nextWorldOriginX, y: 0 };
-    const rw = createSparseWorld(WORLD_AFRICA, cal, span);
-    const ground = new GroundLayer(this, origin, cal, rw.sparse!.boundsPx);
-    this.groundLayers.set(WORLD_AFRICA, ground);
-
-    // STAMP the built zones through the SHARED region pipeline. Cairo is
-    // PRE-EXISTING (the hand-built Egypt world) — the PREBUILT rule skips it,
-    // so it never materializes a chunk here.
-    const chunkMaps: GameMap[] = [];
-    const built = new Map<string, { chunk: BuiltChunk; map: GameMap }>();
-    for (const id of AFRICA_BUILT_ZONES) {
-      if (PREBUILT_ZONE_WORLD[id]) continue;
-      this.stampRegionZoneChunk(WORLD_AFRICA, rw, origin, id, chunkMaps, built);
-    }
-    this.buildRegionGates(WORLD_AFRICA, origin, built);
-
-    this.africaMap = new SparseWorldMap(origin, rw.sparse!.boundsPx, chunkMaps, () => ({ x: this.player.x, y: this.player.y }), (x, y) => ground.isWaterAtWorld(x, y));
-
-    // Default arrival: the LUXOR chunk's arrival once it is stamped; until
-    // then its planned anchor (walkable void where the chunk will appear).
-    const luxor = getZone('luxor-valley-of-kings');
-    if (!luxor) throw new Error("setupAfrica: manifest zone 'luxor-valley-of-kings' missing");
-    const luxorPlanned = planZoneStamp(luxor, cal).centerPx;
-    const arrival = this.regionZoneArrivals['luxor-valley-of-kings'] ?? { x: origin.x + luxorPlanned.x, y: origin.y + luxorPlanned.y };
-    this.worlds[WORLD_AFRICA] = {
-      id: WORLD_AFRICA,
-      map: this.africaMap,
-      collider: this.regionColliders.find((rc) => rc.worldId === WORLD_AFRICA)?.c,
-      defaultArrival: arrival,
-    };
-    this.worldPos[WORLD_AFRICA] = { ...arrival };
-    this.regionWorldIds.add(WORLD_AFRICA);
-    this.nextWorldOriginX = origin.x + rw.sparse!.boundsPx.w + HEAVEN_WORLD_GAP;
-
-    // CROSS-WORLD GATE PAIR (Egypt ↔ Africa). The Egypt-side pad is ADDED
-    // additively at the SOUTH edge of the Egypt map, mid-width — the Nile's
-    // southern exit, upriver toward Luxor. No Egypt tiles change. The Africa
-    // side sits just east of the Luxor arrival, SNAPPED WALKABLE once the
-    // chunk exists (walkable void before that).
-    const eb = this.egyptMap.bounds;
-    const egyptPad = this.egyptMap.nearestWalkableWorld(eb.x + eb.width * 0.5, eb.y + eb.height - 96, 60);
-    const egyptReturn = this.egyptMap.nearestWalkableWorld(egyptPad.x, egyptPad.y - 80, 60);
-    const africaGate = this.africaMap.nearestWalkableWorld(arrival.x + 120, arrival.y + 40);
-    this.regionGates.push({
-      x: egyptPad.x,
-      y: egyptPad.y,
-      label: 'Cross to Luxor (Valley of the Kings)',
-      dest: this.africaMap.nearestWalkableWorld(africaGate.x, africaGate.y + 50),
-      destWorld: WORLD_AFRICA,
-    });
-    this.addHeavenLabel(egyptPad.x, egyptPad.y - 24, '→ Luxor (Valley of the Kings)', '#ffe9a8');
-    this.regionGates.push({
-      x: africaGate.x,
-      y: africaGate.y,
-      label: 'Cross to Egypt (The Nile Crown)',
-      dest: egyptReturn,
-      destWorld: WORLD_EGYPT,
-    });
-    this.addHeavenLabel(africaGate.x, africaGate.y - 24, '→ Egypt (The Nile Crown)', '#ffe9a8');
   }
 
   // --- CAIRO ACT I LIVE BINDING (the Egypt world hosts the Wizard's chain) -----
@@ -7860,10 +7819,11 @@ export class MainScene extends Phaser.Scene {
   private devTravelEarth(): void {
     if (this.activeWorld !== WORLD_EARTH) this.travelToWorld(WORLD_EARTH, this.worlds[WORLD_EARTH].defaultArrival);
   }
-  /** DEV: travel to Europe's first built zone (Rome) — works from anywhere. */
+  /** DEV: travel to Rome — the globe world's default arrival (same entry as
+   *  before the consolidation; Rome now sits at its true planet position). */
   private devTravelEurope(): void {
-    const w = this.worlds[WORLD_EUROPE];
-    if (w) this.travelToWorld(WORLD_EUROPE, w.defaultArrival);
+    const w = this.worlds[WORLD_GLOBE];
+    if (w) this.travelToWorld(WORLD_GLOBE, w.defaultArrival);
   }
 
   /** DEV: travel to the Mount Sinai approach valley (Egypt's south-east Sinai). */
@@ -9602,7 +9562,7 @@ export class MainScene extends Phaser.Scene {
    *  update() — doors, interactions, arcs, angels, townsfolk. Nested CITIES are
    *  terrestrial too (their NPCs/doors work like any ground world). */
   private isTerrestrial(w: WorldId): boolean {
-    return w === WORLD_EARTH || w === WORLD_EGYPT || w === WORLD_EUROPE || w === WORLD_AFRICA || !!this.cityRuntimes[w];
+    return w === WORLD_EARTH || w === WORLD_EGYPT || w === WORLD_GLOBE || !!this.cityRuntimes[w];
   }
 
   /** Position the world marker on the current target and update the edge arrow. */

@@ -108,11 +108,12 @@ try {
     };
   });
 
-  // 3) The Europe sparse world: travel, chunks, gates. Europe SHIPPED — if the
-  // world failed to register, that is a loud FAIL, never a silent skip.
-  const hasEurope = await page.evaluate(() => !!window.__game.scene.getScene('MainScene').worlds['europe']);
-  ok('Europe: sparse world registered (permanent since the region shipped)', hasEurope, hasEurope ? '25 built zones expected' : 'setupEurope registered no world — every Europe check below is unrunnable');
-  if (hasEurope) {
+  // 3) The GLOBE sparse world (Europe + Africa consolidated at true Earth
+  // positions): travel, chunks, gates. The region SHIPPED — if the world
+  // failed to register, that is a loud FAIL, never a silent skip.
+  const hasGlobe = await page.evaluate(() => !!window.__game.scene.getScene('MainScene').worlds['globe']);
+  ok('globe: sparse world registered (permanent since the consolidation)', hasGlobe, hasGlobe ? '37 built zones expected' : 'setupGlobe registered no world — every globe check below is unrunnable');
+  if (hasGlobe) {
     await page.evaluate(() => window.__game.scene.getScene('MainScene').devTravelEurope());
     await page.waitForTimeout(2200);
     const r = await page.evaluate(() => {
@@ -124,8 +125,8 @@ try {
         gates: ms.regionGates.length,
       };
     });
-    ok('Europe: travel lands on a rendered chunk', r.world === 'europe' && r.chunks >= 1 && r.onChunk, `chunks=${r.chunks}`);
-    ok('Europe: gates exist and come in pairs (both directions)', r.gates >= 2 && r.gates % 2 === 0, `${r.gates} gates`);
+    ok('globe: travel lands on a rendered chunk (Rome)', r.world === 'globe' && r.chunks >= 1 && r.onChunk, `chunks=${r.chunks}`);
+    ok('globe: gates exist and come in pairs (both directions)', r.gates >= 2 && r.gates % 2 === 0, `${r.gates} gates`);
     // A real gate crossing — runs UNCONDITIONALLY (no gates = a loud fail here too).
     const crossed = await page.evaluate(async () => {
       const ms = window.__ready();
@@ -138,7 +139,7 @@ try {
       await new Promise((res) => setTimeout(res, 1600));
       return { shown: true, d: Math.hypot(ms.player.x - g.dest.x, ms.player.y - g.dest.y) };
     });
-    ok('Europe: a real gate crossing lands', crossed.shown && crossed.d < 8, crossed.shown ? `d=${crossed.d.toFixed(1)}` : crossed.reason);
+    ok('globe: a real gate crossing lands', crossed.shown && crossed.d < 8, crossed.shown ? `d=${crossed.d.toFixed(1)}` : crossed.reason);
 
     // 3b. PER-CHUNK SPAWNS: standing in a chunk materializes its packs (self-
     // establishing: teleports to zone 1's chunk rather than trusting the
@@ -151,7 +152,7 @@ try {
       await new Promise((res) => setTimeout(res, 900));
       return ms.regionLiveCount();
     });
-    ok('Europe: entering a chunk materializes its spawns', liveAt > 0, `${liveAt} live in zone 1`);
+    ok('globe: entering a chunk materializes its spawns', liveAt > 0, `${liveAt} live in zone 1`);
     // ...and leaving despawns them (teleport deep into the void, past hysteresis).
     const liveAfterLeave = await page.evaluate(async () => {
       const ms = window.__ready();
@@ -159,7 +160,7 @@ try {
       await new Promise((res) => setTimeout(res, 900));
       return ms.regionLiveCount();
     });
-    ok('Europe: leaving a chunk despawns/pools its enemies', liveAfterLeave === 0, `${liveAfterLeave} live after leaving`);
+    ok('globe: leaving a chunk despawns/pools its enemies', liveAfterLeave === 0, `${liveAfterLeave} live after leaving`);
 
     // 3c. KILL OBJECTIVE: jump to a clear beat, kill its family, quest completes.
     const clear = await page.evaluate(async () => {
@@ -172,7 +173,7 @@ try {
       await new Promise((res) => setTimeout(res, 900)); // death sweep + trigger
       return { spawned: wildlife.length, status: ms.chain.status('rom-02-catacomb-vermin') };
     });
-    ok('Europe: kills increment the active clear objective to completion', clear.spawned >= 5 && clear.status === 'complete', `spawned=${clear.spawned} status=${clear.status}`);
+    ok('globe: kills increment the active clear objective to completion', clear.spawned >= 5 && clear.status === 'complete', `spawned=${clear.spawned} status=${clear.status}`);
 
     // 3d. ENTITY CAP during a multi-chunk crossing (rome → campania → apulia).
     const capRun = await page.evaluate(async () => {
@@ -188,7 +189,7 @@ try {
       }
       return { zones: zones.length, peak };
     });
-    ok(`Europe: live-enemy cap holds across a 3-chunk crossing (peak ${capRun.peak})`, capRun.zones === 3 && capRun.peak > 0 && capRun.peak <= 48, `zones=${capRun.zones} peak=${capRun.peak} cap=48`);
+    ok(`globe: live-enemy cap holds across a 3-chunk crossing (peak ${capRun.peak})`, capRun.zones === 3 && capRun.peak > 0 && capRun.peak <= 48, `zones=${capRun.zones} peak=${capRun.peak} cap=48`);
 
     // 3e. VEIL-AMBUSHER: spawns hidden (invisible, OUT of the townsfolk combat
     // list → untargetable) and only reveals when the player enters the radius.
@@ -355,9 +356,9 @@ try {
     );
 
     // 3i. WORLD-RESIDENT PAUSE: an enemy resides in the world whose X-band holds
-    // it. Standing in Europe, ZERO foreign residents may tick and ZERO foreign
-    // bodies may be enabled; entering a world resumes exactly its own residents.
-    // Uses applyWorldSwap directly — the single funnel every travel path shares.
+    // it. Standing in the globe world, ZERO foreign residents may tick and ZERO
+    // foreign bodies may be enabled; entering a world resumes exactly its own
+    // residents. applyWorldSwap directly — the funnel every travel path shares.
     const pause = await page.evaluate(async () => {
       const ms = window.__ready();
       const bands = Object.entries(ms.worlds).map(([id, w]) => ({ id, x0: w.map.bounds.x, x1: w.map.bounds.x + w.map.bounds.width }));
@@ -390,22 +391,22 @@ try {
           localTicking: live.filter((e) => updated.has(e) && homeOf(e.sprite.x) === ms.activeWorld).length,
         };
       };
-      const inEurope = await sample();
+      const inGlobe = await sample();
       ms.applyWorldSwap('heaven', ms.worlds['heaven'].defaultArrival);
       await new Promise((r) => setTimeout(r, 400));
       const inHeaven = await sample();
       ms.applyWorldSwap('hell', ms.worlds['hell'].defaultArrival);
       await new Promise((r) => setTimeout(r, 400));
       const inHell = await sample();
-      ms.applyWorldSwap('europe', ms.worlds['europe'].defaultArrival);
+      ms.applyWorldSwap('globe', ms.worlds['globe'].defaultArrival);
       await new Promise((r) => setTimeout(r, 400));
-      const backEurope = await sample();
-      return { inEurope, inHeaven, inHell, backEurope };
+      const backGlobe = await sample();
+      return { inGlobe, inHeaven, inHell, backGlobe };
     });
     ok(
-      'world-resident pause: in Europe, zero foreign residents tick + zero foreign bodies enabled',
-      pause.inEurope.world === 'europe' && pause.inEurope.foreignTicking === 0 && pause.inEurope.foreignBodies === 0,
-      JSON.stringify(pause.inEurope),
+      'world-resident pause: in the globe world, zero foreign residents tick + zero foreign bodies enabled',
+      pause.inGlobe.world === 'globe' && pause.inGlobe.foreignTicking === 0 && pause.inGlobe.foreignBodies === 0,
+      JSON.stringify(pause.inGlobe),
     );
     ok(
       'world-resident pause: Heaven entry resumes Michael + the cherubs (and only them)',
@@ -418,14 +419,14 @@ try {
       JSON.stringify(pause.inHell),
     );
     ok(
-      'world-resident pause: returning to Europe re-pauses everyone else',
-      pause.backEurope.world === 'europe' && pause.backEurope.foreignTicking === 0 && pause.backEurope.foreignBodies === 0,
-      JSON.stringify(pause.backEurope),
+      'world-resident pause: returning to the globe world re-pauses everyone else',
+      pause.backGlobe.world === 'globe' && pause.backGlobe.foreignTicking === 0 && pause.backGlobe.foreignBodies === 0,
+      JSON.stringify(pause.backGlobe),
     );
 
     // 3j. STATUS EFFECTS DON'T CROSS WORLDS: take a real tagged caster hit while
-    // still in Europe (slow + weaken + an active DoT stack), then travel to Earth
-    // — the player must ARRIVE with zero Europe debuffs (clearDots rides every
+    // still in the globe world (slow + weaken + an active DoT stack), then travel
+    // to Earth — the player must ARRIVE with zero debuffs (clearDots rides every
     // applyWorldSwap, the same path as reset/load/death).
     const seeded = await page.evaluate(async () => {
       const ms = window.__ready(); // alive + healed: a dead player ignores hits by design
@@ -445,7 +446,7 @@ try {
         weakened: ms.time.now < ms.casterWeakenUntil,
       };
     });
-    ok('Europe → Earth return works (and despawns all packs)', afterEarth.world === 'earth' && afterEarth.live === 0, `live=${afterEarth.live}`);
+    ok('globe → Earth return works (and despawns all packs)', afterEarth.world === 'earth' && afterEarth.live === 0, `live=${afterEarth.live}`);
     ok(
       'world travel clears player debuffs: an active DoT does not cross to Earth',
       seeded.stacks > 0 && seeded.slow < 1 && seeded.weakened && afterEarth.stacks === 0 && afterEarth.slow === 1 && !afterEarth.weakened,
@@ -478,20 +479,20 @@ try {
     `slow=${caster.slow} stacks=${caster.stacks} weakened=${caster.weakened}`,
   );
 
-  // 3l. AFRICA RESIDENCY: the X-band residency rule must cover the NEW world —
-  // verified, not assumed. An entity relocated into Africa's band stops
-  // ticking while the player is elsewhere, resumes on Africa entry, and is
-  // fully re-paused (tick + body) on leaving.
+  // 3l. GLOBE RESIDENCY: the X-band residency rule must cover the consolidated
+  // world — verified, not assumed. An entity relocated into the globe's band
+  // stops ticking while the player is elsewhere, resumes on globe entry, and
+  // is fully re-paused (tick + body) on leaving.
   const africaPause = await page.evaluate(async () => {
     const ms = window.__ready();
-    if (!ms.worlds['africa']) return { registered: false };
+    if (!ms.worlds['globe']) return { registered: false };
     const spot = ms.activeMap().nearestWalkableWorld(ms.player.x + 260, ms.player.y);
     const a = ms.spawnAngel('darkcaster', spot.x, spot.y); // born on Earth (spawn needs a dense layer)
-    const dest = ms.worlds['africa'].defaultArrival;
+    const dest = ms.worlds['globe'].defaultArrival;
     // Release the world-bounds clamp first — Earth's physics bounds would snap
     // the body back to Earth's edge on the next step, keeping it an Earth resident.
     a.sprite.setCollideWorldBounds(false);
-    a.sprite.body.reset(dest.x + 150, dest.y); // relocate: an AFRICA resident by X-band
+    a.sprite.body.reset(dest.x + 150, dest.y); // relocate: a GLOBE resident by X-band
     const sample = async () => {
       const proto = Object.getPrototypeOf(a);
       const orig = proto.update;
@@ -505,56 +506,57 @@ try {
       return ticked;
     };
     const tickedFromEarth = await sample();
-    ms.applyWorldSwap('africa', dest);
+    ms.applyWorldSwap('globe', dest);
     await new Promise((res) => setTimeout(res, 300));
-    const tickedInAfrica = await sample();
-    const bodyInAfrica = a.sprite.body.enable;
+    const tickedInGlobe = await sample();
+    const bodyInGlobe = a.sprite.body.enable;
     ms.applyWorldSwap('earth', ms.worlds['earth'].defaultArrival);
     await new Promise((res) => setTimeout(res, 300));
     const tickedAfterLeave = await sample();
     const bodyAfterLeave = a.sprite.body.enable;
     a.destroy();
-    return { registered: true, tickedFromEarth, tickedInAfrica, bodyInAfrica, tickedAfterLeave, bodyAfterLeave };
+    return { registered: true, tickedFromEarth, tickedInGlobe, bodyInGlobe, tickedAfterLeave, bodyAfterLeave };
   });
   ok(
-    'africa: X-band residency pauses its residents elsewhere and resumes on entry',
-    africaPause.registered && !africaPause.tickedFromEarth && africaPause.tickedInAfrica && africaPause.bodyInAfrica && !africaPause.tickedAfterLeave && !africaPause.bodyAfterLeave,
+    'globe: X-band residency pauses its residents elsewhere and resumes on entry',
+    africaPause.registered && !africaPause.tickedFromEarth && africaPause.tickedInGlobe && africaPause.bodyInGlobe && !africaPause.tickedAfterLeave && !africaPause.bodyAfterLeave,
     JSON.stringify(africaPause),
   );
 
-  // 3m. CROSS-WORLD GATE (Egypt ↔ Africa): the first manifest-driven gate pair
-  // — the Nile-exit pad on the Egypt map crosses to the Luxor anchor and back.
+  // 3m. CROSS-WORLD GATE (Egypt ↔ Luxor): the manifest-driven gate pair — the
+  // Nile-exit pad on the Egypt map crosses to Luxor's TRUE globe position and
+  // back, landing ~0 px from each dest.
   const xgate = await page.evaluate(async () => {
     const ms = window.__ready();
     // The CROSS-WORLD pair specifically: the pad that SITS in Egypt and leads
-    // to Africa, and the pad that SITS in Africa and leads to Egypt. (Internal
-    // Africa gates also carry destWorld 'africa' — position disambiguates.)
+    // to the globe, and the pad that SITS in the globe and leads to Egypt.
+    // (Internal globe gates also carry destWorld 'globe' — position picks.)
     const inWorld = (g, id) => {
       const b = ms.worlds[id].map.bounds;
       return g.x >= b.x && g.x <= b.x + b.width;
     };
-    const toAfrica = ms.regionGates.find((g) => g.destWorld === 'africa' && inWorld(g, 'egypt'));
-    const toEgypt = ms.regionGates.find((g) => g.destWorld === 'egypt' && inWorld(g, 'africa'));
-    if (!toAfrica || !toEgypt) return { found: false };
-    ms.applyWorldSwap('egypt', { x: toAfrica.x, y: toAfrica.y + 10 }); // stand on the Egypt pad
+    const toGlobe = ms.regionGates.find((g) => g.destWorld === 'globe' && inWorld(g, 'egypt'));
+    const toEgypt = ms.regionGates.find((g) => g.destWorld === 'egypt' && inWorld(g, 'globe'));
+    if (!toGlobe || !toEgypt) return { found: false };
+    ms.applyWorldSwap('egypt', { x: toGlobe.x, y: toGlobe.y + 10 }); // stand on the Egypt pad
     await new Promise((res) => setTimeout(res, 1600)); // past the world-transition cooldown
     if (!ms.cityGateButton.isVisible) return { found: true, shown: false, step: 'egypt pad button never appeared' };
     ms.cityGateAction?.();
     await new Promise((res) => setTimeout(res, 1800)); // fade travel
-    const inAfrica = ms.activeWorld === 'africa';
-    const dA = Math.hypot(ms.player.x - toAfrica.dest.x, ms.player.y - toAfrica.dest.y);
-    ms.player.sprite.body.reset(toEgypt.x, toEgypt.y + 10); // stand on the Africa-side gate
+    const inGlobe = ms.activeWorld === 'globe';
+    const dA = Math.hypot(ms.player.x - toGlobe.dest.x, ms.player.y - toGlobe.dest.y);
+    ms.player.sprite.body.reset(toEgypt.x, toEgypt.y + 10); // stand on the globe-side gate
     await new Promise((res) => setTimeout(res, 1600));
-    if (!ms.cityGateButton.isVisible) return { found: true, shown: false, step: 'africa gate button never appeared', inAfrica, dA };
+    if (!ms.cityGateButton.isVisible) return { found: true, shown: false, step: 'globe gate button never appeared', inGlobe, dA };
     ms.cityGateAction?.();
     await new Promise((res) => setTimeout(res, 1800));
     const backEgypt = ms.activeWorld === 'egypt';
     const dE = Math.hypot(ms.player.x - toEgypt.dest.x, ms.player.y - toEgypt.dest.y);
-    return { found: true, shown: true, inAfrica, dA: +dA.toFixed(1), backEgypt, dE: +dE.toFixed(1) };
+    return { found: true, shown: true, inGlobe, dA: +dA.toFixed(1), backEgypt, dE: +dE.toFixed(1) };
   });
   ok(
-    'cross-world gate: the Egypt ↔ Africa crossing lands both ways',
-    xgate.found && xgate.shown && xgate.inAfrica && xgate.dA < 8 && xgate.backEgypt && xgate.dE < 8,
+    'cross-world gate: the Egypt ↔ Luxor crossing lands both ways at ~0 px',
+    xgate.found && xgate.shown && xgate.inGlobe && xgate.dA < 8 && xgate.backEgypt && xgate.dE < 8,
     JSON.stringify(xgate),
   );
 
@@ -566,9 +568,9 @@ try {
   const groundRun = await page.evaluate(async () => {
     const ms = window.__ready();
     const game = window.__game;
-    ms.devTravelEurope();
+    ms.devTravelEurope(); // → the globe world, landing at Rome
     await new Promise((res) => setTimeout(res, 2400));
-    const gl = ms.groundLayers.get('europe');
+    const gl = ms.groundLayers.get('globe');
     if (!gl) return { has: false };
     const rome = { cells: gl.cellsDrawn, cls: gl.classAtWorld(ms.player.x, ms.player.y) };
     // Mid-void: hop inland NE of Rome (land void, no chunk beneath).
@@ -606,7 +608,7 @@ try {
     const denseClean = ['earth', 'egypt', 'heaven', 'hell', 'city-faiyum'].every((id) => !ms.groundLayers.has(id));
     return { has: true, rome, midVoid, coastFound: waterX !== null, waterBlocks, groundCells: gl.cellsDrawn, zoomedOutCells, fpsBaseline, fpsGround, denseClean };
   });
-  ok('ground: biome land renders under Rome', groundRun.has && groundRun.rome.cells > 0 && groundRun.rome.cls > 0, groundRun.has ? `cells=${groundRun.rome.cells} class=${groundRun.rome.cls}` : 'no europe ground layer');
+  ok('ground: biome land renders under Rome', groundRun.has && groundRun.rome.cells > 0 && groundRun.rome.cls > 0, groundRun.has ? `cells=${groundRun.rome.cells} class=${groundRun.rome.cls}` : 'no globe ground layer');
   ok('ground: still renders mid-void (no chunk beneath)', groundRun.has && groundRun.midVoid.cells > 0 && groundRun.midVoid.offChunk, groundRun.has ? JSON.stringify(groundRun.midVoid) : '');
   ok(
     'ground: the cell cap holds at ground zoom AND full zoom-out',
