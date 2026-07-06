@@ -21,6 +21,7 @@ export const AFRICA_BUILT_ZONES: string[] = [
   'ngorongoro-outpost',
   'rift-descent',
   'olduvai-cradle',
+  'kinshasa-river-drum',
 ];
 
 /** Zones whose CONTENT lives in a pre-existing hand-built world (never stamped):
