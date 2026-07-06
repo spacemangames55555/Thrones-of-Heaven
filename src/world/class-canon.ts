@@ -16,6 +16,9 @@ export const MANIFEST_CLASS_FOR: Record<string, string> = {
   necromancer: 'Necromancer',
   wizard: 'Wizard', // Egypt's class — NOT Moscow's 'Mage' (see the canon rule)
   witchdoctor: 'Witch Doctor', // Kinshasa (Africa) — class kit not built yet
+  monk: 'Monk', // Lhasa (Asia) — class kit not built yet
+  samurai: 'Samurai', // Kyoto (Asia) — class kit not built yet
+  atlantean: 'Atlantean', // Bali (Asia) — class kit not built yet
 };
 
 /**
@@ -34,4 +37,7 @@ export const KNOWN_CLASS_NAMES: readonly string[] = [
   'Mage', // Moscow — distinct from Wizard, permanently
   'Bard', // London
   'Witch Doctor', // Kinshasa (Africa)
+  'Monk', // Lhasa (Asia)
+  'Samurai', // Kyoto (Asia)
+  'Atlantean', // Bali (Asia)
 ];
