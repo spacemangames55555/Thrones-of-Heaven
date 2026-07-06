@@ -84,7 +84,7 @@ source of truth; `world-builder.ts` stamps zones into region worlds;
 - [x] **nubia-black-pyramids** — done. Desert-highland corridor; Aswan↔Nubia gates. nub-01 THE KUSHITE SENTINEL (Spiritual, aoe-slam) is LIVE at the boss anchor via the champion engine; nub-02 clears dark-casters. First Africa zone with the new families (casters + ambushers) spawning per-chunk.
 - [x] **sudd-drowned-road** — done. Marsh corridor; Nubia↔Sudd gates (the longest Nile-road crossing). sud-01 clears the reed ambushers; sud-02 escort runs the caravan through the marsh — its arm of Victoria's anyOf entry is now earnable.
 - [x] **victoria-source** — done. Lake-shore city — THE NILE/CONGO MERGE: entry anyOf(sud-02, vir-02); the sud arm is earnable now, the Congo arm activates when Virunga builds. Sudd↔Victoria gates (Virunga + Serengeti links arrive with theirs). vic-01 loop-authored story; vic-02 escort out of the lake city.
-- [ ] **serengeti-long-grass** — pending (ser-02 Rift Warden champion registered).
+- [x] **serengeti-long-grass** — done. Savanna corridor; Victoria↔Serengeti gates. ser-01 clear; ser-02 THE RIFT WARDEN (Physical, charge) live at the boss anchor — Ngorongoro's entry prerequisite.
 - [ ] **ngorongoro-outpost** — pending (Act IV patron outpost, hand-authored beats).
 - [ ] **rift-descent** — pending (8-beat Act IV march; af-06 callback needs TWO class-variant scripts: Wizard / Witch Doctor).
 - [ ] **olduvai-cradle** — pending (portal site; structure only until the portal machine phase).

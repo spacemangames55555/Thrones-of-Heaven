@@ -17,6 +17,7 @@ export const AFRICA_BUILT_ZONES: string[] = [
   'nubia-black-pyramids',
   'sudd-drowned-road',
   'victoria-source',
+  'serengeti-long-grass',
 ];
 
 /** Zones whose CONTENT lives in a pre-existing hand-built world (never stamped):
