@@ -126,7 +126,7 @@ atlantean). Build order = manifest order:
 - [x] changtang-empty-crossing — done. High-plateau corridor; Lhasa↔Changtang gates open the Monk spine; The Plateau Stormer (Physical, charge) live at the boss anchor.
 - [x] hoh-xil-roof-of-world — done. High-desert corridor; Changtang↔Hoh Xil gates; hox-01 caster clear live; hox-02 pilgrim escort live (one Jade Gate anyOf arm earnable).
 - [x] kunlun-jade-gate — done. Act IV holy-highland outpost (walled footprint); Hoh Xil↔Jade Gate gates; angel packs live; as-02 light-harvest live. as-01 (Azazel patron arrival) structural TODO.
-- [ ] kunlun-ascent — the 8-beat Act IV pillar march (as-03..as-10; as-06 callback ×3)
+- [x] kunlun-ascent — done. The 8-beat Act IV pillar march; Jade Gate↔Ascent gates; as-04 clear + as-05 light convoy escort + as-10 final harvest live; as-06 scaffolds THREE class-variant TODOs (monk/samurai/atlantean). TODOs: as-03, as-06 ×3, as-07, as-09 prose.
 - [ ] kunlun-jade-court — portal terminal (as-11 mask drop, as-12 threshold)
 - [ ] kyoto-thousand-gates — Samurai home city (Act I chain kyo-01..04)
 - [ ] setouchi-inland-sea — corridor; sea-gate to Shanghai
