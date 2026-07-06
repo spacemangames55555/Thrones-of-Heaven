@@ -39,21 +39,16 @@ export const WORLD_CALIBRATION: Record<string, WorldCalibration> = {
     origin: { lat: 50.12, lng: -126.96 },
     pixelsPerDegree: { x: 2426, y: 2453 },
   },
-  // EUROPE — the Delphi-march region world. Same pixels-per-degree as NA for a
-  // consistent travel feel. Logical span ~50° lng × ~34° lat (Murmansk to
-  // Delphi, London to Moscow) — far too large for one dense tilemap, so this
-  // world is SPARSE/CHUNKED: only stamped zone areas materialize as their own
-  // small chunk layers; the empty span renders as cheap void fill. See
-  // createSparseWorld in world-builder.ts.
-  europe: {
-    origin: { lat: 71.0, lng: -8.0 },
-    pixelsPerDegree: { x: 2426, y: 2453 },
-  },
-  // AFRICA — the Rift-march region world (Cairo/Kinshasa to Olduvai). Same
-  // pixels-per-degree as earth/europe for a consistent travel feel; SPARSE like
-  // Europe. Origin sits NW of every zone anchor (Cairo 30.04N, Kinshasa 15.31E).
-  africa: {
-    origin: { lat: 32.0, lng: 13.0 },
+  // GLOBE — the ONE whole-planet SPARSE region world (the former per-continent
+  // 'europe' and 'africa' worlds, consolidated at TRUE Earth positions through
+  // this single calibration). Origin is the planet's usable top-left (85°N
+  // 180°W); same pixels-per-degree as earth so travel feel is unchanged. Far
+  // too large for one dense tilemap, so only stamped zone areas materialize as
+  // their own small chunk layers (createSparseWorld in world-builder.ts); the
+  // span between renders as the whole-planet Natural-Earth ground raster —
+  // already global, so no new ground data was needed.
+  globe: {
+    origin: { lat: 85.0, lng: -180.0 },
     pixelsPerDegree: { x: 2426, y: 2453 },
   },
   // Future region worlds (e.g. the Egypt map) get their own row, derived the
@@ -62,9 +57,8 @@ export const WORLD_CALIBRATION: Record<string, WorldCalibration> = {
 
 /** Logical spans (degrees east / south of origin) for SPARSE region worlds. */
 export const WORLD_SPAN_DEGREES: Record<string, { lng: number; lat: number }> = {
-  europe: { lng: 50, lat: 34 },
-  // Africa: 13E→38E covers Serengeti (35.49E); 32N→-6S covers Kinshasa (-4.32).
-  africa: { lng: 25, lat: 38 },
+  // Globe: the whole planet (85°N..85°S, 180°W..180°E) — every future zone fits.
+  globe: { lng: 360, lat: 170 },
 };
 
 /** Convert a real-world anchor to LOCAL pixels on its region world's map. */

@@ -13,8 +13,10 @@ export const WORLD_EARTH: WorldId = 'earth';
 export const WORLD_HEAVEN: WorldId = 'heaven';
 export const WORLD_HELL: WorldId = 'hell';
 export const WORLD_EGYPT: WorldId = 'egypt';
-export const WORLD_EUROPE: WorldId = 'europe';
-export const WORLD_AFRICA: WorldId = 'africa';
+/** The ONE whole-planet sparse region world (the former 'europe' and 'africa'
+ *  worlds, consolidated at true Earth positions; later continents stamp into
+ *  it too). Saves referencing the removed ids migrate in SaveSystem (v12). */
+export const WORLD_GLOBE: WorldId = 'globe';
 
 /**
  * The map surface a registered world must provide — everything world-agnostic
