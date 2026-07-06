@@ -1759,6 +1759,18 @@ export const ESCORT_RETRY_MS = 2500;
 /** Distance (px) to the endpoint that counts as ARRIVED (the beat completes). */
 export const ESCORT_ARRIVE_RADIUS = 44;
 
+// --- CAIRO ACT I LIVE BINDING (additive content IN the Egypt world) ---------
+/** Delta-road corrupted-wildlife pack size (>= the 5-kill clear objective). */
+export const CAIRO_WOLF_PACK = 8;
+/** The cai-04 first-evil scout's boosted health pool (a real first boss). */
+export const CAIRO_BOSS_HP = 320;
+/** Mentor talk-button proximity (px). */
+export const CAIRO_INTERACT_RANGE = 110;
+/** cai-03 discovery walk-in radius (px). */
+export const CAIRO_DISCOVERY_RADIUS = 130;
+/** Ambient replenish cadence: dead posts refill while the player is away (ms). */
+export const CAIRO_REPLENISH_MS = 6000;
+
 /** NESTED CITIES: how close (px) to a city gate the Enter/Leave button shows.
  *  Must comfortably cover the fixed arrival spots on BOTH sides of the gate
  *  (inside ~96px, outside ~64px) so the button is available right on arrival. */

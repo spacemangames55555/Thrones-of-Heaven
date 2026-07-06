@@ -303,6 +303,11 @@ import {
   ESCORT_WAVE_HIT_DAMAGE,
   ESCORT_RETRY_MS,
   ESCORT_ARRIVE_RADIUS,
+  CAIRO_WOLF_PACK,
+  CAIRO_BOSS_HP,
+  CAIRO_INTERACT_RANGE,
+  CAIRO_DISCOVERY_RADIUS,
+  CAIRO_REPLENISH_MS,
   HOLY_TINT,
   HOLY_SLASH_COLOR,
   HOLY_DASH_COLOR,
@@ -746,6 +751,13 @@ export class MainScene extends Phaser.Scene {
   /** GROUND LAYER per sparse region world (real continents under the chunks).
    *  Dense hand-built worlds (Earth/Heaven/Hell/Egypt/cities) never get one. */
   private groundLayers = new Map<WorldId, GroundLayer>();
+  // CAIRO ACT I LIVE BINDING — additive ambient content in the EGYPT world so
+  // the Wizard's home chain (cai-01..04) plays by hand. Nothing existing moves.
+  private cairoLive: { family: string; entity: Townsfolk | Demon; post: { x: number; y: number }; bossBeatId?: string; counted: boolean }[] = [];
+  private cairoMentorPos = { x: 0, y: 0 };
+  private cairoDiscoveryPos = { x: 0, y: 0 };
+  private cairoMentorButton!: TouchButton;
+  private cairoReplenishAt = 0;
   /** Per-chunk terrain colliders, each bound to its OWN region world. */
   private regionColliders: { c: Phaser.Physics.Arcade.Collider; worldId: WorldId }[] = [];
   /** Proximity travel gates. destWorld makes a gate CROSS-WORLD (Egypt↔Africa). */
@@ -1329,6 +1341,8 @@ export class MainScene extends Phaser.Scene {
     // Act II Q6: the proximity "Burn the Grove" action (same bottom-centre slot as
     // Talk/Corrupt; they never contend — the grove has no NPC). Hidden until in range.
     this.burnButton = new TouchButton(this, 'Burn the Grove', () => this.tryArcAction());
+    // CAIRO binding: the Keeper's proximity talk button (Egypt world only).
+    this.cairoMentorButton = new TouchButton(this, 'Speak with the Keeper', () => this.cairoMentorTalk());
     this.zoomControls = new ZoomControls(this, cam, this.map.pixelWidth, this.map.pixelHeight);
     this.readout = new DebugReadout(this, () => this.activeMap(), this.player);
     // DEV-only live perf readout (FPS / frame-time + entity, effect + pool counts) so
@@ -1511,6 +1525,7 @@ export class MainScene extends Phaser.Scene {
       }
       this.updateAngels();
       this.updateTownsfolk(); // prune dead first so the wave manager sees the live count
+      if (this.activeWorld === WORLD_EGYPT) this.updateCairoBinding(); // Wizard Act I ambient content
       if (this.activeWorld === WORLD_EARTH) {
         this.checkUrielArrival(); // Act II finale: scripted Uriel scene back in the square
         this.checkSeattleIntro(); // first time in the Druid city: a one-shot intro narration
@@ -5885,6 +5900,9 @@ export class MainScene extends Phaser.Scene {
     // AFRICA — the Rift-march sparse world (no zones stamped yet: walkable
     // void + the Egypt↔Africa cross-world gate pair until the build runs).
     this.setupAfrica();
+
+    // CAIRO ACT I LIVE BINDING — additive Wizard-chain content in Egypt.
+    this.setupCairoBinding();
   }
 
   // --- Europe: the SPARSE region world (chunked stamping) ----------------------
@@ -6111,6 +6129,148 @@ export class MainScene extends Phaser.Scene {
       destWorld: WORLD_EGYPT,
     });
     this.addHeavenLabel(africaGate.x, africaGate.y - 24, '→ Egypt (The Nile Crown)', '#ffe9a8');
+  }
+
+  // --- CAIRO ACT I LIVE BINDING (the Egypt world hosts the Wizard's chain) -----
+  //
+  // Strictly ADDITIVE: new sprites and triggers placed relative to EXISTING
+  // anchors (the Egypt arrival, Faiyum's entrance) — no Egypt/Faiyum tile,
+  // NPC, or quest is touched. Cairo (manifest zone) ↔ Egypt (hand-built world)
+  // per the PREBUILT rule; all prose stays HAND_AUTHORED_TODO placeholders.
+
+  private setupCairoBinding(): void {
+    const map = this.egyptMap;
+    const gate = this.cityRuntimes['city-faiyum']?.entrancePos ?? this.egyptArrivalPos;
+
+    // 1) THE MENTOR — "The Keeper of the Old Kingdom", a gray-box elder on the
+    // gate road, far enough from Faiyum's entrance that the two proximity
+    // buttons never contend (CITY_GATE_RANGE is 120).
+    MainScene.ensureKeeperTexture(this);
+    this.cairoMentorPos = map.nearestWalkableWorld(gate.x + 330, gate.y + 270);
+    this.add.image(this.cairoMentorPos.x, this.cairoMentorPos.y, 'cairo-keeper').setDepth(9);
+    this.addHeavenLabel(this.cairoMentorPos.x, this.cairoMentorPos.y - 34, 'The Keeper of the Old Kingdom', '#ffe9a8');
+
+    // 2) DELTA-ROAD WOLVES (cai-02): red corrupted wildlife on posts fanning
+    // north-west of the arrival — the roads out of the crown city.
+    for (let i = 0; i < CAIRO_WOLF_PACK; i++) {
+      const post = map.nearestWalkableWorld(gate.x - 380 - (i % 4) * 230, gate.y + 420 + Math.floor(i / 4) * 280);
+      this.spawnCairoWolf(post);
+    }
+
+    // 3) THE DISCOVERY (cai-03): a marked rot site on the river road beyond
+    // the wolf posts. Walking in while the beat is active completes it.
+    this.cairoDiscoveryPos = map.nearestWalkableWorld(gate.x - 1350, gate.y + 720);
+    const ring = this.add.circle(this.cairoDiscoveryPos.x, this.cairoDiscoveryPos.y, 16, 0x6a4a2a, 0.5).setStrokeStyle(2, 0x9a6a3a, 0.9).setDepth(6);
+    this.tweens.add({ targets: ring, scale: 1.5, alpha: 0.2, duration: 1400, yoyo: true, repeat: -1, ease: 'Sine.inOut' });
+    this.addHeavenLabel(this.cairoDiscoveryPos.x, this.cairoDiscoveryPos.y - 24, 'Rot in the River (investigate)', '#cfd6e0');
+
+    // 4) THE FIRST EVIL (cai-04): a boosted lesser-evil scout at the city gates.
+    const bossPost = map.nearestWalkableWorld(gate.x + 180, gate.y + 140);
+    this.spawnCairoBoss(bossPost);
+  }
+
+  /** One red delta wolf at its post (canon: corrupted-wildlife = Physical). */
+  private spawnCairoWolf(post: { x: number; y: number }): void {
+    const t = this.spawnTownsfolk(post.x, post.y, null, 'wolf');
+    t.sprite.setTint(DOMAIN_TINT.physical);
+    this.cairoLive.push({ family: 'corrupted-wildlife', entity: t, post: { ...post }, counted: false });
+  }
+
+  /** The cai-04 gate boss: one boosted lesser-evil scout (a demon, canon red). */
+  private spawnCairoBoss(post: { x: number; y: number }): void {
+    const d = this.spawnDemon(post.x, post.y, this.egyptMap.layer);
+    d.sprite.setTint(DOMAIN_TINT.physical).setScale(d.sprite.scale * 1.4);
+    d.health.setMax(CAIRO_BOSS_HP);
+    d.health.full();
+    this.addHeavenLabel(post.x, post.y - 46, '☠ Evil at the Crown', '#e6d6ff');
+    this.cairoLive.push({ family: 'lesser-evil-scouts', entity: d, post: { ...post }, bossBeatId: 'cai-04-first-evil', counted: false });
+  }
+
+  /** The Keeper's talk action: ACCEPTS the manual-start opener (Wizard only —
+   *  class gating decides) and completes it. All prose is a TODO placeholder. */
+  private cairoMentorTalk(): void {
+    const id = 'cai-01-mentor';
+    const st = this.chain.status(id);
+    if (st === 'available' || st === 'active') {
+      if (st === 'available') this.chain.accept(id);
+      this.showBanner('HAND_AUTHORED_TODO: cai-01-mentor — designer prose goes here.', 2800);
+      this.notifyQuest('cai-01-mentor-story-complete' as ObjectiveTrigger);
+    } else {
+      this.showBanner('HAND_AUTHORED_TODO: cai-01-mentor (idle line) — designer prose goes here.', 2200);
+    }
+  }
+
+  /** Per-frame while EGYPT is active: mentor button, discovery walk-in, kill
+   *  sweep (clear counting via the shared region path + the cai-04 boss beat),
+   *  and the throttled ambient replenish so the chain is always completable. */
+  private updateCairoBinding(): void {
+    const now = this.time.now;
+    // Mentor proximity button (never contends with Talk / gate buttons).
+    const near = Phaser.Math.Distance.Between(this.player.x, this.player.y, this.cairoMentorPos.x, this.cairoMentorPos.y) <= CAIRO_INTERACT_RANGE;
+    const free = !this.transitioning && !this.dialogue.isOpen() && !this.talkButton.isVisible && !this.cityGateButton.isVisible && !this.playerDead;
+    this.cairoMentorButton.setVisible(near && free);
+
+    // cai-03 discovery: stepping onto the rot completes the active beat.
+    if (this.chain.activeQuest?.id === 'cai-03-discovery') {
+      const d = Phaser.Math.Distance.Between(this.player.x, this.player.y, this.cairoDiscoveryPos.x, this.cairoDiscoveryPos.y);
+      if (d <= CAIRO_DISCOVERY_RADIUS) {
+        this.showBanner('HAND_AUTHORED_TODO: cai-03-discovery — designer prose goes here.', 2800);
+        this.notifyQuest('cai-03-discovery-story-complete' as ObjectiveTrigger);
+      }
+    }
+
+    // Kill sweep: clears count through the SHARED region objective path (the
+    // cairo zone id); the boss beat completes on its scout's death.
+    for (const rec of this.cairoLive) {
+      if (rec.counted || rec.entity.isAlive) continue;
+      rec.counted = true;
+      if (rec.bossBeatId) {
+        if (this.chain.activeQuest?.id === rec.bossBeatId) {
+          const hit = this.regionBeatForQuest(rec.bossBeatId);
+          if (hit) this.notifyQuest(triggerForBeat(hit.beat) as ObjectiveTrigger);
+        }
+      } else {
+        this.onRegionEnemyKilled(rec.family, 'cairo-nile-crown');
+      }
+    }
+
+    // Ambient replenish (throttled): a counted-dead post refills once the
+    // player is well away from it — no pop-in, and the chain never strands.
+    // The gate boss stays down for good once cai-04 is complete.
+    if (now >= this.cairoReplenishAt) {
+      this.cairoReplenishAt = now + CAIRO_REPLENISH_MS;
+      for (const rec of [...this.cairoLive]) {
+        if (rec.entity.isAlive || !rec.counted) continue;
+        const bossDone = rec.bossBeatId !== undefined && this.chain.status(rec.bossBeatId) === 'complete';
+        const far = Phaser.Math.Distance.Between(this.player.x, this.player.y, rec.post.x, rec.post.y) > 700;
+        if (!bossDone && !far) continue;
+        this.cairoLive = this.cairoLive.filter((x) => x !== rec);
+        if (!bossDone) {
+          if (rec.bossBeatId) this.spawnCairoBoss(rec.post);
+          else this.spawnCairoWolf(rec.post);
+        }
+      }
+    }
+  }
+
+  /** Gray-box keeper body: an aged robed figure with a staff — placeholder art. */
+  private static ensureKeeperTexture(scene: Phaser.Scene): void {
+    if (scene.textures.exists('cairo-keeper')) return;
+    const w = 26;
+    const h = 38;
+    const g = scene.make.graphics({ x: 0, y: 0 }, false);
+    g.fillStyle(0x14100c, 1); // outline
+    g.fillRoundedRect(4, 9, w - 8, h - 11, 5);
+    g.fillStyle(0xd9c28a, 1); // pale gold robe
+    g.fillRoundedRect(6, 11, w - 12, h - 15, 4);
+    g.fillStyle(0x14100c, 1); // head outline
+    g.fillCircle(w / 2, 9, 7);
+    g.fillStyle(0xe8d5b0, 1); // aged face
+    g.fillCircle(w / 2, 9, 5.5);
+    g.lineStyle(3, 0x8a6a3a, 1); // the staff
+    g.lineBetween(w - 4, 6, w - 4, h - 2);
+    g.generateTexture('cairo-keeper', w, h);
+    g.destroy();
   }
 
   // --- NESTED CITIES: the generic city sub-map system --------------------------
