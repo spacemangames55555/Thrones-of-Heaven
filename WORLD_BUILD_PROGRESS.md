@@ -123,7 +123,7 @@ manual-start. as-06 scaffolds THREE class-variant TODOs (monk / samurai /
 atlantean). Build order = manifest order:
 
 - [x] lhasa-prayer-citadel — done. Monk home city stamped on the plateau (class-gated manual-start chain; gates arrive with the Changtang). TODOs: lha-01, lha-03 prose.
-- [ ] changtang-empty-crossing — corridor; The Plateau Stormer champion (cht-02)
+- [x] changtang-empty-crossing — done. High-plateau corridor; Lhasa↔Changtang gates open the Monk spine; The Plateau Stormer (Physical, charge) live at the boss anchor.
 - [ ] hoh-xil-roof-of-world — corridor; escort to the Jade Gate
 - [ ] kunlun-jade-gate — Act IV outpost (Azazel arrives; as-01/as-02)
 - [ ] kunlun-ascent — the 8-beat Act IV pillar march (as-03..as-10; as-06 callback ×3)
