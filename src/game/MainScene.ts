@@ -5909,83 +5909,115 @@ export class MainScene extends Phaser.Scene {
 
     const chunkMaps: GameMap[] = [];
     const built = new Map<string, { chunk: BuiltChunk; map: GameMap }>();
-    for (const id of EUROPE_BUILT_ZONES) {
-      const zone = getZone(id);
-      if (!zone) throw new Error(`Europe built list names unknown zone '${id}'`);
-      const plan = stampZone(rw, zone); // validates bounds + records the chunk
-      const chunk = buildChunkMapData(zone, plan, cal);
-      const map = new GameMap(this, chunk.data, [], { x: origin.x + chunk.originLocalPx.x, y: origin.y + chunk.originLocalPx.y }, { forceCpuLayer: true });
-      new CityMarkers(this, map); // the zone nameplate at its center
-      const collider = this.physics.add.collider(this.player.sprite, map.layer);
-      collider.active = false;
-      this.regionColliders.push({ c: collider, worldId: WORLD_EUROPE });
-      chunkMaps.push(map);
-      built.set(id, { chunk, map });
-      this.regionZoneArrivals[id] = map.nearestWalkableWorld(
-        origin.x + chunk.arrivalLocalPx.x,
-        origin.y + chunk.arrivalLocalPx.y,
-      );
+    for (const id of EUROPE_BUILT_ZONES) this.stampRegionZoneChunk(WORLD_EUROPE, rw, origin, id, chunkMaps, built);
+    this.buildRegionGates(WORLD_EUROPE, origin, built);
 
-      // BOSS ANCHOR: mirror the (south) arrival to the settlement's NORTH side —
-      // where a boss beat's region champion spawns. Marked when the zone has one.
-      const bossAnchor = map.nearestWalkableWorld(
-        origin.x + chunk.centerLocalPx.x,
-        origin.y + chunk.centerLocalPx.y - (chunk.arrivalLocalPx.y - chunk.centerLocalPx.y),
-      );
-      this.regionBossAnchors[id] = bossAnchor;
-      const bossBeat = zone.questChain.find((b) => b.id in CHAMPION_SPECS);
-      if (bossBeat) {
-        const spec = CHAMPION_SPECS[bossBeat.id];
-        const tint = DOMAIN_TINT[spec.domain.toLowerCase() as CombatDomain];
-        this.add.circle(bossAnchor.x, bossAnchor.y, 14, tint, 0.5).setStrokeStyle(2, tint, 0.95).setDepth(6);
-        this.addHeavenLabel(bossAnchor.x, bossAnchor.y - 22, `☠ ${spec.name}`, '#e6d6ff');
-      }
+    // Register the world: arrival at the FIRST built zone's settlement (Rome).
+    const first = built.get(EUROPE_BUILT_ZONES[0])!;
+    const arrival = first.map.nearestWalkableWorld(origin.x + first.chunk.arrivalLocalPx.x, origin.y + first.chunk.arrivalLocalPx.y);
+    this.europeMap = new SparseWorldMap(origin, rw.sparse!.boundsPx, chunkMaps, () => ({ x: this.player.x, y: this.player.y }), (x, y) => ground.isWaterAtWorld(x, y));
+    this.worlds[WORLD_EUROPE] = {
+      id: WORLD_EUROPE,
+      map: this.europeMap,
+      collider: this.regionColliders[0]?.c,
+      defaultArrival: arrival,
+    };
+    this.worldPos[WORLD_EUROPE] = { ...arrival };
+    this.regionWorldIds.add(WORLD_EUROPE); // Europe runs the shared region pipeline
+    this.nextWorldOriginX = origin.x + rw.sparse!.boundsPx.w + HEAVEN_WORLD_GAP;
+  }
 
-      // DEV overlay: a big zone-name label over the chunk, shown only at LOW zoom
-      // (see updateRegionSpawns) — the zoomed-out continent view needs names.
-      if (DEV_MODE) {
-        const label = this.add
-          .text(origin.x + chunk.centerLocalPx.x, origin.y + chunk.centerLocalPx.y, zone.displayName, {
-            fontFamily: 'system-ui, sans-serif',
-            fontSize: '26px',
-            color: '#fff3c4',
-            fontStyle: 'bold',
-          })
-          .setOrigin(0.5)
-          .setStroke('#101830', 8)
-          .setDepth(45)
-          .setVisible(false);
-        this.regionZoneLabels.push(label);
-      }
+  /**
+   * Stamp ONE built zone into a sparse region world: chunk map + collider,
+   * nameplate, arrival, boss anchor (+ champion marker), dev zone label, and
+   * live spawn points. Shared verbatim by every region (Europe, Africa, …).
+   */
+  private stampRegionZoneChunk(
+    worldId: WorldId,
+    rw: ReturnType<typeof createSparseWorld>,
+    origin: { x: number; y: number },
+    id: string,
+    chunkMaps: GameMap[],
+    built: Map<string, { chunk: BuiltChunk; map: GameMap }>,
+  ): void {
+    const zone = getZone(id);
+    if (!zone) throw new Error(`Region '${worldId}' built list names unknown zone '${id}'`);
+    const cal = rw.calibration;
+    const plan = stampZone(rw, zone); // validates bounds + records the chunk
+    const chunk = buildChunkMapData(zone, plan, cal);
+    const map = new GameMap(this, chunk.data, [], { x: origin.x + chunk.originLocalPx.x, y: origin.y + chunk.originLocalPx.y }, { forceCpuLayer: true });
+    new CityMarkers(this, map); // the zone nameplate at its center
+    const collider = this.physics.add.collider(this.player.sprite, map.layer);
+    collider.active = false;
+    this.regionColliders.push({ c: collider, worldId });
+    chunkMaps.push(map);
+    built.set(id, { chunk, map });
+    this.regionZoneArrivals[id] = map.nearestWalkableWorld(
+      origin.x + chunk.arrivalLocalPx.x,
+      origin.y + chunk.arrivalLocalPx.y,
+    );
 
-      // Spawn markers: MAPPED families (wolf/raider/demon/angel spawners exist)
-      // become LIVE spawn points, materialized per-chunk by updateRegionSpawns.
-      // NEW roster families (dark-casters etc.) stay visual markers until their
-      // AI wiring ships.
-      const zoneSpawnPoints: { family: string; x: number; y: number }[] = [];
-      for (const m of plan.spawnMarkers) {
-        const mx = origin.x + m.x;
-        const my = origin.y + m.y;
-        if (m.enemyFamily in EXISTING_FAMILY_DOMAIN) {
-          zoneSpawnPoints.push({ family: m.enemyFamily, x: mx, y: my });
-          continue;
-        }
-        const domain = ENEMY_ROSTER[m.enemyFamily]?.domain;
-        const tint = domain ? DOMAIN_TINT[domain] : 0x9aa0a8;
-        this.add.circle(mx, my, 10, tint, 0.85).setDepth(6);
-        this.addHeavenLabel(mx, my - 16, m.enemyFamily, '#cfd6e0');
-      }
-      this.regionSpawnZones.push({
-        zoneId: id,
-        center: { x: origin.x + chunk.centerLocalPx.x, y: origin.y + chunk.centerLocalPx.y },
-        radiusPx: chunk.data.width * 16, // half the chunk (tiles * 32 / 2)
-        points: zoneSpawnPoints,
-        active: false,
-      });
+    // BOSS ANCHOR: mirror the (south) arrival to the settlement's NORTH side —
+    // where a boss beat's region champion spawns. Marked when the zone has one.
+    const bossAnchor = map.nearestWalkableWorld(
+      origin.x + chunk.centerLocalPx.x,
+      origin.y + chunk.centerLocalPx.y - (chunk.arrivalLocalPx.y - chunk.centerLocalPx.y),
+    );
+    this.regionBossAnchors[id] = bossAnchor;
+    const bossBeat = zone.questChain.find((b) => b.id in CHAMPION_SPECS);
+    if (bossBeat) {
+      const spec = CHAMPION_SPECS[bossBeat.id];
+      const tint = DOMAIN_TINT[spec.domain.toLowerCase() as CombatDomain];
+      this.add.circle(bossAnchor.x, bossAnchor.y, 14, tint, 0.5).setStrokeStyle(2, tint, 0.95).setDepth(6);
+      this.addHeavenLabel(bossAnchor.x, bossAnchor.y - 22, `☠ ${spec.name}`, '#e6d6ff');
     }
 
-    // Gates (second pass — both endpoints must be BUILT): the pad on A's edge
-    // toward B travels to B's pad toward A, nudged toward B's center.
+    // DEV overlay: a big zone-name label over the chunk, shown only at LOW zoom
+    // (see updateRegionSpawns) — the zoomed-out continent view needs names.
+    if (DEV_MODE) {
+      const label = this.add
+        .text(origin.x + chunk.centerLocalPx.x, origin.y + chunk.centerLocalPx.y, zone.displayName, {
+          fontFamily: 'system-ui, sans-serif',
+          fontSize: '26px',
+          color: '#fff3c4',
+          fontStyle: 'bold',
+        })
+        .setOrigin(0.5)
+        .setStroke('#101830', 8)
+        .setDepth(45)
+        .setVisible(false);
+      this.regionZoneLabels.push(label);
+    }
+
+    // Spawn markers: families with live spawners become LIVE spawn points,
+    // materialized per-chunk by updateRegionSpawns; anything unmapped stays a
+    // visual marker (loud, tinted, labeled).
+    const zoneSpawnPoints: { family: string; x: number; y: number }[] = [];
+    for (const m of plan.spawnMarkers) {
+      const mx = origin.x + m.x;
+      const my = origin.y + m.y;
+      if (m.enemyFamily in EXISTING_FAMILY_DOMAIN) {
+        zoneSpawnPoints.push({ family: m.enemyFamily, x: mx, y: my });
+        continue;
+      }
+      const domain = ENEMY_ROSTER[m.enemyFamily]?.domain;
+      const tint = domain ? DOMAIN_TINT[domain] : 0x9aa0a8;
+      this.add.circle(mx, my, 10, tint, 0.85).setDepth(6);
+      this.addHeavenLabel(mx, my - 16, m.enemyFamily, '#cfd6e0');
+    }
+    this.regionSpawnZones.push({
+      zoneId: id,
+      center: { x: origin.x + chunk.centerLocalPx.x, y: origin.y + chunk.centerLocalPx.y },
+      radiusPx: chunk.data.width * 16, // half the chunk (tiles * 32 / 2)
+      points: zoneSpawnPoints,
+      active: false,
+    });
+  }
+
+  /** Gates second pass (both endpoints must be BUILT): the pad on A's edge
+   *  toward B travels to B's pad toward A, nudged toward B's center. Shared by
+   *  every region world. */
+  private buildRegionGates(worldId: WorldId, origin: { x: number; y: number }, built: Map<string, { chunk: BuiltChunk; map: GameMap }>): void {
     for (const [id, { chunk }] of built) {
       for (const g of chunk.gates) {
         const other = built.get(g.toZoneId);
@@ -6004,24 +6036,10 @@ export class MainScene extends Phaser.Scene {
         const label = g.kind === 'sea-dock' ? `Sail to ${name}` : `Cross to ${name}`;
         const gx = origin.x + g.localPx.x;
         const gy = origin.y + g.localPx.y;
-        this.regionGates.push({ x: gx, y: gy, label, dest, destWorld: WORLD_EUROPE });
+        this.regionGates.push({ x: gx, y: gy, label, dest, destWorld: worldId });
         this.addHeavenLabel(gx, gy - 24, g.kind === 'sea-dock' ? `⚓ ${name}` : `→ ${name}`, '#ffe9a8');
       }
     }
-
-    // Register the world: arrival at the FIRST built zone's settlement (Rome).
-    const first = built.get(EUROPE_BUILT_ZONES[0])!;
-    const arrival = first.map.nearestWalkableWorld(origin.x + first.chunk.arrivalLocalPx.x, origin.y + first.chunk.arrivalLocalPx.y);
-    this.europeMap = new SparseWorldMap(origin, rw.sparse!.boundsPx, chunkMaps, () => ({ x: this.player.x, y: this.player.y }), (x, y) => ground.isWaterAtWorld(x, y));
-    this.worlds[WORLD_EUROPE] = {
-      id: WORLD_EUROPE,
-      map: this.europeMap,
-      collider: this.regionColliders[0]?.c,
-      defaultArrival: arrival,
-    };
-    this.worldPos[WORLD_EUROPE] = { ...arrival };
-    this.regionWorldIds.add(WORLD_EUROPE); // Europe runs the shared region pipeline
-    this.nextWorldOriginX = origin.x + rw.sparse!.boundsPx.w + HEAVEN_WORLD_GAP;
   }
 
   /**
@@ -6038,33 +6056,50 @@ export class MainScene extends Phaser.Scene {
     const rw = createSparseWorld(WORLD_AFRICA, cal, span);
     const ground = new GroundLayer(this, origin, cal, rw.sparse!.boundsPx);
     this.groundLayers.set(WORLD_AFRICA, ground);
-    this.africaMap = new SparseWorldMap(origin, rw.sparse!.boundsPx, [], () => ({ x: this.player.x, y: this.player.y }), (x, y) => ground.isWaterAtWorld(x, y));
 
-    // LUXOR anchor, computed from the manifest calibration WITHOUT stamping —
-    // the Africa side of the gate pair + the world's default arrival, so the
-    // crossing lands where the Luxor chunk will materialize.
+    // STAMP the built zones through the SHARED region pipeline. Cairo is
+    // PRE-EXISTING (the hand-built Egypt world) — the PREBUILT rule skips it,
+    // so it never materializes a chunk here.
+    const chunkMaps: GameMap[] = [];
+    const built = new Map<string, { chunk: BuiltChunk; map: GameMap }>();
+    for (const id of AFRICA_BUILT_ZONES) {
+      if (PREBUILT_ZONE_WORLD[id]) continue;
+      this.stampRegionZoneChunk(WORLD_AFRICA, rw, origin, id, chunkMaps, built);
+    }
+    this.buildRegionGates(WORLD_AFRICA, origin, built);
+
+    this.africaMap = new SparseWorldMap(origin, rw.sparse!.boundsPx, chunkMaps, () => ({ x: this.player.x, y: this.player.y }), (x, y) => ground.isWaterAtWorld(x, y));
+
+    // Default arrival: the LUXOR chunk's arrival once it is stamped; until
+    // then its planned anchor (walkable void where the chunk will appear).
     const luxor = getZone('luxor-valley-of-kings');
     if (!luxor) throw new Error("setupAfrica: manifest zone 'luxor-valley-of-kings' missing");
-    const luxorPx = planZoneStamp(luxor, cal).centerPx;
-    const luxorPos = { x: origin.x + luxorPx.x, y: origin.y + luxorPx.y };
-
-    this.worlds[WORLD_AFRICA] = { id: WORLD_AFRICA, map: this.africaMap, defaultArrival: luxorPos };
-    this.worldPos[WORLD_AFRICA] = { ...luxorPos };
+    const luxorPlanned = planZoneStamp(luxor, cal).centerPx;
+    const arrival = this.regionZoneArrivals['luxor-valley-of-kings'] ?? { x: origin.x + luxorPlanned.x, y: origin.y + luxorPlanned.y };
+    this.worlds[WORLD_AFRICA] = {
+      id: WORLD_AFRICA,
+      map: this.africaMap,
+      collider: this.regionColliders.find((rc) => rc.worldId === WORLD_AFRICA)?.c,
+      defaultArrival: arrival,
+    };
+    this.worldPos[WORLD_AFRICA] = { ...arrival };
     this.regionWorldIds.add(WORLD_AFRICA);
     this.nextWorldOriginX = origin.x + rw.sparse!.boundsPx.w + HEAVEN_WORLD_GAP;
 
     // CROSS-WORLD GATE PAIR (Egypt ↔ Africa). The Egypt-side pad is ADDED
     // additively at the SOUTH edge of the Egypt map, mid-width — the Nile's
-    // southern exit, upriver toward Luxor. No Egypt tiles change.
+    // southern exit, upriver toward Luxor. No Egypt tiles change. The Africa
+    // side sits just east of the Luxor arrival, SNAPPED WALKABLE once the
+    // chunk exists (walkable void before that).
     const eb = this.egyptMap.bounds;
     const egyptPad = this.egyptMap.nearestWalkableWorld(eb.x + eb.width * 0.5, eb.y + eb.height - 96, 60);
     const egyptReturn = this.egyptMap.nearestWalkableWorld(egyptPad.x, egyptPad.y - 80, 60);
-    const africaGate = { x: luxorPos.x, y: luxorPos.y + 140 };
+    const africaGate = this.africaMap.nearestWalkableWorld(arrival.x + 120, arrival.y + 40);
     this.regionGates.push({
       x: egyptPad.x,
       y: egyptPad.y,
       label: 'Cross to Luxor (Valley of the Kings)',
-      dest: { x: africaGate.x, y: africaGate.y + 60 },
+      dest: this.africaMap.nearestWalkableWorld(africaGate.x, africaGate.y + 50),
       destWorld: WORLD_AFRICA,
     });
     this.addHeavenLabel(egyptPad.x, egyptPad.y - 24, '→ Luxor (Valley of the Kings)', '#ffe9a8');
