@@ -20,6 +20,7 @@ export const AFRICA_BUILT_ZONES: string[] = [
   'serengeti-long-grass',
   'ngorongoro-outpost',
   'rift-descent',
+  'olduvai-cradle',
 ];
 
 /** Zones whose CONTENT lives in a pre-existing hand-built world (never stamped):
