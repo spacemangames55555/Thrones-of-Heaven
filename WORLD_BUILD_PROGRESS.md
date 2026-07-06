@@ -83,7 +83,7 @@ source of truth; `world-builder.ts` stamps zones into region worlds;
 - [x] **aswan-first-cataract** — done. Nile-cataract corridor; Luxor↔Aswan gates both ways. asw-01 escort + asw-02 clear chained off lux-02 — the Wizard's Nile road now walks Luxor→Aswan. (Harness note: the cross-world gate check now selects the Egypt↔Africa pair by POSITION — internal Africa gates share destWorld and had fooled its find().)
 - [x] **nubia-black-pyramids** — done. Desert-highland corridor; Aswan↔Nubia gates. nub-01 THE KUSHITE SENTINEL (Spiritual, aoe-slam) is LIVE at the boss anchor via the champion engine; nub-02 clears dark-casters. First Africa zone with the new families (casters + ambushers) spawning per-chunk.
 - [x] **sudd-drowned-road** — done. Marsh corridor; Nubia↔Sudd gates (the longest Nile-road crossing). sud-01 clears the reed ambushers; sud-02 escort runs the caravan through the marsh — its arm of Victoria's anyOf entry is now earnable.
-- [ ] **victoria-source** — pending (the Nile/Congo merge: entry anyOf(sud-02, vir-02)).
+- [x] **victoria-source** — done. Lake-shore city — THE NILE/CONGO MERGE: entry anyOf(sud-02, vir-02); the sud arm is earnable now, the Congo arm activates when Virunga builds. Sudd↔Victoria gates (Virunga + Serengeti links arrive with theirs). vic-01 loop-authored story; vic-02 escort out of the lake city.
 - [ ] **serengeti-long-grass** — pending (ser-02 Rift Warden champion registered).
 - [ ] **ngorongoro-outpost** — pending (Act IV patron outpost, hand-authored beats).
 - [ ] **rift-descent** — pending (8-beat Act IV march; af-06 callback needs TWO class-variant scripts: Wizard / Witch Doctor).
