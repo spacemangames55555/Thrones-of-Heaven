@@ -89,7 +89,7 @@ source of truth; `world-builder.ts` stamps zones into region worlds;
 - [x] **rift-descent** — done. The 8-beat Act IV march down the Rift wall (holy-highland); Ngorongoro↔Rift gates; angel packs + af-08's Kneeling Angel boss beat live; af-10 harvest counts guardian/lesser-angel kills. af-06 scaffolds TWO class-variant TODOs (wizard / witchdoctor) — the factory's callback classes are now PER CONTINENT (Europe keeps its five; smoke asserts the per-continent count). TODOs: af-03, af-06 ×2, af-07, af-09 prose.
 - [x] **olduvai-cradle** — done. The portal terminal chunk (portal-threshold, small footprint); Rift↔Olduvai gates. NO portal machine built (structure only) — af-11 (mask drop) + af-12 (threshold) are HAND_AUTHORED_TODO structural beats. The Rift march is walkable end to end: Cairo/Egypt → Luxor → … → Olduvai.
 - [x] **kinshasa-river-drum** — done. WITCH DOCTOR home city (rainforest-river; class kit unbuilt — the chain is class-gated + manual-start and unlocks via the dev override until the kit ships). Fresh starts verified clean (the home-city guard). Isolated until Ituri (next). TODOs: kin-01, kin-03 prose.
-- [ ] **ituri-green-cathedral** — pending (itu-02 Canopy King champion registered).
+- [x] **ituri-green-cathedral** — done. Deep-rainforest corridor; Kinshasa↔Ituri gates open the Witch Doctor spine. itu-02 THE CANOPY KING (Mental, summon-adds — calls in the zone's own wildlife/ambushers) live at the boss anchor; itu-03 fetch chains toward the lakes.
 - [ ] **virunga-smoke-mountains** — pending.
 
 **GROUND LAYER (sparse worlds):** Europe + Africa now draw REAL continents
