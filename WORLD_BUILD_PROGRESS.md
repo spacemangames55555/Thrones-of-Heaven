@@ -122,7 +122,7 @@ calibration, no new residency band). Three home cities: Lhasa (Monk), Kyoto
 manual-start. as-06 scaffolds THREE class-variant TODOs (monk / samurai /
 atlantean). Build order = manifest order:
 
-- [ ] lhasa-prayer-citadel — Monk home city (Act I chain lha-01..04)
+- [x] lhasa-prayer-citadel — done. Monk home city stamped on the plateau (class-gated manual-start chain; gates arrive with the Changtang). TODOs: lha-01, lha-03 prose.
 - [ ] changtang-empty-crossing — corridor; The Plateau Stormer champion (cht-02)
 - [ ] hoh-xil-roof-of-world — corridor; escort to the Jade Gate
 - [ ] kunlun-jade-gate — Act IV outpost (Azazel arrives; as-01/as-02)
