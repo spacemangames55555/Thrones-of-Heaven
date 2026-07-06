@@ -551,6 +551,69 @@ try {
     JSON.stringify(xgate),
   );
 
+  // 3n. GROUND LAYER (sparse worlds): the continents are real — biome ground
+  // renders under Rome AND mid-void, the cell cap holds at every zoom, water
+  // blocks the void where land ends, FPS at ground zoom stays within tolerance
+  // of the pre-ground baseline (~57 headless), and dense hand-built worlds
+  // have NO ground layer.
+  const groundRun = await page.evaluate(async () => {
+    const ms = window.__ready();
+    const game = window.__game;
+    ms.devTravelEurope();
+    await new Promise((res) => setTimeout(res, 2400));
+    const gl = ms.groundLayers.get('europe');
+    if (!gl) return { has: false };
+    const rome = { cells: gl.cellsDrawn, cls: gl.classAtWorld(ms.player.x, ms.player.y) };
+    // Mid-void: hop inland NE of Rome (land void, no chunk beneath).
+    ms.player.sprite.body.reset(ms.player.x + 5000, ms.player.y - 5000);
+    await new Promise((res) => setTimeout(res, 600));
+    const midVoid = { cells: gl.cellsDrawn, offChunk: ms.activeMap().terrainAtWorld(ms.player.x, ms.player.y) === null };
+    // Water blocking: scan west from Rome's arrival for the Tyrrhenian coast.
+    const romeArrival = ms.regionZoneArrivals['rome-eternal-seat'];
+    let landX = null;
+    let waterX = null;
+    for (let i = 1; i <= 80 && waterX === null; i++) {
+      const x = romeArrival.x - i * 400;
+      if (gl.classAtWorld(x, romeArrival.y) === 0) {
+        waterX = x;
+        landX = x + 400;
+      }
+    }
+    const waterBlocks = waterX !== null && ms.activeMap().isBlockedAtWorld(waterX, romeArrival.y) === true && ms.activeMap().isBlockedAtWorld(landX, romeArrival.y) === false;
+    // Cell cap at full zoom-out (the whole continent in frame).
+    ms.zoomControls.target = ms.zoomControls.outLimit;
+    await new Promise((res) => setTimeout(res, 1800));
+    const zoomedOutCells = gl.cellsDrawn;
+    ms.zoomControls.target = 1;
+    await new Promise((res) => setTimeout(res, 1500));
+    // FPS at ground zoom, standing at Rome — SELF-RELATIVE baseline: the same
+    // frames with the ground layer hidden vs shown (robust to session depth
+    // and headless-GPU variance, unlike an absolute number).
+    ms.player.sprite.body.reset(romeArrival.x, romeArrival.y);
+    gl.g.setVisible(false);
+    await new Promise((res) => setTimeout(res, 2800));
+    const fpsBaseline = +game.loop.actualFps.toFixed(1);
+    gl.g.setVisible(true);
+    await new Promise((res) => setTimeout(res, 2800));
+    const fpsGround = +game.loop.actualFps.toFixed(1);
+    const denseClean = ['earth', 'egypt', 'heaven', 'hell', 'city-faiyum'].every((id) => !ms.groundLayers.has(id));
+    return { has: true, rome, midVoid, coastFound: waterX !== null, waterBlocks, groundCells: gl.cellsDrawn, zoomedOutCells, fpsBaseline, fpsGround, denseClean };
+  });
+  ok('ground: biome land renders under Rome', groundRun.has && groundRun.rome.cells > 0 && groundRun.rome.cls > 0, groundRun.has ? `cells=${groundRun.rome.cells} class=${groundRun.rome.cls}` : 'no europe ground layer');
+  ok('ground: still renders mid-void (no chunk beneath)', groundRun.has && groundRun.midVoid.cells > 0 && groundRun.midVoid.offChunk, groundRun.has ? JSON.stringify(groundRun.midVoid) : '');
+  ok(
+    'ground: the cell cap holds at ground zoom AND full zoom-out',
+    groundRun.has && groundRun.groundCells > 0 && groundRun.groundCells <= 9000 && groundRun.zoomedOutCells > 0 && groundRun.zoomedOutCells <= 9000,
+    `ground=${groundRun.groundCells} zoomedOut=${groundRun.zoomedOutCells} cap=9000`,
+  );
+  ok('ground: water is impassable void ground (the Tyrrhenian coast blocks)', groundRun.has && groundRun.coastFound && groundRun.waterBlocks, `coastFound=${groundRun.coastFound} blocks=${groundRun.waterBlocks}`);
+  ok(
+    'ground: FPS at ground zoom within tolerance of the no-ground baseline',
+    groundRun.has && groundRun.fpsGround >= groundRun.fpsBaseline * 0.8,
+    `ground=${groundRun.fpsGround} baseline=${groundRun.fpsBaseline} (tolerance ≥ 80%)`,
+  );
+  ok('ground: dense hand-built worlds have NO ground layer', groundRun.has && groundRun.denseClean, 'earth/egypt/heaven/hell/faiyum clean');
+
   // 4) THE GATE: zero page errors across everything above.
   ok('zero page errors during boot + travel', pageErrors.length === 0, pageErrors.slice(0, 3).join(' | '));
 } finally {
