@@ -48,6 +48,8 @@ export const CONTINENT_WORLD: Record<string, string> = {
   // linked by a cross-world gate at the Nile's southern exit.
   Africa: 'globe',
   Europe: 'globe',
+  // ASIA stamps into the SAME whole-planet world (no new world/calibration/band).
+  Asia: 'globe',
 };
 
 /** The region world id a zone stamps into (throws on an unmapped continent). */
@@ -97,6 +99,16 @@ export const BIOME_PLACEHOLDER_TILE: Record<string, string> = {
   'rainforest-river': 'rainforest',
   'deep-rainforest': 'rainforest',
   'volcanic-highland': 'scabland',
+  // Asia (existing walkable atlas keys — gray-box stand-ins):
+  'himalayan-plateau': 'montane',
+  'high-desert-plateau': 'scabland',
+  'inland-sea-coast': 'beach',
+  'river-gorge': 'pass',
+  'terraced-basin': 'farmland',
+  'island-tropics': 'beach',
+  'delta-city': 'urban',
+  'jungle-temple': 'rainforest',
+  'highland-jungle': 'foothills',
 };
 
 export function placeholderTileForBiome(biome: string): string {

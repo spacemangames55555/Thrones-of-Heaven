@@ -113,3 +113,29 @@ gate). NA seeds + Cairo remain pre-existing / never stamped. The Egypt↔Luxor
 cross-world gate lands at Luxor's true position. Saves referencing the removed
 worlds migrate at v12 (re-pointed to the globe arrival). Future continents
 stamp into 'globe' — no new world plumbing needed.
+
+## ASIA — The Kunlun March (17 zones, manifest registered, NOTHING stamped yet)
+
+Stamps into the EXISTING 'globe' world at true positions (no new world, no new
+calibration, no new residency band). Three home cities: Lhasa (Monk), Kyoto
+(Samurai), Bali (Atlantean) — class kits unbuilt; chains class-gated +
+manual-start. as-06 scaffolds THREE class-variant TODOs (monk / samurai /
+atlantean). Build order = manifest order:
+
+- [ ] lhasa-prayer-citadel — Monk home city (Act I chain lha-01..04)
+- [ ] changtang-empty-crossing — corridor; The Plateau Stormer champion (cht-02)
+- [ ] hoh-xil-roof-of-world — corridor; escort to the Jade Gate
+- [ ] kunlun-jade-gate — Act IV outpost (Azazel arrives; as-01/as-02)
+- [ ] kunlun-ascent — the 8-beat Act IV pillar march (as-03..as-10; as-06 callback ×3)
+- [ ] kunlun-jade-court — portal terminal (as-11 mask drop, as-12 threshold)
+- [ ] kyoto-thousand-gates — Samurai home city (Act I chain kyo-01..04)
+- [ ] setouchi-inland-sea — corridor; sea-gate to Shanghai
+- [ ] shanghai-eastern-dock — city; sea-gate back to the Inland Sea
+- [ ] three-gorges-river-teeth — corridor; The Gorge Witch champion (gor-01)
+- [ ] sichuan-red-basin — corridor; provisions for the climb
+- [ ] bali-drowned-crown — Atlantean home city (Act I chain bal-01..04; island)
+- [ ] java-temple-shore — corridor; sea-gates both ways (island)
+- [ ] bangkok-delta-gate — city; sea-gate from Java
+- [ ] angkor-stone-map — corridor; The Temple Warden champion (ang-02)
+- [ ] yunnan-cloud-steps — corridor; escort up to the plateau
+- [ ] kham-eastern-plateau — corridor; the sea road and island road merge → Jade Gate

@@ -11,5 +11,9 @@ export const CHAMPION_SPECS: Record<string, {
   'nub-01-kushite-sentinel': { name: 'The Kushite Sentinel', domain: 'Spiritual', move: 'aoe-slam' },
   'itu-02-canopy-king':      { name: 'The Canopy King',      domain: 'Mental',    move: 'summon-adds' },
   'ser-02-rift-warden':      { name: 'The Rift Warden',      domain: 'Physical',  move: 'charge' },
+  // ── ASIA — the Kunlun march (append-only) ──
+  'cht-02-plateau-stormer': { name: 'The Plateau Stormer', domain: 'Physical',  move: 'charge' },
+  'gor-01-gorge-witch':     { name: 'The Gorge Witch',     domain: 'Mental',    move: 'channel-beam' },
+  'ang-02-temple-warden':   { name: 'The Temple Warden',   domain: 'Spiritual', move: 'summon-adds' },
 };
 // Note: all four signature moves are deliberately exercised exactly once in Europe.
