@@ -13,6 +13,7 @@ import { buildZoneQuests } from './quest-factory';
 export const ASIA_BUILT_ZONES: string[] = [
   'lhasa-prayer-citadel',
   'changtang-empty-crossing',
+  'hoh-xil-roof-of-world',
 ];
 
 /** Generated QuestDefs for every BUILT Asia zone (same factory as Europe/Africa). */
