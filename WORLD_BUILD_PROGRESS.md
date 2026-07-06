@@ -122,15 +122,15 @@ calibration, no new residency band). Three home cities: Lhasa (Monk), Kyoto
 manual-start. as-06 scaffolds THREE class-variant TODOs (monk / samurai /
 atlantean). Build order = manifest order:
 
-- [ ] lhasa-prayer-citadel — Monk home city (Act I chain lha-01..04)
-- [ ] changtang-empty-crossing — corridor; The Plateau Stormer champion (cht-02)
-- [ ] hoh-xil-roof-of-world — corridor; escort to the Jade Gate
-- [ ] kunlun-jade-gate — Act IV outpost (Azazel arrives; as-01/as-02)
-- [ ] kunlun-ascent — the 8-beat Act IV pillar march (as-03..as-10; as-06 callback ×3)
-- [ ] kunlun-jade-court — portal terminal (as-11 mask drop, as-12 threshold)
-- [ ] kyoto-thousand-gates — Samurai home city (Act I chain kyo-01..04)
-- [ ] setouchi-inland-sea — corridor; sea-gate to Shanghai
-- [ ] shanghai-eastern-dock — city; sea-gate back to the Inland Sea
+- [x] lhasa-prayer-citadel — done. Monk home city stamped on the plateau (class-gated manual-start chain; gates arrive with the Changtang). TODOs: lha-01, lha-03 prose.
+- [x] changtang-empty-crossing — done. High-plateau corridor; Lhasa↔Changtang gates open the Monk spine; The Plateau Stormer (Physical, charge) live at the boss anchor.
+- [x] hoh-xil-roof-of-world — done. High-desert corridor; Changtang↔Hoh Xil gates; hox-01 caster clear live; hox-02 pilgrim escort live (one Jade Gate anyOf arm earnable).
+- [x] kunlun-jade-gate — done. Act IV holy-highland outpost (walled footprint); Hoh Xil↔Jade Gate gates; angel packs live; as-02 light-harvest live. as-01 (Azazel patron arrival) structural TODO.
+- [x] kunlun-ascent — done. The 8-beat Act IV pillar march; Jade Gate↔Ascent gates; as-04 clear + as-05 light convoy escort + as-10 final harvest live; as-06 scaffolds THREE class-variant TODOs (monk/samurai/atlantean). TODOs: as-03, as-06 ×3, as-07, as-09 prose.
+- [x] kunlun-jade-court — done. Portal terminal chunk (portal-threshold, small footprint); Ascent↔Jade Court gates. NO portal machine built — as-11 (mask drop) + as-12 (threshold) are HAND_AUTHORED_TODO structural beats. The Monk road is walkable Lhasa → Jade Court.
+- [x] kyoto-thousand-gates — done. Samurai home city stamped in Japan (class-gated manual-start chain; fresh starts verified clean). Isolated until the Inland Sea (next). TODOs: kyo-01, kyo-03 prose.
+- [x] setouchi-inland-sea — done. Coastal corridor; Kyoto↔Inland Sea gates open the Samurai spine; set-01 raider clear live; the Shanghai sea-dock (boat-door) arrives when Shanghai builds.
+- [x] shanghai-eastern-dock — done. Mainland dock city; the Inland Sea↔Shanghai SEA-DOCK pair (boat-doors) materializes — Japan connects to the mainland; sha-01 dock escort + sha-02 caster clear live.
 - [ ] three-gorges-river-teeth — corridor; The Gorge Witch champion (gor-01)
 - [ ] sichuan-red-basin — corridor; provisions for the climb
 - [ ] bali-drowned-crown — Atlantean home city (Act I chain bal-01..04; island)
