@@ -526,8 +526,15 @@ try {
   // — the Nile-exit pad on the Egypt map crosses to the Luxor anchor and back.
   const xgate = await page.evaluate(async () => {
     const ms = window.__ready();
-    const toAfrica = ms.regionGates.find((g) => g.destWorld === 'africa');
-    const toEgypt = ms.regionGates.find((g) => g.destWorld === 'egypt');
+    // The CROSS-WORLD pair specifically: the pad that SITS in Egypt and leads
+    // to Africa, and the pad that SITS in Africa and leads to Egypt. (Internal
+    // Africa gates also carry destWorld 'africa' — position disambiguates.)
+    const inWorld = (g, id) => {
+      const b = ms.worlds[id].map.bounds;
+      return g.x >= b.x && g.x <= b.x + b.width;
+    };
+    const toAfrica = ms.regionGates.find((g) => g.destWorld === 'africa' && inWorld(g, 'egypt'));
+    const toEgypt = ms.regionGates.find((g) => g.destWorld === 'egypt' && inWorld(g, 'africa'));
     if (!toAfrica || !toEgypt) return { found: false };
     ms.applyWorldSwap('egypt', { x: toAfrica.x, y: toAfrica.y + 10 }); // stand on the Egypt pad
     await new Promise((res) => setTimeout(res, 1600)); // past the world-transition cooldown

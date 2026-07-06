@@ -80,7 +80,7 @@ source of truth; `world-builder.ts` stamps zones into region worlds;
 
 - [x] **cairo-nile-crown** — done (pre-existing, hand-built — never stamp). Corresponds to the existing Egypt world + Faiyum, exactly as Seattle corresponds to the Washington map. Chain registered (Wizard-gated, manual-start): cai-01 mentor / cai-02 clear / cai-03 discovery / cai-04 first-evil. TODOs: cai-01, cai-03 prose.
 - [x] **luxor-valley-of-kings** — done. FIRST Africa chunk (nile-valley placeholder) through the shared region pipeline (stampRegionZoneChunk, factored out of Europe's builder — Europe re-verified green on the same code). The Egypt↔Africa cross-world gate now lands ON the chunk (snapped walkable, d=0 both ways); lux-01 clear + lux-02 fetch chained off cai-04. Live spawns: corrupted-wildlife + lesser-evil-scouts.
-- [ ] **aswan-first-cataract** — pending.
+- [x] **aswan-first-cataract** — done. Nile-cataract corridor; Luxor↔Aswan gates both ways. asw-01 escort + asw-02 clear chained off lux-02 — the Wizard's Nile road now walks Luxor→Aswan. (Harness note: the cross-world gate check now selects the Egypt↔Africa pair by POSITION — internal Africa gates share destWorld and had fooled its find().)
 - [ ] **nubia-black-pyramids** — pending (nub-01 Kushite Sentinel champion registered in champion-specs).
 - [ ] **sudd-drowned-road** — pending.
 - [ ] **victoria-source** — pending (the Nile/Congo merge: entry anyOf(sud-02, vir-02)).

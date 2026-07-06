@@ -13,6 +13,7 @@ import { buildZoneQuests } from './quest-factory';
 export const AFRICA_BUILT_ZONES: string[] = [
   'cairo-nile-crown',
   'luxor-valley-of-kings',
+  'aswan-first-cataract',
 ];
 
 /** Zones whose CONTENT lives in a pre-existing hand-built world (never stamped):
