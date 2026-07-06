@@ -125,7 +125,7 @@ atlantean). Build order = manifest order:
 - [x] lhasa-prayer-citadel — done. Monk home city stamped on the plateau (class-gated manual-start chain; gates arrive with the Changtang). TODOs: lha-01, lha-03 prose.
 - [x] changtang-empty-crossing — done. High-plateau corridor; Lhasa↔Changtang gates open the Monk spine; The Plateau Stormer (Physical, charge) live at the boss anchor.
 - [x] hoh-xil-roof-of-world — done. High-desert corridor; Changtang↔Hoh Xil gates; hox-01 caster clear live; hox-02 pilgrim escort live (one Jade Gate anyOf arm earnable).
-- [ ] kunlun-jade-gate — Act IV outpost (Azazel arrives; as-01/as-02)
+- [x] kunlun-jade-gate — done. Act IV holy-highland outpost (walled footprint); Hoh Xil↔Jade Gate gates; angel packs live; as-02 light-harvest live. as-01 (Azazel patron arrival) structural TODO.
 - [ ] kunlun-ascent — the 8-beat Act IV pillar march (as-03..as-10; as-06 callback ×3)
 - [ ] kunlun-jade-court — portal terminal (as-11 mask drop, as-12 threshold)
 - [ ] kyoto-thousand-gates — Samurai home city (Act I chain kyo-01..04)
