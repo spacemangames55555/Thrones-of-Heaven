@@ -15,6 +15,7 @@ export const AFRICA_BUILT_ZONES: string[] = [
   'luxor-valley-of-kings',
   'aswan-first-cataract',
   'nubia-black-pyramids',
+  'sudd-drowned-road',
 ];
 
 /** Zones whose CONTENT lives in a pre-existing hand-built world (never stamped):
