@@ -35,6 +35,9 @@ import {
  *    retired ids are cleared; saves past the old descent/gate are marked through
  *    4.8 / 4.10 respectively so the endgame stays unlocked; retired ids are dropped
  *    from the completed set.
+ *  • v11→v12 (GLOBE CONSOLIDATION) removed the 'europe'/'africa' worlds in favor
+ *    of the one whole-planet 'globe' world: saves in/remembering those worlds are
+ *    re-pointed/dropped (see the step) — the player lands at the globe arrival.
  * In every additive case a pre-migration player is already past that content, so the
  * new quests are marked COMPLETE (prerequisites stay satisfied → no soft-lock), and
  * Uriel is flagged as already arrived so his scene never replays. v6 also keeps the
@@ -141,6 +144,25 @@ function migrate(data: SaveData): SaveData {
     // registry + remembered positions are already open Records (a v10 save simply
     // has no 'egypt' entry until the player travels there), and no quest ids
     // changed. The bump just marks saves as from a build that knows Egypt.
+  }
+  if (data.saveVersion < 12) {
+    // v11→v12 — GLOBE CONSOLIDATION: the 'europe' and 'africa' region worlds
+    // were REMOVED, replaced by the whole-planet 'globe' world with every
+    // generated zone at its TRUE Earth position — so any saved europe/africa
+    // coordinate is meaningless there (and loading an unregistered world id
+    // would crash). A save IN one of those worlds re-points to 'globe' with an
+    // off-map position: applyWorldSwap's bounds-snap then lands it at the
+    // globe's default arrival (Rome). Remembered europe/africa entries are
+    // dropped. Quests are untouched (no ids changed). Idempotent.
+    if (data.world && (data.world.active === 'europe' || data.world.active === 'africa')) {
+      data.world.active = 'globe';
+      data.world.x = -1e9;
+      data.world.y = -1e9;
+    }
+    if (data.world?.remembered) {
+      delete data.world.remembered.europe;
+      delete data.world.remembered.africa;
+    }
   }
   if (data.quests) data.quests.completed = [...completed];
   data.saveVersion = SAVE_VERSION;

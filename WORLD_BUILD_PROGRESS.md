@@ -103,3 +103,13 @@ travel). Dense hand-built worlds (Earth/Heaven/Hell/Egypt/Faiyum) get none.
 DATA SOURCE + LICENSE: derived from Natural Earth 110m land polygons
 (naturalearthdata.com) — Natural Earth is PUBLIC DOMAIN (free for any use, no
 attribution required). Regenerate with `node tools/generateEarthRaster.mjs`.
+
+**GLOBE CONSOLIDATION:** the 'europe' and 'africa' region worlds are MERGED
+into ONE whole-planet sparse world — id 'globe', origin 85°N 180°W, span
+360°×170°, same pixels-per-degree — with all 37 generated zones re-stamped at
+their TRUE manifest lat/lng through the one shared calibration. The continents
+share walkable ground (Levant/Anatolia land bridge verified; no Europe↔Africa
+gate). NA seeds + Cairo remain pre-existing / never stamped. The Egypt↔Luxor
+cross-world gate lands at Luxor's true position. Saves referencing the removed
+worlds migrate at v12 (re-pointed to the globe arrival). Future continents
+stamp into 'globe' — no new world plumbing needed.

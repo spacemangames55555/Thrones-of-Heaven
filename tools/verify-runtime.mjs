@@ -22,6 +22,8 @@
 // chains it), starts its own preview server on :4174, exits nonzero on any
 // failure. Requires the window.__game handle exported by src/main.ts.
 import { spawn } from 'node:child_process';
+import { readdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { chromium } from 'playwright-core';
 
 const PORT = 4174;
@@ -589,24 +591,49 @@ try {
       }
     }
     const waterBlocks = waterX !== null && ms.activeMap().isBlockedAtWorld(waterX, romeArrival.y) === true && ms.activeMap().isBlockedAtWorld(landX, romeArrival.y) === false;
-    // Cell cap at full zoom-out (the whole continent in frame).
+    // Cell cap at full zoom-out (the whole PLANET in frame).
     ms.zoomControls.target = ms.zoomControls.outLimit;
     await new Promise((res) => setTimeout(res, 1800));
     const zoomedOutCells = gl.cellsDrawn;
+    // TRUE frame rate over a window, by counting rAF ticks — the loop's
+    // smoothed actualFps converges over many seconds after a scene-cost
+    // change, so a before/after pair of reads compares two points on the
+    // convergence curve, not the toggled cost (a probe showed it decaying
+    // 24→8 with the ground hidden the whole time).
+    const fpsOver = (msWin) =>
+      new Promise((resolve) => {
+        let frames = 0;
+        const t0 = performance.now();
+        const tick = () => {
+          frames++;
+          const dt = performance.now() - t0;
+          if (dt >= msWin) resolve(+((frames * 1000) / dt).toFixed(1));
+          else requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+      });
+    // FPS at CONTINENT zoom (still fully zoomed out): ground hidden vs shown.
+    gl.setVisible(false);
+    await new Promise((res) => setTimeout(res, 800));
+    const fpsContinentBase = await fpsOver(2500);
+    gl.setVisible(true);
+    await new Promise((res) => setTimeout(res, 800));
+    const fpsContinentGround = await fpsOver(2500);
     ms.zoomControls.target = 1;
     await new Promise((res) => setTimeout(res, 1500));
     // FPS at ground zoom, standing at Rome — SELF-RELATIVE baseline: the same
     // frames with the ground layer hidden vs shown (robust to session depth
-    // and headless-GPU variance, unlike an absolute number).
+    // and headless-GPU variance, unlike an absolute number), measured by rAF
+    // counting like the continent pair above.
     ms.player.sprite.body.reset(romeArrival.x, romeArrival.y);
-    gl.g.setVisible(false);
-    await new Promise((res) => setTimeout(res, 2800));
-    const fpsBaseline = +game.loop.actualFps.toFixed(1);
-    gl.g.setVisible(true);
-    await new Promise((res) => setTimeout(res, 2800));
-    const fpsGround = +game.loop.actualFps.toFixed(1);
+    gl.setVisible(false);
+    await new Promise((res) => setTimeout(res, 800));
+    const fpsBaseline = await fpsOver(2500);
+    gl.setVisible(true);
+    await new Promise((res) => setTimeout(res, 800));
+    const fpsGround = await fpsOver(2500);
     const denseClean = ['earth', 'egypt', 'heaven', 'hell', 'city-faiyum'].every((id) => !ms.groundLayers.has(id));
-    return { has: true, rome, midVoid, coastFound: waterX !== null, waterBlocks, groundCells: gl.cellsDrawn, zoomedOutCells, fpsBaseline, fpsGround, denseClean };
+    return { has: true, rome, midVoid, coastFound: waterX !== null, waterBlocks, groundCells: gl.cellsDrawn, zoomedOutCells, fpsBaseline, fpsGround, fpsContinentBase, fpsContinentGround, denseClean };
   });
   ok('ground: biome land renders under Rome', groundRun.has && groundRun.rome.cells > 0 && groundRun.rome.cls > 0, groundRun.has ? `cells=${groundRun.rome.cells} class=${groundRun.rome.cls}` : 'no globe ground layer');
   ok('ground: still renders mid-void (no chunk beneath)', groundRun.has && groundRun.midVoid.cells > 0 && groundRun.midVoid.offChunk, groundRun.has ? JSON.stringify(groundRun.midVoid) : '');
@@ -622,6 +649,90 @@ try {
     `ground=${groundRun.fpsGround} baseline=${groundRun.fpsBaseline} (tolerance ≥ 80%)`,
   );
   ok('ground: dense hand-built worlds have NO ground layer', groundRun.has && groundRun.denseClean, 'earth/egypt/heaven/hell/faiyum clean');
+  ok(
+    'ground: FPS at CONTINENT zoom within tolerance of the no-ground baseline',
+    groundRun.has && groundRun.fpsContinentGround >= groundRun.fpsContinentBase * 0.8,
+    `ground=${groundRun.fpsContinentGround} baseline=${groundRun.fpsContinentBase} (tolerance ≥ 80%)`,
+  );
+
+  // 3n2. TRUE POSITIONS (the consolidation's core claim): Rome AND Luxor sit at
+  // their real manifest lat/lng through the ONE globe calibration, with real
+  // land rendered beneath, and a Levant/Anatolia land bridge of walkable void
+  // ground joins the two regions — ground continuity, no gate needed.
+  const globePos = await page.evaluate(() => {
+    const ms = window.__ready();
+    const o = ms.worlds['globe'].map.bounds;
+    const px = (lat, lng) => ({ x: o.x + (lng + 180) * 2426, y: o.y + (85 - lat) * 2453 }); // the globe calibration
+    const gl = ms.groundLayers.get('globe');
+    const at = (zoneId, lat, lng) => {
+      const z = ms.regionSpawnZones.find((s) => s.zoneId === zoneId);
+      if (!z) return { d: -1, cls: -1 };
+      const e = px(lat, lng);
+      return { d: +Math.hypot(z.center.x - e.x, z.center.y - e.y).toFixed(1), cls: gl.classAtWorld(z.center.x, z.center.y) };
+    };
+    const rome = at('rome-eternal-seat', 41.9, 12.5); // the manifest anchors
+    const luxor = at('luxor-valley-of-kings', 25.69, 32.64);
+    // The land bridge: Ankara → Gaziantep → Amman, all walkable land void.
+    const bridge = [
+      [39.93, 32.85],
+      [37.07, 37.38],
+      [31.95, 35.93],
+    ].map(([lat, lng]) => {
+      const p = px(lat, lng);
+      return { cls: gl.classAtWorld(p.x, p.y), blocked: ms.worlds['globe'].map.isBlockedAtWorld(p.x, p.y), offChunk: ms.worlds['globe'].map.terrainAtWorld(p.x, p.y) === null };
+    });
+    return { rome, luxor, bridge };
+  });
+  ok('globe: Rome renders at its true planet position', globePos.rome.d >= 0 && globePos.rome.d < 2 && globePos.rome.cls > 0, JSON.stringify(globePos.rome));
+  ok('globe: Luxor renders at its true planet position', globePos.luxor.d >= 0 && globePos.luxor.d < 2 && globePos.luxor.cls > 0, JSON.stringify(globePos.luxor));
+  ok(
+    'globe: a Levant/Anatolia land bridge of walkable ground joins the regions',
+    globePos.bridge.every((b) => b.cls > 0 && !b.blocked && b.offChunk),
+    JSON.stringify(globePos.bridge),
+  );
+
+  // 3n3. THE REMOVED WORLDS ARE GONE: nothing at runtime registers or routes to
+  // 'europe'/'africa', and no LIVE source line references the ids — the v12
+  // save migration (src/save) and explanatory comments are the only allowed
+  // remnants.
+  const oldRefs = await page.evaluate(() => {
+    const ms = window.__game.scene.getScene('MainScene');
+    const dead = ['europe', 'africa'];
+    return {
+      worlds: dead.filter((id) => !!ms.worlds[id]),
+      grounds: dead.filter((id) => ms.groundLayers.has(id)),
+      gates: ms.regionGates.filter((g) => dead.includes(g.destWorld)).length,
+      colliders: ms.regionColliders.filter((rc) => dead.includes(rc.worldId)).length,
+      regionIds: dead.filter((id) => ms.regionWorldIds.has(id)),
+    };
+  });
+  const srcHits = (() => {
+    const files = [];
+    const walk = (dir) => {
+      for (const e of readdirSync(dir, { withFileTypes: true })) {
+        const p = join(dir, e.name);
+        if (e.isDirectory()) walk(p);
+        else if (e.name.endsWith('.ts')) files.push(p);
+      }
+    };
+    walk('src');
+    const hits = [];
+    for (const f of files) {
+      if (f.includes('save')) continue; // the migration references the removed ids on purpose
+      const lines = readFileSync(f, 'utf8').split('\n');
+      lines.forEach((ln, i) => {
+        const t = ln.trim();
+        if (t.startsWith('//') || t.startsWith('*') || t.startsWith('/*')) return; // prose, not code
+        if (/'(europe|africa)'|"(europe|africa)"/.test(ln)) hits.push(`${f}:${i + 1}`);
+      });
+    }
+    return hits;
+  })();
+  ok(
+    'globe: zero references to the removed europe/africa worlds remain (runtime + source)',
+    oldRefs.worlds.length === 0 && oldRefs.grounds.length === 0 && oldRefs.gates === 0 && oldRefs.colliders === 0 && oldRefs.regionIds.length === 0 && srcHits.length === 0,
+    JSON.stringify({ ...oldRefs, srcHits: srcHits.slice(0, 5) }),
+  );
 
   // 3o. CAIRO ACT I (the Wizard's home chain, live in the hand-built Egypt
   // world): cai-01..04 complete END TO END via real play actions — the
