@@ -79,13 +79,13 @@ source of truth; `world-builder.ts` stamps zones into region worlds;
 > the Cairo integration build run's job.
 
 - [x] **cairo-nile-crown** — done (pre-existing, hand-built — never stamp). Corresponds to the existing Egypt world + Faiyum, exactly as Seattle corresponds to the Washington map. Chain registered (Wizard-gated, manual-start): cai-01 mentor / cai-02 clear / cai-03 discovery / cai-04 first-evil. TODOs: cai-01, cai-03 prose.
-- [ ] **luxor-valley-of-kings** — pending (first stamp of the Africa build runs; the cross-world gate already lands at its anchor).
-- [ ] **aswan-first-cataract** — pending.
-- [ ] **nubia-black-pyramids** — pending (nub-01 Kushite Sentinel champion registered in champion-specs).
-- [ ] **sudd-drowned-road** — pending.
-- [ ] **victoria-source** — pending (the Nile/Congo merge: entry anyOf(sud-02, vir-02)).
-- [ ] **serengeti-long-grass** — pending (ser-02 Rift Warden champion registered).
-- [ ] **ngorongoro-outpost** — pending (Act IV patron outpost, hand-authored beats).
+- [x] **luxor-valley-of-kings** — done. FIRST Africa chunk (nile-valley placeholder) through the shared region pipeline (stampRegionZoneChunk, factored out of Europe's builder — Europe re-verified green on the same code). The Egypt↔Africa cross-world gate now lands ON the chunk (snapped walkable, d=0 both ways); lux-01 clear + lux-02 fetch chained off cai-04. Live spawns: corrupted-wildlife + lesser-evil-scouts.
+- [x] **aswan-first-cataract** — done. Nile-cataract corridor; Luxor↔Aswan gates both ways. asw-01 escort + asw-02 clear chained off lux-02 — the Wizard's Nile road now walks Luxor→Aswan. (Harness note: the cross-world gate check now selects the Egypt↔Africa pair by POSITION — internal Africa gates share destWorld and had fooled its find().)
+- [x] **nubia-black-pyramids** — done. Desert-highland corridor; Aswan↔Nubia gates. nub-01 THE KUSHITE SENTINEL (Spiritual, aoe-slam) is LIVE at the boss anchor via the champion engine; nub-02 clears dark-casters. First Africa zone with the new families (casters + ambushers) spawning per-chunk.
+- [x] **sudd-drowned-road** — done. Marsh corridor; Nubia↔Sudd gates (the longest Nile-road crossing). sud-01 clears the reed ambushers; sud-02 escort runs the caravan through the marsh — its arm of Victoria's anyOf entry is now earnable.
+- [x] **victoria-source** — done. Lake-shore city — THE NILE/CONGO MERGE: entry anyOf(sud-02, vir-02); the sud arm is earnable now, the Congo arm activates when Virunga builds. Sudd↔Victoria gates (Virunga + Serengeti links arrive with theirs). vic-01 loop-authored story; vic-02 escort out of the lake city.
+- [x] **serengeti-long-grass** — done. Savanna corridor; Victoria↔Serengeti gates. ser-01 clear; ser-02 THE RIFT WARDEN (Physical, charge) live at the boss anchor — Ngorongoro's entry prerequisite.
+- [x] **ngorongoro-outpost** — done. Act IV holy-highland outpost (walled footprint); Serengeti↔Ngorongoro gates. af-01 (Azazel's patron arrival) is structural with HAND_AUTHORED_TODO prose; af-02 harvests radiant-guardian light (angel packs live). The Rift march is open to the crater rim.
 - [ ] **rift-descent** — pending (8-beat Act IV march; af-06 callback needs TWO class-variant scripts: Wizard / Witch Doctor).
 - [ ] **olduvai-cradle** — pending (portal site; structure only until the portal machine phase).
 - [ ] **kinshasa-river-drum** — pending (WITCH DOCTOR home city — class kit unbuilt; chain locked until it ships or the dev override).

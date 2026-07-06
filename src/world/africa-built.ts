@@ -10,7 +10,16 @@ import { buildZoneQuests } from './quest-factory';
  * Wizard's Act I, cai-01..cai-04, class-gated + manual-start) but the zone is
  * NEVER stamped. The other 12 zones are appended here by the Africa build runs.
  */
-export const AFRICA_BUILT_ZONES: string[] = ['cairo-nile-crown'];
+export const AFRICA_BUILT_ZONES: string[] = [
+  'cairo-nile-crown',
+  'luxor-valley-of-kings',
+  'aswan-first-cataract',
+  'nubia-black-pyramids',
+  'sudd-drowned-road',
+  'victoria-source',
+  'serengeti-long-grass',
+  'ngorongoro-outpost',
+];
 
 /** Zones whose CONTENT lives in a pre-existing hand-built world (never stamped):
  *  dev jumps / travel for their beats target that world, not the region world. */
