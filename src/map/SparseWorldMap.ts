@@ -26,12 +26,18 @@ export class SparseWorldMap implements WorldMapLike {
   private readonly chunks: GameMap[];
   private readonly focus: () => { x: number; y: number };
 
+  /** Optional VOID-ground blocker (the ground layer's water): consulted for
+   *  points on no chunk. Absent = the whole void is walkable (legacy). */
+  private readonly isVoidBlocked?: (worldX: number, worldY: number) => boolean;
+
   constructor(
     origin: { x: number; y: number },
     sizePx: { w: number; h: number },
     chunks: GameMap[],
     focus: () => { x: number; y: number },
+    isVoidBlocked?: (worldX: number, worldY: number) => boolean,
   ) {
+    this.isVoidBlocked = isVoidBlocked;
     // ZERO chunks is legal: a region world can register before any zone is
     // stamped (Africa pre-build) — its whole span is walkable void until then.
     this.origin = origin;
@@ -77,12 +83,13 @@ export class SparseWorldMap implements WorldMapLike {
     return this.chunkAt(worldX, worldY)?.terrainAtWorld(worldX, worldY) ?? null;
   }
 
-  /** Void between chunks is WALKABLE open ground (out of the whole span blocks). */
+  /** Void between chunks is WALKABLE ground — except where the ground layer
+   *  says WATER (out of the whole span always blocks). */
   isBlockedAtWorld(worldX: number, worldY: number): boolean {
     const b = this.bounds;
     if (worldX < b.x || worldY < b.y || worldX > b.x + b.width || worldY > b.y + b.height) return true;
     const chunk = this.chunkAt(worldX, worldY);
-    return chunk ? chunk.isBlockedAtWorld(worldX, worldY) : false;
+    return chunk ? chunk.isBlockedAtWorld(worldX, worldY) : this.isVoidBlocked?.(worldX, worldY) ?? false;
   }
 
   nearestWalkableWorld(worldX: number, worldY: number, maxTiles = 10): { x: number; y: number } {

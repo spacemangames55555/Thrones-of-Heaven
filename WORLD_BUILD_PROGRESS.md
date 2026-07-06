@@ -91,3 +91,13 @@ source of truth; `world-builder.ts` stamps zones into region worlds;
 - [ ] **kinshasa-river-drum** — pending (WITCH DOCTOR home city — class kit unbuilt; chain locked until it ships or the dev override).
 - [ ] **ituri-green-cathedral** — pending (itu-02 Canopy King champion registered).
 - [ ] **virunga-smoke-mountains** — pending.
+
+**GROUND LAYER (sparse worlds):** Europe + Africa now draw REAL continents
+beneath their chunks — a bundled 720×360 land/water + coarse-biome raster
+(17.5KB RLE) sampled through each world's lat/lng calibration, rendered as a
+camera-windowed pooled layer (cell cap 9000 at any zoom, hysteresis like the
+enemy chunks). Land is walkable; WATER BLOCKS the void (gates remain the
+travel). Dense hand-built worlds (Earth/Heaven/Hell/Egypt/Faiyum) get none.
+DATA SOURCE + LICENSE: derived from Natural Earth 110m land polygons
+(naturalearthdata.com) — Natural Earth is PUBLIC DOMAIN (free for any use, no
+attribution required). Regenerate with `node tools/generateEarthRaster.mjs`.

@@ -38,6 +38,7 @@ import { buildHeavenMapData, HEAVEN_WIDTH, HEAVEN_HEIGHT, HEAVEN_CHERUB_SPAWNS, 
 import { buildHellMapData, HELL_WIDTH, HELL_HEIGHT, HELL_DEMON_SPAWNS, SATAN_LAIR } from '../map/hellWorld';
 import { WORLD_EARTH, WORLD_HEAVEN, WORLD_HELL, WORLD_EGYPT, WORLD_EUROPE, WORLD_AFRICA, type WorldId, type WorldRuntime, type WorldMapLike } from '../world/worlds';
 import { AFRICA_BUILT_ZONES, buildAfricaQuestDefs, PREBUILT_ZONE_WORLD } from '../world/africa-built';
+import { GroundLayer } from '../map/GroundLayer';
 import { CITY_DEFS, CITY_FAIYUM, type CityDef } from '../world/cities';
 import { MANIFEST_CLASS_FOR, KNOWN_CLASS_NAMES } from '../world/class-canon';
 import { SparseWorldMap } from '../map/SparseWorldMap';
@@ -742,6 +743,9 @@ export class MainScene extends Phaser.Scene {
   private africaMap?: SparseWorldMap;
   /** Which registered worlds run the region pipeline (spawn zones, gates…). */
   private regionWorldIds = new Set<WorldId>();
+  /** GROUND LAYER per sparse region world (real continents under the chunks).
+   *  Dense hand-built worlds (Earth/Heaven/Hell/Egypt/cities) never get one. */
+  private groundLayers = new Map<WorldId, GroundLayer>();
   /** Per-chunk terrain colliders, each bound to its OWN region world. */
   private regionColliders: { c: Phaser.Physics.Arcade.Collider; worldId: WorldId }[] = [];
   /** Proximity travel gates. destWorld makes a gate CROSS-WORLD (Egypt↔Africa). */
@@ -1500,7 +1504,11 @@ export class MainScene extends Phaser.Scene {
       if (this.isDashing()) this.talkButton.setVisible(false);
       else this.checkInteractions();
       this.updateCityGates(); // AFTER interactions: Talk keeps the shared slot
-      if (this.regionWorldIds.has(this.activeWorld)) this.updateRegionSpawns(); // per-chunk packs (any region world)
+      if (this.regionWorldIds.has(this.activeWorld)) {
+        this.updateRegionSpawns(); // per-chunk packs (any region world)
+        this.groundLayers.get(this.activeWorld)?.update(this.cameras.main); // continents under the camera
+        this.blockVoidWater(); // water is impassable ground; gates are the travel
+      }
       this.updateAngels();
       this.updateTownsfolk(); // prune dead first so the wave manager sees the live count
       if (this.activeWorld === WORLD_EARTH) {
@@ -5894,6 +5902,11 @@ export class MainScene extends Phaser.Scene {
     const origin = { x: this.nextWorldOriginX, y: 0 };
     const rw = createSparseWorld(WORLD_EUROPE, cal, span);
 
+    // GROUND LAYER: the real continents (Natural-Earth raster through this
+    // world's calibration) drawn beneath every chunk. Water blocks the void.
+    const ground = new GroundLayer(this, origin, cal, rw.sparse!.boundsPx);
+    this.groundLayers.set(WORLD_EUROPE, ground);
+
     const chunkMaps: GameMap[] = [];
     const built = new Map<string, { chunk: BuiltChunk; map: GameMap }>();
     for (const id of EUROPE_BUILT_ZONES) {
@@ -5999,7 +6012,7 @@ export class MainScene extends Phaser.Scene {
     // Register the world: arrival at the FIRST built zone's settlement (Rome).
     const first = built.get(EUROPE_BUILT_ZONES[0])!;
     const arrival = first.map.nearestWalkableWorld(origin.x + first.chunk.arrivalLocalPx.x, origin.y + first.chunk.arrivalLocalPx.y);
-    this.europeMap = new SparseWorldMap(origin, rw.sparse!.boundsPx, chunkMaps, () => ({ x: this.player.x, y: this.player.y }));
+    this.europeMap = new SparseWorldMap(origin, rw.sparse!.boundsPx, chunkMaps, () => ({ x: this.player.x, y: this.player.y }), (x, y) => ground.isWaterAtWorld(x, y));
     this.worlds[WORLD_EUROPE] = {
       id: WORLD_EUROPE,
       map: this.europeMap,
@@ -6023,7 +6036,9 @@ export class MainScene extends Phaser.Scene {
     const span = WORLD_SPAN_DEGREES[WORLD_AFRICA];
     const origin = { x: this.nextWorldOriginX, y: 0 };
     const rw = createSparseWorld(WORLD_AFRICA, cal, span);
-    this.africaMap = new SparseWorldMap(origin, rw.sparse!.boundsPx, [], () => ({ x: this.player.x, y: this.player.y }));
+    const ground = new GroundLayer(this, origin, cal, rw.sparse!.boundsPx);
+    this.groundLayers.set(WORLD_AFRICA, ground);
+    this.africaMap = new SparseWorldMap(origin, rw.sparse!.boundsPx, [], () => ({ x: this.player.x, y: this.player.y }), (x, y) => ground.isWaterAtWorld(x, y));
 
     // LUXOR anchor, computed from the manifest calibration WITHOUT stamping —
     // the Africa side of the gate pair + the world's default arrival, so the
@@ -6714,6 +6729,24 @@ export class MainScene extends Phaser.Scene {
       if (this.escort === e) e.npcSprite.clearTint();
     });
     this.lastCombatTime = this.time.now;
+  }
+
+  /** WATER BLOCKS (region worlds): cancel movement INTO void water — stepping
+   *  off dry ground (or a chunk) toward a water cell stops at the shoreline.
+   *  Deliberately one-way: something already OVER water (dev teleports, the
+   *  verify void-hops) may walk out. Gates remain the practical travel. */
+  private blockVoidWater(): void {
+    const ground = this.groundLayers.get(this.activeWorld);
+    if (!ground || this.playerDead) return;
+    const body = this.player.sprite.body as Phaser.Physics.Arcade.Body;
+    if (body.velocity.x === 0 && body.velocity.y === 0) return;
+    const map = this.activeMap();
+    const overWaterNow = map.terrainAtWorld(this.player.x, this.player.y) === null && ground.isWaterAtWorld(this.player.x, this.player.y);
+    if (overWaterNow) return; // walking out is allowed
+    const len = Math.hypot(body.velocity.x, body.velocity.y) || 1;
+    const nx = this.player.x + (body.velocity.x / len) * 18;
+    const ny = this.player.y + (body.velocity.y / len) * 18;
+    if (map.terrainAtWorld(nx, ny) === null && ground.isWaterAtWorld(nx, ny)) body.velocity.set(0, 0);
   }
 
   /** Tear the escort run down (death/arrival/leave/beat change) — clean state. */
