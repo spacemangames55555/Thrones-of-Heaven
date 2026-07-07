@@ -156,7 +156,7 @@ class-variant TODO. Build order = manifest order:
 - [x] etemenanki-stair — done. Babel portal terminal (no portal machine — structure only, like Delphi/Olduvai/Jade Court); bb-11 + bb-12 marker-playable, prose TODO. BABEL REGION COMPLETE: Dubai → the Stair walkable end to end.
 
 ### ULURU — The Hunter's Songline (7)
-- [ ] sydney-harbour-watch — Hunter home city (Act I chain syd-01..04)
+- [x] sydney-harbour-watch — done. Hunter home city on the east coast (class-gated manual-start chain; fresh starts clean). Isolated until the Blue Mountains. TODOs: syd-01, syd-03 prose.
 - [ ] blue-mountains-veil — corridor; ambusher clear + fetch
 - [ ] red-track — corridor; The Track Warden champion (red-01)
 - [ ] dry-heart — corridor; caster clear + water escort
