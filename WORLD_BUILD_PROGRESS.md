@@ -134,7 +134,7 @@ atlantean). Build order = manifest order:
 - [x] three-gorges-river-teeth — done. Yangtze gorge corridor; Shanghai↔Gorges gates; The Gorge Witch (Mental, channel-beam) live at the boss anchor; gor-02 river convoy escort live.
 - [x] sichuan-red-basin — done. Terraced-basin corridor; Gorges↔Sichuan gates; sic-01 raider clear live; sic-02 fetch (one Kham anyOf arm) structural.
 - [x] bali-drowned-crown — done. Atlantean home city; the coarse raster reads its anchor as WATER, so the chunk IS the island (stamps its own walkable footprint; the surrounding water-void blocks — exits are the Java boat-doors, arriving with Java). Class-gated manual-start chain; fresh starts clean. TODOs: bal-01, bal-03 prose.
-- [ ] java-temple-shore — corridor; sea-gates both ways (island)
+- [x] java-temple-shore — done. Island corridor; the Bali↔Java BOAT-DOOR pair materializes (the Atlantean road opens); jav-01 clear live; the Bangkok sea-dock arrives with Bangkok.
 - [ ] bangkok-delta-gate — city; sea-gate from Java
 - [ ] angkor-stone-map — corridor; The Temple Warden champion (ang-02)
 - [ ] yunnan-cloud-steps — corridor; escort up to the plateau
