@@ -20,6 +20,7 @@ export const FINAL_REGIONS_BUILT_ZONES: string[] = [
   'etemenanki-stair',
   'sydney-harbour-watch',
   'blue-mountains-veil',
+  'red-track',
 ];
 
 /** Generated QuestDefs for every BUILT final-region zone (the shared factory). */
