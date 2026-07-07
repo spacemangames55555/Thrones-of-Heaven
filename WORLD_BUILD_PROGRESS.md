@@ -162,7 +162,7 @@ class-variant TODO. Build order = manifest order:
 - [x] dry-heart — done. Red-desert corridor; Red Track↔Dry Heart gates; dry-01 caster clear + dry-02 water-wagon escort live.
 - [x] desert-muster — done. Act IV outpost in the Red Centre; Dry Heart↔Muster gates; angel packs + ul-02 harvest live; ul-01 marker-playable, prose TODO.
 - [x] songlines-end — done. The 8-beat Uluru march; Muster↔Songline's End gates; ul-04 clear + ul-05 convoy + ul-08 kneeling-angel elite + ul-10 harvest live; ul-06 ONE Hunter variant TODO. TODOs: ul-03, ul-06, ul-07, ul-09 prose.
-- [ ] uluru-heart-stone — portal terminal (ul-11 mask drop, ul-12 threshold)
+- [x] uluru-heart-stone — done. Uluru portal terminal (structure only); ul-11 + ul-12 marker-playable, prose TODO. ULURU REGION COMPLETE: Sydney → the Heart Stone walkable end to end.
 
 ### TEOTIHUACAN — The Savage's Tour (8)
 - [ ] mexico-lake-crown — Savage home city (Act I chain mex-01..04)
