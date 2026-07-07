@@ -172,4 +172,4 @@ class-variant TODO. Build order = manifest order:
 - [x] veracruz-olmec-shore — done. Gulf-coast corridor; Yucatán↔Veracruz gates; ver-01 raider clear + ver-02 caravan-home escort live — the tour bends back toward the valley.
 - [x] valley-muster — done. Act IV outpost in the Valley of Mexico; Veracruz↔Muster gates; angel packs + te-02 harvest live; te-01 marker-playable, prose TODO.
 - [x] avenue-of-the-dead — done. The 8-beat Teotihuacan march; Muster↔Avenue gates; te-04 clear + te-05 convoy + te-08 kneeling-angel elite + te-10 harvest live; te-06 ONE Savage variant TODO. (Chunk substantially overlaps the Muster — true real-world spacing ~200px; corridor carries no walls, cosmetic only.) TODOs: te-03, te-06, te-07, te-09 prose.
-- [ ] teotihuacan-birthplace — portal terminal (te-11 mask drop, te-12 threshold)
+- [x] teotihuacan-birthplace — done. Teotihuacan portal terminal (structure only); te-11 + te-12 marker-playable, prose TODO. TEOTIHUACAN REGION COMPLETE — and with it the LAUNCH MAP: all 81 zones built.

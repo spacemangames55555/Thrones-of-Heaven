@@ -32,6 +32,7 @@ export const FINAL_REGIONS_BUILT_ZONES: string[] = [
   'veracruz-olmec-shore',
   'valley-muster',
   'avenue-of-the-dead',
+  'teotihuacan-birthplace',
 ];
 
 /** Generated QuestDefs for every BUILT final-region zone (the shared factory). */
