@@ -159,7 +159,7 @@ class-variant TODO. Build order = manifest order:
 - [x] sydney-harbour-watch — done. Hunter home city on the east coast (class-gated manual-start chain; fresh starts clean). Isolated until the Blue Mountains. TODOs: syd-01, syd-03 prose.
 - [x] blue-mountains-veil — done. Eucalypt highland; Sydney↔Blue Mountains gates open the Hunter spine; blu-01 ambusher clear + blu-02 water pickups live.
 - [x] red-track — done. Outback corridor; Blue Mountains↔Red Track gates; The Track Warden (Physical, charge) live at the boss anchor; red-02 songline escort live.
-- [ ] dry-heart — corridor; caster clear + water escort
+- [x] dry-heart — done. Red-desert corridor; Red Track↔Dry Heart gates; dry-01 caster clear + dry-02 water-wagon escort live.
 - [ ] desert-muster — Act IV outpost (ul-01 Azazel; ul-02 harvest)
 - [ ] songlines-end — the 8-beat Act IV march (ul-03..ul-10; ul-06 callback ×1 Hunter)
 - [ ] uluru-heart-stone — portal terminal (ul-11 mask drop, ul-12 threshold)

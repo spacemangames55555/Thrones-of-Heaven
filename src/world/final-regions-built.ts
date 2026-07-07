@@ -21,6 +21,7 @@ export const FINAL_REGIONS_BUILT_ZONES: string[] = [
   'sydney-harbour-watch',
   'blue-mountains-veil',
   'red-track',
+  'dry-heart',
 ];
 
 /** Generated QuestDefs for every BUILT final-region zone (the shared factory). */
