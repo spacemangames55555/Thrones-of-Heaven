@@ -20,6 +20,14 @@ export const ASIA_BUILT_ZONES: string[] = [
   'kyoto-thousand-gates',
   'setouchi-inland-sea',
   'shanghai-eastern-dock',
+  'three-gorges-river-teeth',
+  'sichuan-red-basin',
+  'bali-drowned-crown',
+  'java-temple-shore',
+  'bangkok-delta-gate',
+  'angkor-stone-map',
+  'yunnan-cloud-steps',
+  'kham-eastern-plateau',
 ];
 
 /** Generated QuestDefs for every BUILT Asia zone (same factory as Europe/Africa). */

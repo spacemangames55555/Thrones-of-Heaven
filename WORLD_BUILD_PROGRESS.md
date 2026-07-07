@@ -131,11 +131,11 @@ atlantean). Build order = manifest order:
 - [x] kyoto-thousand-gates — done. Samurai home city stamped in Japan (class-gated manual-start chain; fresh starts verified clean). Isolated until the Inland Sea (next). TODOs: kyo-01, kyo-03 prose.
 - [x] setouchi-inland-sea — done. Coastal corridor; Kyoto↔Inland Sea gates open the Samurai spine; set-01 raider clear live; the Shanghai sea-dock (boat-door) arrives when Shanghai builds.
 - [x] shanghai-eastern-dock — done. Mainland dock city; the Inland Sea↔Shanghai SEA-DOCK pair (boat-doors) materializes — Japan connects to the mainland; sha-01 dock escort + sha-02 caster clear live.
-- [ ] three-gorges-river-teeth — corridor; The Gorge Witch champion (gor-01)
-- [ ] sichuan-red-basin — corridor; provisions for the climb
-- [ ] bali-drowned-crown — Atlantean home city (Act I chain bal-01..04; island)
-- [ ] java-temple-shore — corridor; sea-gates both ways (island)
-- [ ] bangkok-delta-gate — city; sea-gate from Java
-- [ ] angkor-stone-map — corridor; The Temple Warden champion (ang-02)
-- [ ] yunnan-cloud-steps — corridor; escort up to the plateau
-- [ ] kham-eastern-plateau — corridor; the sea road and island road merge → Jade Gate
+- [x] three-gorges-river-teeth — done. Yangtze gorge corridor; Shanghai↔Gorges gates; The Gorge Witch (Mental, channel-beam) live at the boss anchor; gor-02 river convoy escort live.
+- [x] sichuan-red-basin — done. Terraced-basin corridor; Gorges↔Sichuan gates; sic-01 raider clear live; sic-02 fetch (one Kham anyOf arm) structural.
+- [x] bali-drowned-crown — done. Atlantean home city; the coarse raster reads its anchor as WATER, so the chunk IS the island (stamps its own walkable footprint; the surrounding water-void blocks — exits are the Java boat-doors, arriving with Java). Class-gated manual-start chain; fresh starts clean. TODOs: bal-01, bal-03 prose.
+- [x] java-temple-shore — done. Island corridor; the Bali↔Java BOAT-DOOR pair materializes (the Atlantean road opens); jav-01 clear live; the Bangkok sea-dock arrives with Bangkok.
+- [x] bangkok-delta-gate — done. Delta city; the Java↔Bangkok BOAT-DOOR pair lands the island road on the mainland; ban-01 delta escort live; ban-02 raider clear live.
+- [x] angkor-stone-map — done. Jungle-temple corridor; Bangkok↔Angkor gates; The Temple Warden (Spiritual, summon-adds — calls the zone·s own ambushers/casters) live at the boss anchor; ang-01 story structural.
+- [x] yunnan-cloud-steps — done. Highland-jungle corridor; Angkor↔Yunnan gates; yun-01 clear live; yun-02 caravan escort live (the second Kham anyOf arm is earnable).
+- [x] kham-eastern-plateau — done. Eastern-plateau corridor; Sichuan↔Kham, Yunnan↔Kham AND Kham↔Jade Gate gates all materialize — the sea road and the island road become one and the WHOLE REGION closes: all 17 zones built, every spine converging on the Jade Gate → the Ascent → the Jade Court.
