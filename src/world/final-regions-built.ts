@@ -29,6 +29,7 @@ export const FINAL_REGIONS_BUILT_ZONES: string[] = [
   'oaxaca-cloud-valley',
   'palenque-jungle-court',
   'yucatan-serpent-steps',
+  'veracruz-olmec-shore',
 ];
 
 /** Generated QuestDefs for every BUILT final-region zone (the shared factory). */

@@ -169,7 +169,7 @@ class-variant TODO. Build order = manifest order:
 - [x] oaxaca-cloud-valley — done. Cloud-highland corridor; Mexico City↔Oaxaca gates open the Savage spine; oax-01 clear + oax-02 Zapotec-seal pickups live.
 - [x] palenque-jungle-court — done. Jungle-temple corridor; Oaxaca↔Palenque gates; pal-01 ambusher clear + pal-02 jungle escort live.
 - [x] yucatan-serpent-steps — done. Limestone-scrub corridor; Palenque↔Yucatán gates; The Serpent of the Steps (Spiritual, aoe-slam) live at the boss anchor; yuc-02 cenote pickups live.
-- [ ] veracruz-olmec-shore — corridor; raider clear + caravan escort
+- [x] veracruz-olmec-shore — done. Gulf-coast corridor; Yucatán↔Veracruz gates; ver-01 raider clear + ver-02 caravan-home escort live — the tour bends back toward the valley.
 - [ ] valley-muster — Act IV outpost (te-01 Azazel; te-02 harvest)
 - [ ] avenue-of-the-dead — the 8-beat Act IV march (te-03..te-10; te-06 callback ×1 Savage)
 - [ ] teotihuacan-birthplace — portal terminal (te-11 mask drop, te-12 threshold)
