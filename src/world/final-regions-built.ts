@@ -31,6 +31,7 @@ export const FINAL_REGIONS_BUILT_ZONES: string[] = [
   'yucatan-serpent-steps',
   'veracruz-olmec-shore',
   'valley-muster',
+  'avenue-of-the-dead',
 ];
 
 /** Generated QuestDefs for every BUILT final-region zone (the shared factory). */
