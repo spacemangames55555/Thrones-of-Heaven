@@ -153,7 +153,7 @@ class-variant TODO. Build order = manifest order:
 - [x] mesopotamian-marshes — done. The Reed Sea; Pearl Coast↔Marshes gates; The Reed King (Mental, summon-adds) live at the boss anchor; mar-02 ambusher clear + mar-03 channel escort live.
 - [x] shinar-muster — done. Act IV outpost at Babylon; Marshes↔Shinar gates; angel packs + bb-02 harvest live; bb-01 (Azazel arrival + the Babel gift line) marker-playable, prose TODO.
 - [x] processional-way — done. The 8-beat Babel march; Shinar↔Way gates; bb-04 clear + bb-05 convoy + bb-08 kneeling-angel elite + bb-10 harvest live; bb-06 scaffolds ONE Assassin variant TODO. TODOs: bb-03, bb-06, bb-07, bb-09 prose. (Chunks overlap Shinar slightly — real-world spacing; corridors have no walls, cosmetic only.)
-- [ ] etemenanki-stair — portal terminal (bb-11 mask drop, bb-12 threshold)
+- [x] etemenanki-stair — done. Babel portal terminal (no portal machine — structure only, like Delphi/Olduvai/Jade Court); bb-11 + bb-12 marker-playable, prose TODO. BABEL REGION COMPLETE: Dubai → the Stair walkable end to end.
 
 ### ULURU — The Hunter's Songline (7)
 - [ ] sydney-harbour-watch — Hunter home city (Act I chain syd-01..04)

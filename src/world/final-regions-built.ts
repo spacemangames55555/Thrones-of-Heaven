@@ -17,6 +17,7 @@ export const FINAL_REGIONS_BUILT_ZONES: string[] = [
   'mesopotamian-marshes',
   'shinar-muster',
   'processional-way',
+  'etemenanki-stair',
 ];
 
 /** Generated QuestDefs for every BUILT final-region zone (the shared factory). */
