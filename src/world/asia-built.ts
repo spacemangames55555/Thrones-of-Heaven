@@ -21,6 +21,7 @@ export const ASIA_BUILT_ZONES: string[] = [
   'setouchi-inland-sea',
   'shanghai-eastern-dock',
   'three-gorges-river-teeth',
+  'sichuan-red-basin',
 ];
 
 /** Generated QuestDefs for every BUILT Asia zone (same factory as Europe/Africa). */
