@@ -25,6 +25,7 @@ export const ASIA_BUILT_ZONES: string[] = [
   'bali-drowned-crown',
   'java-temple-shore',
   'bangkok-delta-gate',
+  'angkor-stone-map',
 ];
 
 /** Generated QuestDefs for every BUILT Asia zone (same factory as Europe/Africa). */

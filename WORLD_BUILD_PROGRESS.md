@@ -136,6 +136,6 @@ atlantean). Build order = manifest order:
 - [x] bali-drowned-crown — done. Atlantean home city; the coarse raster reads its anchor as WATER, so the chunk IS the island (stamps its own walkable footprint; the surrounding water-void blocks — exits are the Java boat-doors, arriving with Java). Class-gated manual-start chain; fresh starts clean. TODOs: bal-01, bal-03 prose.
 - [x] java-temple-shore — done. Island corridor; the Bali↔Java BOAT-DOOR pair materializes (the Atlantean road opens); jav-01 clear live; the Bangkok sea-dock arrives with Bangkok.
 - [x] bangkok-delta-gate — done. Delta city; the Java↔Bangkok BOAT-DOOR pair lands the island road on the mainland; ban-01 delta escort live; ban-02 raider clear live.
-- [ ] angkor-stone-map — corridor; The Temple Warden champion (ang-02)
+- [x] angkor-stone-map — done. Jungle-temple corridor; Bangkok↔Angkor gates; The Temple Warden (Spiritual, summon-adds — calls the zone·s own ambushers/casters) live at the boss anchor; ang-01 story structural.
 - [ ] yunnan-cloud-steps — corridor; escort up to the plateau
 - [ ] kham-eastern-plateau — corridor; the sea road and island road merge → Jade Gate
