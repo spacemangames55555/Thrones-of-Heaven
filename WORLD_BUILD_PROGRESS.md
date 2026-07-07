@@ -157,7 +157,7 @@ class-variant TODO. Build order = manifest order:
 
 ### ULURU — The Hunter's Songline (7)
 - [x] sydney-harbour-watch — done. Hunter home city on the east coast (class-gated manual-start chain; fresh starts clean). Isolated until the Blue Mountains. TODOs: syd-01, syd-03 prose.
-- [ ] blue-mountains-veil — corridor; ambusher clear + fetch
+- [x] blue-mountains-veil — done. Eucalypt highland; Sydney↔Blue Mountains gates open the Hunter spine; blu-01 ambusher clear + blu-02 water pickups live.
 - [ ] red-track — corridor; The Track Warden champion (red-01)
 - [ ] dry-heart — corridor; caster clear + water escort
 - [ ] desert-muster — Act IV outpost (ul-01 Azazel; ul-02 harvest)

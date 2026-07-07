@@ -19,6 +19,7 @@ export const FINAL_REGIONS_BUILT_ZONES: string[] = [
   'processional-way',
   'etemenanki-stair',
   'sydney-harbour-watch',
+  'blue-mountains-veil',
 ];
 
 /** Generated QuestDefs for every BUILT final-region zone (the shared factory). */
