@@ -149,7 +149,7 @@ class-variant TODO. Build order = manifest order:
 
 ### BABEL — The Assassin's Road (6)
 - [x] dubai-glass-souk — done. Assassin home city on the Gulf (class-gated manual-start chain; mentor/marker/elite mechanics inherited). TODOs: dub-01, dub-03 prose.
-- [ ] pearl-coast — corridor; clear + fetch + escort
+- [x] pearl-coast — done. Gulf corridor; Dubai↔Pearl Coast gates open the Assassin spine; prl-01 raider clear + prl-02 pearl pickups + prl-03 escort all live.
 - [ ] mesopotamian-marshes — corridor; The Reed King champion (mar-01)
 - [ ] shinar-muster — Act IV outpost (bb-01 Azazel + Babel gift line TODO; bb-02 harvest)
 - [ ] processional-way — the 8-beat Act IV march (bb-03..bb-10; bb-06 callback ×1 Assassin)
