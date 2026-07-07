@@ -16,6 +16,9 @@ export const CALLBACK_CLASSES_BY_CONTINENT: Record<string, readonly string[]> = 
   Europe: ['bard', 'priest', 'blacksmith', 'mage', 'necromancer'],
   Africa: ['wizard', 'witchdoctor'],
   Asia: ['monk', 'samurai', 'atlantean'],
+  'Near East': ['assassin'],
+  Oceania: ['hunter'],
+  Mesoamerica: ['savage'],
 };
 
 /**

@@ -139,3 +139,37 @@ atlantean). Build order = manifest order:
 - [x] angkor-stone-map — done. Jungle-temple corridor; Bangkok↔Angkor gates; The Temple Warden (Spiritual, summon-adds — calls the zone·s own ambushers/casters) live at the boss anchor; ang-01 story structural.
 - [x] yunnan-cloud-steps — done. Highland-jungle corridor; Angkor↔Yunnan gates; yun-01 clear live; yun-02 caravan escort live (the second Kham anyOf arm is earnable).
 - [x] kham-eastern-plateau — done. Eastern-plateau corridor; Sichuan↔Kham, Yunnan↔Kham AND Kham↔Jade Gate gates all materialize — the sea road and the island road become one and the WHOLE REGION closes: all 17 zones built, every spine converging on the Jade Gate → the Ascent → the Jade Court.
+
+## FINAL THREE REGIONS (21 zones, manifest registered, NOTHING stamped yet)
+
+All stamp into the existing 'globe' world at true positions. Three home cities:
+Dubai (Assassin), Sydney (Hunter), Mexico City (Savage) — with these, all 14
+classes are named in canon. bb-06 / ul-06 / te-06 each scaffold ONE labeled
+class-variant TODO. Build order = manifest order:
+
+### BABEL — The Assassin's Road (6)
+- [ ] dubai-glass-souk — Assassin home city (Act I chain dub-01..04)
+- [ ] pearl-coast — corridor; clear + fetch + escort
+- [ ] mesopotamian-marshes — corridor; The Reed King champion (mar-01)
+- [ ] shinar-muster — Act IV outpost (bb-01 Azazel + Babel gift line TODO; bb-02 harvest)
+- [ ] processional-way — the 8-beat Act IV march (bb-03..bb-10; bb-06 callback ×1 Assassin)
+- [ ] etemenanki-stair — portal terminal (bb-11 mask drop, bb-12 threshold)
+
+### ULURU — The Hunter's Songline (7)
+- [ ] sydney-harbour-watch — Hunter home city (Act I chain syd-01..04)
+- [ ] blue-mountains-veil — corridor; ambusher clear + fetch
+- [ ] red-track — corridor; The Track Warden champion (red-01)
+- [ ] dry-heart — corridor; caster clear + water escort
+- [ ] desert-muster — Act IV outpost (ul-01 Azazel; ul-02 harvest)
+- [ ] songlines-end — the 8-beat Act IV march (ul-03..ul-10; ul-06 callback ×1 Hunter)
+- [ ] uluru-heart-stone — portal terminal (ul-11 mask drop, ul-12 threshold)
+
+### TEOTIHUACAN — The Savage's Tour (8)
+- [ ] mexico-lake-crown — Savage home city (Act I chain mex-01..04)
+- [ ] oaxaca-cloud-valley — corridor; clear + Zapotec seal fetch
+- [ ] palenque-jungle-court — corridor; ambusher clear + jungle escort
+- [ ] yucatan-serpent-steps — corridor; The Serpent of the Steps champion (yuc-01)
+- [ ] veracruz-olmec-shore — corridor; raider clear + caravan escort
+- [ ] valley-muster — Act IV outpost (te-01 Azazel; te-02 harvest)
+- [ ] avenue-of-the-dead — the 8-beat Act IV march (te-03..te-10; te-06 callback ×1 Savage)
+- [ ] teotihuacan-birthplace — portal terminal (te-11 mask drop, te-12 threshold)
