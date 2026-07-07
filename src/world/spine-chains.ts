@@ -51,4 +51,25 @@ export const ENTRY_PREREQUISITES: Record<string, EntryPrereq> = {
   'kunlun-jade-gate': [{ anyOf: ['hox-02-pilgrims-to-the-gate', 'kha-02-caravan-to-the-gate'] }],
   'kunlun-ascent': ['as-02-first-harvest'],
   'kunlun-jade-court': ['as-10-final-harvest'],
+  // ── BABEL — the Assassin's road (append-only) ──
+  'pearl-coast': ['dub-04-first-evil'],
+  'mesopotamian-marshes': ['prl-03-past-the-coves'],
+  'shinar-muster': ['mar-03-through-the-channels'],
+  'processional-way': ['bb-02-first-harvest'],
+  'etemenanki-stair': ['bb-10-final-harvest'],
+  // ── ULURU — the Hunter's songline (append-only) ──
+  'blue-mountains-veil': ['syd-04-first-evil'],
+  'red-track': ['blu-02-water-for-the-track'],
+  'dry-heart': ['red-02-songline-walkers'],
+  'desert-muster': ['dry-02-last-water'],
+  'songlines-end': ['ul-02-first-harvest'],
+  'uluru-heart-stone': ['ul-10-final-harvest'],
+  // ── TEOTIHUACAN — the Savage's tour (append-only) ──
+  'oaxaca-cloud-valley': ['mex-04-first-evil'],
+  'palenque-jungle-court': ['oax-02-zapotec-seal'],
+  'yucatan-serpent-steps': ['pal-02-jungle-dark'],
+  'veracruz-olmec-shore': ['yuc-02-cenote-offering'],
+  'valley-muster': ['ver-02-caravan-home'],
+  'avenue-of-the-dead': ['te-02-first-harvest'],
+  'teotihuacan-birthplace': ['te-10-final-harvest'],
 };

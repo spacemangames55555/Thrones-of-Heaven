@@ -50,6 +50,10 @@ export const CONTINENT_WORLD: Record<string, string> = {
   Europe: 'globe',
   // ASIA stamps into the SAME whole-planet world (no new world/calibration/band).
   Asia: 'globe',
+  // FINAL THREE march regions — same whole-planet world.
+  'Near East': 'globe',
+  Oceania: 'globe',
+  Mesoamerica: 'globe',
 };
 
 /** The region world id a zone stamps into (throws on an unmapped continent). */
@@ -109,6 +113,16 @@ export const BIOME_PLACEHOLDER_TILE: Record<string, string> = {
   'delta-city': 'urban',
   'jungle-temple': 'rainforest',
   'highland-jungle': 'foothills',
+  // Babel / Uluru / Teotihuacan (existing walkable atlas keys — gray-box):
+  'desert-coast': 'dune_sand',
+  'temperate-coast': 'beach',
+  'eucalypt-highland': 'foothills',
+  outback: 'steppe',
+  'red-desert': 'dune_sand',
+  'lake-valley': 'irrigated_field',
+  'cloud-highland': 'foothills',
+  'limestone-scrub': 'scabland',
+  'gulf-coast': 'beach',
 };
 
 export function placeholderTileForBiome(biome: string): string {
