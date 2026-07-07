@@ -27,6 +27,7 @@ export const FINAL_REGIONS_BUILT_ZONES: string[] = [
   'uluru-heart-stone',
   'mexico-lake-crown',
   'oaxaca-cloud-valley',
+  'palenque-jungle-court',
 ];
 
 /** Generated QuestDefs for every BUILT final-region zone (the shared factory). */

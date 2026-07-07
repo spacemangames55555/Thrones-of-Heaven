@@ -167,7 +167,7 @@ class-variant TODO. Build order = manifest order:
 ### TEOTIHUACAN — The Savage's Tour (8)
 - [x] mexico-lake-crown — done. Savage home city in the Valley of Mexico (class-gated manual-start chain; fresh starts clean). TODOs: mex-01, mex-03 prose.
 - [x] oaxaca-cloud-valley — done. Cloud-highland corridor; Mexico City↔Oaxaca gates open the Savage spine; oax-01 clear + oax-02 Zapotec-seal pickups live.
-- [ ] palenque-jungle-court — corridor; ambusher clear + jungle escort
+- [x] palenque-jungle-court — done. Jungle-temple corridor; Oaxaca↔Palenque gates; pal-01 ambusher clear + pal-02 jungle escort live.
 - [ ] yucatan-serpent-steps — corridor; The Serpent of the Steps champion (yuc-01)
 - [ ] veracruz-olmec-shore — corridor; raider clear + caravan escort
 - [ ] valley-muster — Act IV outpost (te-01 Azazel; te-02 harvest)
