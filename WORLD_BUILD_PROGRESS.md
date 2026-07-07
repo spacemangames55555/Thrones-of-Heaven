@@ -148,7 +148,7 @@ classes are named in canon. bb-06 / ul-06 / te-06 each scaffold ONE labeled
 class-variant TODO. Build order = manifest order:
 
 ### BABEL — The Assassin's Road (6)
-- [ ] dubai-glass-souk — Assassin home city (Act I chain dub-01..04)
+- [x] dubai-glass-souk — done. Assassin home city on the Gulf (class-gated manual-start chain; mentor/marker/elite mechanics inherited). TODOs: dub-01, dub-03 prose.
 - [ ] pearl-coast — corridor; clear + fetch + escort
 - [ ] mesopotamian-marshes — corridor; The Reed King champion (mar-01)
 - [ ] shinar-muster — Act IV outpost (bb-01 Azazel + Babel gift line TODO; bb-02 harvest)
