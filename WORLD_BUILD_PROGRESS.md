@@ -148,28 +148,28 @@ classes are named in canon. bb-06 / ul-06 / te-06 each scaffold ONE labeled
 class-variant TODO. Build order = manifest order:
 
 ### BABEL — The Assassin's Road (6)
-- [ ] dubai-glass-souk — Assassin home city (Act I chain dub-01..04)
-- [ ] pearl-coast — corridor; clear + fetch + escort
-- [ ] mesopotamian-marshes — corridor; The Reed King champion (mar-01)
-- [ ] shinar-muster — Act IV outpost (bb-01 Azazel + Babel gift line TODO; bb-02 harvest)
-- [ ] processional-way — the 8-beat Act IV march (bb-03..bb-10; bb-06 callback ×1 Assassin)
-- [ ] etemenanki-stair — portal terminal (bb-11 mask drop, bb-12 threshold)
+- [x] dubai-glass-souk — done. Assassin home city on the Gulf (class-gated manual-start chain; mentor/marker/elite mechanics inherited). TODOs: dub-01, dub-03 prose.
+- [x] pearl-coast — done. Gulf corridor; Dubai↔Pearl Coast gates open the Assassin spine; prl-01 raider clear + prl-02 pearl pickups + prl-03 escort all live.
+- [x] mesopotamian-marshes — done. The Reed Sea; Pearl Coast↔Marshes gates; The Reed King (Mental, summon-adds) live at the boss anchor; mar-02 ambusher clear + mar-03 channel escort live.
+- [x] shinar-muster — done. Act IV outpost at Babylon; Marshes↔Shinar gates; angel packs + bb-02 harvest live; bb-01 (Azazel arrival + the Babel gift line) marker-playable, prose TODO.
+- [x] processional-way — done. The 8-beat Babel march; Shinar↔Way gates; bb-04 clear + bb-05 convoy + bb-08 kneeling-angel elite + bb-10 harvest live; bb-06 scaffolds ONE Assassin variant TODO. TODOs: bb-03, bb-06, bb-07, bb-09 prose. (Chunks overlap Shinar slightly — real-world spacing; corridors have no walls, cosmetic only.)
+- [x] etemenanki-stair — done. Babel portal terminal (no portal machine — structure only, like Delphi/Olduvai/Jade Court); bb-11 + bb-12 marker-playable, prose TODO. BABEL REGION COMPLETE: Dubai → the Stair walkable end to end.
 
 ### ULURU — The Hunter's Songline (7)
-- [ ] sydney-harbour-watch — Hunter home city (Act I chain syd-01..04)
-- [ ] blue-mountains-veil — corridor; ambusher clear + fetch
-- [ ] red-track — corridor; The Track Warden champion (red-01)
-- [ ] dry-heart — corridor; caster clear + water escort
-- [ ] desert-muster — Act IV outpost (ul-01 Azazel; ul-02 harvest)
-- [ ] songlines-end — the 8-beat Act IV march (ul-03..ul-10; ul-06 callback ×1 Hunter)
-- [ ] uluru-heart-stone — portal terminal (ul-11 mask drop, ul-12 threshold)
+- [x] sydney-harbour-watch — done. Hunter home city on the east coast (class-gated manual-start chain; fresh starts clean). Isolated until the Blue Mountains. TODOs: syd-01, syd-03 prose.
+- [x] blue-mountains-veil — done. Eucalypt highland; Sydney↔Blue Mountains gates open the Hunter spine; blu-01 ambusher clear + blu-02 water pickups live.
+- [x] red-track — done. Outback corridor; Blue Mountains↔Red Track gates; The Track Warden (Physical, charge) live at the boss anchor; red-02 songline escort live.
+- [x] dry-heart — done. Red-desert corridor; Red Track↔Dry Heart gates; dry-01 caster clear + dry-02 water-wagon escort live.
+- [x] desert-muster — done. Act IV outpost in the Red Centre; Dry Heart↔Muster gates; angel packs + ul-02 harvest live; ul-01 marker-playable, prose TODO.
+- [x] songlines-end — done. The 8-beat Uluru march; Muster↔Songline's End gates; ul-04 clear + ul-05 convoy + ul-08 kneeling-angel elite + ul-10 harvest live; ul-06 ONE Hunter variant TODO. TODOs: ul-03, ul-06, ul-07, ul-09 prose.
+- [x] uluru-heart-stone — done. Uluru portal terminal (structure only); ul-11 + ul-12 marker-playable, prose TODO. ULURU REGION COMPLETE: Sydney → the Heart Stone walkable end to end.
 
 ### TEOTIHUACAN — The Savage's Tour (8)
-- [ ] mexico-lake-crown — Savage home city (Act I chain mex-01..04)
-- [ ] oaxaca-cloud-valley — corridor; clear + Zapotec seal fetch
-- [ ] palenque-jungle-court — corridor; ambusher clear + jungle escort
-- [ ] yucatan-serpent-steps — corridor; The Serpent of the Steps champion (yuc-01)
-- [ ] veracruz-olmec-shore — corridor; raider clear + caravan escort
-- [ ] valley-muster — Act IV outpost (te-01 Azazel; te-02 harvest)
-- [ ] avenue-of-the-dead — the 8-beat Act IV march (te-03..te-10; te-06 callback ×1 Savage)
-- [ ] teotihuacan-birthplace — portal terminal (te-11 mask drop, te-12 threshold)
+- [x] mexico-lake-crown — done. Savage home city in the Valley of Mexico (class-gated manual-start chain; fresh starts clean). TODOs: mex-01, mex-03 prose.
+- [x] oaxaca-cloud-valley — done. Cloud-highland corridor; Mexico City↔Oaxaca gates open the Savage spine; oax-01 clear + oax-02 Zapotec-seal pickups live.
+- [x] palenque-jungle-court — done. Jungle-temple corridor; Oaxaca↔Palenque gates; pal-01 ambusher clear + pal-02 jungle escort live.
+- [x] yucatan-serpent-steps — done. Limestone-scrub corridor; Palenque↔Yucatán gates; The Serpent of the Steps (Spiritual, aoe-slam) live at the boss anchor; yuc-02 cenote pickups live.
+- [x] veracruz-olmec-shore — done. Gulf-coast corridor; Yucatán↔Veracruz gates; ver-01 raider clear + ver-02 caravan-home escort live — the tour bends back toward the valley.
+- [x] valley-muster — done. Act IV outpost in the Valley of Mexico; Veracruz↔Muster gates; angel packs + te-02 harvest live; te-01 marker-playable, prose TODO.
+- [x] avenue-of-the-dead — done. The 8-beat Teotihuacan march; Muster↔Avenue gates; te-04 clear + te-05 convoy + te-08 kneeling-angel elite + te-10 harvest live; te-06 ONE Savage variant TODO. (Chunk substantially overlaps the Muster — true real-world spacing ~200px; corridor carries no walls, cosmetic only.) TODOs: te-03, te-06, te-07, te-09 prose.
+- [x] teotihuacan-birthplace — done. Teotihuacan portal terminal (structure only); te-11 + te-12 marker-playable, prose TODO. TEOTIHUACAN REGION COMPLETE — and with it the LAUNCH MAP: all 81 zones built.

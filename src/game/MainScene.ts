@@ -39,6 +39,7 @@ import { buildHellMapData, HELL_WIDTH, HELL_HEIGHT, HELL_DEMON_SPAWNS, SATAN_LAI
 import { WORLD_EARTH, WORLD_HEAVEN, WORLD_HELL, WORLD_EGYPT, WORLD_GLOBE, type WorldId, type WorldRuntime, type WorldMapLike } from '../world/worlds';
 import { AFRICA_BUILT_ZONES, buildAfricaQuestDefs, PREBUILT_ZONE_WORLD } from '../world/africa-built';
 import { ASIA_BUILT_ZONES, buildAsiaQuestDefs } from '../world/asia-built';
+import { FINAL_REGIONS_BUILT_ZONES, buildFinalRegionsQuestDefs } from '../world/final-regions-built';
 import { GroundLayer } from '../map/GroundLayer';
 import { CITY_DEFS, CITY_FAIYUM, type CityDef } from '../world/cities';
 import { MANIFEST_CLASS_FOR, KNOWN_CLASS_NAMES } from '../world/class-canon';
@@ -1240,7 +1241,7 @@ export class MainScene extends Phaser.Scene {
     // The LIVE registry = the hand-authored chain (untouched) + the generated
     // quests of every BUILT Europe zone appended after it (pure composition;
     // ids are collision-guarded, unbuilt prerequisites read as UNMET).
-    this.chain = new QuestChain(appendToRegistry(QUEST_REGISTRY, [...buildEuropeQuestDefs(), ...buildAfricaQuestDefs(), ...buildAsiaQuestDefs()]));
+    this.chain = new QuestChain(appendToRegistry(QUEST_REGISTRY, [...buildEuropeQuestDefs(), ...buildAfricaQuestDefs(), ...buildAsiaQuestDefs(), ...buildFinalRegionsQuestDefs()]));
     // Announce the class BEFORE hooking onChange: the quest UI (tracker) doesn't
     // exist yet, and setPlayerClass fires onChange (this crashed create() when
     // announced after the hookup — refreshQuestUi touched the not-yet-built HUD).
@@ -5931,7 +5932,7 @@ export class MainScene extends Phaser.Scene {
   // the globe's NA position is expected). Future continents just append.
 
   private setupGlobe(): void {
-    const zoneIds = [...EUROPE_BUILT_ZONES, ...AFRICA_BUILT_ZONES, ...ASIA_BUILT_ZONES].filter((id) => !PREBUILT_ZONE_WORLD[id]);
+    const zoneIds = [...EUROPE_BUILT_ZONES, ...AFRICA_BUILT_ZONES, ...ASIA_BUILT_ZONES, ...FINAL_REGIONS_BUILT_ZONES].filter((id) => !PREBUILT_ZONE_WORLD[id]);
     if (zoneIds.length === 0) return;
     const cal = WORLD_CALIBRATION[WORLD_GLOBE];
     const span = WORLD_SPAN_DEGREES[WORLD_GLOBE];
@@ -9616,7 +9617,7 @@ export class MainScene extends Phaser.Scene {
    */
   private devJumpToFactoryBeat(targetId: string, def: QuestDef): void {
     const zone = WORLD.find((z) => z.questChain.some((b) => b.id === targetId));
-    if (!zone || !(EUROPE_BUILT_ZONES.includes(zone.id) || AFRICA_BUILT_ZONES.includes(zone.id) || ASIA_BUILT_ZONES.includes(zone.id))) return;
+    if (!zone || !(EUROPE_BUILT_ZONES.includes(zone.id) || AFRICA_BUILT_ZONES.includes(zone.id) || ASIA_BUILT_ZONES.includes(zone.id) || FINAL_REGIONS_BUILT_ZONES.includes(zone.id))) return;
 
     // Class gate: satisfy it via the dev override if needed, and say so.
     if (def.classRequirement) {
