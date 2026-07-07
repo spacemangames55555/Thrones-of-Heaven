@@ -22,6 +22,7 @@ export const ASIA_BUILT_ZONES: string[] = [
   'shanghai-eastern-dock',
   'three-gorges-river-teeth',
   'sichuan-red-basin',
+  'bali-drowned-crown',
 ];
 
 /** Generated QuestDefs for every BUILT Asia zone (same factory as Europe/Africa). */

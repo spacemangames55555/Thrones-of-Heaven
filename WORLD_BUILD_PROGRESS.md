@@ -133,7 +133,7 @@ atlantean). Build order = manifest order:
 - [x] shanghai-eastern-dock — done. Mainland dock city; the Inland Sea↔Shanghai SEA-DOCK pair (boat-doors) materializes — Japan connects to the mainland; sha-01 dock escort + sha-02 caster clear live.
 - [x] three-gorges-river-teeth — done. Yangtze gorge corridor; Shanghai↔Gorges gates; The Gorge Witch (Mental, channel-beam) live at the boss anchor; gor-02 river convoy escort live.
 - [x] sichuan-red-basin — done. Terraced-basin corridor; Gorges↔Sichuan gates; sic-01 raider clear live; sic-02 fetch (one Kham anyOf arm) structural.
-- [ ] bali-drowned-crown — Atlantean home city (Act I chain bal-01..04; island)
+- [x] bali-drowned-crown — done. Atlantean home city; the coarse raster reads its anchor as WATER, so the chunk IS the island (stamps its own walkable footprint; the surrounding water-void blocks — exits are the Java boat-doors, arriving with Java). Class-gated manual-start chain; fresh starts clean. TODOs: bal-01, bal-03 prose.
 - [ ] java-temple-shore — corridor; sea-gates both ways (island)
 - [ ] bangkok-delta-gate — city; sea-gate from Java
 - [ ] angkor-stone-map — corridor; The Temple Warden champion (ang-02)
