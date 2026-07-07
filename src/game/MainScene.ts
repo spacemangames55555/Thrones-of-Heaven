@@ -309,6 +309,11 @@ import {
   CAIRO_INTERACT_RANGE,
   CAIRO_DISCOVERY_RADIUS,
   CAIRO_REPLENISH_MS,
+  MENTOR_INTERACT_RANGE,
+  BEAT_MARKER_RADIUS,
+  BEAT_PICKUP_RADIUS,
+  BEAT_PICKUP_COUNT,
+  BEAT_ELITE_HP_PER_TIER,
   HOLY_TINT,
   HOLY_SLASH_COLOR,
   HOLY_DASH_COLOR,
@@ -758,6 +763,17 @@ export class MainScene extends Phaser.Scene {
   private cairoDiscoveryPos = { x: 0, y: 0 };
   private cairoMentorButton!: TouchButton;
   private cairoReplenishAt = 0;
+  // GENERIC BEAT COMPLETION — one implementation per archetype pattern, bound
+  // to EVERY generated zone (Cairo's proven mentor/marker/elite patterns,
+  // generalized). Mentors are persistent NPCs in their home-city chunks;
+  // story markers / fetch pickups / elite bosses exist only while their beat
+  // is the ACTIVE quest and clean up on any change (retry-friendly).
+  private regionMentors: { beatId: string; zoneId: string; pos: { x: number; y: number } }[] = [];
+  private mentorButton!: TouchButton;
+  private mentorNear?: { beatId: string; zoneId: string; pos: { x: number; y: number } };
+  private beatMarker?: { beatId: string; pos: { x: number; y: number }; objs: Phaser.GameObjects.GameObject[] };
+  private beatPickups?: { beatId: string; taken: number; items: { obj: Phaser.GameObjects.Arc; taken: boolean; x: number; y: number }[] };
+  private beatElite?: { beatId: string; zoneId: string; kind: 'demon' | 'angel'; entity: Demon | AngelEnemy; label: Phaser.GameObjects.Text };
   /** Per-chunk terrain colliders, each bound to its OWN region world. */
   private regionColliders: { c: Phaser.Physics.Arcade.Collider; worldId: WorldId }[] = [];
   /** Proximity travel gates. destWorld makes a gate CROSS-WORLD (Egypt↔Africa). */
@@ -1343,6 +1359,7 @@ export class MainScene extends Phaser.Scene {
     this.burnButton = new TouchButton(this, 'Burn the Grove', () => this.tryArcAction());
     // CAIRO binding: the Keeper's proximity talk button (Egypt world only).
     this.cairoMentorButton = new TouchButton(this, 'Speak with the Keeper', () => this.cairoMentorTalk());
+    this.mentorButton = new TouchButton(this, 'Speak with the Mentor', () => this.regionMentorTalk());
     this.zoomControls = new ZoomControls(this, cam, this.map.pixelWidth, this.map.pixelHeight);
     this.readout = new DebugReadout(this, () => this.activeMap(), this.player);
     // DEV-only live perf readout (FPS / frame-time + entity, effect + pool counts) so
@@ -6006,6 +6023,19 @@ export class MainScene extends Phaser.Scene {
       origin.y + chunk.arrivalLocalPx.y,
     );
 
+    // MENTOR (generic beat completion): a home-city chain's opening story beat
+    // gets a persistent placeholder elder beside the arrival — Cairo's Keeper
+    // pattern, generalized. Nameplate = the beat title; talking accepts +
+    // completes the manual-start opener (class gating decides availability).
+    const opener = zone.questChain[0];
+    if (zone.homeClass && opener?.archetype === 'story') {
+      MainScene.ensureKeeperTexture(this);
+      const mpos = map.nearestWalkableWorld(origin.x + chunk.arrivalLocalPx.x + 96, origin.y + chunk.arrivalLocalPx.y + 40);
+      this.add.image(mpos.x, mpos.y, 'cairo-keeper').setDepth(9);
+      this.addHeavenLabel(mpos.x, mpos.y - 34, opener.title, '#ffe9a8');
+      this.regionMentors.push({ beatId: opener.id, zoneId: id, pos: mpos });
+    }
+
     // BOSS ANCHOR: mirror the (south) arrival to the settlement's NORTH side —
     // where a boss beat's region champion spawns. Marked when the zone has one.
     const bossAnchor = map.nearestWalkableWorld(
@@ -6233,6 +6263,212 @@ export class MainScene extends Phaser.Scene {
     g.destroy();
   }
 
+  // --- GENERIC BEAT COMPLETION: every generated chain hand-playable ------------
+  //
+  // ONE implementation per archetype pattern — nothing per-beat. Cairo's four
+  // proven mechanics, generalized to every stamped zone: mentor talk (opening
+  // story beat of a home-city chain), story-marker walk-in (all other story
+  // beats), fetch pickups, and an elite fallback for boss beats WITHOUT a
+  // champion spec. Already-completable beats (clears, harvests, escorts,
+  // champions, Cairo's own binding) are untouched. ALL prose stays a
+  // HAND_AUTHORED_TODO placeholder for hand-authored beats.
+
+  /** Placeholder prose for a beat's banner — never invented content. */
+  private beatProse(zone: ManifestZone, beat: QuestBeat): string {
+    return beat.handAuthored === true || zone.handAuthored === true
+      ? `HAND_AUTHORED_TODO: ${beat.id} — designer prose goes here.`
+      : `${beat.title} — ${beat.summary}`;
+  }
+
+  /** The mentor's talk action (generic Cairo Keeper): ACCEPT the manual-start
+   *  class-gated opener if available, then complete it. Idle line otherwise. */
+  private regionMentorTalk(): void {
+    const m = this.mentorNear;
+    if (!m) return;
+    const hit = this.regionBeatForQuest(m.beatId);
+    if (!hit) return;
+    const st = this.chain.status(m.beatId);
+    if (st === 'available' || st === 'active') {
+      if (st === 'available') this.chain.accept(m.beatId);
+      // Trigger FIRST, prose banner AFTER — the placeholder line outlives the
+      // completion's reward banner (which fires synchronously in between).
+      this.notifyQuest(triggerForBeat(hit.beat) as ObjectiveTrigger);
+      this.showBanner(this.beatProse(hit.zone, hit.beat), 2800);
+    } else {
+      this.showBanner(`HAND_AUTHORED_TODO: ${m.beatId} (idle line) — designer prose goes here.`, 2200);
+    }
+  }
+
+  /** Per-frame (region worlds): mentors' proximity button + the ACTIVE beat's
+   *  marker / pickups / elite, spawned and cleaned by archetype. */
+  private updateRegionBeatObjectives(): void {
+    // MENTORS: persistent NPCs; the nearest within range owns the shared button.
+    let near: (typeof this.regionMentors)[number] | undefined;
+    for (const m of this.regionMentors) {
+      if (Phaser.Math.Distance.Between(this.player.x, this.player.y, m.pos.x, m.pos.y) <= MENTOR_INTERACT_RANGE) {
+        near = m;
+        break;
+      }
+    }
+    this.mentorNear = near;
+    const free = !this.transitioning && !this.dialogue.isOpen() && !this.talkButton.isVisible && !this.cityGateButton.isVisible && !this.playerDead;
+    this.mentorButton.setVisible(!!near && free);
+
+    const q = this.chain.activeQuest;
+    const hit = this.regionBeatForQuest(q?.id);
+    const zone = hit ? this.regionSpawnZones.find((z) => z.zoneId === hit.zone.id) : undefined;
+    const isMentorBeat = !!q && this.regionMentors.some((m) => m.beatId === q.id);
+
+    // STORY MARKER (every non-mentor story beat): a pulsing site in the beat's
+    // zone; walking in completes it (Cairo's discovery pattern).
+    const wantMarker = !!q && !!hit && !!zone && hit.beat.archetype === 'story' && !isMentorBeat;
+    if (this.beatMarker && (!wantMarker || this.beatMarker.beatId !== q?.id)) this.clearBeatMarker();
+    if (wantMarker && !this.beatMarker) this.spawnBeatMarker(q.id, zone);
+    if (this.beatMarker && q && hit && this.beatMarker.beatId === q.id && !this.playerDead) {
+      const d = Phaser.Math.Distance.Between(this.player.x, this.player.y, this.beatMarker.pos.x, this.beatMarker.pos.y);
+      if (d <= BEAT_MARKER_RADIUS) {
+        this.clearBeatMarker();
+        this.notifyQuest(triggerForBeat(hit.beat) as ObjectiveTrigger);
+        this.showBanner(this.beatProse(hit.zone, hit.beat), 2800); // prose outlives the reward banner
+      }
+    }
+
+    // FETCH PICKUPS: three glowing objects around the settlement; collecting
+    // all of them completes the beat.
+    const wantPickups = !!q && !!hit && !!zone && hit.beat.archetype === 'fetch';
+    if (this.beatPickups && (!wantPickups || this.beatPickups.beatId !== q?.id)) this.clearBeatPickups();
+    if (wantPickups && !this.beatPickups) this.spawnBeatPickups(q.id, zone);
+    if (this.beatPickups && q && hit && this.beatPickups.beatId === q.id && !this.playerDead) {
+      for (const it of this.beatPickups.items) {
+        if (it.taken) continue;
+        if (Phaser.Math.Distance.Between(this.player.x, this.player.y, it.x, it.y) <= BEAT_PICKUP_RADIUS) {
+          it.taken = true;
+          this.tweens.killTweensOf(it.obj);
+          it.obj.destroy();
+          this.beatPickups.taken++;
+          this.showBanner(`${hit.beat.title} — ${this.beatPickups.taken}/${BEAT_PICKUP_COUNT} recovered.`, 1600);
+        }
+      }
+      if (this.beatPickups.taken >= BEAT_PICKUP_COUNT) {
+        this.clearBeatPickups();
+        this.notifyQuest(triggerForBeat(hit.beat) as ObjectiveTrigger);
+        this.showBanner(this.beatProse(hit.zone, hit.beat), 2800); // prose outlives the reward banner
+      }
+    }
+
+    // ELITE BOSS FALLBACK (boss beats with NO champion spec): one boosted
+    // enemy of the beat's family at the zone's boss anchor — Cairo's gate
+    // scout, tier-scaled. Champion life-cycle rules: exists only while the
+    // beat is active + the chunk is active; leaving/dying resets for a retry;
+    // completion means it never respawns (the beat is no longer active).
+    const wantElite = !!q && !!hit && !!zone && hit.beat.archetype === 'boss' && !CHAMPION_SPECS[q.id];
+    if (this.beatElite) {
+      if (!this.beatElite.entity.isAlive) {
+        // A REAL defeat (despawns go through despawnBeatElite, never here).
+        if (q && hit && this.beatElite.beatId === q.id) {
+          this.notifyQuest(triggerForBeat(hit.beat) as ObjectiveTrigger);
+          this.showBanner(this.beatProse(hit.zone, hit.beat), 2800); // prose outlives the reward banner
+        }
+        this.beatElite.label.destroy();
+        this.beatElite = undefined;
+      } else if (!wantElite || this.beatElite.beatId !== q?.id || this.playerDead || !zone?.active) {
+        this.despawnBeatElite();
+      } else {
+        this.beatElite.label.setPosition(this.beatElite.entity.sprite.x, this.beatElite.entity.sprite.y - 46);
+      }
+    }
+    if (wantElite && !this.beatElite && zone.active && !this.playerDead && hit) {
+      this.spawnBeatElite(q.id, hit.zone.id, hit.beat.enemyFamily ?? 'lesser-evil-scouts', hit.zone.tier, hit.beat.title);
+    }
+  }
+
+  /** Deterministic story-marker site: west of the settlement, off the arrival. */
+  private spawnBeatMarker(beatId: string, zone: (typeof this.regionSpawnZones)[number]): void {
+    const pos = this.activeMap().nearestWalkableWorld(zone.center.x - zone.radiusPx * 0.55, zone.center.y + zone.radiusPx * 0.25);
+    const hit = this.regionBeatForQuest(beatId);
+    const ring = this.add.circle(pos.x, pos.y, 16, 0x6a4a2a, 0.5).setStrokeStyle(2, 0x9a6a3a, 0.9).setDepth(6);
+    this.tweens.add({ targets: ring, scale: 1.5, alpha: 0.2, duration: 1400, yoyo: true, repeat: -1, ease: 'Sine.inOut' });
+    const label = this.add
+      .text(pos.x, pos.y - 24, `${hit?.beat.title ?? beatId} (approach)`, { fontFamily: 'system-ui, sans-serif', fontSize: '13px', color: '#cfd6e0' })
+      .setOrigin(0.5)
+      .setStroke('#101830', 4)
+      .setDepth(6);
+    this.beatMarker = { beatId, pos, objs: [ring, label] };
+  }
+
+  private clearBeatMarker(): void {
+    if (!this.beatMarker) return;
+    for (const o of this.beatMarker.objs) {
+      this.tweens.killTweensOf(o);
+      o.destroy();
+    }
+    this.beatMarker = undefined;
+  }
+
+  /** Three pickups on a ring outside the settlement walls, walkable-snapped. */
+  private spawnBeatPickups(beatId: string, zone: (typeof this.regionSpawnZones)[number]): void {
+    const items: NonNullable<typeof this.beatPickups>['items'] = [];
+    for (let i = 0; i < BEAT_PICKUP_COUNT; i++) {
+      const ang = -Math.PI / 2 + (Math.PI * 2 * i) / BEAT_PICKUP_COUNT;
+      const p = this.activeMap().nearestWalkableWorld(zone.center.x + Math.cos(ang) * zone.radiusPx * 0.4, zone.center.y + Math.sin(ang) * zone.radiusPx * 0.4);
+      const obj = this.add.circle(p.x, p.y, 10, 0xffe27a, 0.95).setStrokeStyle(2, 0xfff4c0, 1).setDepth(7);
+      this.tweens.add({ targets: obj, alpha: 0.45, scale: 1.3, duration: 900, yoyo: true, repeat: -1, ease: 'Sine.inOut' });
+      items.push({ obj, taken: false, x: p.x, y: p.y });
+    }
+    this.beatPickups = { beatId, taken: 0, items };
+  }
+
+  private clearBeatPickups(): void {
+    if (!this.beatPickups) return;
+    for (const it of this.beatPickups.items) {
+      if (!it.taken) {
+        this.tweens.killTweensOf(it.obj);
+        it.obj.destroy();
+      }
+    }
+    this.beatPickups = undefined;
+  }
+
+  /** One boosted family enemy at the boss anchor (Cairo's 320 HP scout × tier). */
+  private spawnBeatElite(beatId: string, zoneId: string, family: string, tier: number, title: string): void {
+    const anchor = this.regionBossAnchors[zoneId];
+    if (!anchor) return;
+    let entity: Demon | AngelEnemy;
+    let kind: 'demon' | 'angel';
+    if (family === 'lesser-angels' || family === 'radiant-guardians' || family === 'herald-angels') {
+      const v = family === 'herald-angels' ? 'herald' : family === 'radiant-guardians' ? 'warden' : 'lesser';
+      entity = this.spawnAngel(v, anchor.x, anchor.y); // angelic look, no domain tint (canon)
+      kind = 'angel';
+    } else {
+      const d = this.spawnDemon(anchor.x, anchor.y, this.activeMap().layer);
+      d.sprite.setTint(DOMAIN_TINT[EXISTING_FAMILY_DOMAIN[family] ?? 'physical']);
+      entity = d;
+      kind = 'demon';
+    }
+    entity.sprite.setScale(entity.sprite.scale * 1.4);
+    entity.health.setMax(BEAT_ELITE_HP_PER_TIER * tier);
+    entity.health.full();
+    const label = this.add
+      .text(anchor.x, anchor.y - 46, `☠ ${title}`, { fontFamily: 'system-ui, sans-serif', fontSize: '14px', color: '#e6d6ff', fontStyle: 'bold' })
+      .setOrigin(0.5)
+      .setStroke('#101830', 4)
+      .setDepth(40);
+    this.beatElite = { beatId, zoneId, kind, entity, label };
+  }
+
+  /** Silent removal (retry semantics) — never counts as a defeat. */
+  private despawnBeatElite(): void {
+    if (!this.beatElite) return;
+    const e = this.beatElite.entity;
+    if (e.isAlive) {
+      e.destroy();
+      if (this.beatElite.kind === 'angel') this.angels = this.angels.filter((a) => (a as unknown) !== e);
+      else this.demons = this.demons.filter((d) => (d as unknown) !== e);
+    }
+    this.beatElite.label.destroy();
+    this.beatElite = undefined;
+  }
+
   // --- NESTED CITIES: the generic city sub-map system --------------------------
   //
   // Every CityDef in world/cities.ts becomes a small registered WORLD (CPU layer,
@@ -6376,6 +6612,7 @@ export class MainScene extends Phaser.Scene {
     this.updateRegionAmbushers(); // the veil-ambusher hidden/burst/re-hide machine
     this.updateRegionChampion(); // the active boss beat's region champion
     this.updateRegionEscort(); // the active escort beat's convoy run
+    this.updateRegionBeatObjectives(); // mentors / story markers / pickups / elites
     // DEV overlay: at low zoom the chunks are unreadable — show big zone-name
     // labels at constant SCREEN size so the zoomed-out view reads as a map.
     if (this.regionZoneLabels.length > 0) {

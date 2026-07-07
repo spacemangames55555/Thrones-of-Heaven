@@ -1771,6 +1771,18 @@ export const CAIRO_DISCOVERY_RADIUS = 130;
 /** Ambient replenish cadence: dead posts refill while the player is away (ms). */
 export const CAIRO_REPLENISH_MS = 6000;
 
+// --- GENERIC BEAT COMPLETION (every generated chain hand-playable) -----------
+/** Mentor talk-button proximity (px) — Cairo's proven range. */
+export const MENTOR_INTERACT_RANGE = 110;
+/** Story-beat marker walk-in radius (px) — Cairo's discovery radius. */
+export const BEAT_MARKER_RADIUS = 130;
+/** Fetch pickup collect radius (px). */
+export const BEAT_PICKUP_RADIUS = 52;
+/** Fetch pickups per beat. */
+export const BEAT_PICKUP_COUNT = 3;
+/** Elite (non-champion) boss HP per zone tier — Cairo's 320 HP scout is tier 1. */
+export const BEAT_ELITE_HP_PER_TIER = 320;
+
 /** NESTED CITIES: how close (px) to a city gate the Enter/Leave button shows.
  *  Must comfortably cover the fixed arrival spots on BOTH sides of the gate
  *  (inside ~96px, outside ~64px) so the button is available right on arrival. */

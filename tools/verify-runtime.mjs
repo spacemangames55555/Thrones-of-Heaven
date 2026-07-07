@@ -785,6 +785,110 @@ try {
     JSON.stringify(cairo),
   );
 
+  // 3p. GENERIC BEAT COMPLETION — one full home chain per continent plays END
+  // TO END by real actions: mentor talk (proximity button + the same handler),
+  // five real kills, the story-marker walk-in, the elite-boss kill. All three
+  // chains share the mentor→clear→story→boss shape.
+  const playHomeChain = (params) =>
+    page.evaluate(async ({ className, zoneId, ids }) => {
+      const ms = window.__ready();
+      const wait = (t) => new Promise((r) => setTimeout(r, t));
+      ms.devClassOverride = className;
+      ms.announcePlayerClass();
+      ms.chain.load({ completed: [], activeId: null, activeObjective: 0 }); // the verified-clean fresh-start state
+      ms.applyWorldSwap('globe', ms.regionZoneArrivals[zoneId]);
+      ms.playerHealth.shield = 1e9; // re-arm past the swap's debuff clear
+      await wait(1700); // transition + chunk activation + packs
+      // 1) the mentor: stand beside the elder; the button must offer itself.
+      const m = ms.regionMentors.find((x) => x.zoneId === zoneId);
+      if (!m) return { step: 'no mentor registered' };
+      ms.player.sprite.body.reset(m.pos.x + 40, m.pos.y);
+      await wait(500);
+      const btn = ms.mentorButton.isVisible;
+      ms.regionMentorTalk();
+      await wait(300);
+      const s1 = ms.chain.status(ids[0]);
+      // 2) the clear: five REAL wildlife kills inside the zone.
+      const prey = ms.regionLive.filter((r) => r.zoneId === zoneId && r.family === 'corrupted-wildlife' && r.entity.isAlive).slice(0, 5);
+      for (const r of prey) r.entity.takeHit(999999);
+      await wait(800);
+      const s2 = ms.chain.status(ids[1]);
+      // 3) the discovery: walk onto the story marker.
+      await wait(400); // marker spawns once the beat is active
+      const mk = ms.beatMarker;
+      if (mk) ms.player.sprite.body.reset(mk.pos.x, mk.pos.y);
+      await wait(600);
+      const s3 = ms.chain.status(ids[2]);
+      // 4) the first evil: fell the elite at the boss anchor.
+      await wait(700); // elite spawns (beat active + chunk active)
+      const el = ms.beatElite;
+      if (el) el.entity.takeHit(999999);
+      await wait(700);
+      const s4 = ms.chain.status(ids[3]);
+      ms.devClassOverride = null;
+      ms.announcePlayerClass();
+      return { btn, prey: prey.length, marker: !!mk, elite: !!el, s1, s2, s3, s4 };
+    }, params);
+  for (const chain of [
+    { name: 'Europe (Rome, Priest)', className: 'Priest', zoneId: 'rome-eternal-seat', ids: ['rom-01-mentor', 'rom-02-catacomb-vermin', 'rom-03-reliquary-rot', 'rom-04-appian-gate'] },
+    { name: 'Africa (Kinshasa, Witch Doctor)', className: 'Witch Doctor', zoneId: 'kinshasa-river-drum', ids: ['kin-01-mentor', 'kin-02-first-blood', 'kin-03-discovery', 'kin-04-first-evil'] },
+    { name: 'Asia (Lhasa, Monk)', className: 'Monk', zoneId: 'lhasa-prayer-citadel', ids: ['lha-01-mentor', 'lha-02-first-blood', 'lha-03-discovery', 'lha-04-first-evil'] },
+  ]) {
+    const r = await playHomeChain(chain);
+    ok(
+      `home chain end to end by hand: ${chain.name}`,
+      r.btn && r.prey === 5 && r.marker && r.elite && r.s1 === 'complete' && r.s2 === 'complete' && r.s3 === 'complete' && r.s4 === 'complete',
+      JSON.stringify(r),
+    );
+  }
+
+  // 3q. HAND-AUTHORED MARCH BEAT: as-01 (Azazel's Asia arrival) completes via
+  // its marker with the HAND_AUTHORED_TODO placeholder intact — structure
+  // playable, prose still the designer's to write.
+  const march = await page.evaluate(async () => {
+    const ms = window.__ready();
+    const wait = (t) => new Promise((r) => setTimeout(r, t));
+    ms.devJumpToQuest('as-01-azazel-welcome');
+    ms.playerHealth.shield = 1e9;
+    await wait(2600); // travel + chunk activation + the marker
+    const mk = ms.beatMarker;
+    if (!mk || mk.beatId !== 'as-01-azazel-welcome') return { marker: false };
+    ms.player.sprite.body.reset(mk.pos.x, mk.pos.y);
+    await wait(600);
+    const banner = ms.banner.text;
+    const def = ms.chain.get('as-01-azazel-welcome');
+    return {
+      marker: true,
+      status: ms.chain.status('as-01-azazel-welcome'),
+      bannerTodo: banner.includes('HAND_AUTHORED_TODO: as-01-azazel-welcome'),
+      defTodo: def.npcInactiveLines[0].includes('HAND_AUTHORED_TODO'),
+    };
+  });
+  ok(
+    'march beat: as-01 completes via its marker with the TODO placeholder intact',
+    march.marker && march.status === 'complete' && march.bannerTodo && march.defTodo,
+    JSON.stringify(march),
+  );
+
+  // 3r. FETCH PICKUPS: set-02 (Passage West) completes by collecting all three
+  // glowing pickups with real walks.
+  const fetchRun = await page.evaluate(async () => {
+    const ms = window.__ready();
+    const wait = (t) => new Promise((r) => setTimeout(r, t));
+    ms.devJumpToQuest('set-02-passage-west');
+    ms.playerHealth.shield = 1e9;
+    await wait(2600);
+    const pk = ms.beatPickups;
+    if (!pk || pk.beatId !== 'set-02-passage-west') return { pickups: 0 };
+    const spots = pk.items.map((i) => ({ x: i.x, y: i.y }));
+    for (const s of spots) {
+      ms.player.sprite.body.reset(s.x, s.y);
+      await wait(400);
+    }
+    return { pickups: spots.length, status: ms.chain.status('set-02-passage-west') };
+  });
+  ok('fetch beat: set-02 completes by collecting all three pickups', fetchRun.pickups === 3 && fetchRun.status === 'complete', JSON.stringify(fetchRun));
+
   // 4) THE GATE: zero page errors across everything above.
   ok('zero page errors during boot + travel', pageErrors.length === 0, pageErrors.slice(0, 3).join(' | '));
 } finally {
