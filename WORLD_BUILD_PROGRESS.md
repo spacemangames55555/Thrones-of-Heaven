@@ -165,7 +165,7 @@ class-variant TODO. Build order = manifest order:
 - [x] uluru-heart-stone — done. Uluru portal terminal (structure only); ul-11 + ul-12 marker-playable, prose TODO. ULURU REGION COMPLETE: Sydney → the Heart Stone walkable end to end.
 
 ### TEOTIHUACAN — The Savage's Tour (8)
-- [ ] mexico-lake-crown — Savage home city (Act I chain mex-01..04)
+- [x] mexico-lake-crown — done. Savage home city in the Valley of Mexico (class-gated manual-start chain; fresh starts clean). TODOs: mex-01, mex-03 prose.
 - [ ] oaxaca-cloud-valley — corridor; clear + Zapotec seal fetch
 - [ ] palenque-jungle-court — corridor; ambusher clear + jungle escort
 - [ ] yucatan-serpent-steps — corridor; The Serpent of the Steps champion (yuc-01)
