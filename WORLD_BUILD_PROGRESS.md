@@ -138,4 +138,4 @@ atlantean). Build order = manifest order:
 - [x] bangkok-delta-gate — done. Delta city; the Java↔Bangkok BOAT-DOOR pair lands the island road on the mainland; ban-01 delta escort live; ban-02 raider clear live.
 - [x] angkor-stone-map — done. Jungle-temple corridor; Bangkok↔Angkor gates; The Temple Warden (Spiritual, summon-adds — calls the zone·s own ambushers/casters) live at the boss anchor; ang-01 story structural.
 - [x] yunnan-cloud-steps — done. Highland-jungle corridor; Angkor↔Yunnan gates; yun-01 clear live; yun-02 caravan escort live (the second Kham anyOf arm is earnable).
-- [ ] kham-eastern-plateau — corridor; the sea road and island road merge → Jade Gate
+- [x] kham-eastern-plateau — done. Eastern-plateau corridor; Sichuan↔Kham, Yunnan↔Kham AND Kham↔Jade Gate gates all materialize — the sea road and the island road become one and the WHOLE REGION closes: all 17 zones built, every spine converging on the Jade Gate → the Ascent → the Jade Court.
