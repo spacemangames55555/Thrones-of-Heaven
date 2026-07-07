@@ -152,7 +152,7 @@ class-variant TODO. Build order = manifest order:
 - [x] pearl-coast — done. Gulf corridor; Dubai↔Pearl Coast gates open the Assassin spine; prl-01 raider clear + prl-02 pearl pickups + prl-03 escort all live.
 - [x] mesopotamian-marshes — done. The Reed Sea; Pearl Coast↔Marshes gates; The Reed King (Mental, summon-adds) live at the boss anchor; mar-02 ambusher clear + mar-03 channel escort live.
 - [x] shinar-muster — done. Act IV outpost at Babylon; Marshes↔Shinar gates; angel packs + bb-02 harvest live; bb-01 (Azazel arrival + the Babel gift line) marker-playable, prose TODO.
-- [ ] processional-way — the 8-beat Act IV march (bb-03..bb-10; bb-06 callback ×1 Assassin)
+- [x] processional-way — done. The 8-beat Babel march; Shinar↔Way gates; bb-04 clear + bb-05 convoy + bb-08 kneeling-angel elite + bb-10 harvest live; bb-06 scaffolds ONE Assassin variant TODO. TODOs: bb-03, bb-06, bb-07, bb-09 prose. (Chunks overlap Shinar slightly — real-world spacing; corridors have no walls, cosmetic only.)
 - [ ] etemenanki-stair — portal terminal (bb-11 mask drop, bb-12 threshold)
 
 ### ULURU — The Hunter's Songline (7)
