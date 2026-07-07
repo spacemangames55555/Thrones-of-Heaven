@@ -151,7 +151,7 @@ class-variant TODO. Build order = manifest order:
 - [x] dubai-glass-souk — done. Assassin home city on the Gulf (class-gated manual-start chain; mentor/marker/elite mechanics inherited). TODOs: dub-01, dub-03 prose.
 - [x] pearl-coast — done. Gulf corridor; Dubai↔Pearl Coast gates open the Assassin spine; prl-01 raider clear + prl-02 pearl pickups + prl-03 escort all live.
 - [x] mesopotamian-marshes — done. The Reed Sea; Pearl Coast↔Marshes gates; The Reed King (Mental, summon-adds) live at the boss anchor; mar-02 ambusher clear + mar-03 channel escort live.
-- [ ] shinar-muster — Act IV outpost (bb-01 Azazel + Babel gift line TODO; bb-02 harvest)
+- [x] shinar-muster — done. Act IV outpost at Babylon; Marshes↔Shinar gates; angel packs + bb-02 harvest live; bb-01 (Azazel arrival + the Babel gift line) marker-playable, prose TODO.
 - [ ] processional-way — the 8-beat Act IV march (bb-03..bb-10; bb-06 callback ×1 Assassin)
 - [ ] etemenanki-stair — portal terminal (bb-11 mask drop, bb-12 threshold)
 

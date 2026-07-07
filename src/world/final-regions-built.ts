@@ -15,6 +15,7 @@ export const FINAL_REGIONS_BUILT_ZONES: string[] = [
   'dubai-glass-souk',
   'pearl-coast',
   'mesopotamian-marshes',
+  'shinar-muster',
 ];
 
 /** Generated QuestDefs for every BUILT final-region zone (the shared factory). */
