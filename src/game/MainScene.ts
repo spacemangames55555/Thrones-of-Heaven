@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { GameMap } from '../map/GameMap';
-import { preloadTerrainTiles } from '../render/tileAtlas';
+import { preloadTerrainTiles, drawIntoAtlasCell } from '../render/tileAtlas';
+import { preloadSpriteOverrides, applySpriteOverrides, applySpriteOverride } from '../render/spriteOverrides';
 import { Player } from '../entities/Player';
 import { Npc } from '../entities/Npc';
 import { Controls } from '../input/Controls';
@@ -746,6 +747,8 @@ export class MainScene extends Phaser.Scene {
   private cityGateAction: (() => void) | null = null;
   /** DEV: overrides the class announced to the quest chain (null = real class). */
   private devClassOverride: string | null = null;
+  /** The drop-in art seams, exposed for the runtime gate (mechanism checks). */
+  readonly artOverrides = { drawIntoAtlasCell, applySpriteOverride };
 
   // REGION WORLDS — the sparse chunked worlds (Europe today, Africa next; see
   // SparseWorldMap). Chunks are small standalone GameMaps; the void between
@@ -1014,9 +1017,14 @@ export class MainScene extends Phaser.Scene {
   /** Load real terrain tile art before create() builds the atlas (drop-in PNG path). */
   preload(): void {
     preloadTerrainTiles(this);
+    preloadSpriteOverrides(this);
   }
 
   create(): void {
+    // SPRITE DROP-INS first: any loaded override mints its canonical texture
+    // key BEFORE entities ensure theirs (their guards then skip the gray-box).
+    applySpriteOverrides(this);
+
     const data = washingtonMap as unknown as WashingtonMap;
 
     // Overworld map, now including the extra town tiles in its tileset.

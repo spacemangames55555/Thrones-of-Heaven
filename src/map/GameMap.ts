@@ -1,8 +1,8 @@
 import Phaser from 'phaser';
 import type { WashingtonMap, TerrainType, CityMarker, TileCoord } from './mapTypes';
-import { TILE_SIZE, atlasFrameForKey, generatePlaceholderAtlas } from '../render/tileAtlas';
+import { TILE_SIZE, ATLAS_TEXTURE_KEY, atlasFrameForKey, generatePlaceholderAtlas } from '../render/tileAtlas';
 
-const ATLAS_KEY = 'terrain-atlas';
+const ATLAS_KEY = ATLAS_TEXTURE_KEY; // shared with the drop-in override path (tileAtlas.ts)
 
 /**
  * Builds the renderable Washington map from the authored JSON:
