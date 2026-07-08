@@ -158,9 +158,26 @@ export const TERRAIN_TILE_IMAGES: { key: string; file: string }[] = [
   { key: 'hell_void', file: 'tiles/terrain/Hell_void.png' }, // Hell_void.png → Hell "Chasm" (BLOCKS — unchanged)
 ];
 
+// --- 64px MASTER TILES (the hi-res drop-in path) ------------------------------
+//
+// The same data-only contract at DOUBLE resolution: drop a PNG in
+// public/tiles/terrain-64/ (64×64, self-tiling at 64) and add ONE line here.
+// A key listed here takes PRECEDENCE over its TERRAIN_TILE_IMAGES entry: the
+// 64px master is auto-fitted into the terrain's atlas cell on the existing
+// grid (a half-scale composite — seam-free beside 32px neighbors). Keys absent
+// here fall back to the 32px list, then to the procedural placeholder. Ship
+// 64px masters going forward: when the atlas cell or renderer resolution
+// grows, the same files light up at full detail with no re-delivery.
+export const TERRAIN_TILE_IMAGES_64: { key: string; file: string }[] = [];
+
 /** Texture cache key under which a terrain's real tile PNG is loaded. */
 export function terrainTileTextureKey(key: string): string {
   return `tile-${key}`;
+}
+
+/** Texture cache key for a terrain's 64px master PNG. */
+export function terrainTile64TextureKey(key: string): string {
+  return `tile64-${key}`;
 }
 
 /** Queue the real terrain tile PNGs for loading. Call from a scene's preload(). */
@@ -169,6 +186,38 @@ export function preloadTerrainTiles(scene: Phaser.Scene): void {
     const texKey = terrainTileTextureKey(key);
     if (!scene.textures.exists(texKey)) scene.load.image(texKey, file);
   }
+  for (const { key, file } of TERRAIN_TILE_IMAGES_64) {
+    const texKey = terrainTile64TextureKey(key);
+    if (!scene.textures.exists(texKey)) scene.load.image(texKey, file);
+  }
+}
+
+/** The shared atlas texture's cache key (GameMap builds it; overrides draw into it). */
+export const ATLAS_TEXTURE_KEY = 'terrain-atlas';
+
+/**
+ * Auto-fit ONE loaded source image into a terrain's atlas CELL (the 64px
+ * master path, and the alignment seam the runtime gate exercises). Draws with
+ * high-quality scaling into exactly the cell's 32px rect, refreshes the canvas
+ * texture, and returns the cell origin — or null when the terrain/source is
+ * unknown (callers fall back; never a crash).
+ */
+export function drawIntoAtlasCell(scene: Phaser.Scene, terrainKey: string, srcTextureKey: string): { ox: number; oy: number } | null {
+  const frame = frameByKey.get(terrainKey);
+  if (frame === undefined || !scene.textures.exists(srcTextureKey) || !scene.textures.exists(ATLAS_TEXTURE_KEY)) return null;
+  const src = scene.textures.get(srcTextureKey).getSourceImage();
+  if (!(src instanceof HTMLImageElement || src instanceof HTMLCanvasElement)) return null;
+  const atlas = scene.textures.get(ATLAS_TEXTURE_KEY) as Phaser.Textures.CanvasTexture;
+  const ctx = atlas.context;
+  const ox = (frame % ATLAS_COLUMNS) * TILE_SIZE;
+  const oy = Math.floor(frame / ATLAS_COLUMNS) * TILE_SIZE;
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.clearRect(ox, oy, TILE_SIZE, TILE_SIZE);
+  ctx.drawImage(src, ox, oy, TILE_SIZE, TILE_SIZE);
+  ctx.imageSmoothingEnabled = false;
+  atlas.refresh();
+  return { ox, oy };
 }
 
 // --- Placeholder atlas drawing (temporary; replaced by real art) -------------
@@ -259,7 +308,10 @@ export function generatePlaceholderAtlas(scene: Phaser.Scene, key: string): void
   // samples it nearest-neighbor (pixelArt mode) so the pixel art stays crisp.
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = 'high';
+  // 64px MASTERS take precedence over the 32px list for the same key.
+  const has64 = new Set(TERRAIN_TILE_IMAGES_64.filter(({ key }) => scene.textures.exists(terrainTile64TextureKey(key))).map(({ key }) => key));
   for (const { key } of TERRAIN_TILE_IMAGES) {
+    if (has64.has(key)) continue; // its 64px master wins below
     const frame = frameByKey.get(key);
     const texKey = terrainTileTextureKey(key);
     if (frame === undefined || !scene.textures.exists(texKey)) continue; // not loaded → keep placeholder
@@ -269,6 +321,17 @@ export function generatePlaceholderAtlas(scene: Phaser.Scene, key: string): void
     const oy = Math.floor(frame / cols) * ts;
     ctx.clearRect(ox, oy, ts, ts);
     ctx.drawImage(src, ox, oy, ts, ts); // whole source → the 32px cell
+  }
+  for (const { key } of TERRAIN_TILE_IMAGES_64) {
+    const frame = frameByKey.get(key);
+    const texKey = terrainTile64TextureKey(key);
+    if (frame === undefined || !scene.textures.exists(texKey)) continue; // missing → 32px art / placeholder stands
+    const src = scene.textures.get(texKey).getSourceImage();
+    if (!(src instanceof HTMLImageElement || src instanceof HTMLCanvasElement)) continue;
+    const ox = (frame % cols) * ts;
+    const oy = Math.floor(frame / cols) * ts;
+    ctx.clearRect(ox, oy, ts, ts);
+    ctx.drawImage(src, ox, oy, ts, ts); // 64px master → half-scale into the cell
   }
   ctx.imageSmoothingEnabled = false;
 

@@ -98,3 +98,28 @@ Currently mapped real tiles:
 1. Paint a PNG matching this grid/order exactly: `public/tiles/terrain-atlas.png`.
 2. In `src/map/GameMap.ts`, replace the `generatePlaceholderAtlas(scene, ATLAS_KEY)` call with loading that PNG as the `ATLAS_KEY` texture (e.g. preload `this.load.image(ATLAS_KEY, ...)`).
 3. To re-order/add tiles, edit the `ATLAS_TILES` array in `src/render/tileAtlas.ts` only — the terrain->frame mapping derives from it.
+
+## 64px MASTER TILES (the hi-res drop-in path)
+
+1. Author terrain art at **64×64** (self-tiling at 64 — edges must wrap so
+   neighbors join seam-free). PNG with no padding; name it after the terrain.
+2. Drop it in `public/tiles/terrain-64/` and add ONE line to
+   `TERRAIN_TILE_IMAGES_64` in `src/render/tileAtlas.ts`:
+   `{ key: '<terrainKey>', file: 'tiles/terrain-64/<Name>.png' }`.
+3. A key listed there WINS over its 32px entry; the master is auto-fitted onto
+   the terrain's cell on the existing grid (half-scale composite — pixel-exact
+   beside 32px neighbors). Keys without a 64px file fall back to the 32px art,
+   then to the procedural placeholder. Deliver 64px masters going forward: when
+   the renderer/atlas resolution grows, the same files light up at full detail.
+
+## SPRITE DROP-INS (characters, NPCs, portals)
+
+1. One PNG per creature at `public/sprites/<texture-key>.png` — any resolution
+   (64/128px masters downscale cleanly), transparent background, single
+   side-facing still (there are no animation spritesheets; motion is code).
+2. Add ONE line to `SPRITE_OVERRIDES` in `src/render/spriteOverrides.ts` with
+   the texture key and its CANONICAL size (table in that file — hitboxes key
+   off it, so art never changes gameplay). The PNG is auto-fitted to that size
+   under the same key at boot; every entity picks it up with zero code changes.
+   Note: `angel-enemy` and `townsfolk` are TINTED per variant — paint them in
+   near-white/neutral tones so the variant colors read.

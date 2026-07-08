@@ -889,6 +889,59 @@ try {
   });
   ok('fetch beat: set-02 completes by collecting all three pickups', fetchRun.pickups === 3 && fetchRun.status === 'complete', JSON.stringify(fetchRun));
 
+  // 3t. 64PX ART PATH + SPRITE DROP-IN: the MECHANISM, without shipping art.
+  // A synthetic 64px master must composite into EXACTLY its terrain's atlas
+  // cell (center lands, neighbor cell untouched — the seam contract), and a
+  // synthetic sprite override must mint a texture of exactly the canonical
+  // size. Both restore/clean up, so the run stays visually unchanged.
+  const artPath = await page.evaluate(() => {
+    const ms = window.__ready();
+    // Synthetic 64px master: magenta with a green center dot (a detail marker
+    // that must survive the half-scale fit into the 32px cell).
+    const cvs = ms.textures.createCanvas('test-64-master', 64, 64);
+    const c = cvs.context;
+    c.fillStyle = '#ff00ff';
+    c.fillRect(0, 0, 64, 64);
+    c.fillStyle = '#00ff00';
+    c.beginPath();
+    c.arc(32, 32, 8, 0, Math.PI * 2);
+    c.fill();
+    cvs.refresh();
+    const atlas = ms.textures.get('terrain-atlas');
+    const ctx = atlas.context;
+    const cell = ms.artOverrides.drawIntoAtlasCell(ms, 'steppe', 'test-64-master');
+    if (!cell) return { cell: false };
+    const before = ctx.getImageData(cell.ox, cell.oy, 32, 32); // (captured AFTER draw — restore uses the snapshot below)
+    const center = [...ctx.getImageData(cell.ox + 16, cell.oy + 16, 1, 1).data];
+    const corner = [...ctx.getImageData(cell.ox + 2, cell.oy + 2, 1, 1).data];
+    const neighbor = [...ctx.getImageData(cell.ox + 32 + 16, cell.oy + 16, 1, 1).data];
+    void before;
+    // RESTORE: re-fit the terrain's own 32px art (steppe ships real art) so the
+    // atlas is pixel-identical to a normal boot for everything after this.
+    const restored = ms.artOverrides.drawIntoAtlasCell(ms, 'steppe', 'tile-steppe') !== null;
+    const back = [...ctx.getImageData(cell.ox + 16, cell.oy + 16, 1, 1).data];
+    // SPRITE DROP-IN: the same synthetic source fitted to a canonical size
+    // under a throwaway key.
+    const ok = ms.artOverrides.applySpriteOverride(ms, 'test-sprite-override', 28, 40, 'test-64-master');
+    const spr = ok ? ms.textures.get('test-sprite-override').getSourceImage() : null;
+    const sprSize = spr ? [spr.width, spr.height] : null;
+    ms.textures.remove('test-sprite-override');
+    ms.textures.remove('test-64-master');
+    return { cell: true, center, corner, neighbor, restored, back, sprOk: ok, sprSize };
+  });
+  const magenta = (p) => p && p[0] > 200 && p[1] < 60 && p[2] > 200;
+  const green = (p) => p && p[1] > 200 && p[0] < 60;
+  ok(
+    '64px art path: a 64px master composites into exactly its atlas cell (seam intact, restore clean)',
+    artPath.cell && green(artPath.center) && magenta(artPath.corner) && !magenta(artPath.neighbor) && artPath.restored && !green(artPath.back),
+    JSON.stringify(artPath),
+  );
+  ok(
+    'sprite drop-in: an override mints the canonical key at the canonical size',
+    artPath.sprOk === true && Array.isArray(artPath.sprSize) && artPath.sprSize[0] === 28 && artPath.sprSize[1] === 40,
+    `applied=${artPath.sprOk} size=${JSON.stringify(artPath.sprSize)}`,
+  );
+
   // 4) THE GATE: zero page errors across everything above.
   ok('zero page errors during boot + travel', pageErrors.length === 0, pageErrors.slice(0, 3).join(' | '));
 } finally {
