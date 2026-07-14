@@ -176,6 +176,9 @@ export const CLASS_BASE_STATS: Record<string, ClassBaseStats> = {
   // Necromancer — Slavic death-sorcerer. IN-BETWEEN durability: hardier than the
   // fragile Wizard, squishier than the Blacksmith; normal move speed. (Tune here.)
   necromancer: { baseMaxHP: 80, hpPerLevel: 16, baseDamage: 28, dmgPerLevel: 6, moveSpeedMult: 1 },
+  // Druid — Seattle's walking ecosystem: ×0.90 HP / ×0.95 damage / ×1.00 speed of
+  // the Blacksmith baseline (rounded: 90/18 HP, 24 base damage). (Tune here.)
+  druid: { baseMaxHP: 90, hpPerLevel: 18, baseDamage: 24, dmgPerLevel: 5, moveSpeedMult: 1 },
 };
 
 /** The base-stat profile for a class id (defaults to the Blacksmith baseline). */

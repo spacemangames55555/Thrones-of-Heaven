@@ -75,6 +75,13 @@ export class AlliedSummonManager {
     this.applyBuffsToAll();
   }
 
+  /** Drop every active summon buff immediately (the runtime gate's cleanup — long
+   *  buffs like the Druid oils would otherwise bleed into later checks). */
+  clearBuffs(): void {
+    this.buffs = [];
+    this.applyBuffsToAll();
+  }
+
   /** The aggregate live multipliers from all active buffs (additive bonuses, dr capped). */
   private aggregateBuffs(): { damageBonus: number; drBonus: number; hpMult: number } {
     let dmg = 0;

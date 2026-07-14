@@ -101,6 +101,10 @@ export interface AlliedSummonConfig {
   readonly projectileRadius?: number;
   /** RANGED-only: bolt tint. */
   readonly projectileColor?: number;
+  /** ATTACKER-only: a DoT the summon's hits apply to struck enemies (the Druid's Viper
+   *  poison / Wolverine bleed). Routed through the scene's shared DoT system via the
+   *  combat ctx, so ticks/death/XP all flow through the one path. */
+  readonly attackDot?: { dmgPerTick: number; tickMs: number; durationMs: number; color: number };
 }
 
 // ─── ICE GOLEM (the proof: a tank/blocker) — EDIT THESE TO TUNE ───────────────
@@ -331,6 +335,220 @@ export const DEMON_ALLY_CONFIG: AlliedSummonConfig = {
   projectileSpeed: DEMON_ALLY_TUNING.projectileSpeed,
   projectileRadius: DEMON_ALLY_TUNING.projectileRadius,
   projectileColor: DEMON_ALLY_TUNING.projectileColor,
+};
+
+// ─── DRUID SUMMONS (Wild Kin tree; calibrated against the Necromancer roster) ──
+//
+// Five wild-kin units on the SAME foundation: two DoT-applying attackers (Viper =
+// poison, Wolverine = bleed — the new `attackDot` rider), the Chimpanzee PAIR
+// (two tougher melee units from one cast), the SCAVENGERS (untargetable timed
+// chip units on the drawsAggro=false seam), and the Polar Bear (a high-HP
+// attacking aggro magnet — the Druid's "taunt" tank, Dark-Matter-Monster tier).
+
+/** 1) VIPER — tier-1 attacker whose bites POISON (calibrated vs the Skeleton: 60HP/14dmg). */
+export const VIPER_TUNING = {
+  maxHP: 45,
+  attackDamage: 8,
+  attackDot: { dmgPerTick: 4, tickMs: 600, durationMs: 3000, color: 0x74c86a }, // poison
+  attackCooldownMs: 900,
+  attackRange: 44,
+  seekRange: 340,
+  leashRange: 540,
+  durationMs: 18000,
+  aggroRadius: 110,
+  followRange: 150,
+  moveTilesPerSec: 6.5,
+  bodyRadius: 11,
+  maxConcurrent: 2,
+  summonCooldownMs: 6000,
+  summonEnergyCost: 14,
+  tint: 0x74c86a,
+} as const;
+
+export const VIPER_CONFIG: AlliedSummonConfig = {
+  key: 'druid_viper',
+  name: 'Viper',
+  behavior: 'attacker',
+  maxHP: VIPER_TUNING.maxHP,
+  durationMs: VIPER_TUNING.durationMs,
+  aggroRadius: VIPER_TUNING.aggroRadius,
+  followRange: VIPER_TUNING.followRange,
+  moveTilesPerSec: VIPER_TUNING.moveTilesPerSec,
+  bodyRadius: VIPER_TUNING.bodyRadius,
+  tint: VIPER_TUNING.tint,
+  drawsAggro: true,
+  aggroPriority: AGGRO_TIER.MINION,
+  attackDamage: VIPER_TUNING.attackDamage,
+  attackCooldownMs: VIPER_TUNING.attackCooldownMs,
+  attackRange: VIPER_TUNING.attackRange,
+  seekRange: VIPER_TUNING.seekRange,
+  leashRange: VIPER_TUNING.leashRange,
+  attackDot: VIPER_TUNING.attackDot,
+};
+
+/** 2) WOLVERINE — tier-2 attacker whose swipes BLEED (between Skeleton and Monster). */
+export const WOLVERINE_TUNING = {
+  maxHP: 90,
+  attackDamage: 12,
+  attackDot: { dmgPerTick: 5, tickMs: 500, durationMs: 2500, color: 0xd04a3a }, // bleed
+  attackCooldownMs: 800,
+  attackRange: 48,
+  seekRange: 360,
+  leashRange: 560,
+  durationMs: 20000,
+  aggroRadius: 120,
+  followRange: 150,
+  moveTilesPerSec: 7,
+  bodyRadius: 13,
+  maxConcurrent: 2,
+  summonCooldownMs: 9000,
+  summonEnergyCost: 18,
+  tint: 0x9a7a52,
+} as const;
+
+export const WOLVERINE_CONFIG: AlliedSummonConfig = {
+  key: 'druid_wolverine',
+  name: 'Wolverine',
+  behavior: 'attacker',
+  maxHP: WOLVERINE_TUNING.maxHP,
+  durationMs: WOLVERINE_TUNING.durationMs,
+  aggroRadius: WOLVERINE_TUNING.aggroRadius,
+  followRange: WOLVERINE_TUNING.followRange,
+  moveTilesPerSec: WOLVERINE_TUNING.moveTilesPerSec,
+  bodyRadius: WOLVERINE_TUNING.bodyRadius,
+  tint: WOLVERINE_TUNING.tint,
+  drawsAggro: true,
+  aggroPriority: AGGRO_TIER.MINION,
+  attackDamage: WOLVERINE_TUNING.attackDamage,
+  attackCooldownMs: WOLVERINE_TUNING.attackCooldownMs,
+  attackRange: WOLVERINE_TUNING.attackRange,
+  seekRange: WOLVERINE_TUNING.seekRange,
+  leashRange: WOLVERINE_TUNING.leashRange,
+  attackDot: WOLVERINE_TUNING.attackDot,
+};
+
+/** 3) CHIMPANZEE PAIR — one cast spawns TWO tougher single-target melee units. */
+export const CHIMPANZEE_TUNING = {
+  maxHP: 110,
+  attackDamage: 16,
+  attackCooldownMs: 700,
+  attackRange: 46,
+  seekRange: 340,
+  leashRange: 560,
+  durationMs: 20000,
+  aggroRadius: 120,
+  followRange: 150,
+  moveTilesPerSec: 6.5,
+  bodyRadius: 14,
+  /** The PAIR: one cast spawns this many; maxConcurrent covers both. */
+  pairCount: 2,
+  maxConcurrent: 2,
+  summonCooldownMs: 14000,
+  summonEnergyCost: 24,
+  tint: 0xb08a5a,
+} as const;
+
+export const CHIMPANZEE_CONFIG: AlliedSummonConfig = {
+  key: 'druid_chimpanzee',
+  name: 'Chimpanzee',
+  behavior: 'attacker',
+  maxHP: CHIMPANZEE_TUNING.maxHP,
+  durationMs: CHIMPANZEE_TUNING.durationMs,
+  aggroRadius: CHIMPANZEE_TUNING.aggroRadius,
+  followRange: CHIMPANZEE_TUNING.followRange,
+  moveTilesPerSec: CHIMPANZEE_TUNING.moveTilesPerSec,
+  bodyRadius: CHIMPANZEE_TUNING.bodyRadius,
+  tint: CHIMPANZEE_TUNING.tint,
+  drawsAggro: true,
+  aggroPriority: AGGRO_TIER.MINION,
+  attackDamage: CHIMPANZEE_TUNING.attackDamage,
+  attackCooldownMs: CHIMPANZEE_TUNING.attackCooldownMs,
+  attackRange: CHIMPANZEE_TUNING.attackRange,
+  seekRange: CHIMPANZEE_TUNING.seekRange,
+  leashRange: CHIMPANZEE_TUNING.leashRange,
+};
+
+/** 4) SCAVENGERS — UNTARGETABLE timed chip units (drawsAggro=false seam, like the
+ *  ranged allies but melee): enemies fully ignore them; they expire after 30s. */
+export const SCAVENGER_TUNING = {
+  maxHP: 30, // moot (enemies ignore them) — shared summon plumbing
+  attackDamage: 5, // small chip damage
+  attackCooldownMs: 700,
+  attackRange: 52,
+  seekRange: 320,
+  leashRange: 560,
+  /** The 30s auto-expiry from the spec (passed as the duration override). */
+  durationMs: 30000,
+  /** One cast releases this many scavengers. */
+  count: 3,
+  maxConcurrent: 3,
+  aggroRadius: 0, // never pulls aggro (drawsAggro=false makes this moot)
+  followRange: 150,
+  moveTilesPerSec: 7,
+  bodyRadius: 11,
+  summonCooldownMs: 18000,
+  summonEnergyCost: 22,
+  tint: 0x9a8a6a,
+} as const;
+
+export const SCAVENGER_CONFIG: AlliedSummonConfig = {
+  key: 'druid_scavenger',
+  name: 'Scavenger',
+  behavior: 'attacker',
+  maxHP: SCAVENGER_TUNING.maxHP,
+  durationMs: SCAVENGER_TUNING.durationMs,
+  aggroRadius: SCAVENGER_TUNING.aggroRadius,
+  followRange: SCAVENGER_TUNING.followRange,
+  moveTilesPerSec: SCAVENGER_TUNING.moveTilesPerSec,
+  bodyRadius: SCAVENGER_TUNING.bodyRadius,
+  tint: SCAVENGER_TUNING.tint,
+  drawsAggro: false, // KEY: outside the aggro hierarchy → enemies ignore them entirely
+  aggroPriority: PLAYER_AGGRO_PRIORITY, // unused (drawsAggro=false)
+  attackDamage: SCAVENGER_TUNING.attackDamage,
+  attackCooldownMs: SCAVENGER_TUNING.attackCooldownMs,
+  attackRange: SCAVENGER_TUNING.attackRange,
+  seekRange: SCAVENGER_TUNING.seekRange,
+  leashRange: SCAVENGER_TUNING.leashRange,
+};
+
+/** 5) POLAR BEAR — the Druid's taunt-tank: a high-HP attacking AGGRO MAGNET
+ *  (Dark Matter Monster tier, calibrated slightly below its 600 HP). */
+export const POLAR_BEAR_TUNING = {
+  maxHP: 450,
+  attackDamage: 18,
+  attackCooldownMs: 1200,
+  attackRange: 60,
+  seekRange: 420,
+  leashRange: 660,
+  durationMs: 25000,
+  aggroRadius: 280, // the "taunt": a big magnet pull, like the Monster's 300
+  followRange: 180,
+  moveTilesPerSec: 5,
+  bodyRadius: 24,
+  maxConcurrent: 1,
+  summonCooldownMs: 20000,
+  summonEnergyCost: 30,
+  tint: 0xe8f0f6,
+} as const;
+
+export const POLAR_BEAR_CONFIG: AlliedSummonConfig = {
+  key: 'druid_polar_bear',
+  name: 'Polar Bear',
+  behavior: 'attacker',
+  maxHP: POLAR_BEAR_TUNING.maxHP,
+  durationMs: POLAR_BEAR_TUNING.durationMs,
+  aggroRadius: POLAR_BEAR_TUNING.aggroRadius,
+  followRange: POLAR_BEAR_TUNING.followRange,
+  moveTilesPerSec: POLAR_BEAR_TUNING.moveTilesPerSec,
+  bodyRadius: POLAR_BEAR_TUNING.bodyRadius,
+  tint: POLAR_BEAR_TUNING.tint,
+  drawsAggro: true,
+  aggroPriority: AGGRO_TIER.MAGNET, // enemies prefer the bear — the Druid's taunt
+  attackDamage: POLAR_BEAR_TUNING.attackDamage,
+  attackCooldownMs: POLAR_BEAR_TUNING.attackCooldownMs,
+  attackRange: POLAR_BEAR_TUNING.attackRange,
+  seekRange: POLAR_BEAR_TUNING.seekRange,
+  leashRange: POLAR_BEAR_TUNING.leashRange,
 };
 
 // ─── PET-TARGETED BUFFS (new buff target = your summons) ───────────────────────

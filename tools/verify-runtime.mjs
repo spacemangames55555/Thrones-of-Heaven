@@ -986,10 +986,14 @@ try {
         await wait(25);
       }
     }
-    // Clean up everything the sweep armed: timed forms expire now, summons and
-    // DoTs clear, vitals restore — the page-error gate still watches the tail.
+    // Clean up everything the sweep armed: timed forms expire now, summons (and
+    // their long pet buffs — the Druid oils run 5 minutes), friendly zones,
+    // stealth and DoTs clear, vitals restore — the page-error gate watches the tail.
     for (const t of ms.skillTimed) t.endsAt = 0;
     ms.summons.clear();
+    ms.summons.clearBuffs();
+    ms.clearFriendlyZones();
+    ms.breakPlayerStealth();
     ms.clearDots();
     ms.playerHealth.full();
     await wait(500);
@@ -997,7 +1001,7 @@ try {
   });
   ok(
     'skill framework: every skill in every tree executes; composed actions match their declared primitives',
-    skillSweep.errors.length === 0 && skillSweep.mismatches.length === 0 && skillSweep.composed === 42 && skillSweep.total >= 90,
+    skillSweep.errors.length === 0 && skillSweep.mismatches.length === 0 && skillSweep.composed === 56 && skillSweep.total >= 120,
     `total=${skillSweep.total} composed=${skillSweep.composed} bespokeActive=${skillSweep.bespokeActive} timed/other=${skillSweep.other} passive=${skillSweep.passive}` +
       (skillSweep.errors.length ? ` ERRORS=${JSON.stringify(skillSweep.errors.slice(0, 3))}` : '') +
       (skillSweep.mismatches.length ? ` MISMATCH=${JSON.stringify(skillSweep.mismatches.slice(0, 3))}` : ''),

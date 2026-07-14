@@ -98,7 +98,19 @@ import {
   AGGRO_REEVAL_INTERVAL_MS,
   AGGRO_STICKY_MARGIN,
   type AlliedSummonConfig,
+  VIPER_CONFIG,
+  VIPER_TUNING,
+  WOLVERINE_CONFIG,
+  WOLVERINE_TUNING,
+  CHIMPANZEE_CONFIG,
+  CHIMPANZEE_TUNING,
+  SCAVENGER_CONFIG,
+  SCAVENGER_TUNING,
+  POLAR_BEAR_CONFIG,
+  POLAR_BEAR_TUNING,
 } from '../summon/summonData';
+import { TAPESTRY_TUNING, BEAR_MIGHT_ID, ELEPHANT_RAGE_ID } from '../skills/druidTapestry';
+import { RESTORATION_TUNING, CLAY_ID, OIL_IMMUNITY_ID, OIL_VITALITY_ID } from '../skills/druidRestoration';
 import { PlayerPower } from '../player/PlayerPower';
 import { URIEL_SCENE } from '../story/urielData';
 import { URIEL_SENDOFF_LINES, RIFT_SCENE } from '../story/riftSceneData';
@@ -1181,6 +1193,9 @@ export class MainScene extends Phaser.Scene {
         return e ? { x: e.x, y: e.y, dist: Phaser.Math.Distance.Between(x, y, e.x, e.y) } : null;
       },
       attack: (x, y, range, damage) => this.aoeHitAll(x, y, range, damage),
+      // attackDot rider (Viper poison / Wolverine bleed): summon hits route their DoT
+      // through the SAME shared DoT system player skills use.
+      applyDot: (x, y, radius, dmgPerTick, tickMs, durationMs, color) => this.applyDotInRange(x, y, radius, dmgPerTick, tickMs, durationMs, color),
       // RANGED allies fire through the EXISTING pooled PLAYER-faction projectile path — the
       // same system player skills use, so no new pipeline + no per-shot allocation churn.
       fireProjectile: (fx, fy, tx, ty, damage, speed, range, radius, color) => {
@@ -2206,6 +2221,54 @@ export class MainScene extends Phaser.Scene {
     } else if (action === 'necro_wrecking_ball') {
       // Marrow #9 — charge into a crowd: damage + KNOCKDOWN along the path (reuses Charge).
       this.startCharge(MARROW_TUNING.wreckingBall);
+    } else if (action === 'dru_bear_might') {
+      // Druid Tapestry #4 — a crushing swipe + the bear's lingering strength (timed +damage).
+      const c = TAPESTRY_TUNING.bearMight;
+      this.runComposedSteps([{ p: 'strike', at: 'self', radius: c.radius, damage: c.damage, tint: c.tint }]);
+      this.startTimedSkill(BEAR_MIGHT_ID, c.buffMs, { damageMult: c.buffDamageMult }, c.tint);
+    } else if (action === 'dru_elephant') {
+      // Druid Tapestry #10 — a thunderous wide sweep + thick hide (timed +defense).
+      const c = TAPESTRY_TUNING.elephant;
+      this.runComposedSteps([{ p: 'strike', at: 'self', radius: c.radius, damage: c.damage, tint: 0xc8c8d8 }]);
+      this.startTimedSkill(ELEPHANT_RAGE_ID, c.buffMs, { damageReduction: c.buffDamageReduction }, c.tint);
+    } else if (action === 'dru_falcon') {
+      // Druid Tapestry #5 — falcon dive: damage + KNOCKDOWN along the path (reuses Charge).
+      this.breakPlayerStealth(); // it's an attack
+      this.startCharge(TAPESTRY_TUNING.falcon);
+    } else if (action === 'dru_clay') {
+      // Druid Restoration #4 — a heal + a short hardening (timed +defense).
+      const c = RESTORATION_TUNING.clay;
+      this.runComposedSteps([{ p: 'heal', amount: c.heal }]);
+      this.startTimedSkill(CLAY_ID, c.buffMs, { damageReduction: c.damageReduction }, c.tint);
+    } else if (action === 'dru_oil_immunity') {
+      // Druid Restoration #9 — 5-minute ally resistance: self (timed DR) + summons (pet buff).
+      const c = RESTORATION_TUNING.oilImmunity;
+      this.startTimedSkill(OIL_IMMUNITY_ID, c.durationMs, { damageReduction: c.selfDamageReduction }, c.tint);
+      this.summons.addBuff({ id: 'dru_oil_immunity', drBonus: c.summonDrBonus, durationMs: c.durationMs }, this.time.now);
+      this.showBanner('Oil of Immunity', 1200);
+    } else if (action === 'dru_oil_vitality') {
+      // Druid Restoration #10 — 5-minute ally vitality: self (timed +maxHP) + summons (pet buff).
+      const c = RESTORATION_TUNING.oilVitality;
+      this.startTimedSkill(OIL_VITALITY_ID, c.durationMs, { maxHPMult: c.selfMaxHPMult }, c.tint);
+      this.summons.addBuff({ id: 'dru_oil_vitality', hpBonus: c.summonHpBonus, durationMs: c.durationMs }, this.time.now);
+      this.showBanner('Oil of Vitality', 1200);
+    } else if (action === 'dru_viper') {
+      this.summonAlliedUnits(VIPER_CONFIG, 1, VIPER_TUNING.maxConcurrent); // Wild Kin #2 — poison attacker
+      this.showBanner('Viper summoned', 1000);
+    } else if (action === 'dru_wolverine') {
+      this.summonAlliedUnits(WOLVERINE_CONFIG, 1, WOLVERINE_TUNING.maxConcurrent); // Wild Kin #4 — bleed attacker
+      this.showBanner('Wolverine summoned', 1000);
+    } else if (action === 'dru_chimp_pair') {
+      // Wild Kin #6 — the PAIR summon: two bonded melee units from one cast.
+      this.summonAlliedUnits(CHIMPANZEE_CONFIG, CHIMPANZEE_TUNING.pairCount, CHIMPANZEE_TUNING.maxConcurrent);
+      this.showBanner('Chimpanzee pair summoned', 1200);
+    } else if (action === 'dru_scavengers') {
+      // Wild Kin #8 — UNTARGETABLE timed chip units (drawsAggro=false + 30s override).
+      this.summonAlliedUnits(SCAVENGER_CONFIG, SCAVENGER_TUNING.count, SCAVENGER_TUNING.maxConcurrent, SCAVENGER_TUNING.durationMs);
+      this.showBanner('Scavengers released', 1200);
+    } else if (action === 'dru_polar_bear') {
+      this.summonAlliedUnits(POLAR_BEAR_CONFIG, 1, POLAR_BEAR_TUNING.maxConcurrent); // Wild Kin #9 — the taunt tank
+      this.showBanner('Polar Bear summoned', 1200);
     }
   }
 
@@ -2336,6 +2399,7 @@ export class MainScene extends Phaser.Scene {
       const inWedge = (ex: number, ey: number): boolean => this.inCone(px, py, dx, dy, ex, ey, s.range, half);
       this.aoeHitAll(px, py, s.range, this.skillDamage(s.damage), inWedge);
       if (s.knockback) this.knockbackEnemiesInRange(px, py, s.range, s.knockback, s.knockbackStunMs ?? 200, inWedge);
+      if (s.slowFactor !== undefined && s.slowMs) this.slowEnemiesInRange(px, py, s.range, s.slowMs, s.slowFactor, inWedge);
     } else if (s.p === 'line') {
       const { dx, dy } = this.facingUnit();
       const x2 = px + dx * s.length;
@@ -3631,9 +3695,10 @@ export class MainScene extends Phaser.Scene {
   // --- Control primitives: SLOW (per-enemy velocity scale) + WEAKEN + reactive ---
 
   /** SLOW: scale the movement speed of enemies in range to `factor` (0.5 = half) for `ms`. */
-  private slowEnemiesInRange(x: number, y: number, range: number, ms: number, factor: number): void {
+  private slowEnemiesInRange(x: number, y: number, range: number, ms: number, factor: number, where?: (ex: number, ey: number) => boolean): void {
     const until = this.time.now + ms;
     for (const e of this.combatEnemiesInRange(x, y, range)) {
+      if (where && !where(e.x, e.y)) continue; // shape filter (the Chill cone)
       const cur = this.slowedEnemies.get(e);
       // Keep the strongest slow + the latest expiry while refreshed (auras refresh each frame).
       this.slowedEnemies.set(e, { until: Math.max(cur?.until ?? 0, until), factor: Math.min(cur?.factor ?? 1, factor) });
