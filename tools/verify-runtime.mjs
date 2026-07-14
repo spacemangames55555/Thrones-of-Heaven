@@ -74,6 +74,46 @@ try {
     }
   }
 
+  // 1b. THE SELECT SCREEN IS THE REAL DOOR (permanent): the fresh-start loop below
+  // starts classes PROGRAMMATICALLY, so a missing select card could ship while every
+  // check passed (exactly how the Druid card went missing from the live deploy).
+  // This check drives the REAL UI: the select screen must list exactly one card per
+  // REGISTERED class, and CLICKING each card must start MainScene as that class.
+  const registeredIds = await (async () => {
+    await page.goto(`http://localhost:${PORT}/`, { waitUntil: 'load' });
+    await page.waitForFunction(() => !!window.__game && window.__game.scene.isActive('TitleScene'), { timeout: 25000 });
+    return page.evaluate(() => Object.keys(window.__game.scene.getScene('MainScene').classSkillsAll));
+  })();
+  const startedIds = [];
+  let selectCards = -1;
+  for (let i = 0; i < registeredIds.length; i++) {
+    await page.goto(`http://localhost:${PORT}/`, { waitUntil: 'load' });
+    await page.waitForFunction(() => !!window.__game && window.__game.scene.isActive('TitleScene'), { timeout: 25000 });
+    await page.evaluate(() => {
+      localStorage.clear();
+      window.__game.scene.getScene('TitleScene').scene.start('CharacterSelectScene');
+    });
+    await page.waitForTimeout(600);
+    const cards = await page.evaluate(() => {
+      const sc = window.__game.scene.getScene('CharacterSelectScene');
+      return sc.children.list
+        .filter((o) => o.type === 'Rectangle' && o.input && o.input.enabled)
+        .map((r) => ({ x: r.x, y: r.y + r.displayHeight / 2 }))
+        .sort((a, b) => a.y - b.y);
+    });
+    selectCards = cards.length;
+    if (i >= cards.length) break; // fewer cards than classes → the assert below fails loudly
+    await page.mouse.click(cards[i].x, cards[i].y); // the REAL door: a pointer tap on the card
+    await page.waitForFunction(() => window.__game.scene.isActive('MainScene'), { timeout: 25000 });
+    await page.waitForTimeout(1200);
+    startedIds.push(await page.evaluate(() => window.__game.scene.getScene('MainScene').classId));
+  }
+  ok(
+    'select screen: one card per registered class; each card CLICK starts its class (real UI path)',
+    selectCards === registeredIds.length && startedIds.length === registeredIds.length && registeredIds.every((id) => startedIds.includes(id)),
+    `cards=${selectCards} registered=[${registeredIds.join(',')}] started=[${startedIds.join(',')}]`,
+  );
+
   // 2) Every playable class boots to a clean fresh start (nothing auto-starts —
   //    this is the guard against generated home-city chains hijacking openings).
   //    Druid runs LAST on purpose: the WA-opening check below plays on in ITS session.
