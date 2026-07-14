@@ -163,6 +163,11 @@ export type ActiveActionId =
  *  heal / shield / ward — self heal, absorb pool, cheat-death arm.
  *  drain  — hit the nearest foe in front and heal a fraction dealt.
  *  plague — contagious DoT that spreads between enemies.
+ *  chain  — bolt that arcs to up to N more enemies, damage falloff per jump.
+ *  dualbolt — smart-target: damages an enemy in range, else heals an ally/self.
+ *  friendzone — heal-over-time ground area for the player + summons
+ *               (static, or mobile with follow: true).
+ *  stealth — the player leaves all enemy targeting for a window; attacking breaks it.
  * Damage fields: `damage` is skill-scaled (skillDamage); `damageRaw` is
  * unscaled (legacy Tank numbers); `damageMult` multiplies playerDamage().
  */
@@ -234,7 +239,55 @@ export type ComposedStep =
   | { p: 'shield'; amount: number; durationMs: number; banner?: string }
   | { p: 'ward'; armedMs: number; banner?: string }
   | { p: 'drain'; range: number; reach?: number; damage: number; healPct: number; tint: number }
-  | { p: 'plague'; applyRange: number; applyRadius: number; dotDamage: number; dotTickMs: number; dotDurationMs: number; spreadRadius: number; maxSpread: number; tint: number };
+  | { p: 'plague'; applyRange: number; applyRadius: number; dotDamage: number; dotTickMs: number; dotDurationMs: number; spreadRadius: number; maxSpread: number; tint: number }
+  // ── DRUID FRAMEWORK EXTENSIONS (additive; class-agnostic like every primitive) ──
+  | {
+      /** CHAIN-BOUNCE: strike the nearest enemy within `range`, then arc to up to
+       *  `jumps` MORE enemies — each within `jumpRange` of the last one hit, never
+       *  the same enemy twice — dealing damage × `falloff` per jump. */
+      p: 'chain';
+      range: number;
+      jumps: number;
+      jumpRange: number;
+      damage: number;
+      falloff: number;
+      tint: number;
+    }
+  | {
+      /** DUAL-USE bolt (smart-target): with an enemy within `range` it fires a
+       *  damaging bolt at it; with NO enemy in range it MENDS instead — the
+       *  most-injured allied summon within `healRange`, else the caster. */
+      p: 'dualbolt';
+      range: number;
+      damage: number;
+      speed: number;
+      radius: number;
+      heal: number;
+      healRange: number;
+      tint: number;
+      healTint?: number;
+    }
+  | {
+      /** FRIENDLY ZONE: the ally-facing twin of `hazard` — a ground area that
+       *  HEALS the player + allied summons inside it every tick. STATIC (placed
+       *  where cast) by default; `follow: true` makes it MOBILE (tracks the caster). */
+      p: 'friendzone';
+      radius: number;
+      healPerTick: number;
+      tickMs: number;
+      durationMs: number;
+      follow?: boolean;
+      tint?: number;
+      banner?: string;
+    }
+  | {
+      /** PLAYER STEALTH: for `durationMs` the player leaves ALL enemy targeting
+       *  (current aggro wiped on entry; enemies hold position unless a summon
+       *  draws them). Ends early the moment the player attacks. */
+      p: 'stealth';
+      durationMs: number;
+      banner?: string;
+    };
 
 export type SkillEffect =
   | { kind: 'passive'; stats: SkillStatMods }

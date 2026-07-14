@@ -114,6 +114,13 @@ export class AlliedSummon {
     return time >= this.expireAt;
   }
 
+  /** Heal the summon (friendly zones / the dual-use mending bolt). Clamped to max HP. */
+  heal(amount: number): void {
+    if (this.dead) return;
+    this.health.heal(amount);
+    this.bar.setRatio(this.health.ratio);
+  }
+
   /** Apply enemy damage to the summon; returns damage dealt. Dies/shatters at 0 HP. */
   takeHit(amount: number): number {
     if (this.dead) return 0;
