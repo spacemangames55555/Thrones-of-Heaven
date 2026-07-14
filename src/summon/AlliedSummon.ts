@@ -20,6 +20,9 @@ export interface SummonCombatCtx {
    * pooled) — no new projectile system, no per-shot allocation churn.
    */
   fireProjectile(fromX: number, fromY: number, targetX: number, targetY: number, damage: number, speed: number, range: number, radius: number, color: number): void;
+  /** Apply a DoT to enemies within `radius` of (x,y) — the `attackDot` rider (Viper poison /
+   *  Wolverine bleed) routed through the scene's shared DoT system. Optional (older ctxs). */
+  applyDot?(x: number, y: number, radius: number, dmgPerTick: number, tickMs: number, durationMs: number, color: number): void;
 }
 
 /**
@@ -114,6 +117,13 @@ export class AlliedSummon {
     return time >= this.expireAt;
   }
 
+  /** Heal the summon (friendly zones / the dual-use mending bolt). Clamped to max HP. */
+  heal(amount: number): void {
+    if (this.dead) return;
+    this.health.heal(amount);
+    this.bar.setRatio(this.health.ratio);
+  }
+
   /** Apply enemy damage to the summon; returns damage dealt. Dies/shatters at 0 HP. */
   takeHit(amount: number): number {
     if (this.dead) return 0;
@@ -168,6 +178,9 @@ export class AlliedSummon {
         if (time >= this.attackReadyAt) {
           const dmg = Math.round((this.config.attackDamage ?? 0) * (1 + this.damageBonus));
           ctx?.attack(enemy.x, enemy.y, reach, dmg);
+          // attackDot rider: the hit also POISONS/BLEEDS what it struck (Viper/Wolverine).
+          const dot = this.config.attackDot;
+          if (dot) ctx?.applyDot?.(enemy.x, enemy.y, reach, dot.dmgPerTick, dot.tickMs, dot.durationMs, dot.color);
           this.attackReadyAt = time + (this.config.attackCooldownMs ?? 1000);
           this.swingFx();
         }

@@ -97,7 +97,20 @@ import {
   SUMMON_BUFF_TUNING,
   AGGRO_REEVAL_INTERVAL_MS,
   AGGRO_STICKY_MARGIN,
+  type AlliedSummonConfig,
+  VIPER_CONFIG,
+  VIPER_TUNING,
+  WOLVERINE_CONFIG,
+  WOLVERINE_TUNING,
+  CHIMPANZEE_CONFIG,
+  CHIMPANZEE_TUNING,
+  SCAVENGER_CONFIG,
+  SCAVENGER_TUNING,
+  POLAR_BEAR_CONFIG,
+  POLAR_BEAR_TUNING,
 } from '../summon/summonData';
+import { TAPESTRY_TUNING, BEAR_MIGHT_ID, ELEPHANT_RAGE_ID } from '../skills/druidTapestry';
+import { RESTORATION_TUNING, CLAY_ID, OIL_IMMUNITY_ID, OIL_VITALITY_ID } from '../skills/druidRestoration';
 import { PlayerPower } from '../player/PlayerPower';
 import { URIEL_SCENE } from '../story/urielData';
 import { URIEL_SENDOFF_LINES, RIFT_SCENE } from '../story/riftSceneData';
@@ -429,6 +442,11 @@ interface CombatEnemy {
   halt(): void;
 }
 
+/** Composed primitives that count as an ATTACK (they end player stealth). The
+ *  self-only primitives (heal/shield/ward/friendzone/stealth) don't; dualbolt
+ *  decides inside its branch (only its enemy-hit path is an attack). */
+const OFFENSIVE_PRIMITIVES = new Set<string>(['strike', 'bolt', 'cone', 'line', 'hazard', 'drain', 'plague', 'chain']);
+
 export class MainScene extends Phaser.Scene {
   private map!: GameMap;
   private player!: Player;
@@ -574,6 +592,15 @@ export class MainScene extends Phaser.Scene {
   /** Active per-target DoTs (Toxic Bolt / Plague). Plague carries a shared spread budget so
    *  the contagion jumps to nearby enemies up to a cap. Reusable damage-over-time primitive. */
   private dots: { target: CombatEnemy; dmgPerTick: number; tickMs: number; nextTickAt: number; expireAt: number; color: number; spread?: { radius: number; budget: { remaining: number } }; stackKey?: string }[] = [];
+  // --- Druid framework primitives (composable; class-agnostic) ---
+  /** FRIENDLY ZONES: the ally-facing twin of spellHazards — ground areas that HEAL the
+   *  player + allied summons inside them each tick. `follow` zones track the caster.
+   *  Public-readable so the runtime gate can observe placement/expiry. */
+  friendlyZones: { x: number; y: number; radius: number; healPerTick: number; tickMs: number; nextTickAt: number; expireAt: number; follow: boolean; fx: Phaser.GameObjects.Arc }[] = [];
+  /** PLAYER STEALTH: while now < playerStealthUntil, the player is OUT of all enemy
+   *  targeting (enemyAggroTarget holds enemies in place unless a summon draws them).
+   *  0 = off. Entering wipes current aggro; ANY attack breaks it early. */
+  playerStealthUntil = 0;
   /**
    * CHANNELED-BEAM state (the channel primitive). Transient: a single active channel locks
    * one enemy, ticks damage, optionally trickles energy, and is cancelled by movement / any
@@ -1166,6 +1193,9 @@ export class MainScene extends Phaser.Scene {
         return e ? { x: e.x, y: e.y, dist: Phaser.Math.Distance.Between(x, y, e.x, e.y) } : null;
       },
       attack: (x, y, range, damage) => this.aoeHitAll(x, y, range, damage),
+      // attackDot rider (Viper poison / Wolverine bleed): summon hits route their DoT
+      // through the SAME shared DoT system player skills use.
+      applyDot: (x, y, radius, dmgPerTick, tickMs, durationMs, color) => this.applyDotInRange(x, y, radius, dmgPerTick, tickMs, durationMs, color),
       // RANGED allies fire through the EXISTING pooled PLAYER-faction projectile path — the
       // same system player skills use, so no new pipeline + no per-shot allocation churn.
       fireProjectile: (fx, fy, tx, ty, damage, speed, range, radius, color) => {
@@ -1590,6 +1620,7 @@ export class MainScene extends Phaser.Scene {
     this.updateControlEffects();
     this.applyEnemySlows();
     this.updateSpellHazards(); // ground zones (Lava / Black Ice / Freezing Rain / Biohazard / Pestilence)
+    this.updateFriendlyZones(); // heal-over-time zones for the player + summons (static + mobile)
     this.updateDots(); // poison DoTs + Plague contagion spread + stacking DoTs
     this.updateChannel(delta); // channeled beam: tick damage + energy trickle + redraw
     this.projectiles.update(delta, this.player.x, this.player.y, PROJECTILE_PLAYER_HIT_RADIUS);
@@ -1925,6 +1956,8 @@ export class MainScene extends Phaser.Scene {
     this.skillCooldownDur = {};
     this.releaseAllStuns();
     this.clearSpellHazards();
+    this.clearFriendlyZones();
+    this.breakPlayerStealth();
     this.clearDots();
     this.summons.clear();
     this.requireStartingSkill(); // pick a first skill if this class has none yet
@@ -2188,6 +2221,54 @@ export class MainScene extends Phaser.Scene {
     } else if (action === 'necro_wrecking_ball') {
       // Marrow #9 — charge into a crowd: damage + KNOCKDOWN along the path (reuses Charge).
       this.startCharge(MARROW_TUNING.wreckingBall);
+    } else if (action === 'dru_bear_might') {
+      // Druid Tapestry #4 — a crushing swipe + the bear's lingering strength (timed +damage).
+      const c = TAPESTRY_TUNING.bearMight;
+      this.runComposedSteps([{ p: 'strike', at: 'self', radius: c.radius, damage: c.damage, tint: c.tint }]);
+      this.startTimedSkill(BEAR_MIGHT_ID, c.buffMs, { damageMult: c.buffDamageMult }, c.tint);
+    } else if (action === 'dru_elephant') {
+      // Druid Tapestry #10 — a thunderous wide sweep + thick hide (timed +defense).
+      const c = TAPESTRY_TUNING.elephant;
+      this.runComposedSteps([{ p: 'strike', at: 'self', radius: c.radius, damage: c.damage, tint: 0xc8c8d8 }]);
+      this.startTimedSkill(ELEPHANT_RAGE_ID, c.buffMs, { damageReduction: c.buffDamageReduction }, c.tint);
+    } else if (action === 'dru_falcon') {
+      // Druid Tapestry #5 — falcon dive: damage + KNOCKDOWN along the path (reuses Charge).
+      this.breakPlayerStealth(); // it's an attack
+      this.startCharge(TAPESTRY_TUNING.falcon);
+    } else if (action === 'dru_clay') {
+      // Druid Restoration #4 — a heal + a short hardening (timed +defense).
+      const c = RESTORATION_TUNING.clay;
+      this.runComposedSteps([{ p: 'heal', amount: c.heal }]);
+      this.startTimedSkill(CLAY_ID, c.buffMs, { damageReduction: c.damageReduction }, c.tint);
+    } else if (action === 'dru_oil_immunity') {
+      // Druid Restoration #9 — 5-minute ally resistance: self (timed DR) + summons (pet buff).
+      const c = RESTORATION_TUNING.oilImmunity;
+      this.startTimedSkill(OIL_IMMUNITY_ID, c.durationMs, { damageReduction: c.selfDamageReduction }, c.tint);
+      this.summons.addBuff({ id: 'dru_oil_immunity', drBonus: c.summonDrBonus, durationMs: c.durationMs }, this.time.now);
+      this.showBanner('Oil of Immunity', 1200);
+    } else if (action === 'dru_oil_vitality') {
+      // Druid Restoration #10 — 5-minute ally vitality: self (timed +maxHP) + summons (pet buff).
+      const c = RESTORATION_TUNING.oilVitality;
+      this.startTimedSkill(OIL_VITALITY_ID, c.durationMs, { maxHPMult: c.selfMaxHPMult }, c.tint);
+      this.summons.addBuff({ id: 'dru_oil_vitality', hpBonus: c.summonHpBonus, durationMs: c.durationMs }, this.time.now);
+      this.showBanner('Oil of Vitality', 1200);
+    } else if (action === 'dru_viper') {
+      this.summonAlliedUnits(VIPER_CONFIG, 1, VIPER_TUNING.maxConcurrent); // Wild Kin #2 — poison attacker
+      this.showBanner('Viper summoned', 1000);
+    } else if (action === 'dru_wolverine') {
+      this.summonAlliedUnits(WOLVERINE_CONFIG, 1, WOLVERINE_TUNING.maxConcurrent); // Wild Kin #4 — bleed attacker
+      this.showBanner('Wolverine summoned', 1000);
+    } else if (action === 'dru_chimp_pair') {
+      // Wild Kin #6 — the PAIR summon: two bonded melee units from one cast.
+      this.summonAlliedUnits(CHIMPANZEE_CONFIG, CHIMPANZEE_TUNING.pairCount, CHIMPANZEE_TUNING.maxConcurrent);
+      this.showBanner('Chimpanzee pair summoned', 1200);
+    } else if (action === 'dru_scavengers') {
+      // Wild Kin #8 — UNTARGETABLE timed chip units (drawsAggro=false + 30s override).
+      this.summonAlliedUnits(SCAVENGER_CONFIG, SCAVENGER_TUNING.count, SCAVENGER_TUNING.maxConcurrent, SCAVENGER_TUNING.durationMs);
+      this.showBanner('Scavengers released', 1200);
+    } else if (action === 'dru_polar_bear') {
+      this.summonAlliedUnits(POLAR_BEAR_CONFIG, 1, POLAR_BEAR_TUNING.maxConcurrent); // Wild Kin #9 — the taunt tank
+      this.showBanner('Polar Bear summoned', 1200);
     }
   }
 
@@ -2197,6 +2278,9 @@ export class MainScene extends Phaser.Scene {
   runComposedSteps(steps: ComposedStep[]): void {
     this.lastCombatTime = this.time.now;
     this.lastComposedPrimitives = steps.map((s) => s.p);
+    // ATTACKING BREAKS STEALTH: any offensive primitive ends it before running.
+    // (dualbolt decides inside its branch — its heal path is not an attack.)
+    if (steps.some((s) => OFFENSIVE_PRIMITIVES.has(s.p))) this.breakPlayerStealth();
     for (const s of steps) this.runComposedStep(s);
   }
 
@@ -2315,6 +2399,7 @@ export class MainScene extends Phaser.Scene {
       const inWedge = (ex: number, ey: number): boolean => this.inCone(px, py, dx, dy, ex, ey, s.range, half);
       this.aoeHitAll(px, py, s.range, this.skillDamage(s.damage), inWedge);
       if (s.knockback) this.knockbackEnemiesInRange(px, py, s.range, s.knockback, s.knockbackStunMs ?? 200, inWedge);
+      if (s.slowFactor !== undefined && s.slowMs) this.slowEnemiesInRange(px, py, s.range, s.slowMs, s.slowFactor, inWedge);
     } else if (s.p === 'line') {
       const { dx, dy } = this.facingUnit();
       const x2 = px + dx * s.length;
@@ -2369,6 +2454,92 @@ export class MainScene extends Phaser.Scene {
       const fy = py + this.player.facingY * s.applyRange * 0.6;
       this.spawnSkillRing(fx, fy, s.applyRadius, s.tint);
       this.applyPlagueInRange(fx, fy, s.applyRadius, this.skillDamage(s.dotDamage), s.dotTickMs, s.dotDurationMs, s.spreadRadius, s.maxSpread);
+    } else if (s.p === 'chain') {
+      // CHAIN-BOUNCE: hit the nearest enemy, then arc to up to `jumps` more —
+      // each within jumpRange of the LAST one hit, never the same enemy twice —
+      // with damage × falloff per jump. Kills mid-chain are fine: the next-hop
+      // search only considers live enemies.
+      let target = this.nearestEnemy(px, py, s.range);
+      if (!target) {
+        this.showBanner('No target in range', 800);
+        return;
+      }
+      let dmg = this.skillDamage(s.damage);
+      let fromX = px;
+      let fromY = py;
+      const hit = new Set<CombatEnemy>();
+      for (let arc = 0; arc <= s.jumps && target; arc++) {
+        hit.add(target);
+        this.spawnLineFx(fromX, fromY, target.x, target.y, 6, s.tint);
+        this.spawnSkillRing(target.x, target.y, 26, s.tint);
+        const dealt = target.takeHit(dmg);
+        if (dealt > 0) {
+          this.dmgDealtAccum += dealt;
+          this.spawnDamageNumber(target.x, target.y - 24, dealt, '#b8ffc8');
+        }
+        fromX = target.x;
+        fromY = target.y;
+        dmg = Math.max(1, Math.round(dmg * s.falloff));
+        let next: CombatEnemy | null = null;
+        let nextD = Infinity;
+        for (const e of this.combatEnemiesInRange(fromX, fromY, s.jumpRange)) {
+          if (hit.has(e)) continue;
+          const d = Phaser.Math.Distance.Between(fromX, fromY, e.x, e.y);
+          if (d < nextD) {
+            next = e;
+            nextD = d;
+          }
+        }
+        target = next;
+      }
+      this.notifyBossesPlayerAction('ranged');
+    } else if (s.p === 'dualbolt') {
+      // DUAL-USE bolt (smart-target): an enemy in range → a damaging bolt at it
+      // (an attack — breaks stealth); no enemy → a MENDING bolt instead: the
+      // most-injured allied summon within healRange, else the caster.
+      const target = this.nearestEnemy(px, py, s.range);
+      if (target) {
+        this.breakPlayerStealth();
+        const ang = Math.atan2(target.y - py, target.x - px);
+        const dx = Math.cos(ang);
+        const dy = Math.sin(ang);
+        this.projectiles.spawn({
+          x: px + dx * 18,
+          y: py + dy * 18,
+          dirX: dx,
+          dirY: dy,
+          speed: s.speed,
+          damage: this.skillDamage(s.damage),
+          maxRange: s.range + 60,
+          faction: 'player',
+          color: s.tint,
+          radius: s.radius,
+        });
+        this.notifyBossesPlayerAction('ranged');
+        return;
+      }
+      const healTint = s.healTint ?? 0xa8ffd0;
+      let ally: AlliedSummon | null = null;
+      for (const sm of this.summons.list) {
+        if (!sm.isAlive || sm.health.current >= sm.health.max) continue;
+        if (Phaser.Math.Distance.Between(px, py, sm.x, sm.y) > s.healRange) continue;
+        if (!ally || sm.health.ratio < ally.health.ratio) ally = sm;
+      }
+      if (ally) {
+        ally.heal(s.heal);
+        this.spawnSkillRing(ally.x, ally.y, ally.bodyRadius + 14, healTint);
+        this.spawnDamageNumber(ally.x, ally.y - 30, s.heal, '#a8ffd0');
+      } else {
+        this.playerHealth.heal(s.heal);
+        this.spawnSkillRing(px, py, 60, healTint);
+        this.spawnDamageNumber(px, py - 30, s.heal, '#a8ffd0');
+      }
+    } else if (s.p === 'friendzone') {
+      this.spawnFriendlyZone(px, py, s.radius, s.healPerTick, s.tickMs, s.durationMs, s.follow ?? false, s.tint);
+      if (s.banner) this.showBanner(s.banner, 1200);
+    } else if (s.p === 'stealth') {
+      this.startPlayerStealth(s.durationMs);
+      if (s.banner) this.showBanner(s.banner, 1200);
     }
   }
 
@@ -2673,6 +2844,111 @@ export class MainScene extends Phaser.Scene {
       h.fx.destroy();
     }
     this.spellHazards = [];
+  }
+
+  // --- Druid framework: friendly zones + player stealth + multi-unit summons ----
+
+  /**
+   * FRIENDLY ZONE (the ally-facing twin of spawnSpellHazard): a ground area that HEALS
+   * the player + allied summons inside it every `tickMs`. STATIC by default; `follow`
+   * makes it MOBILE — it tracks the caster each frame. Public so composed skills and
+   * the runtime gate share one entry point.
+   */
+  spawnFriendlyZone(x: number, y: number, radius: number, healPerTick: number, tickMs: number, durationMs: number, follow: boolean, tint?: number): void {
+    const now = this.time.now;
+    const color = tint ?? 0x7de0a0;
+    const fx = this.add.circle(x, y, radius, color, 0.15).setStrokeStyle(2, color, 0.7).setDepth(5);
+    this.worldFx.add(fx);
+    this.tweens.add({ targets: fx, alpha: { from: 0.3, to: 0.14 }, duration: 520, yoyo: true, repeat: -1 });
+    this.friendlyZones.push({ x, y, radius, healPerTick, tickMs, nextTickAt: now + tickMs, expireAt: now + durationMs, follow, fx });
+  }
+
+  /** Per-frame: move `follow` zones with the caster, tick heals for the player +
+   *  allied summons inside each zone, expire lapsed zones. Mirrors updateSpellHazards. */
+  private updateFriendlyZones(): void {
+    if (this.friendlyZones.length === 0) return;
+    const now = this.time.now;
+    for (const z of this.friendlyZones) {
+      if (z.follow) {
+        z.x = this.player.x;
+        z.y = this.player.y;
+        z.fx.setPosition(z.x, z.y);
+      }
+      if (now >= z.nextTickAt) {
+        z.nextTickAt = now + z.tickMs;
+        if (!this.playerDead && this.playerHealth.current < this.playerHealth.max && Phaser.Math.Distance.Between(z.x, z.y, this.player.x, this.player.y) <= z.radius) {
+          this.playerHealth.heal(z.healPerTick);
+          this.spawnDamageNumber(this.player.x, this.player.y - 30, z.healPerTick, '#a8ffd0');
+        }
+        for (const sm of this.summons.list) {
+          if (sm.isAlive && sm.health.current < sm.health.max && sm.distanceTo(z.x, z.y) <= z.radius) sm.heal(z.healPerTick);
+        }
+      }
+    }
+    if (this.friendlyZones.some((z) => now >= z.expireAt)) {
+      for (const z of this.friendlyZones) {
+        if (now >= z.expireAt) {
+          this.tweens.killTweensOf(z.fx);
+          this.tweens.add({ targets: z.fx, alpha: 0, duration: 200, onComplete: () => z.fx.destroy() });
+        }
+      }
+      this.friendlyZones = this.friendlyZones.filter((z) => now < z.expireAt);
+    }
+  }
+
+  /** Remove every friendly zone immediately (dev reset / save load / world swap). */
+  private clearFriendlyZones(): void {
+    for (const z of this.friendlyZones) {
+      this.tweens.killTweensOf(z.fx);
+      z.fx.destroy();
+    }
+    this.friendlyZones = [];
+  }
+
+  /** Is player stealth live right now? (Runtime-gate observable.) */
+  get playerStealthActive(): boolean {
+    return this.time.now < this.playerStealthUntil;
+  }
+
+  /** Enter PLAYER STEALTH for `durationMs`: wipe all current enemy aggro (every enemy
+   *  re-evaluates and finds no player to chase — see enemyAggroTarget) and fade the
+   *  avatar. Any attack — an offensive composed step or the basic strike — breaks it. */
+  startPlayerStealth(durationMs: number): void {
+    this.playerStealthUntil = this.time.now + durationMs;
+    this.aggroState = new WeakMap(); // aggro wipe: forces an immediate re-evaluation
+    this.player.sprite.setAlpha(0.45);
+  }
+
+  /** End stealth NOW (an attack broke it / the window lapsed / a reset). Restores the avatar. */
+  breakPlayerStealth(): void {
+    if (this.playerStealthUntil === 0) return;
+    this.playerStealthUntil = 0;
+    this.player.sprite.setAlpha(1);
+  }
+
+  /**
+   * GENERIC MULTI-UNIT SUMMON (Druid framework): spawn `count` units of `config`
+   * ahead of the player in ONE cast — count 2 lands a linked PAIR side-by-side
+   * (perpendicular offsets across the facing). `maxConcurrent` caps the TYPE (a
+   * pair skill passes ≥ 2 so its own second unit isn't recycled). The UNTARGETABLE
+   * TIMED variant is pure config on the existing seam: drawsAggro=false keeps the
+   * unit out of all enemy targeting/interception, `durationMsOverride` shortens its
+   * life, and a small attackDamage gives the chip damage. Returns the spawned units.
+   */
+  summonAlliedUnits(config: AlliedSummonConfig, count: number, maxConcurrent: number, durationMsOverride?: number): AlliedSummon[] {
+    const { dx, dy } = this.facingUnit();
+    const out: AlliedSummon[] = [];
+    for (let i = 0; i < count; i++) {
+      const side = count > 1 ? (i - (count - 1) / 2) * 44 : 0; // pair: flank the facing line
+      const jx = count > 1 ? 0 : Phaser.Math.Between(-20, 20); // single: light scatter
+      const x = this.player.x + dx * 40 - dy * side + jx;
+      const y = this.player.y + dy * 40 + dx * side;
+      const s = this.summons.summon(config, x, y, maxConcurrent, durationMsOverride);
+      this.spawnSkillRing(s.x, s.y, config.bodyRadius + 12, config.tint);
+      out.push(s);
+    }
+    this.lastCombatTime = this.time.now;
+    return out;
   }
 
   // --- DoT (damage-over-time) + contagion primitive (Toxic Bolt / Plague) -------
@@ -3073,13 +3349,17 @@ export class MainScene extends Phaser.Scene {
    */
   private enemyAggroTarget(enemy: object, ex: number, ey: number): { x: number; y: number } {
     const now = this.time.now;
+    const stealthed = now < this.playerStealthUntil; // a hidden player can't be focused
     // Necromancer TAUNT is a LIVE override (don't wait for the next re-eval): focus the player.
-    if (now < this.tauntUntil) return { x: this.player.x, y: this.player.y };
+    if (now < this.tauntUntil && !stealthed) return { x: this.player.x, y: this.player.y };
     let st = this.aggroState.get(enemy);
     const lostTarget = !!st && st.targetSummon != null && !st.targetSummon.isAlive;
     if (!st || now >= st.nextEval || lostTarget) st = this.reevalEnemyAggro(enemy, ex, ey, st, now);
     const t = st.targetSummon;
     if (t && t.isAlive) return { x: t.x, y: t.y };
+    // PLAYER STEALTH: with no summon to chase, a hidden player is NOT a target —
+    // the enemy holds its position (the fall-through floor is removed).
+    if (stealthed) return { x: ex, y: ey };
     return { x: this.player.x, y: this.player.y };
   }
 
@@ -3092,8 +3372,10 @@ export class MainScene extends Phaser.Scene {
     prev: { targetSummon: AlliedSummon | null; nextEval: number } | undefined,
     now: number,
   ): { targetSummon: AlliedSummon | null; nextEval: number } {
-    // Necromancer TAUNT overrides the hierarchy: focus the player while it's active.
-    const taunted = now < this.tauntUntil;
+    // Necromancer TAUNT overrides the hierarchy: focus the player while it's active
+    // (unless the player is STEALTHED — a hidden player can't be focused, so summons
+    // keep drawing normally).
+    const taunted = now < this.tauntUntil && now >= this.playerStealthUntil;
     const best = taunted ? null : this.summons?.aggroSummonNear(ex, ey) ?? null;
     let chosen = best;
     // STICKINESS: keep the current ally-target if it's still alive + in range (+ margin) and
@@ -3413,9 +3695,10 @@ export class MainScene extends Phaser.Scene {
   // --- Control primitives: SLOW (per-enemy velocity scale) + WEAKEN + reactive ---
 
   /** SLOW: scale the movement speed of enemies in range to `factor` (0.5 = half) for `ms`. */
-  private slowEnemiesInRange(x: number, y: number, range: number, ms: number, factor: number): void {
+  private slowEnemiesInRange(x: number, y: number, range: number, ms: number, factor: number, where?: (ex: number, ey: number) => boolean): void {
     const until = this.time.now + ms;
     for (const e of this.combatEnemiesInRange(x, y, range)) {
+      if (where && !where(e.x, e.y)) continue; // shape filter (the Chill cone)
       const cur = this.slowedEnemies.get(e);
       // Keep the strongest slow + the latest expiry while refreshed (auras refresh each frame).
       this.slowedEnemies.set(e, { until: Math.max(cur?.until ?? 0, until), factor: Math.min(cur?.factor ?? 1, factor) });
@@ -3552,6 +3835,8 @@ export class MainScene extends Phaser.Scene {
       this.playerHealth.shield = 0;
       this.shieldUntil = 0;
     }
+    // PLAYER STEALTH: restore the avatar when the window lapses (attacks end it earlier).
+    if (this.playerStealthUntil > 0 && this.time.now >= this.playerStealthUntil) this.breakPlayerStealth();
     // LIFESTEAL (Bloodlust): heal a fraction of the damage dealt since last frame.
     const lifesteal = this.combinedSkillMods().lifestealPct ?? 0;
     if (!this.playerDead && lifesteal > 0 && this.dmgDealtAccum > 0 && this.playerHealth.current < this.playerHealth.max) {
@@ -3592,6 +3877,7 @@ export class MainScene extends Phaser.Scene {
   /** The BASIC STRIKE effect (the former default melee swing) — now an equippable
    *  skill action. Cooldown/energy/dead-guards are handled by the skill system. */
   private doBasicStrike(): void {
+    this.breakPlayerStealth(); // attacking ends stealth
     // Swing in the facing direction; forgiving radius (the enemy is large).
     const sx = this.player.x + this.player.facingX * (PLAYER_ATTACK_RANGE * 0.5);
     const sy = this.player.y + this.player.facingY * (PLAYER_ATTACK_RANGE * 0.5);
@@ -3733,6 +4019,8 @@ export class MainScene extends Phaser.Scene {
     this.projectiles.clear(); // drop any bolts still in flight
     this.summons.clear(); // allied summons don't survive the player's death
     this.clearSpellHazards();
+    this.clearFriendlyZones();
+    this.breakPlayerStealth();
     this.clearDots();
     this.despawnRegionChampion(); // death resets a champion encounter cleanly
     this.lastCombatTime = -1e9;
@@ -5196,6 +5484,8 @@ export class MainScene extends Phaser.Scene {
       this.skillTimed = []; // timed buffs/forms are runtime-only (not persisted)
       this.releaseAllStuns();
       this.clearSpellHazards(); // drop any Wizard Lava patches
+      this.clearFriendlyZones(); // heal zones are runtime-only too
+      this.breakPlayerStealth();
       this.clearDots(); // drop any poison DoTs
       this.summons.clear(); // summons are transient — never carried across a load
       this.recomputeSkillEffects(); // apply passive maxHP/damage/speed/reduction now
@@ -7798,6 +8088,8 @@ export class MainScene extends Phaser.Scene {
     // Allied summons + ground effects don't travel between worlds — clear on every change.
     this.summons.clear();
     this.clearSpellHazards();
+    this.clearFriendlyZones();
+    this.breakPlayerStealth();
     this.clearDots();
 
     // WORLD-RESIDENT PAUSE: resume the destination's residents, pause everyone
@@ -9131,6 +9423,8 @@ export class MainScene extends Phaser.Scene {
     this.skillCooldownDur = {};
     this.releaseAllStuns();
     this.clearSpellHazards();
+    this.clearFriendlyZones();
+    this.breakPlayerStealth();
     this.clearDots();
     this.summons.clear();
     this.skills.hardReset();

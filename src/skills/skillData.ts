@@ -28,12 +28,15 @@ import { WIZARD_ETHEREAL_SKILLS, WIZ_ETHEREAL_TREE } from './wizardEthereal';
 import { MARROW_TREE_SKILLS, MARROW_TREE } from './necromancerMarrow';
 import { SUMMONS_TREE_SKILLS, SUMMONS_TREE } from './necromancerSummons';
 import { DARK_MATTER_TREE_SKILLS, DARK_MATTER_TREE } from './necromancerDarkMatter';
+import { DRUID_TAPESTRY_SKILLS, DRUID_TAPESTRY_TREE } from './druidTapestry';
+import { DRUID_RESTORATION_SKILLS, DRUID_RESTORATION_TREE } from './druidRestoration';
+import { DRUID_WILDKIN_SKILLS, DRUID_WILDKIN_TREE } from './druidWildKin';
 
 /** How many active skills the player can equip to on-screen slots. */
 export const LOADOUT_SLOTS = 6;
 
 /** The playable classes. Only the Blacksmith has trees this batch; others slot in later. */
-export type ClassId = 'blacksmith' | 'necromancer' | 'wizard';
+export type ClassId = 'blacksmith' | 'necromancer' | 'wizard' | 'druid';
 
 /** Stat modifiers a skill contributes — used by PASSIVE (permanent) and by timed
  *  BUFF / TRANSFORMATION effects (while active). All optional; absent = no change. */
@@ -131,7 +134,35 @@ export type ActiveActionId =
   | 'necro_dm_hex'
   | 'necro_dm_abyssal'
   | 'necro_dm_rift'
-  | 'necro_dm_singularity';
+  | 'necro_dm_singularity'
+  // Druid — Tapestry of Beasts.
+  | 'dru_mantis'
+  | 'dru_bear_might'
+  | 'dru_falcon'
+  | 'dru_stealth'
+  | 'dru_bee_swarm'
+  | 'dru_elk'
+  | 'dru_elephant'
+  // Druid — Nature's Restoration.
+  | 'dru_lye'
+  | 'dru_mushroom'
+  | 'dru_aloe'
+  | 'dru_clay'
+  | 'dru_sage_burn'
+  | 'dru_spores'
+  | 'dru_oil_immunity'
+  | 'dru_oil_vitality'
+  // Druid — Wild Kin & Earth's Wrath.
+  | 'dru_chill'
+  | 'dru_viper'
+  | 'dru_lightning'
+  | 'dru_wolverine'
+  | 'dru_earthquake'
+  | 'dru_chimp_pair'
+  | 'dru_lava_pocket'
+  | 'dru_scavengers'
+  | 'dru_polar_bear'
+  | 'dru_hail';
 
 /**
  * The five supported EFFECT KINDS. The scene applies them generically:
@@ -163,6 +194,11 @@ export type ActiveActionId =
  *  heal / shield / ward — self heal, absorb pool, cheat-death arm.
  *  drain  — hit the nearest foe in front and heal a fraction dealt.
  *  plague — contagious DoT that spreads between enemies.
+ *  chain  — bolt that arcs to up to N more enemies, damage falloff per jump.
+ *  dualbolt — smart-target: damages an enemy in range, else heals an ally/self.
+ *  friendzone — heal-over-time ground area for the player + summons
+ *               (static, or mobile with follow: true).
+ *  stealth — the player leaves all enemy targeting for a window; attacking breaks it.
  * Damage fields: `damage` is skill-scaled (skillDamage); `damageRaw` is
  * unscaled (legacy Tank numbers); `damageMult` multiplies playerDamage().
  */
@@ -213,7 +249,7 @@ export type ComposedStep =
       dot?: { dmgPerTick: number; tickMs: number; durationMs: number; radius: number; color: number };
       vuln?: { mult: number; durationMs: number; banner?: string };
     }
-  | { p: 'cone'; range: number; halfAngleDeg: number; damage: number; tint: number; knockback?: number; knockbackStunMs?: number }
+  | { p: 'cone'; range: number; halfAngleDeg: number; damage: number; tint: number; knockback?: number; knockbackStunMs?: number; slowFactor?: number; slowMs?: number }
   | { p: 'line'; length: number; width: number; damage: number; tint: number }
   | {
       p: 'hazard';
@@ -234,7 +270,55 @@ export type ComposedStep =
   | { p: 'shield'; amount: number; durationMs: number; banner?: string }
   | { p: 'ward'; armedMs: number; banner?: string }
   | { p: 'drain'; range: number; reach?: number; damage: number; healPct: number; tint: number }
-  | { p: 'plague'; applyRange: number; applyRadius: number; dotDamage: number; dotTickMs: number; dotDurationMs: number; spreadRadius: number; maxSpread: number; tint: number };
+  | { p: 'plague'; applyRange: number; applyRadius: number; dotDamage: number; dotTickMs: number; dotDurationMs: number; spreadRadius: number; maxSpread: number; tint: number }
+  // ── DRUID FRAMEWORK EXTENSIONS (additive; class-agnostic like every primitive) ──
+  | {
+      /** CHAIN-BOUNCE: strike the nearest enemy within `range`, then arc to up to
+       *  `jumps` MORE enemies — each within `jumpRange` of the last one hit, never
+       *  the same enemy twice — dealing damage × `falloff` per jump. */
+      p: 'chain';
+      range: number;
+      jumps: number;
+      jumpRange: number;
+      damage: number;
+      falloff: number;
+      tint: number;
+    }
+  | {
+      /** DUAL-USE bolt (smart-target): with an enemy within `range` it fires a
+       *  damaging bolt at it; with NO enemy in range it MENDS instead — the
+       *  most-injured allied summon within `healRange`, else the caster. */
+      p: 'dualbolt';
+      range: number;
+      damage: number;
+      speed: number;
+      radius: number;
+      heal: number;
+      healRange: number;
+      tint: number;
+      healTint?: number;
+    }
+  | {
+      /** FRIENDLY ZONE: the ally-facing twin of `hazard` — a ground area that
+       *  HEALS the player + allied summons inside it every tick. STATIC (placed
+       *  where cast) by default; `follow: true` makes it MOBILE (tracks the caster). */
+      p: 'friendzone';
+      radius: number;
+      healPerTick: number;
+      tickMs: number;
+      durationMs: number;
+      follow?: boolean;
+      tint?: number;
+      banner?: string;
+    }
+  | {
+      /** PLAYER STEALTH: for `durationMs` the player leaves ALL enemy targeting
+       *  (current aggro wiped on entry; enemies hold position unless a summon
+       *  draws them). Ends early the moment the player attacks. */
+      p: 'stealth';
+      durationMs: number;
+      banner?: string;
+    };
 
 export type SkillEffect =
   | { kind: 'passive'; stats: SkillStatMods }
@@ -332,6 +416,9 @@ export interface SkillDef {
   /** Requires that ANY option of this branch group is already unlocked (a post-branch
    *  waypoint, e.g. node 7 after the node-6 branch). Complements the single `prereq`. */
   readonly prereqGroup?: string;
+  /** DATA-ONLY animal tag (Druid Tapestry skills): feeds the future visual-trait
+   *  system — no rendering reads it today. */
+  readonly trait?: string;
 }
 
 /** EQUIPPABLE = goes into a loadout slot + gets an on-screen button (everything that
@@ -342,7 +429,12 @@ export function isEquippableSkill(def: SkillDef): boolean {
 
 /** ACTIVE ability ids that deal NO direct damage (pure utility / summons) — excluded from
  *  the "damaging active" classification below. Keep this list tiny + explicit. */
-const NON_DAMAGING_ACTIVE_ACTIONS: ReadonlySet<ActiveActionId> = new Set(['intimidate', 'summon_ice_golem', 'summon_skeleton', 'summon_dark_matter', 'buff_summons', 'necro_dark_matter_burst', 'necro_army', 'necro_dm_hex', 'wiz_black_ice', 'eth_mend', 'eth_mana_shield', 'eth_blink', 'eth_ankh']);
+const NON_DAMAGING_ACTIVE_ACTIONS: ReadonlySet<ActiveActionId> = new Set([
+  'intimidate', 'summon_ice_golem', 'summon_skeleton', 'summon_dark_matter', 'buff_summons', 'necro_dark_matter_burst', 'necro_army', 'necro_dm_hex', 'wiz_black_ice', 'eth_mend', 'eth_mana_shield', 'eth_blink', 'eth_ankh',
+  // Druid utility/heal/summon actives (Lye DOES damage — it stays a damaging active).
+  'dru_stealth', 'dru_mushroom', 'dru_aloe', 'dru_clay', 'dru_sage_burn', 'dru_spores', 'dru_oil_immunity', 'dru_oil_vitality',
+  'dru_viper', 'dru_wolverine', 'dru_chimp_pair', 'dru_scavengers', 'dru_polar_bear',
+]);
 
 /**
  * DAMAGING ACTIVE = an `active`-kind skill whose ability deals damage. This is the
@@ -357,7 +449,7 @@ export function isDamagingActive(def: SkillDef): boolean {
 
 /** Active summon abilities that produce an ATTACKING summon — these are how a no-direct-
  *  damage build still kills things, so they count as a valid STARTER offense (below). */
-const ATTACKING_SUMMON_ACTIONS: ReadonlySet<ActiveActionId> = new Set<ActiveActionId>(['summon_skeleton', 'necro_army']);
+const ATTACKING_SUMMON_ACTIONS: ReadonlySet<ActiveActionId> = new Set<ActiveActionId>(['summon_skeleton', 'necro_army', 'dru_viper', 'dru_wolverine', 'dru_chimp_pair', 'dru_polar_bear']);
 
 /**
  * STARTER skill = a valid "first ability" under the no-kit model and what the anti-soft-lock
@@ -379,6 +471,12 @@ const NON_AIMABLE_ACTIONS: ReadonlySet<ActiveActionId> = new Set<ActiveActionId>
   'necro_dm_hex', // Dark Matter: targets nearest (tap); Blip/Bomb/Tainted/Abyssal/Rift/Singularity are directional
   'eth_mend', 'eth_mana_shield', 'eth_ankh',
   'necro_bone_nova', // self-centered shockwave (Bone Dart/Punch/Stake/Wrecking/Grasp are directional)
+  // Druid: self-AoE / self-buffs / heals / zones / summons + the auto-targeting casts
+  // (Lye smart-targets, Lightning chains from the nearest foe). Mantis/Falcon/Chill/
+  // Earthquake/Lava Pocket/Hail are directional and stay aimable.
+  'dru_bear_might', 'dru_stealth', 'dru_bee_swarm', 'dru_elk', 'dru_elephant',
+  'dru_lye', 'dru_mushroom', 'dru_aloe', 'dru_clay', 'dru_sage_burn', 'dru_spores', 'dru_oil_immunity', 'dru_oil_vitality',
+  'dru_lightning', 'dru_viper', 'dru_wolverine', 'dru_chimp_pair', 'dru_scavengers', 'dru_polar_bear',
 ]);
 
 /**
@@ -477,11 +575,36 @@ const NECROMANCER: ClassSkills = {
   ],
 };
 
+// ─── DRUID (Seattle's walking ecosystem; near-Blacksmith durability) ───────────
+//
+// Kit-free like the others; the forced first pick is PER-CLASS (needsFirstSkill
+// counts starters across ALL trees), and every Druid tree's tier-0 is a damaging
+// active anyway: Mantis (melee flurry), Lye (the dual-use bolt — it burns when an
+// enemy is in range), Freezing Wind Chill (cone). Tapestry skills carry data-only
+// `trait` animal tags for the future visual-trait system.
+const DRUID: ClassSkills = {
+  classId: 'druid',
+  trees: [
+    { id: DRUID_TAPESTRY_TREE, name: 'Tapestry of Beasts' }, // 10 beast skills (opens on Mantis)
+    { id: DRUID_RESTORATION_TREE, name: "Nature's Restoration" }, // 10 healer skills (opens on Lye)
+    { id: DRUID_WILDKIN_TREE, name: 'Wild Kin' }, // 10 wrath + summon skills (opens on Chill)
+  ],
+  skills: [
+    // --- TAPESTRY OF BEASTS (10 skills, linear; every node trait-tagged). Data in druidTapestry.ts. ---
+    ...DRUID_TAPESTRY_SKILLS,
+    // --- NATURE'S RESTORATION (10 skills, linear; heals + zones + oils). Data in druidRestoration.ts. ---
+    ...DRUID_RESTORATION_SKILLS,
+    // --- WILD KIN & EARTH'S WRATH (10 skills, linear; wrath + 5 summons). Data in druidWildKin.ts. ---
+    ...DRUID_WILDKIN_SKILLS,
+  ],
+};
+
 /** Per-class trees + skills. The scene reads the ACTIVE class's entry. */
 export const CLASS_SKILLS: Record<ClassId, ClassSkills> = {
   blacksmith: BLACKSMITH,
   wizard: WIZARD,
   necromancer: NECROMANCER,
+  druid: DRUID,
 };
 
 /** Look up a class's full skill set (trees + skills). */

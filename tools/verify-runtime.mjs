@@ -74,9 +74,50 @@ try {
     }
   }
 
+  // 1b. THE SELECT SCREEN IS THE REAL DOOR (permanent): the fresh-start loop below
+  // starts classes PROGRAMMATICALLY, so a missing select card could ship while every
+  // check passed (exactly how the Druid card went missing from the live deploy).
+  // This check drives the REAL UI: the select screen must list exactly one card per
+  // REGISTERED class, and CLICKING each card must start MainScene as that class.
+  const registeredIds = await (async () => {
+    await page.goto(`http://localhost:${PORT}/`, { waitUntil: 'load' });
+    await page.waitForFunction(() => !!window.__game && window.__game.scene.isActive('TitleScene'), { timeout: 25000 });
+    return page.evaluate(() => Object.keys(window.__game.scene.getScene('MainScene').classSkillsAll));
+  })();
+  const startedIds = [];
+  let selectCards = -1;
+  for (let i = 0; i < registeredIds.length; i++) {
+    await page.goto(`http://localhost:${PORT}/`, { waitUntil: 'load' });
+    await page.waitForFunction(() => !!window.__game && window.__game.scene.isActive('TitleScene'), { timeout: 25000 });
+    await page.evaluate(() => {
+      localStorage.clear();
+      window.__game.scene.getScene('TitleScene').scene.start('CharacterSelectScene');
+    });
+    await page.waitForTimeout(600);
+    const cards = await page.evaluate(() => {
+      const sc = window.__game.scene.getScene('CharacterSelectScene');
+      return sc.children.list
+        .filter((o) => o.type === 'Rectangle' && o.input && o.input.enabled)
+        .map((r) => ({ x: r.x, y: r.y + r.displayHeight / 2 }))
+        .sort((a, b) => a.y - b.y);
+    });
+    selectCards = cards.length;
+    if (i >= cards.length) break; // fewer cards than classes → the assert below fails loudly
+    await page.mouse.click(cards[i].x, cards[i].y); // the REAL door: a pointer tap on the card
+    await page.waitForFunction(() => window.__game.scene.isActive('MainScene'), { timeout: 25000 });
+    await page.waitForTimeout(1200);
+    startedIds.push(await page.evaluate(() => window.__game.scene.getScene('MainScene').classId));
+  }
+  ok(
+    'select screen: one card per registered class; each card CLICK starts its class (real UI path)',
+    selectCards === registeredIds.length && startedIds.length === registeredIds.length && registeredIds.every((id) => startedIds.includes(id)),
+    `cards=${selectCards} registered=[${registeredIds.join(',')}] started=[${startedIds.join(',')}]`,
+  );
+
   // 2) Every playable class boots to a clean fresh start (nothing auto-starts —
   //    this is the guard against generated home-city chains hijacking openings).
-  for (const cls of ['blacksmith', 'wizard', 'necromancer']) {
+  //    Druid runs LAST on purpose: the WA-opening check below plays on in ITS session.
+  for (const cls of ['blacksmith', 'wizard', 'necromancer', 'druid']) {
     await newGame(cls);
     const s = await page.evaluate(() => {
       const ms = window.__game.scene.getScene('MainScene');
@@ -108,7 +149,121 @@ try {
       }
       return ms;
     };
+    // __quietSpot(): relocate the player to a walkable spot with NO combat enemy
+    // within 800px — the shared isolation precondition for the combat-primitive checks.
+    window.__quietSpot = () => {
+      const ms = window.__ready();
+      for (let i = 1; i <= 40; i++) {
+        const x = ms.player.x + (i % 2 ? 1 : -1) * i * 380;
+        const y = ms.player.y + ((i % 3) - 1) * 320;
+        const w = ms.activeMap().nearestWalkableWorld(x, y);
+        if (w && ms.combatEnemiesInRange(w.x, w.y, 800).length === 0) {
+          ms.player.sprite.body.reset(w.x, w.y);
+          return true;
+        }
+      }
+      return false;
+    };
   });
+
+  // 2b. THE WA OPENING PLAYS FOR A REAL DRUID: the fresh-start loop above ended on a
+  // live Druid run whose forced first pick (the probe's card click) chose one of the
+  // three tree openers. The pick must be unlocked + equipped (needsFirstSkill now
+  // false), and THE PICKED SKILL must win the opening Sasquatch fight through the
+  // real activation path.
+  const druidOpening = await page.evaluate(async () => {
+    const ms = window.__ready();
+    const wait = (t) => new Promise((r) => setTimeout(r, t));
+    const classId = ms.classId;
+    const needs = ms.skills.needsFirstSkill();
+    const starter = ms.skills.loadout().filter(Boolean)[0] ?? null;
+    const openers = ['dru_tap_mantis', 'dru_res_lye', 'dru_wk_chill']; // the three tier-0 damaging actives
+    const starterDef = ms.classSkillsAll['druid'].skills.find((d) => d.id === starter);
+    const action = starterDef && starterDef.effect.kind === 'active' ? starterDef.effect.action : null;
+    const sas = ms.sasquatch;
+    if (!sas || !sas.isAlive || !action) return { classId, needs, starter, fought: false };
+    ms.player.sprite.body.reset(sas.x - 50, sas.y); // stand beside it, facing right
+    ms.player.facingX = 1;
+    ms.player.facingY = 0;
+    let casts = 0;
+    while (sas.isAlive && casts < 40) {
+      ms.runActiveSkill(action); // whichever opener was picked (cooldown bypassed; same code path)
+      casts++;
+      await wait(220); // flurry pulses / bolt travel
+      ms.playerHealth.full();
+      ms.playerHealth.shield = 1e9;
+    }
+    return { classId, needs, starter, isOpener: openers.includes(starter), fought: true, casts, defeated: !sas.isAlive };
+  });
+  ok(
+    'druid: WA opening plays — the forced first pick wins the Sasquatch fight',
+    druidOpening.classId === 'druid' && druidOpening.needs === false && druidOpening.isOpener === true && druidOpening.fought && druidOpening.defeated,
+    JSON.stringify(druidOpening),
+  );
+
+  // 2c. EVERY COMMIT-1 EXTENSION THROUGH A REAL DRUID SKILL: stealth (Snow Leopard),
+  // the dual-use bolt (Lye, heal path), both friendly zones (Sage Burn mobile +
+  // Healing Spores static), chain (Lightning Strike across two foes), the pair
+  // summon (Chimpanzee Pair) and the untargetable timed summons (Scavengers).
+  const druidKit = await page.evaluate(async () => {
+    const ms = window.__ready();
+    const wait = (t) => new Promise((r) => setTimeout(r, t));
+    if (!window.__quietSpot()) return { setup: 'no quiet spot' };
+    // Stealth via the real skill.
+    ms.runActiveSkill('dru_stealth');
+    const stealth = ms.playerStealthActive;
+    ms.breakPlayerStealth();
+    // Lye's heal path (no enemy in range → mend self).
+    ms.playerHealth.current = Math.max(1, ms.playerHealth.max - 50);
+    const hp0 = ms.playerHealth.current;
+    ms.runActiveSkill('dru_lye');
+    const lyeHealed = ms.playerHealth.current - hp0;
+    // Both friendly-zone variants.
+    ms.runActiveSkill('dru_sage_burn'); // mobile (follows)
+    ms.runActiveSkill('dru_spores'); // static
+    const zones = ms.friendlyZones.map((z) => z.follow);
+    // Chain via Lightning Strike across two real foes.
+    const w1 = ms.activeMap().nearestWalkableWorld(ms.player.x + 150, ms.player.y);
+    const f1 = ms.spawnAngel('darkcaster', w1.x, w1.y);
+    const w2 = ms.activeMap().nearestWalkableWorld(ms.player.x + 300, ms.player.y);
+    const f2 = ms.spawnAngel('darkcaster', w2.x, w2.y);
+    await wait(250);
+    const h1 = f1.health.current;
+    const h2 = f2.health.current;
+    ms.runActiveSkill('dru_lightning');
+    await wait(150);
+    const chainPrims = ms.lastComposedPrimitives.join(',');
+    const chained = h1 - f1.health.current > 0 && h2 - f2.health.current > 0;
+    f1.destroy();
+    f2.destroy();
+    // Summon variants via the real skills.
+    ms.summons.clear();
+    ms.runActiveSkill('dru_chimp_pair');
+    const chimps = ms.summons.list.filter((s) => s.config.key === 'druid_chimpanzee').length;
+    ms.runActiveSkill('dru_scavengers');
+    const scavs = ms.summons.list.filter((s) => s.config.key === 'druid_scavenger');
+    const scavengers = scavs.length;
+    const scavUntargetable = scavs.length > 0 && scavs.every((s) => !s.drawsAggro);
+    // Clean up everything this check armed.
+    ms.summons.clear();
+    ms.clearFriendlyZones();
+    ms.breakPlayerStealth();
+    ms.playerHealth.full();
+    return { setup: 'ok', stealth, lyeHealed, zones, chainPrims, chained, chimps, scavengers, scavUntargetable };
+  });
+  ok(
+    'druid: every framework extension fires through a real Druid skill',
+    druidKit.setup === 'ok' &&
+      druidKit.stealth &&
+      druidKit.lyeHealed === 24 &&
+      JSON.stringify(druidKit.zones) === '[true,false]' &&
+      druidKit.chainPrims === 'chain' &&
+      druidKit.chained &&
+      druidKit.chimps === 2 &&
+      druidKit.scavengers === 3 &&
+      druidKit.scavUntargetable,
+    JSON.stringify(druidKit),
+  );
 
   // 3) The GLOBE sparse world (Europe + Africa consolidated at true Earth
   // positions): travel, chunks, gates. The region SHIPPED — if the world
@@ -986,10 +1141,14 @@ try {
         await wait(25);
       }
     }
-    // Clean up everything the sweep armed: timed forms expire now, summons and
-    // DoTs clear, vitals restore — the page-error gate still watches the tail.
+    // Clean up everything the sweep armed: timed forms expire now, summons (and
+    // their long pet buffs — the Druid oils run 5 minutes), friendly zones,
+    // stealth and DoTs clear, vitals restore — the page-error gate watches the tail.
     for (const t of ms.skillTimed) t.endsAt = 0;
     ms.summons.clear();
+    ms.summons.clearBuffs();
+    ms.clearFriendlyZones();
+    ms.breakPlayerStealth();
     ms.clearDots();
     ms.playerHealth.full();
     await wait(500);
@@ -997,10 +1156,221 @@ try {
   });
   ok(
     'skill framework: every skill in every tree executes; composed actions match their declared primitives',
-    skillSweep.errors.length === 0 && skillSweep.mismatches.length === 0 && skillSweep.composed === 42 && skillSweep.total >= 90,
+    skillSweep.errors.length === 0 && skillSweep.mismatches.length === 0 && skillSweep.composed === 56 && skillSweep.total >= 120,
     `total=${skillSweep.total} composed=${skillSweep.composed} bespokeActive=${skillSweep.bespokeActive} timed/other=${skillSweep.other} passive=${skillSweep.passive}` +
       (skillSweep.errors.length ? ` ERRORS=${JSON.stringify(skillSweep.errors.slice(0, 3))}` : '') +
       (skillSweep.mismatches.length ? ` MISMATCH=${JSON.stringify(skillSweep.mismatches.slice(0, 3))}` : ''),
+  );
+
+  // 3v. DRUID FRAMEWORK EXTENSIONS (permanent): the composable primitives +
+  // summon variants Commit 1 added, each exercised through its real runtime
+  // seam. Each check establishes its own preconditions (a QUIET walkable spot
+  // via the shared __quietSpot helper, freshly-spawned targets) and fails
+  // loudly when setup fails.
+
+  // 3v-1. CHAIN-BOUNCE: one cast hits the nearest enemy then arcs to two more,
+  // never re-hitting, with strictly falling damage per jump.
+  const chainRun = await page.evaluate(async () => {
+    const ms = window.__ready();
+    const wait = (t) => new Promise((r) => setTimeout(r, t));
+    if (!window.__quietSpot()) return { setup: 'no quiet spot' };
+    const spawnAt = (d) => {
+      const w = ms.activeMap().nearestWalkableWorld(ms.player.x + d, ms.player.y);
+      return ms.spawnAngel('darkcaster', w.x, w.y);
+    };
+    const targets = [spawnAt(140), spawnAt(300), spawnAt(460)];
+    await wait(200);
+    const hp0 = targets.map((t) => t.health.current);
+    ms.runComposedSteps([{ p: 'chain', range: 320, jumps: 2, jumpRange: 260, damage: 30, falloff: 0.5, tint: 0x88ff88 }]);
+    await wait(150);
+    const drops = targets.map((t, i) => hp0[i] - t.health.current);
+    const prims = ms.lastComposedPrimitives.join(',');
+    for (const t of targets) t.destroy();
+    return { setup: 'ok', drops, prims };
+  });
+  ok(
+    'druid ext — chain: one cast arcs across three enemies with falling damage',
+    chainRun.setup === 'ok' && chainRun.prims === 'chain' && chainRun.drops.every((d) => d > 0) && chainRun.drops[0] > chainRun.drops[1] && chainRun.drops[1] > chainRun.drops[2],
+    JSON.stringify(chainRun),
+  );
+
+  // 3v-2. DUAL-USE BOLT: with NO enemy in range it MENDS (the most-injured summon
+  // in heal range, else the caster); with an enemy in range it damages it.
+  const dualRun = await page.evaluate(async () => {
+    const ms = window.__ready();
+    const wait = (t) => new Promise((r) => setTimeout(r, t));
+    if (!window.__quietSpot()) return { setup: 'no quiet spot' };
+    const step = { p: 'dualbolt', range: 320, damage: 24, speed: 620, radius: 10, heal: 30, healRange: 260, tint: 0x9ad8a0 };
+    // (a) self-heal: injured player, no enemy, no summon.
+    ms.summons.clear();
+    ms.playerHealth.current = Math.max(1, ms.playerHealth.max - 60);
+    const before = ms.playerHealth.current;
+    ms.runComposedSteps([step]);
+    const selfHealed = ms.playerHealth.current - before;
+    // (b) summon-heal: an injured summon in range outranks the (also injured) player.
+    const cfg = { key: 'gate_test_tank', name: 'Gate Tank', behavior: 'tank', maxHP: 100, durationMs: 20000, aggroRadius: 150, followRange: 150, moveTilesPerSec: 5, bodyRadius: 12, tint: 0x88cc88, drawsAggro: true, aggroPriority: 2 };
+    const [tank] = ms.summonAlliedUnits(cfg, 1, 1);
+    tank.takeHit(40);
+    const tankBefore = tank.health.current;
+    ms.playerHealth.current = Math.max(1, ms.playerHealth.max - 60);
+    const playerBefore = ms.playerHealth.current;
+    ms.runComposedSteps([step]);
+    const tankHealed = tank.health.current - tankBefore;
+    const playerUntouched = ms.playerHealth.current === playerBefore;
+    // (c) damage: an enemy in range gets the bolt instead (flight time allowed).
+    const w = ms.activeMap().nearestWalkableWorld(ms.player.x + 180, ms.player.y);
+    const foe = ms.spawnAngel('darkcaster', w.x, w.y);
+    await wait(200);
+    const foe0 = foe.health.current;
+    ms.runComposedSteps([step]);
+    await wait(700);
+    const foeDrop = foe0 - foe.health.current;
+    foe.destroy();
+    ms.summons.clear();
+    ms.playerHealth.full();
+    return { setup: 'ok', selfHealed, tankHealed, playerUntouched, foeDrop };
+  });
+  ok(
+    'druid ext — dual-use bolt: heals self, prefers an injured summon, damages an enemy in range',
+    dualRun.setup === 'ok' && dualRun.selfHealed === 30 && dualRun.tankHealed === 30 && dualRun.playerUntouched && dualRun.foeDrop > 0,
+    JSON.stringify(dualRun),
+  );
+
+  // 3v-3. FRIENDLY ZONE (STATIC): heals the player + a summon standing in it on
+  // ticks, stays where it was cast, and stops healing once the player leaves.
+  const staticZone = await page.evaluate(async () => {
+    const ms = window.__ready();
+    const wait = (t) => new Promise((r) => setTimeout(r, t));
+    if (!window.__quietSpot()) return { setup: 'no quiet spot' };
+    ms.summons.clear();
+    const cfg = { key: 'gate_test_tank', name: 'Gate Tank', behavior: 'tank', maxHP: 100, durationMs: 20000, aggroRadius: 150, followRange: 150, moveTilesPerSec: 5, bodyRadius: 12, tint: 0x88cc88, drawsAggro: true, aggroPriority: 2 };
+    const [tank] = ms.summonAlliedUnits(cfg, 1, 1);
+    tank.takeHit(50);
+    const tankBefore = tank.health.current;
+    ms.playerHealth.current = Math.max(1, ms.playerHealth.max - 80);
+    const before = ms.playerHealth.current;
+    ms.runComposedSteps([{ p: 'friendzone', radius: 140, healPerTick: 10, tickMs: 200, durationMs: 3000 }]);
+    const z = ms.friendlyZones[ms.friendlyZones.length - 1];
+    const placedAt = { x: z.x, y: z.y, follow: z.follow };
+    await wait(900);
+    const healed = ms.playerHealth.current - before;
+    const tankHealed = tank.health.current - tankBefore;
+    // Leave the zone: the center must NOT follow, and healing must stop.
+    ms.player.sprite.body.reset(ms.player.x + 600, ms.player.y);
+    await wait(300);
+    const stayed = Math.hypot(z.x - placedAt.x, z.y - placedAt.y) < 1;
+    const outside = ms.playerHealth.current;
+    await wait(600);
+    const healedOutside = ms.playerHealth.current - outside;
+    ms.summons.clear();
+    ms.playerHealth.full();
+    return { setup: 'ok', follow: placedAt.follow, healed, tankHealed, stayed, healedOutside };
+  });
+  ok(
+    'druid ext — static friendly zone: heals player + summon on ticks, holds position, stops outside',
+    staticZone.setup === 'ok' && staticZone.follow === false && staticZone.healed >= 30 && staticZone.tankHealed >= 30 && staticZone.stayed && staticZone.healedOutside === 0,
+    JSON.stringify(staticZone),
+  );
+
+  // 3v-4. FRIENDLY ZONE (MOBILE): the follow variant tracks the caster and keeps
+  // healing on the move, then expires cleanly (list emptied, FX gone).
+  const mobileZone = await page.evaluate(async () => {
+    const ms = window.__ready();
+    const wait = (t) => new Promise((r) => setTimeout(r, t));
+    if (!window.__quietSpot()) return { setup: 'no quiet spot' };
+    ms.playerHealth.current = Math.max(1, ms.playerHealth.max - 80);
+    const before = ms.playerHealth.current;
+    ms.runComposedSteps([{ p: 'friendzone', follow: true, radius: 120, healPerTick: 8, tickMs: 200, durationMs: 2200 }]);
+    const z = ms.friendlyZones[ms.friendlyZones.length - 1];
+    ms.player.sprite.body.reset(ms.player.x + 500, ms.player.y + 300);
+    await wait(400);
+    const tracked = Math.hypot(z.x - ms.player.x, z.y - ms.player.y) < 40;
+    await wait(600);
+    const healedMoving = ms.playerHealth.current - before;
+    await wait(1600); // past durationMs → the zone must be pruned
+    const expired = ms.friendlyZones.length === 0;
+    ms.playerHealth.full();
+    return { setup: 'ok', tracked, healedMoving, expired };
+  });
+  ok(
+    'druid ext — mobile friendly zone: follows the caster, heals on the move, expires cleanly',
+    mobileZone.setup === 'ok' && mobileZone.tracked && mobileZone.healedMoving >= 24 && mobileZone.expired,
+    JSON.stringify(mobileZone),
+  );
+
+  // 3v-5. PLAYER STEALTH: an enemy chasing the player stops targeting them the
+  // moment stealth starts (aggro wiped, no fall-through to the player), and an
+  // ATTACK breaks it (targeting resumes).
+  const stealthRun = await page.evaluate(async () => {
+    const ms = window.__ready();
+    const wait = (t) => new Promise((r) => setTimeout(r, t));
+    if (!window.__quietSpot()) return { setup: 'no quiet spot' };
+    const w = ms.activeMap().nearestWalkableWorld(ms.player.x + 160, ms.player.y);
+    const foe = ms.spawnAngel('darkcaster', w.x, w.y);
+    await wait(250);
+    const tgt = () => ms.enemyAggroTarget(foe, foe.x, foe.y);
+    const t0 = tgt();
+    const targetsPlayerBefore = Math.hypot(t0.x - ms.player.x, t0.y - ms.player.y) < 4;
+    ms.runComposedSteps([{ p: 'stealth', durationMs: 8000 }]);
+    const t1 = tgt();
+    const ignoredDuring = Math.hypot(t1.x - foe.x, t1.y - foe.y) < 4 && !(Math.hypot(t1.x - ms.player.x, t1.y - ms.player.y) < 4);
+    const activeDuring = ms.playerStealthActive;
+    // Attacking breaks it: any offensive composed step.
+    ms.runComposedSteps([{ p: 'strike', at: 'self', radius: 90, damageRaw: 1, tint: 0xffffff }]);
+    const brokeOnAttack = !ms.playerStealthActive && ms.player.sprite.alpha === 1;
+    await wait(450); // past the aggro re-eval interval
+    const t2 = tgt();
+    const targetsPlayerAfter = Math.hypot(t2.x - ms.player.x, t2.y - ms.player.y) < 4;
+    foe.destroy();
+    return { setup: 'ok', targetsPlayerBefore, ignoredDuring, activeDuring, brokeOnAttack, targetsPlayerAfter };
+  });
+  ok(
+    'druid ext — stealth: removes the player from enemy targeting, breaks on attack',
+    stealthRun.setup === 'ok' && stealthRun.targetsPlayerBefore && stealthRun.ignoredDuring && stealthRun.activeDuring && stealthRun.brokeOnAttack && stealthRun.targetsPlayerAfter,
+    JSON.stringify(stealthRun),
+  );
+
+  // 3v-6. SUMMON VARIANTS: (pair) ONE cast spawns TWO live linked units of one
+  // type; (untargetable timed) a drawsAggro:false attacker is invisible to the
+  // aggro hierarchy AND bolt interception, lands its low chip damage on a real
+  // enemy, and auto-expires at its overridden duration.
+  const variantRun = await page.evaluate(async () => {
+    const ms = window.__ready();
+    const wait = (t) => new Promise((r) => setTimeout(r, t));
+    if (!window.__quietSpot()) return { setup: 'no quiet spot' };
+    ms.summons.clear();
+    // PAIR: one cast → two live units of the same type, side by side.
+    const pairCfg = { key: 'gate_test_pair', name: 'Gate Pair', behavior: 'tank', maxHP: 60, durationMs: 15000, aggroRadius: 150, followRange: 150, moveTilesPerSec: 5, bodyRadius: 12, tint: 0x88cc88, drawsAggro: true, aggroPriority: 2 };
+    const pair = ms.summonAlliedUnits(pairCfg, 2, 2);
+    const pairAlive = pair.length === 2 && pair.every((s) => s.isAlive) && ms.summons.list.filter((s) => s.config.key === 'gate_test_pair').length === 2;
+    const apart = pair.length === 2 ? Math.hypot(pair[0].x - pair[1].x, pair[0].y - pair[1].y) : 0;
+    ms.summons.clear();
+    // UNTARGETABLE TIMED: drawsAggro=false + a duration override + chip damage.
+    const chipCfg = {
+      key: 'gate_test_chip', name: 'Gate Chip', behavior: 'attacker', maxHP: 30, durationMs: 60000,
+      aggroRadius: 0, followRange: 150, moveTilesPerSec: 6, bodyRadius: 12, tint: 0xcccc66,
+      drawsAggro: false, aggroPriority: 1, attackDamage: 4, attackCooldownMs: 350, attackRange: 70, seekRange: 320, leashRange: 600,
+    };
+    const [chip] = ms.summonAlliedUnits(chipCfg, 1, 1, 1600);
+    const untargetable = ms.summons.aggroSummonNear(chip.x, chip.y) === null && ms.summons.summonAt(chip.x, chip.y, 60) === null;
+    const w = ms.activeMap().nearestWalkableWorld(ms.player.x + 120, ms.player.y);
+    const foe = ms.spawnAngel('darkcaster', w.x, w.y);
+    await wait(300);
+    const foe0 = foe.health.current;
+    await wait(900); // the chip attacker closes + swings at least once
+    const chipped = foe0 - foe.health.current;
+    const foeTarget = ms.enemyAggroTarget(foe, foe.x, foe.y);
+    const foeIgnoresChip = !(Math.hypot(foeTarget.x - chip.x, foeTarget.y - chip.y) < 4);
+    await wait(700); // past the 1600ms override → expired + pruned
+    const expired = !ms.summons.list.some((s) => s.config.key === 'gate_test_chip');
+    foe.destroy();
+    ms.summons.clear();
+    return { setup: 'ok', pairAlive, apart, untargetable, chipped, foeIgnoresChip, expired };
+  });
+  ok(
+    'druid ext — summon variants: pair spawns two; untargetable timed unit chips, is ignored, expires',
+    variantRun.setup === 'ok' && variantRun.pairAlive && variantRun.apart > 20 && variantRun.untargetable && variantRun.chipped > 0 && variantRun.foeIgnoresChip && variantRun.expired,
+    JSON.stringify(variantRun),
   );
 
   // 4) THE GATE: zero page errors across everything above.

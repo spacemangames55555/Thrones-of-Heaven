@@ -4,6 +4,7 @@ import { RUN_SPEED } from '../game/settings';
 const TEXTURE_KEY = 'player-figure'; // Blacksmith (gold soul/herald) avatar
 const WIZARD_TEXTURE_KEY = 'wizard-figure'; // Wizard (Egyptian sorcerer) avatar
 const NECRO_TEXTURE_KEY = 'necro-figure'; // Necromancer (Slavic death-sorcerer) avatar
+const DRUID_TEXTURE_KEY = 'druid-figure'; // Druid (Seattle wild-warden) avatar
 const WIDTH = 32; // ~1 tile wide
 const HEIGHT = 48; // ~1.5 tiles tall — fixes the "character = one giant block" look
 
@@ -11,6 +12,7 @@ const HEIGHT = 48; // ~1.5 tiles tall — fixes the "character = one giant block
 function textureForClass(classId: string): string {
   if (classId === 'wizard') return WIZARD_TEXTURE_KEY;
   if (classId === 'necromancer') return NECRO_TEXTURE_KEY;
+  if (classId === 'druid') return DRUID_TEXTURE_KEY;
   return TEXTURE_KEY;
 }
 
@@ -32,6 +34,7 @@ export class Player {
     Player.ensureTexture(scene);
     Player.ensureWizardTexture(scene);
     Player.ensureNecroTexture(scene);
+    Player.ensureDruidTexture(scene);
 
     this.sprite = scene.physics.add.sprite(x, y, textureForClass(classId));
     this.sprite.setCollideWorldBounds(true);
@@ -191,6 +194,47 @@ export class Player {
     g.fillStyle(0x9a6cff, 1);
     g.fillCircle(w - 6, 11, 3);
     g.generateTexture(NECRO_TEXTURE_KEY, w, h);
+    g.destroy();
+  }
+
+  /** The Druid avatar — Seattle's wild-warden: a moss-green hooded mantle with a bark-brown
+   *  under-robe, small antler tines above the hood, and a gnarled staff with a living green
+   *  bud. CODE-DRAWN PLACEHOLDER (a real sprite PNG drops in later via the sprite override
+   *  under this same key). Same footprint as the other figures (class-agnostic body). */
+  private static ensureDruidTexture(scene: Phaser.Scene): void {
+    if (scene.textures.exists(DRUID_TEXTURE_KEY)) return;
+    const w = WIDTH;
+    const h = HEIGHT;
+    const g = scene.make.graphics({ x: 0, y: 0 }, false);
+    // Dark outline + bark-brown under-robe body (a vertical warden capsule).
+    g.fillStyle(0x0c1008, 1);
+    g.fillRoundedRect(4, 8, w - 8, h - 10, 9);
+    g.fillStyle(0x5a4428, 1); // bark-brown robe
+    g.fillRoundedRect(6, 10, w - 12, h - 14, 7);
+    // Moss-green mantle over the shoulders + a leaf clasp.
+    g.fillStyle(0x4a7a3a, 1);
+    g.fillRoundedRect(6, 16, w - 12, 12, 5);
+    g.fillStyle(0x8ac86a, 1); // pale leaf clasp
+    g.fillCircle(w / 2, 21, 2.2);
+    g.fillStyle(0x4a7a3a, 1); // moss trim down the center
+    g.fillRect(w / 2 - 1, 26, 2, h - 32);
+    // Green hood framing a weathered face, antler tines above.
+    g.fillStyle(0x3a6030, 1);
+    g.fillRoundedRect(w / 2 - 9, 5, 18, 14, 5);
+    g.fillStyle(0xd8b890, 1); // weathered skin
+    g.fillCircle(w / 2, 13, 5);
+    g.fillStyle(0x0c1008, 1); // eyes
+    g.fillCircle(w / 2 - 2, 12.5, 1.1);
+    g.fillCircle(w / 2 + 2, 12.5, 1.1);
+    g.fillStyle(0xd9cba8, 1); // small antler tines
+    g.fillTriangle(w / 2 - 7, 7, w / 2 - 4, 8, w / 2 - 9, 1);
+    g.fillTriangle(w / 2 + 7, 7, w / 2 + 4, 8, w / 2 + 9, 1);
+    // A gnarled staff with a living green bud on the right.
+    g.fillStyle(0x6b4a2a, 1);
+    g.fillRect(w - 7, 12, 2, h - 20);
+    g.fillStyle(0x74c86a, 1);
+    g.fillCircle(w - 6, 11, 3);
+    g.generateTexture(DRUID_TEXTURE_KEY, w, h);
     g.destroy();
   }
 }
