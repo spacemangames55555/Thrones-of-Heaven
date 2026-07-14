@@ -942,6 +942,67 @@ try {
     `applied=${artPath.sprOk} size=${JSON.stringify(artPath.sprSize)}`,
   );
 
+  // 3u. SKILL FRAMEWORK (composed-action schema): EVERY skill in every tree of
+  // every class executes without error through its real runtime seam, and each
+  // COMPOSED action produces exactly its declared primitives. Direct calls
+  // bypass only cooldown/energy — the same code paths real activation uses.
+  const skillSweep = await page.evaluate(async () => {
+    const ms = window.__ready();
+    const wait = (t) => new Promise((r) => setTimeout(r, t));
+    const out = { total: 0, composed: 0, bespokeActive: 0, other: 0, passive: 0, mismatches: [], errors: [] };
+    for (const cls of Object.keys(ms.classSkillsAll)) {
+      for (const def of ms.classSkillsAll[cls].skills) {
+        const e = def.effect;
+        out.total++;
+        try {
+          if (e.kind === 'active' && e.compose) {
+            ms.runComposedSteps(e.compose);
+            out.composed++;
+            const want = e.compose.map((s) => s.p).join(',');
+            const got = ms.lastComposedPrimitives.join(',');
+            if (want !== got) out.mismatches.push(`${def.id}: ran [${got}] declared [${want}]`);
+          } else if (e.kind === 'active') {
+            ms.runActiveSkill(e.action);
+            out.bespokeActive++;
+          } else if (e.kind === 'buff' || e.kind === 'transformation') {
+            ms.startTimedSkill(def.id, 60, e.stats, e.tint, e.kind === 'transformation' ? { auraDamage: e.auraDamage, auraRadius: e.auraRadius } : {});
+            out.other++;
+          } else if (e.kind === 'debuff') {
+            ms.runDebuffSkill(e.radius);
+            out.other++;
+          } else if (e.kind === 'channel') {
+            ms.tryStartChannel(def.id, e); // no-target path is its own valid branch
+            out.other++;
+          } else if (e.kind === 'stacking_dot') {
+            const t = ms.nearestEnemy(ms.player.x, ms.player.y, e.range);
+            if (t) ms.addStackingDot(t, def.id, e.dmgPerTick, e.tickMs, e.durationMs, e.maxStacks, e.color ?? 0x9a6cff);
+            out.other++;
+          } else {
+            out.passive++; // stat-only: aggregated by recompute, nothing to execute
+          }
+        } catch (err) {
+          out.errors.push(`${def.id}: ${err.message}`);
+        }
+        await wait(25);
+      }
+    }
+    // Clean up everything the sweep armed: timed forms expire now, summons and
+    // DoTs clear, vitals restore — the page-error gate still watches the tail.
+    for (const t of ms.skillTimed) t.endsAt = 0;
+    ms.summons.clear();
+    ms.clearDots();
+    ms.playerHealth.full();
+    await wait(500);
+    return out;
+  });
+  ok(
+    'skill framework: every skill in every tree executes; composed actions match their declared primitives',
+    skillSweep.errors.length === 0 && skillSweep.mismatches.length === 0 && skillSweep.composed === 42 && skillSweep.total >= 90,
+    `total=${skillSweep.total} composed=${skillSweep.composed} bespokeActive=${skillSweep.bespokeActive} timed/other=${skillSweep.other} passive=${skillSweep.passive}` +
+      (skillSweep.errors.length ? ` ERRORS=${JSON.stringify(skillSweep.errors.slice(0, 3))}` : '') +
+      (skillSweep.mismatches.length ? ` MISMATCH=${JSON.stringify(skillSweep.mismatches.slice(0, 3))}` : ''),
+  );
+
   // 4) THE GATE: zero page errors across everything above.
   ok('zero page errors during boot + travel', pageErrors.length === 0, pageErrors.slice(0, 3).join(' | '));
 } finally {

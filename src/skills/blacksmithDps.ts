@@ -43,7 +43,13 @@ export const DPS_TREE_SKILLS: SkillDef[] = [
     description: 'Activate: a quick hard strike in front of you. Low cooldown.',
     cost: 1,
     tier: 0,
-    effect: { kind: 'active', action: 'bash', cooldownMs: DPS_TUNING.bash.cooldownMs, energyCost: DPS_TUNING.bash.energyCost },
+    effect: {
+      kind: 'active',
+      action: 'bash',
+      cooldownMs: DPS_TUNING.bash.cooldownMs,
+      energyCost: DPS_TUNING.bash.energyCost,
+      compose: [{ p: 'strike', at: 'front', range: DPS_TUNING.bash.range, damage: DPS_TUNING.bash.damage, tint: 0xff7a3a }],
+    },
   },
   {
     id: 'bs_dps_berserker',
@@ -63,7 +69,13 @@ export const DPS_TREE_SKILLS: SkillDef[] = [
     cost: 1,
     prereq: 'bs_dps_berserker',
     tier: 2,
-    effect: { kind: 'active', action: 'overswing', cooldownMs: DPS_TUNING.overswing.cooldownMs, energyCost: DPS_TUNING.overswing.energyCost },
+    effect: {
+      kind: 'active',
+      action: 'overswing',
+      cooldownMs: DPS_TUNING.overswing.cooldownMs,
+      energyCost: DPS_TUNING.overswing.energyCost,
+      compose: [{ p: 'strike', at: 'front', range: DPS_TUNING.overswing.range, damage: DPS_TUNING.overswing.damage, tint: 0xffb04a, windUpMs: DPS_TUNING.overswing.windUpMs }],
+    },
   },
   {
     id: 'bs_dps_double_swing',
@@ -100,7 +112,13 @@ export const DPS_TREE_SKILLS: SkillDef[] = [
     cost: 1,
     prereq: 'bs_dps_crazed',
     tier: 5,
-    effect: { kind: 'active', action: 'windmill', cooldownMs: DPS_TUNING.windmill.cooldownMs, energyCost: DPS_TUNING.windmill.energyCost },
+    effect: {
+      kind: 'active',
+      action: 'windmill',
+      cooldownMs: DPS_TUNING.windmill.cooldownMs,
+      energyCost: DPS_TUNING.windmill.energyCost,
+      compose: [{ p: 'strike', at: 'self', radius: DPS_TUNING.windmill.radius, damage: DPS_TUNING.windmill.damage, tint: 0xff9a5a }],
+    },
   },
   {
     id: 'bs_dps_hammer_throw',
@@ -110,7 +128,13 @@ export const DPS_TREE_SKILLS: SkillDef[] = [
     cost: 1,
     prereq: 'bs_dps_windmill',
     tier: 6,
-    effect: { kind: 'active', action: 'hammer_throw', cooldownMs: DPS_TUNING.hammerThrow.cooldownMs, energyCost: DPS_TUNING.hammerThrow.energyCost },
+    effect: {
+      kind: 'active',
+      action: 'hammer_throw',
+      cooldownMs: DPS_TUNING.hammerThrow.cooldownMs,
+      energyCost: DPS_TUNING.hammerThrow.energyCost,
+      compose: [{ p: 'bolt', damage: DPS_TUNING.hammerThrow.damage, speed: DPS_TUNING.hammerThrow.speed, range: DPS_TUNING.hammerThrow.range, radius: DPS_TUNING.hammerThrow.radius, tint: 0xd9c08a }],
+    },
   },
   {
     id: 'bs_dps_triple_swing',

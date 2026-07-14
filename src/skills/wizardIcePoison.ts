@@ -57,7 +57,13 @@ export const WIZARD_ICEPOISON_SKILLS: SkillDef[] = [
     description: `Activate: hurl an ice shard that PIERCES through up to ${T.icicle.pierce} enemies in a line. Your reliable ranged attack.`,
     cost: 1,
     tier: 0,
-    effect: { kind: 'active', action: 'wiz_icicle', cooldownMs: T.icicle.cooldownMs, energyCost: T.icicle.energyCost },
+    effect: {
+      kind: 'active',
+      action: 'wiz_icicle',
+      cooldownMs: T.icicle.cooldownMs,
+      energyCost: T.icicle.energyCost,
+      compose: [{ p: 'bolt', damage: T.icicle.damage, speed: T.icicle.speed, range: T.icicle.range, radius: T.icicle.radius, tint: 0x9fe8ff, pierce: T.icicle.pierce }],
+    },
   },
   {
     id: 'wiz_toxic_bolt',
@@ -67,7 +73,16 @@ export const WIZARD_ICEPOISON_SKILLS: SkillDef[] = [
     cost: 1,
     prereq: 'wiz_icicle',
     tier: 1,
-    effect: { kind: 'active', action: 'wiz_toxic_bolt', cooldownMs: T.toxicBolt.cooldownMs, energyCost: T.toxicBolt.energyCost },
+    effect: {
+      kind: 'active',
+      action: 'wiz_toxic_bolt',
+      cooldownMs: T.toxicBolt.cooldownMs,
+      energyCost: T.toxicBolt.energyCost,
+      compose: [{
+        p: 'bolt', damage: T.toxicBolt.impactDamage, speed: T.toxicBolt.speed, range: T.toxicBolt.range, radius: T.toxicBolt.radius, tint: 0x9acd32,
+        dot: { dmgPerTick: T.toxicBolt.dotDamage, tickMs: T.toxicBolt.dotTickMs, durationMs: T.toxicBolt.dotDurationMs, radius: T.toxicBolt.dotRadius, color: 0x9acd32 },
+      }],
+    },
   },
   {
     id: 'wiz_black_ice',
@@ -77,7 +92,13 @@ export const WIZARD_ICEPOISON_SKILLS: SkillDef[] = [
     cost: 1,
     prereq: 'wiz_toxic_bolt',
     tier: 2,
-    effect: { kind: 'active', action: 'wiz_black_ice', cooldownMs: T.blackIce.cooldownMs, energyCost: T.blackIce.energyCost },
+    effect: {
+      kind: 'active',
+      action: 'wiz_black_ice',
+      cooldownMs: T.blackIce.cooldownMs,
+      energyCost: T.blackIce.energyCost,
+      compose: [{ p: 'hazard', at: 'ahead', placeAhead: T.blackIce.placeAhead, radius: T.blackIce.radius, tickDamage: 0, tickMs: T.blackIce.tickMs, durationMs: T.blackIce.durationMs, slowFactor: T.blackIce.slowFactor, fill: 0x4a6a8f, stroke: 0xbfe6ff }],
+    },
   },
   {
     id: 'wiz_frostbite',
@@ -87,7 +108,17 @@ export const WIZARD_ICEPOISON_SKILLS: SkillDef[] = [
     cost: 1,
     prereq: 'wiz_black_ice',
     tier: 3,
-    effect: { kind: 'active', action: 'wiz_frostbite', cooldownMs: T.frostbite.cooldownMs, energyCost: T.frostbite.energyCost },
+    effect: {
+      kind: 'active',
+      action: 'wiz_frostbite',
+      cooldownMs: T.frostbite.cooldownMs,
+      energyCost: T.frostbite.energyCost,
+      compose: [{
+        p: 'strike', at: 'front', range: T.frostbite.range, damage: T.frostbite.damage, tint: 0xbfe6ff,
+        slowFactor: T.frostbite.slowFactor, slowMs: T.frostbite.durationMs,
+        weaken: T.frostbite.weaken, weakenMs: T.frostbite.durationMs, weakenOnlyIfHit: true,
+      }],
+    },
   },
   {
     id: 'wiz_sludge',
@@ -97,7 +128,13 @@ export const WIZARD_ICEPOISON_SKILLS: SkillDef[] = [
     cost: 1,
     prereq: 'wiz_frostbite',
     tier: 4,
-    effect: { kind: 'active', action: 'wiz_sludge', cooldownMs: T.sludge.cooldownMs, energyCost: T.sludge.energyCost },
+    effect: {
+      kind: 'active',
+      action: 'wiz_sludge',
+      cooldownMs: T.sludge.cooldownMs,
+      energyCost: T.sludge.energyCost,
+      compose: [{ p: 'cone', range: T.sludge.range, halfAngleDeg: T.sludge.coneHalfAngleDeg, damage: T.sludge.damage, tint: 0x9acd32, knockback: T.sludge.knockback, knockbackStunMs: 200 }],
+    },
   },
   {
     id: 'wiz_freezing_rain',
@@ -107,7 +144,13 @@ export const WIZARD_ICEPOISON_SKILLS: SkillDef[] = [
     cost: 1,
     prereq: 'wiz_sludge',
     tier: 5,
-    effect: { kind: 'active', action: 'wiz_freezing_rain', cooldownMs: T.freezingRain.cooldownMs, energyCost: T.freezingRain.energyCost },
+    effect: {
+      kind: 'active',
+      action: 'wiz_freezing_rain',
+      cooldownMs: T.freezingRain.cooldownMs,
+      energyCost: T.freezingRain.energyCost,
+      compose: [{ p: 'hazard', at: 'self', radius: T.freezingRain.radius, tickDamage: T.freezingRain.tickDamage, tickMs: T.freezingRain.tickMs, durationMs: T.freezingRain.durationMs, slowFactor: T.freezingRain.slowFactor, fill: 0x6aa0d0, stroke: 0xbfe6ff }],
+    },
   },
   {
     id: 'wiz_biohazard',
@@ -117,7 +160,13 @@ export const WIZARD_ICEPOISON_SKILLS: SkillDef[] = [
     cost: 1,
     prereq: 'wiz_freezing_rain',
     tier: 6,
-    effect: { kind: 'active', action: 'wiz_biohazard', cooldownMs: T.biohazard.cooldownMs, energyCost: T.biohazard.energyCost },
+    effect: {
+      kind: 'active',
+      action: 'wiz_biohazard',
+      cooldownMs: T.biohazard.cooldownMs,
+      energyCost: T.biohazard.energyCost,
+      compose: [{ p: 'hazard', at: 'ahead', placeAhead: T.biohazard.throwRange, radius: T.biohazard.radius, tickDamage: T.biohazard.tickDamage, tickMs: T.biohazard.tickMs, durationMs: T.biohazard.durationMs, fill: 0x6b8e23, stroke: 0x9acd32 }],
+    },
   },
   {
     id: 'wiz_plague',
@@ -127,7 +176,13 @@ export const WIZARD_ICEPOISON_SKILLS: SkillDef[] = [
     cost: 1,
     prereq: 'wiz_biohazard',
     tier: 7,
-    effect: { kind: 'active', action: 'wiz_plague', cooldownMs: T.plague.cooldownMs, energyCost: T.plague.energyCost },
+    effect: {
+      kind: 'active',
+      action: 'wiz_plague',
+      cooldownMs: T.plague.cooldownMs,
+      energyCost: T.plague.energyCost,
+      compose: [{ p: 'plague', applyRange: T.plague.applyRange, applyRadius: T.plague.applyRadius, dotDamage: T.plague.dotDamage, dotTickMs: T.plague.dotTickMs, dotDurationMs: T.plague.dotDurationMs, spreadRadius: T.plague.spreadRadius, maxSpread: T.plague.maxSpread, tint: 0x9acd32 }],
+    },
   },
   {
     // ICE GOLEM — relocated here from its standalone slot. Same id (ICE_GOLEM_SKILL_ID) so
@@ -151,6 +206,15 @@ export const WIZARD_ICEPOISON_SKILLS: SkillDef[] = [
     cost: 1,
     prereq: ICE_GOLEM_SKILL_ID,
     tier: 9,
-    effect: { kind: 'active', action: 'wiz_pestilence', cooldownMs: T.pestilence.cooldownMs, energyCost: T.pestilence.energyCost },
+    effect: {
+      kind: 'active',
+      action: 'wiz_pestilence',
+      cooldownMs: T.pestilence.cooldownMs,
+      energyCost: T.pestilence.energyCost,
+      compose: [{
+        p: 'hazard', at: 'self', radius: T.pestilence.radius, tickDamage: T.pestilence.tickDamage, tickMs: T.pestilence.tickMs, durationMs: T.pestilence.durationMs,
+        slowFactor: T.pestilence.slowFactor, weaken: T.pestilence.weaken, fill: 0x6b8e23, stroke: 0x9acd32, ring: 0x9acd32, banner: 'Pestilence!',
+      }],
+    },
   },
 ];
