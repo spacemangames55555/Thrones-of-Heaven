@@ -61,7 +61,13 @@ export const MARROW_TREE_SKILLS: SkillDef[] = [
     description: 'Activate: hurl a shard of bone — a fast single-target ranged shot. Your first ability.',
     cost: 1,
     tier: 0,
-    effect: { kind: 'active', action: 'necro_bone_dart', cooldownMs: MARROW_TUNING.boneDart.cooldownMs, energyCost: MARROW_TUNING.boneDart.energyCost },
+    effect: {
+      kind: 'active',
+      action: 'necro_bone_dart',
+      cooldownMs: MARROW_TUNING.boneDart.cooldownMs,
+      energyCost: MARROW_TUNING.boneDart.energyCost,
+      compose: [{ p: 'bolt', damage: MARROW_TUNING.boneDart.damage, speed: MARROW_TUNING.boneDart.speed, range: MARROW_TUNING.boneDart.range, radius: MARROW_TUNING.boneDart.radius, tint: 0xe9e4d6 }],
+    },
   },
   {
     id: 'necro_marrow_spiked_punch',
@@ -71,7 +77,13 @@ export const MARROW_TREE_SKILLS: SkillDef[] = [
     cost: 1,
     prereq: 'necro_marrow_bone_dart',
     tier: 1,
-    effect: { kind: 'active', action: 'necro_spiked_punch', cooldownMs: MARROW_TUNING.spikedPunch.cooldownMs, energyCost: MARROW_TUNING.spikedPunch.energyCost },
+    effect: {
+      kind: 'active',
+      action: 'necro_spiked_punch',
+      cooldownMs: MARROW_TUNING.spikedPunch.cooldownMs,
+      energyCost: MARROW_TUNING.spikedPunch.energyCost,
+      compose: [{ p: 'strike', at: 'front', range: MARROW_TUNING.spikedPunch.range, damage: MARROW_TUNING.spikedPunch.damage, tint: 0xd9d2c2, tauntMs: MARROW_TUNING.spikedPunch.tauntMs }],
+    },
   },
   {
     id: 'necro_marrow_bone_nova',
@@ -81,7 +93,13 @@ export const MARROW_TREE_SKILLS: SkillDef[] = [
     cost: 1,
     prereq: 'necro_marrow_spiked_punch',
     tier: 2,
-    effect: { kind: 'active', action: 'necro_bone_nova', cooldownMs: MARROW_TUNING.boneNova.cooldownMs, energyCost: MARROW_TUNING.boneNova.energyCost },
+    effect: {
+      kind: 'active',
+      action: 'necro_bone_nova',
+      cooldownMs: MARROW_TUNING.boneNova.cooldownMs,
+      energyCost: MARROW_TUNING.boneNova.energyCost,
+      compose: [{ p: 'strike', at: 'self', radius: MARROW_TUNING.boneNova.radius, damage: MARROW_TUNING.boneNova.damage, tint: 0xe9e4d6, knockback: MARROW_TUNING.boneNova.knockback, knockbackStunMs: 160, tauntMs: MARROW_TUNING.boneNova.tauntMs }],
+    },
   },
   {
     id: 'necro_marrow_calcify',
@@ -118,7 +136,13 @@ export const MARROW_TREE_SKILLS: SkillDef[] = [
     cost: 1,
     prereq: MARROWNAUT_ID,
     tier: 5,
-    effect: { kind: 'active', action: 'necro_stake', cooldownMs: MARROW_TUNING.stake.cooldownMs, energyCost: MARROW_TUNING.stake.energyCost },
+    effect: {
+      kind: 'active',
+      action: 'necro_stake',
+      cooldownMs: MARROW_TUNING.stake.cooldownMs,
+      energyCost: MARROW_TUNING.stake.energyCost,
+      compose: [{ p: 'strike', at: 'front', range: MARROW_TUNING.stake.range, damage: MARROW_TUNING.stake.damage, noRing: true, rootMs: MARROW_TUNING.stake.rootMs }],
+    },
   },
   {
     id: OSTEO_AURA_ID,
@@ -158,6 +182,12 @@ export const MARROW_TREE_SKILLS: SkillDef[] = [
     cost: 1,
     prereq: 'necro_marrow_wrecking_ball',
     tier: 9,
-    effect: { kind: 'active', action: 'necro_grasp', cooldownMs: MARROW_TUNING.graspOfDeath.cooldownMs, energyCost: MARROW_TUNING.graspOfDeath.energyCost },
+    effect: {
+      kind: 'active',
+      action: 'necro_grasp',
+      cooldownMs: MARROW_TUNING.graspOfDeath.cooldownMs,
+      energyCost: MARROW_TUNING.graspOfDeath.energyCost,
+      compose: [{ p: 'drain', range: MARROW_TUNING.graspOfDeath.range, damage: MARROW_TUNING.graspOfDeath.damage, healPct: MARROW_TUNING.graspOfDeath.healPct, tint: 0x9a6cff }],
+    },
   },
 ];

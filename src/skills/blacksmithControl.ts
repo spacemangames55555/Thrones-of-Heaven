@@ -71,7 +71,13 @@ export const CONTROL_TREE_SKILLS: SkillDef[] = [
     cost: 1,
     prereq: 'bs_ctrl_toughness',
     tier: 2,
-    effect: { kind: 'active', action: 'disarm', cooldownMs: CONTROL_TUNING.disarm.cooldownMs, energyCost: CONTROL_TUNING.disarm.energyCost },
+    effect: {
+      kind: 'active',
+      action: 'disarm',
+      cooldownMs: CONTROL_TUNING.disarm.cooldownMs,
+      energyCost: CONTROL_TUNING.disarm.energyCost,
+      compose: [{ p: 'strike', at: 'front', range: CONTROL_TUNING.disarm.range, damage: CONTROL_TUNING.disarm.damage, tint: 0xb0a0ff, stunMs: CONTROL_TUNING.disarm.disarmMs }],
+    },
   },
   {
     id: 'bs_ctrl_intimidate',
@@ -81,7 +87,17 @@ export const CONTROL_TREE_SKILLS: SkillDef[] = [
     cost: 1,
     prereq: 'bs_ctrl_disarm',
     tier: 3,
-    effect: { kind: 'active', action: 'intimidate', cooldownMs: CONTROL_TUNING.intimidate.cooldownMs, energyCost: CONTROL_TUNING.intimidate.energyCost },
+    effect: {
+      kind: 'active',
+      action: 'intimidate',
+      cooldownMs: CONTROL_TUNING.intimidate.cooldownMs,
+      energyCost: CONTROL_TUNING.intimidate.energyCost,
+      compose: [{
+        p: 'strike', at: 'self', radius: CONTROL_TUNING.intimidate.radius, tint: 0xffa040,
+        slowFactor: CONTROL_TUNING.intimidate.slowFactor, slowMs: CONTROL_TUNING.intimidate.durationMs,
+        weaken: CONTROL_TUNING.intimidate.weaken, weakenMs: CONTROL_TUNING.intimidate.durationMs, weakenChannel: 'intimidate',
+      }],
+    },
   },
   {
     id: COUNTER_ID,
@@ -101,7 +117,13 @@ export const CONTROL_TREE_SKILLS: SkillDef[] = [
     cost: 1,
     prereq: COUNTER_ID,
     tier: 5,
-    effect: { kind: 'active', action: 'cripple', cooldownMs: CONTROL_TUNING.cripple.cooldownMs, energyCost: CONTROL_TUNING.cripple.energyCost },
+    effect: {
+      kind: 'active',
+      action: 'cripple',
+      cooldownMs: CONTROL_TUNING.cripple.cooldownMs,
+      energyCost: CONTROL_TUNING.cripple.energyCost,
+      compose: [{ p: 'strike', at: 'front', range: CONTROL_TUNING.cripple.range, damage: CONTROL_TUNING.cripple.damage, tint: 0x8af0d0, slowFactor: CONTROL_TUNING.cripple.slowFactor, slowMs: CONTROL_TUNING.cripple.slowMs }],
+    },
   },
   {
     id: IRON_WILL_ID,

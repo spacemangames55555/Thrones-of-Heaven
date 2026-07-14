@@ -51,7 +51,13 @@ export const TANK_TREE_SKILLS: SkillDef[] = [
     description: `Activate: a short shield strike — moderate damage and STUNS hit enemies for ${(TANK_TUNING.shieldBash.stunMs / 1000).toFixed(1)}s.`,
     cost: 1,
     tier: 0,
-    effect: { kind: 'active', action: 'shield_bash', cooldownMs: TANK_TUNING.shieldBash.cooldownMs, energyCost: TANK_TUNING.shieldBash.energyCost },
+    effect: {
+      kind: 'active',
+      action: 'shield_bash',
+      cooldownMs: TANK_TUNING.shieldBash.cooldownMs,
+      energyCost: TANK_TUNING.shieldBash.energyCost,
+      compose: [{ p: 'strike', at: 'front', range: TANK_TUNING.shieldBash.range, damageRaw: TANK_TUNING.shieldBash.damage, tint: 0xcfe3ff, stunMs: TANK_TUNING.shieldBash.stunMs }],
+    },
   },
   {
     id: 'bs_tank_grit',
@@ -81,7 +87,13 @@ export const TANK_TREE_SKILLS: SkillDef[] = [
     cost: 1,
     prereq: 'bs_tank_iron_hide',
     tier: 3,
-    effect: { kind: 'active', action: 'shove', cooldownMs: TANK_TUNING.shove.cooldownMs, energyCost: TANK_TUNING.shove.energyCost },
+    effect: {
+      kind: 'active',
+      action: 'shove',
+      cooldownMs: TANK_TUNING.shove.cooldownMs,
+      energyCost: TANK_TUNING.shove.energyCost,
+      compose: [{ p: 'strike', at: 'self', radius: TANK_TUNING.shove.radius, damageRaw: TANK_TUNING.shove.damage, tint: 0x9fd0ff, knockback: TANK_TUNING.shove.knockback, knockbackStunMs: TANK_TUNING.shove.stunMs }],
+    },
   },
   {
     id: 'bs_tank_double_block',
@@ -101,7 +113,13 @@ export const TANK_TREE_SKILLS: SkillDef[] = [
     cost: 1,
     prereq: 'bs_tank_double_block',
     tier: 5,
-    effect: { kind: 'active', action: 'shield_swing', cooldownMs: TANK_TUNING.shieldSwing.cooldownMs, energyCost: TANK_TUNING.shieldSwing.energyCost },
+    effect: {
+      kind: 'active',
+      action: 'shield_swing',
+      cooldownMs: TANK_TUNING.shieldSwing.cooldownMs,
+      energyCost: TANK_TUNING.shieldSwing.energyCost,
+      compose: [{ p: 'strike', at: 'front', range: TANK_TUNING.shieldSwing.range, reach: TANK_TUNING.shieldSwing.arcReach, damageRaw: TANK_TUNING.shieldSwing.damage, tint: 0xffd27a }],
+    },
   },
   {
     id: 'bs_tank_war_chant',

@@ -65,9 +65,8 @@ import { HealthBar } from '../combat/HealthBar';
 import { HolyBoltButton } from '../ui/HolyBoltButton';
 import { LoadoutBar } from '../ui/LoadoutBar';
 import { SkillState } from '../skills/SkillState';
-import { classSkills, combineMods, isStarterSkill, isAimableSkill, isEquippableSkill, type SkillDef, type SkillStatMods, type SkillEffect, type ActiveActionId, type ClassId } from '../skills/skillData';
+import { classSkills, combineMods, isStarterSkill, isAimableSkill, isEquippableSkill, CLASS_SKILLS, type ComposedStep, type SkillDef, type SkillStatMods, type SkillEffect, type ActiveActionId, type ClassId } from '../skills/skillData';
 import { TANK_TUNING } from '../skills/blacksmithTank';
-import { DPS_TUNING } from '../skills/blacksmithDps';
 import { CONTROL_TUNING, COUNTER_ID, IRON_WILL_ID, DOMINANCE_ID, IRON_PYRITE_ID } from '../skills/blacksmithControl';
 import { MARROW_TUNING, MARROWNAUT_ID, OSTEO_AURA_ID } from '../skills/necromancerMarrow';
 import {
@@ -81,7 +80,6 @@ import {
 } from '../skills/necromancerSummons';
 import { DM_TUNING, BLIGHT_ID } from '../skills/necromancerDarkMatter';
 import { WIZARD_FIREWIND_TUNING, WIZ_STORM_ID } from '../skills/wizardFireWind';
-import { ICEPOISON_TUNING } from '../skills/wizardIcePoison';
 import { ETHEREAL_TUNING } from '../skills/wizardEthereal';
 import { AlliedSummonManager } from '../summon/AlliedSummonManager';
 import type { SummonCombatCtx, AlliedSummon } from '../summon/AlliedSummon';
@@ -749,6 +747,8 @@ export class MainScene extends Phaser.Scene {
   private devClassOverride: string | null = null;
   /** The drop-in art seams, exposed for the runtime gate (mechanism checks). */
   readonly artOverrides = { drawIntoAtlasCell, applySpriteOverride };
+  /** Every class's skill trees, exposed for the runtime gate's skill sweep. */
+  readonly classSkillsAll = CLASS_SKILLS;
 
   // REGION WORLDS — the sparse chunked worlds (Europe today, Africa next; see
   // SparseWorldMap). Chunks are small standalone GameMaps; the void between
@@ -2100,7 +2100,36 @@ export class MainScene extends Phaser.Scene {
   }
 
   /** ACTIVE handler — dispatched by action id. New actives add a case (data picks the id). */
+  /** action id → its composed steps, across every class (built once; collisions
+   *  are a data bug and fail loudly). */
+  private composedByAction?: Map<ActiveActionId, ComposedStep[]>;
+  /** The primitives the LAST composed run executed (runtime-gate observable). */
+  lastComposedPrimitives: string[] = [];
+
+  private composedFor(action: ActiveActionId): ComposedStep[] | undefined {
+    if (!this.composedByAction) {
+      this.composedByAction = new Map();
+      for (const cls of Object.keys(CLASS_SKILLS) as ClassId[]) {
+        for (const def of classSkills(cls).skills) {
+          const e = def.effect;
+          if (e.kind !== 'active' || !e.compose) continue;
+          const prev = this.composedByAction.get(e.action);
+          if (prev && prev !== e.compose) throw new Error(`Composed action '${e.action}' defined twice with different steps`);
+          this.composedByAction.set(e.action, e.compose);
+        }
+      }
+    }
+    return this.composedByAction.get(action);
+  }
+
   private runActiveSkill(action: ActiveActionId): void {
+    // COMPOSED ACTIONS first: skills declared as data run through the generic
+    // executor; only bespoke mechanics remain as cases below.
+    const steps = this.composedFor(action);
+    if (steps) {
+      this.runComposedSteps(steps);
+      return;
+    }
     const px = this.player.x;
     const py = this.player.y;
     this.lastCombatTime = this.time.now;
@@ -2109,103 +2138,14 @@ export class MainScene extends Phaser.Scene {
       const r = 150;
       this.spawnSkillRing(px, py, r, 0xff8a3a);
       this.aoeHitAll(px, py, r, this.playerDamage() * 2);
-    } else if (action === 'shield_bash') {
-      // Short shield strike in front + STUN to hit enemies (Tank #2).
-      const c = TANK_TUNING.shieldBash;
-      const fx = px + this.player.facingX * c.range * 0.6;
-      const fy = py + this.player.facingY * c.range * 0.6;
-      this.spawnSkillRing(fx, fy, c.range, 0xcfe3ff);
-      this.aoeHitAll(fx, fy, c.range, c.damage);
-      this.stunEnemiesInRange(fx, fy, c.range, c.stunMs);
-    } else if (action === 'shove') {
-      // Knock back all nearby enemies, creating space (Tank #4).
-      const c = TANK_TUNING.shove;
-      this.spawnSkillRing(px, py, c.radius, 0x9fd0ff);
-      if (c.damage > 0) this.aoeHitAll(px, py, c.radius, c.damage);
-      this.knockbackEnemiesInRange(px, py, c.radius, c.knockback, c.stunMs);
-    } else if (action === 'shield_swing') {
-      // Wide frontal arc (offset AoE in the facing direction) (Tank #6).
-      const c = TANK_TUNING.shieldSwing;
-      const fx = px + this.player.facingX * c.range * c.arcReach;
-      const fy = py + this.player.facingY * c.range * c.arcReach;
-      this.spawnSkillRing(fx, fy, c.range, 0xffd27a);
-      this.aoeHitAll(fx, fy, c.range, c.damage);
     } else if (action === 'plow') {
       this.startPlow(); // tanky forward charge that shoves + damages the path (Tank #8)
     } else if (action === 'basic_strike') {
       this.doBasicStrike(); // the folded-in default attack (equippable basic)
     } else if (action === 'dodge') {
       this.doDodge(); // the folded-in default dodge/lunge (equippable basic)
-    } else if (action === 'bash') {
-      // DPS #1 — a quick hard strike in front.
-      const c = DPS_TUNING.bash;
-      const fx = px + this.player.facingX * c.range * 0.6;
-      const fy = py + this.player.facingY * c.range * 0.6;
-      this.spawnSkillRing(fx, fy, c.range, 0xff7a3a);
-      this.aoeHitAll(fx, fy, c.range, this.skillDamage(c.damage));
-    } else if (action === 'overswing') {
-      // DPS #3 — slow telegraphed heavy strike: wind-up ring, then a big hit.
-      const c = DPS_TUNING.overswing;
-      const tele = this.add.circle(px, py, 10, 0xffd27a, 0).setStrokeStyle(3, 0xffb04a, 0.9).setDepth(13);
-      this.worldFx.add(tele);
-      this.tweens.add({ targets: tele, scale: c.range / 10, alpha: { from: 0.7, to: 0 }, duration: c.windUpMs, ease: 'Quad.in', onComplete: () => tele.destroy() });
-      this.time.delayedCall(c.windUpMs, () => {
-        if (this.playerDead) return;
-        const fx = this.player.x + this.player.facingX * c.range * 0.6;
-        const fy = this.player.y + this.player.facingY * c.range * 0.6;
-        this.spawnSkillRing(fx, fy, c.range, 0xffb04a);
-        this.aoeHitAll(fx, fy, c.range, this.skillDamage(c.damage));
-      });
-    } else if (action === 'windmill') {
-      // DPS #6 — spin: hit ALL enemies around the player.
-      const c = DPS_TUNING.windmill;
-      this.spawnSkillRing(px, py, c.radius, 0xff9a5a);
-      this.aoeHitAll(px, py, c.radius, this.skillDamage(c.damage));
-    } else if (action === 'hammer_throw') {
-      // DPS #7 — ranged thrown hammer (player-faction projectile; reuses the bolt path).
-      const c = DPS_TUNING.hammerThrow;
-      const len = Math.hypot(this.player.facingX, this.player.facingY) || 1;
-      const dx = this.player.facingX / len;
-      const dy = this.player.facingY / len;
-      this.projectiles.spawn({
-        x: px + dx * 18,
-        y: py + dy * 18,
-        dirX: dx,
-        dirY: dy,
-        speed: c.speed,
-        damage: this.skillDamage(c.damage),
-        maxRange: c.range,
-        faction: 'player',
-        color: 0xd9c08a,
-        radius: c.radius,
-      });
-      this.notifyBossesPlayerAction('ranged');
     } else if (action === 'control_charge') {
       this.startCharge(); // Control #1 — forward rush + knockdown along the path
-    } else if (action === 'disarm') {
-      // Control #3 — strike a target in front + lock it down (can't act). (Disarm is
-      // modeled as a freeze: per-enemy attack-only suppression isn't generic here.)
-      const c = CONTROL_TUNING.disarm;
-      const fx = px + this.player.facingX * c.range * 0.6;
-      const fy = py + this.player.facingY * c.range * 0.6;
-      this.spawnSkillRing(fx, fy, c.range, 0xb0a0ff);
-      this.aoeHitAll(fx, fy, c.range, this.skillDamage(c.damage));
-      this.stunEnemiesInRange(fx, fy, c.range, c.disarmMs);
-    } else if (action === 'intimidate') {
-      // Control #4 — AoE shout: SLOW + WEAKEN all nearby enemies for a duration.
-      const c = CONTROL_TUNING.intimidate;
-      this.spawnSkillRing(px, py, c.radius, 0xffa040);
-      this.slowEnemiesInRange(px, py, c.radius, c.durationMs, c.slowFactor);
-      this.intimidateWeakenUntil = this.time.now + c.durationMs;
-      this.intimidateWeakenFactor = c.weaken;
-    } else if (action === 'cripple') {
-      // Control #6 — heavy blow + sharp single-target SLOW.
-      const c = CONTROL_TUNING.cripple;
-      const fx = px + this.player.facingX * c.range * 0.6;
-      const fy = py + this.player.facingY * c.range * 0.6;
-      this.spawnSkillRing(fx, fy, c.range, 0x8af0d0);
-      this.aoeHitAll(fx, fy, c.range, this.skillDamage(c.damage));
-      this.slowEnemiesInRange(fx, fy, c.range, c.slowMs, c.slowFactor);
     } else if (action === 'execute') {
       // Control #8 — finisher: enemies below the HP threshold take massive bonus damage.
       const c = CONTROL_TUNING.execute;
@@ -2214,10 +2154,6 @@ export class MainScene extends Phaser.Scene {
       this.spawnSkillRing(fx, fy, c.range, 0xff5050);
       const low = this.combatEnemiesInRange(fx, fy, c.range).some((e) => e.health.ratio < c.thresholdPct);
       this.aoeHitAll(fx, fy, c.range, this.skillDamage(low ? c.damage * c.executeMult : c.damage));
-    } else if (action === 'wiz_fireball') {
-      // Wizard #1 — single-target fire bolt (the entry damaging active).
-      const c = WIZARD_FIREWIND_TUNING.fireball;
-      this.castFireBolt(c.damage, c.speed, c.range, c.radius, 0xff7a2a);
     } else if (action === 'wiz_flicker') {
       // Wizard #2 — multi-projectile spread of fast bolts.
       const c = WIZARD_FIREWIND_TUNING.flicker;
@@ -2231,54 +2167,8 @@ export class MainScene extends Phaser.Scene {
         this.spawnWizardBolt(Math.cos(ang), Math.sin(ang), dmg, c.speed, c.range, c.radius, 0xffb24a, this.stormSplash(dmg));
       }
       this.notifyBossesPlayerAction('ranged');
-    } else if (action === 'wiz_combust') {
-      // Wizard #3 — bolt that EXPLODES into splash AoE on impact (always splashes).
-      const c = WIZARD_FIREWIND_TUNING.combust;
-      const { dx, dy } = this.facingUnit();
-      this.spawnWizardBolt(dx, dy, this.skillDamage(c.directDamage), c.speed, c.range, c.radius, 0xff5a2a, {
-        splashRadius: c.splashRadius,
-        splashDamage: this.skillDamage(c.splashDamage),
-      });
-      this.notifyBossesPlayerAction('ranged');
-    } else if (action === 'wiz_dust_devil') {
-      // Wizard #4 — cone of wind in front of the player (true wedge hitbox).
-      const c = WIZARD_FIREWIND_TUNING.dustDevil;
-      const { dx, dy } = this.facingUnit();
-      const half = (c.coneHalfAngleDeg * Math.PI) / 180;
-      this.spawnConeFx(px, py, dx, dy, c.range, half, 0x9ad8ff);
-      this.aoeHitAll(px, py, c.range, this.skillDamage(c.damage), (ex, ey) => this.inCone(px, py, dx, dy, ex, ey, c.range, half));
     } else if (action === 'wiz_gust') {
       this.startGust(); // Wizard #5 — wind-dash + path damage (reuses the dash movement)
-    } else if (action === 'wiz_lava') {
-      // Wizard #6 — persistent burning ground patch ahead (reuses the hazard pattern).
-      const c = WIZARD_FIREWIND_TUNING.lava;
-      const { dx, dy } = this.facingUnit();
-      this.spawnSpellHazard(px + dx * c.placeAhead, py + dy * c.placeAhead, c.radius, this.skillDamage(c.tickDamage), c.durationMs, c.tickMs);
-    } else if (action === 'wiz_immolation') {
-      // Wizard #7 — fiery burst around the player (self-centered circle AoE).
-      const c = WIZARD_FIREWIND_TUNING.immolation;
-      this.spawnSkillRing(px, py, c.radius, 0xff7a2a);
-      this.aoeHitAll(px, py, c.radius, this.skillDamage(c.damage));
-    } else if (action === 'wiz_jet_stream') {
-      // Wizard #8 — line/wall of wind projected straight ahead (true segment hitbox).
-      const c = WIZARD_FIREWIND_TUNING.jetStream;
-      const { dx, dy } = this.facingUnit();
-      const x2 = px + dx * c.length;
-      const y2 = py + dy * c.length;
-      this.spawnLineFx(px, py, x2, y2, c.width, 0xbfe6ff);
-      const bx = (px + x2) / 2;
-      const by = (py + y2) / 2;
-      this.aoeHitAll(bx, by, c.length / 2 + c.width, this.skillDamage(c.damage), (ex, ey) => this.inLine(px, py, x2, y2, ex, ey, c.width / 2));
-    } else if (action === 'wiz_tornado') {
-      // Wizard #9 — large multi-pulse vortex that follows the player (bigger than Immolation).
-      const c = WIZARD_FIREWIND_TUNING.tornado;
-      for (let i = 0; i < c.pulses; i++) {
-        this.time.delayedCall(i * c.pulseMs, () => {
-          if (this.playerDead) return;
-          this.spawnSkillRing(this.player.x, this.player.y, c.radius, 0xbfe6ff);
-          this.aoeHitAll(this.player.x, this.player.y, c.radius, this.skillDamage(c.damage));
-        });
-      }
     } else if (action === 'summon_ice_golem') {
       this.summonIceGolem(); // allied tank/blocker summon (draws aggro, no attack)
     } else if (action === 'summon_skeleton') {
@@ -2291,205 +2181,194 @@ export class MainScene extends Phaser.Scene {
       this.summonDarkMatterBurst(); // Summons #5 — timed +summon-damage
     } else if (action === 'necro_army') {
       this.summonArmyOfTheDead(); // Summons #10 capstone — swarm + empower
-    } else if (action === 'necro_dm_blip') {
-      // Dark Matter #1 — fast cheap bolt (the spammable basic; entry damaging active).
-      const c = DM_TUNING.blip;
-      const { dx, dy } = this.facingUnit();
-      this.projectiles.spawn({ x: px + dx * 18, y: py + dy * 18, dirX: dx, dirY: dy, speed: c.speed, damage: this.skillDamage(c.damage), maxRange: c.range, faction: 'player', color: 0xb98bff, radius: c.radius });
-      this.notifyBossesPlayerAction('ranged');
-    } else if (action === 'necro_dm_bomb') {
-      // Dark Matter #2 — lobbed bolt: direct hit + splash AoE on impact (reuses splash).
-      const c = DM_TUNING.bomb;
-      const { dx, dy } = this.facingUnit();
-      this.projectiles.spawn({ x: px + dx * 18, y: py + dy * 18, dirX: dx, dirY: dy, speed: c.speed, damage: this.skillDamage(c.directDamage), maxRange: c.range, faction: 'player', color: 0x7a3fb0, radius: c.radius, splashRadius: c.splashRadius, splashDamage: this.skillDamage(c.splashDamage) });
-      this.notifyBossesPlayerAction('ranged');
-    } else if (action === 'necro_dm_tainted') {
-      // Dark Matter #3 — bolt + DEFENSE-DOWN window (reuses the Osteo damage-amp mechanic, timed).
-      const c = DM_TUNING.tainted;
-      const { dx, dy } = this.facingUnit();
-      this.projectiles.spawn({ x: px + dx * 18, y: py + dy * 18, dirX: dx, dirY: dy, speed: c.speed, damage: this.skillDamage(c.damage), maxRange: c.range, faction: 'player', color: 0x9a5cff, radius: c.radius });
-      this.darkVulnUntil = this.time.now + c.debuffMs;
-      this.darkVulnMult = 1 + c.defenseReduction;
-      this.showBanner('Defenses tainted', 900);
-      this.notifyBossesPlayerAction('ranged');
-    } else if (action === 'necro_dm_hex') {
-      // Dark Matter #4 — debuff: SLOW + WEAKEN the nearest foe's area (reuses slow + weaken).
-      const c = DM_TUNING.hex;
-      const target = this.nearestEnemy(px, py, c.range);
-      if (target) {
-        this.slowEnemiesInRange(target.x, target.y, c.radius, c.durationMs, c.slowFactor);
-        this.setPoisonWeaken(c.weaken, c.durationMs); // weaken = enemy damage dealt down (timed window)
-        if (c.damage > 0) this.aoeHitAll(target.x, target.y, c.radius, this.skillDamage(c.damage));
-        this.spawnSkillRing(target.x, target.y, c.radius, 0x6a3fb0);
-      } else {
-        this.showBanner('No target in range', 800);
-      }
-    } else if (action === 'necro_dm_abyssal') {
-      // Dark Matter #5 — cone of dark energy in front (reuses the cone pattern).
-      const c = DM_TUNING.abyssal;
-      const { dx, dy } = this.facingUnit();
-      const half = (c.coneHalfAngleDeg * Math.PI) / 180;
-      this.spawnConeFx(px, py, dx, dy, c.range, half, 0x9a5cff);
-      this.aoeHitAll(px, py, c.range, this.skillDamage(c.damage), (ex, ey) => this.inCone(px, py, dx, dy, ex, ey, c.range, half));
-    } else if (action === 'necro_dm_rift') {
-      // Dark Matter #6 — ranged AoE at a spot ahead (reuses the placed-AoE pattern).
-      const c = DM_TUNING.rift;
-      const { dx, dy } = this.facingUnit();
-      const cxr = px + dx * c.range;
-      const cyr = py + dy * c.range;
-      this.spawnSkillRing(cxr, cyr, c.radius, 0x7a3fb0);
-      this.aoeHitAll(cxr, cyr, c.radius, this.skillDamage(c.damage));
     } else if (action === 'necro_dm_singularity') {
       this.castSingularity(); // Dark Matter #10 capstone — pull + heavy AoE over time
-    } else if (action === 'wiz_icicle') {
-      // Ice/Poison #1 — piercing ice shard (passes through several enemies).
-      const c = ICEPOISON_TUNING.icicle;
-      const { dx, dy } = this.facingUnit();
-      this.projectiles.spawn({ x: px + dx * 18, y: py + dy * 18, dirX: dx, dirY: dy, speed: c.speed, damage: this.skillDamage(c.damage), maxRange: c.range, faction: 'player', color: 0x9fe8ff, radius: c.radius, pierce: c.pierce });
-      this.notifyBossesPlayerAction('ranged');
-    } else if (action === 'wiz_toxic_bolt') {
-      // Ice/Poison #2 — bolt that poisons (DoT field blooms on impact).
-      const c = ICEPOISON_TUNING.toxicBolt;
-      const { dx, dy } = this.facingUnit();
-      this.projectiles.spawn({
-        x: px + dx * 18, y: py + dy * 18, dirX: dx, dirY: dy, speed: c.speed, damage: this.skillDamage(c.impactDamage), maxRange: c.range, faction: 'player', color: 0x9acd32, radius: c.radius,
-        dotOnImpact: { dmgPerTick: this.skillDamage(c.dotDamage), tickMs: c.dotTickMs, durationMs: c.dotDurationMs, radius: c.dotRadius, color: 0x9acd32 },
-      });
-      this.notifyBossesPlayerAction('ranged');
-    } else if (action === 'wiz_black_ice') {
-      // Ice/Poison #3 — slick ground patch ahead: SLOW only, no damage.
-      const c = ICEPOISON_TUNING.blackIce;
-      const { dx, dy } = this.facingUnit();
-      this.spawnSpellHazard(px + dx * c.placeAhead, py + dy * c.placeAhead, c.radius, 0, c.durationMs, c.tickMs, { slowFactor: c.slowFactor, fill: 0x4a6a8f, stroke: 0xbfe6ff });
-    } else if (action === 'wiz_frostbite') {
-      // Ice/Poison #4 — chill a foe ahead: damage + SLOW + WEAKEN.
-      const c = ICEPOISON_TUNING.frostbite;
-      const fx = px + this.player.facingX * c.range * 0.6;
-      const fy = py + this.player.facingY * c.range * 0.6;
-      this.spawnSkillRing(fx, fy, c.range, 0xbfe6ff);
-      this.aoeHitAll(fx, fy, c.range, this.skillDamage(c.damage));
-      this.slowEnemiesInRange(fx, fy, c.range, c.durationMs, c.slowFactor);
-      if (this.combatEnemiesInRange(fx, fy, c.range).length > 0) this.setPoisonWeaken(c.weaken, c.durationMs);
-    } else if (action === 'wiz_sludge') {
-      // Ice/Poison #5 — toxic cone: damage + KNOCKBACK (true wedge).
-      const c = ICEPOISON_TUNING.sludge;
-      const { dx, dy } = this.facingUnit();
-      const half = (c.coneHalfAngleDeg * Math.PI) / 180;
-      this.spawnConeFx(px, py, dx, dy, c.range, half, 0x9acd32);
-      const inWedge = (ex: number, ey: number): boolean => this.inCone(px, py, dx, dy, ex, ey, c.range, half);
-      this.aoeHitAll(px, py, c.range, this.skillDamage(c.damage), inWedge);
-      this.knockbackEnemiesInRange(px, py, c.range, c.knockback, 200, inWedge);
-    } else if (action === 'wiz_freezing_rain') {
-      // Ice/Poison #6 — zone around the player: SLOW + DAMAGE over time.
-      const c = ICEPOISON_TUNING.freezingRain;
-      this.spawnSpellHazard(px, py, c.radius, this.skillDamage(c.tickDamage), c.durationMs, c.tickMs, { slowFactor: c.slowFactor, fill: 0x6aa0d0, stroke: 0xbfe6ff });
-    } else if (action === 'wiz_biohazard') {
-      // Ice/Poison #7 — lob a poison cloud ahead: lingering DoT zone.
-      const c = ICEPOISON_TUNING.biohazard;
-      const { dx, dy } = this.facingUnit();
-      this.spawnSpellHazard(px + dx * c.throwRange, py + dy * c.throwRange, c.radius, this.skillDamage(c.tickDamage), c.durationMs, c.tickMs, { fill: 0x6b8e23, stroke: 0x9acd32 });
-    } else if (action === 'wiz_plague') {
-      // Ice/Poison #8 — infect foes ahead with a CONTAGIOUS DoT that spreads.
-      const c = ICEPOISON_TUNING.plague;
-      const fx = px + this.player.facingX * c.applyRange * 0.6;
-      const fy = py + this.player.facingY * c.applyRange * 0.6;
-      this.spawnSkillRing(fx, fy, c.applyRadius, 0x9acd32);
-      this.applyPlagueInRange(fx, fy, c.applyRadius, this.skillDamage(c.dotDamage), c.dotTickMs, c.dotDurationMs, c.spreadRadius, c.maxSpread);
-    } else if (action === 'wiz_pestilence') {
-      // Ice/Poison #10 — ULTIMATE: a huge field — heavy DoT + SLOW + WEAKEN.
-      const c = ICEPOISON_TUNING.pestilence;
-      this.spawnSkillRing(px, py, c.radius, 0x9acd32);
-      this.spawnSpellHazard(px, py, c.radius, this.skillDamage(c.tickDamage), c.durationMs, c.tickMs, { slowFactor: c.slowFactor, weaken: c.weaken, fill: 0x6b8e23, stroke: 0x9acd32 });
-      this.showBanner('Pestilence!', 1400);
-    } else if (action === 'eth_bolt') {
-      // Ethereal #1 — ghostly single-target bolt (the entry damaging active).
-      const c = ETHEREAL_TUNING.etherealBolt;
-      const { dx, dy } = this.facingUnit();
-      this.projectiles.spawn({ x: px + dx * 18, y: py + dy * 18, dirX: dx, dirY: dy, speed: c.speed, damage: this.skillDamage(c.damage), maxRange: c.range, faction: 'player', color: 0xcfc0ff, radius: c.radius });
-      this.notifyBossesPlayerAction('ranged');
-    } else if (action === 'eth_mend') {
-      // Ethereal #2 — instant self-heal.
-      const c = ETHEREAL_TUNING.mend;
-      this.playerHealth.heal(c.healAmount);
-      this.spawnSkillRing(px, py, 60, 0xa8ffd0);
-      this.spawnDamageNumber(px, py - 30, c.healAmount, '#a8ffd0');
-    } else if (action === 'eth_mana_shield') {
-      // Ethereal #4 — raise a damage-absorbing shield pool for a duration.
-      const c = ETHEREAL_TUNING.manaShield;
-      this.playerHealth.shield = c.amount;
-      this.shieldUntil = this.time.now + c.durationMs;
-      this.spawnSkillRing(px, py, 70, 0x8fd8ff);
-      this.showBanner('Mana Shield up', 1100);
     } else if (action === 'eth_blink') {
       this.doBlink(); // Ethereal #5 — instant teleport forward (the escape)
-    } else if (action === 'eth_soul_siphon') {
-      // Ethereal #8 — frontal drain: damage foes ahead + heal per enemy struck.
-      const c = ETHEREAL_TUNING.soulSiphon;
-      const fx = px + this.player.facingX * c.range * 0.6;
-      const fy = py + this.player.facingY * c.range * 0.6;
-      this.spawnSkillRing(fx, fy, c.range, 0xcf7aff);
-      const hits = Math.min(c.maxHeals, this.combatEnemiesInRange(fx, fy, c.range).length);
-      this.aoeHitAll(fx, fy, c.range, this.skillDamage(c.damage));
-      if (hits > 0) {
-        this.playerHealth.heal(c.healPerHit * hits);
-        this.spawnDamageNumber(px, py - 30, c.healPerHit * hits, '#cf7aff');
-      }
-    } else if (action === 'eth_ankh') {
-      // Ethereal #10 — ULTIMATE: arm the cheat-death ward (consumed by a lethal blow).
-      const c = ETHEREAL_TUNING.ankh;
-      this.ankhArmedUntil = this.time.now + c.armedMs;
-      this.spawnSkillRing(px, py, 90, 0xffe9a8);
-      this.showBanner('Ankh of Life armed', 1400);
-    } else if (action === 'necro_bone_dart') {
-      // Marrow #1 — ranged single-target bone shot (the entry damaging active).
-      const c = MARROW_TUNING.boneDart;
-      const { dx, dy } = this.facingUnit();
-      this.projectiles.spawn({ x: px + dx * 18, y: py + dy * 18, dirX: dx, dirY: dy, speed: c.speed, damage: this.skillDamage(c.damage), maxRange: c.range, faction: 'player', color: 0xe9e4d6, radius: c.radius });
-      this.notifyBossesPlayerAction('ranged');
-    } else if (action === 'necro_spiked_punch') {
-      // Marrow #2 — bone-fist melee in front + TAUNT the struck foe(s) onto the player.
-      const c = MARROW_TUNING.spikedPunch;
-      const fx = px + this.player.facingX * c.range * 0.6;
-      const fy = py + this.player.facingY * c.range * 0.6;
-      this.spawnSkillRing(fx, fy, c.range, 0xd9d2c2);
-      this.aoeHitAll(fx, fy, c.range, this.skillDamage(c.damage));
-      this.tauntEnemiesInRange(fx, fy, c.range, c.tauntMs);
-    } else if (action === 'necro_bone_nova') {
-      // Marrow #3 — shockwave around the player: damage + knockback + brief taunt.
-      const c = MARROW_TUNING.boneNova;
-      this.spawnSkillRing(px, py, c.radius, 0xe9e4d6);
-      this.aoeHitAll(px, py, c.radius, this.skillDamage(c.damage));
-      this.knockbackEnemiesInRange(px, py, c.radius, c.knockback, 160);
-      this.tauntEnemiesInRange(px, py, c.radius, c.tauntMs);
-    } else if (action === 'necro_stake') {
-      // Marrow #6 — drive a stake through the nearest foe in front: ROOT (movement-lock).
-      const c = MARROW_TUNING.stake;
-      const fx = px + this.player.facingX * c.range * 0.6;
-      const fy = py + this.player.facingY * c.range * 0.6;
-      if (c.damage > 0) this.aoeHitAll(fx, fy, c.range, this.skillDamage(c.damage));
-      this.rootNearestEnemy(fx, fy, c.range, c.rootMs);
     } else if (action === 'necro_wrecking_ball') {
       // Marrow #9 — charge into a crowd: damage + KNOCKDOWN along the path (reuses Charge).
       this.startCharge(MARROW_TUNING.wreckingBall);
-    } else if (action === 'necro_grasp') {
-      // Marrow #10 — capstone lifesteal: drain the nearest foe in front; heal a portion.
-      const c = MARROW_TUNING.graspOfDeath;
-      const fx = px + this.player.facingX * c.range * 0.6;
-      const fy = py + this.player.facingY * c.range * 0.6;
-      this.spawnSkillRing(fx, fy, c.range, 0x9a6cff);
-      const target = this.nearestEnemy(fx, fy, c.range);
+    }
+  }
+
+  /** THE COMPOSED-ACTION EXECUTOR: runs a skill declared as data (steps of
+   *  shared primitives + numbers) — behaviorally identical to the bespoke
+   *  branches it replaced; every call maps 1:1 onto a proven helper. */
+  runComposedSteps(steps: ComposedStep[]): void {
+    this.lastCombatTime = this.time.now;
+    this.lastComposedPrimitives = steps.map((s) => s.p);
+    for (const s of steps) this.runComposedStep(s);
+  }
+
+  /** One composed step's damage number under the three scaling modes. */
+  private composedDamage(s: { damage?: number; damageRaw?: number; damageMult?: number }): number {
+    if (s.damageMult !== undefined) return this.playerDamage() * s.damageMult;
+    if (s.damageRaw !== undefined) return s.damageRaw;
+    if (s.damage !== undefined && s.damage > 0) return this.skillDamage(s.damage);
+    return 0;
+  }
+
+  private runComposedStep(s: ComposedStep): void {
+    const px = this.player.x;
+    const py = this.player.y;
+    if (s.p === 'strike') {
+      const fire = (): void => {
+        if (this.playerDead) return;
+        const { dx, dy } = this.facingUnit();
+        const cx = this.player.x;
+        const cy = this.player.y;
+        // Placement + hit radius per mode (front strikes hit within `range`).
+        let x = cx;
+        let y = cy;
+        let radius = s.radius ?? s.range ?? 0;
+        if (s.at === 'front') {
+          const reach = s.reach ?? 0.6;
+          x = cx + this.player.facingX * (s.range ?? 0) * reach;
+          y = cy + this.player.facingY * (s.range ?? 0) * reach;
+          radius = s.range ?? 0;
+        } else if (s.at === 'ahead') {
+          x = cx + dx * (s.range ?? 0);
+          y = cy + dy * (s.range ?? 0);
+        } else if (s.at === 'nearest') {
+          const target = this.nearestEnemy(cx, cy, s.range ?? 0);
+          if (!target) {
+            if (s.missBanner) this.showBanner(s.missBanner, 800);
+            return;
+          }
+          x = target.x;
+          y = target.y;
+        }
+        if (!s.noRing && s.tint !== undefined) this.spawnSkillRing(x, y, radius, s.tint);
+        // Soul-Siphon heals count enemies BEFORE the hit (the strike may kill).
+        const preHits = s.healPerHit !== undefined ? Math.min(s.maxHeals ?? Infinity, this.combatEnemiesInRange(x, y, radius).length) : 0;
+        const dmg = this.composedDamage(s);
+        if (dmg > 0) this.aoeHitAll(x, y, radius, dmg);
+        if (s.stunMs) this.stunEnemiesInRange(x, y, radius, s.stunMs);
+        if (s.knockback) this.knockbackEnemiesInRange(x, y, radius, s.knockback, s.knockbackStunMs ?? 200);
+        if (s.slowFactor !== undefined && s.slowMs) this.slowEnemiesInRange(x, y, radius, s.slowMs, s.slowFactor);
+        if (s.weaken !== undefined && s.weakenMs) {
+          const apply = !s.weakenOnlyIfHit || this.combatEnemiesInRange(x, y, radius).length > 0;
+          if (apply) {
+            if (s.weakenChannel === 'intimidate') {
+              this.intimidateWeakenUntil = this.time.now + s.weakenMs;
+              this.intimidateWeakenFactor = s.weaken;
+            } else {
+              this.setPoisonWeaken(s.weaken, s.weakenMs);
+            }
+          }
+        }
+        if (s.tauntMs) this.tauntEnemiesInRange(x, y, radius, s.tauntMs);
+        if (s.rootMs) this.rootNearestEnemy(x, y, radius, s.rootMs);
+        if (s.healPerHit !== undefined && preHits > 0) {
+          this.playerHealth.heal(s.healPerHit * preHits);
+          this.spawnDamageNumber(cx, cy - 30, s.healPerHit * preHits, '#cf7aff');
+        }
+      };
+      if (s.windUpMs) {
+        // The Overswing telegraph: an expanding ring, then the strike from the
+        // player's FRESH position.
+        const tele = this.add.circle(px, py, 10, 0xffd27a, 0).setStrokeStyle(3, 0xffb04a, 0.9).setDepth(13);
+        this.worldFx.add(tele);
+        this.tweens.add({ targets: tele, scale: (s.range ?? 100) / 10, alpha: { from: 0.7, to: 0 }, duration: s.windUpMs, ease: 'Quad.in', onComplete: () => tele.destroy() });
+        this.time.delayedCall(s.windUpMs, fire);
+      } else if (s.pulses && s.pulses > 1) {
+        for (let i = 0; i < s.pulses; i++) this.time.delayedCall(i * (s.pulseMs ?? 300), fire);
+      } else {
+        fire();
+      }
+    } else if (s.p === 'bolt') {
+      if (s.via === 'aimed') {
+        this.castFireBolt(s.damage, s.speed, s.range, s.radius, s.tint); // scales + storm splash + notify
+        return;
+      }
+      const { dx, dy } = this.facingUnit();
+      const dmg = this.skillDamage(s.damage);
+      if (s.via === 'wizard') {
+        this.spawnWizardBolt(dx, dy, dmg, s.speed, s.range, s.radius, s.tint, s.splash ? { splashRadius: s.splash.radius, splashDamage: this.skillDamage(s.splash.damage) } : undefined);
+      } else {
+        this.projectiles.spawn({
+          x: px + dx * 18,
+          y: py + dy * 18,
+          dirX: dx,
+          dirY: dy,
+          speed: s.speed,
+          damage: dmg,
+          maxRange: s.range,
+          faction: 'player',
+          color: s.tint,
+          radius: s.radius,
+          ...(s.pierce !== undefined ? { pierce: s.pierce } : {}),
+          ...(s.splash ? { splashRadius: s.splash.radius, splashDamage: this.skillDamage(s.splash.damage) } : {}),
+          ...(s.dot ? { dotOnImpact: { dmgPerTick: this.skillDamage(s.dot.dmgPerTick), tickMs: s.dot.tickMs, durationMs: s.dot.durationMs, radius: s.dot.radius, color: s.dot.color } } : {}),
+        });
+      }
+      if (s.vuln) {
+        this.darkVulnUntil = this.time.now + s.vuln.durationMs;
+        this.darkVulnMult = 1 + s.vuln.mult;
+        if (s.vuln.banner) this.showBanner(s.vuln.banner, 900);
+      }
+      this.notifyBossesPlayerAction('ranged');
+    } else if (s.p === 'cone') {
+      const { dx, dy } = this.facingUnit();
+      const half = (s.halfAngleDeg * Math.PI) / 180;
+      this.spawnConeFx(px, py, dx, dy, s.range, half, s.tint);
+      const inWedge = (ex: number, ey: number): boolean => this.inCone(px, py, dx, dy, ex, ey, s.range, half);
+      this.aoeHitAll(px, py, s.range, this.skillDamage(s.damage), inWedge);
+      if (s.knockback) this.knockbackEnemiesInRange(px, py, s.range, s.knockback, s.knockbackStunMs ?? 200, inWedge);
+    } else if (s.p === 'line') {
+      const { dx, dy } = this.facingUnit();
+      const x2 = px + dx * s.length;
+      const y2 = py + dy * s.length;
+      this.spawnLineFx(px, py, x2, y2, s.width, s.tint);
+      this.aoeHitAll((px + x2) / 2, (py + y2) / 2, s.length / 2 + s.width, this.skillDamage(s.damage), (ex, ey) => this.inLine(px, py, x2, y2, ex, ey, s.width / 2));
+    } else if (s.p === 'hazard') {
+      const { dx, dy } = this.facingUnit();
+      const x = s.at === 'ahead' ? px + dx * (s.placeAhead ?? 0) : px;
+      const y = s.at === 'ahead' ? py + dy * (s.placeAhead ?? 0) : py;
+      if (s.ring !== undefined) this.spawnSkillRing(x, y, s.radius, s.ring);
+      const opts: { slowFactor?: number; weaken?: number; fill?: number; stroke?: number } = {};
+      if (s.slowFactor !== undefined) opts.slowFactor = s.slowFactor;
+      if (s.weaken !== undefined) opts.weaken = s.weaken;
+      if (s.fill !== undefined) opts.fill = s.fill;
+      if (s.stroke !== undefined) opts.stroke = s.stroke;
+      this.spawnSpellHazard(x, y, s.radius, s.tickDamage > 0 ? this.skillDamage(s.tickDamage) : 0, s.durationMs, s.tickMs, Object.keys(opts).length ? opts : undefined);
+      if (s.banner) this.showBanner(s.banner, 1400);
+    } else if (s.p === 'heal') {
+      this.playerHealth.heal(s.amount);
+      this.spawnSkillRing(px, py, 60, s.ring ?? 0xa8ffd0);
+      this.spawnDamageNumber(px, py - 30, s.amount, '#a8ffd0');
+    } else if (s.p === 'shield') {
+      this.playerHealth.shield = s.amount;
+      this.shieldUntil = this.time.now + s.durationMs;
+      this.spawnSkillRing(px, py, 70, 0x8fd8ff);
+      if (s.banner) this.showBanner(s.banner, 1100);
+    } else if (s.p === 'ward') {
+      this.ankhArmedUntil = this.time.now + s.armedMs;
+      this.spawnSkillRing(px, py, 90, 0xffe9a8);
+      if (s.banner) this.showBanner(s.banner, 1400);
+    } else if (s.p === 'drain') {
+      const reach = s.reach ?? 0.6;
+      const fx = px + this.player.facingX * s.range * reach;
+      const fy = py + this.player.facingY * s.range * reach;
+      this.spawnSkillRing(fx, fy, s.range, s.tint);
+      const target = this.nearestEnemy(fx, fy, s.range);
       if (target) {
-        const dealt = target.takeHit(this.skillDamage(c.damage));
+        const dealt = target.takeHit(this.skillDamage(s.damage));
         if (dealt > 0) {
           this.dmgDealtAccum += dealt;
           this.spawnDamageNumber(target.x, target.y - 24, dealt, '#c8a8ff');
-          const heal = Math.round(dealt * c.healPct);
+          const heal = Math.round(dealt * s.healPct);
           if (heal > 0 && this.playerHealth.current < this.playerHealth.max) {
             this.playerHealth.heal(heal);
             this.spawnDamageNumber(px, py - 30, heal, '#a8ffd0');
           }
         }
       }
+    } else if (s.p === 'plague') {
+      const fx = px + this.player.facingX * s.applyRange * 0.6;
+      const fy = py + this.player.facingY * s.applyRange * 0.6;
+      this.spawnSkillRing(fx, fy, s.applyRadius, s.tint);
+      this.applyPlagueInRange(fx, fy, s.applyRadius, this.skillDamage(s.dotDamage), s.dotTickMs, s.dotDurationMs, s.spreadRadius, s.maxSpread);
     }
   }
 

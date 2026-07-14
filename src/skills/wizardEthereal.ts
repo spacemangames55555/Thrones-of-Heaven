@@ -57,7 +57,13 @@ export const WIZARD_ETHEREAL_SKILLS: SkillDef[] = [
     description: 'Activate: hurl a bolt of raw spirit at the first enemy it hits. Your reliable ranged attack.',
     cost: 1,
     tier: 0,
-    effect: { kind: 'active', action: 'eth_bolt', cooldownMs: T.etherealBolt.cooldownMs, energyCost: T.etherealBolt.energyCost },
+    effect: {
+      kind: 'active',
+      action: 'eth_bolt',
+      cooldownMs: T.etherealBolt.cooldownMs,
+      energyCost: T.etherealBolt.energyCost,
+      compose: [{ p: 'bolt', damage: T.etherealBolt.damage, speed: T.etherealBolt.speed, range: T.etherealBolt.range, radius: T.etherealBolt.radius, tint: 0xcfc0ff }],
+    },
   },
   {
     id: 'eth_mend',
@@ -67,7 +73,13 @@ export const WIZARD_ETHEREAL_SKILLS: SkillDef[] = [
     cost: 1,
     prereq: 'eth_bolt',
     tier: 1,
-    effect: { kind: 'active', action: 'eth_mend', cooldownMs: T.mend.cooldownMs, energyCost: T.mend.energyCost },
+    effect: {
+      kind: 'active',
+      action: 'eth_mend',
+      cooldownMs: T.mend.cooldownMs,
+      energyCost: T.mend.energyCost,
+      compose: [{ p: 'heal', amount: T.mend.healAmount }],
+    },
   },
   {
     id: 'eth_regeneration',
@@ -87,7 +99,13 @@ export const WIZARD_ETHEREAL_SKILLS: SkillDef[] = [
     cost: 1,
     prereq: 'eth_regeneration',
     tier: 3,
-    effect: { kind: 'active', action: 'eth_mana_shield', cooldownMs: T.manaShield.cooldownMs, energyCost: T.manaShield.energyCost },
+    effect: {
+      kind: 'active',
+      action: 'eth_mana_shield',
+      cooldownMs: T.manaShield.cooldownMs,
+      energyCost: T.manaShield.energyCost,
+      compose: [{ p: 'shield', amount: T.manaShield.amount, durationMs: T.manaShield.durationMs, banner: 'Mana Shield up' }],
+    },
   },
   {
     id: 'eth_blink',
@@ -127,7 +145,13 @@ export const WIZARD_ETHEREAL_SKILLS: SkillDef[] = [
     cost: 1,
     prereq: 'eth_form',
     tier: 7,
-    effect: { kind: 'active', action: 'eth_soul_siphon', cooldownMs: T.soulSiphon.cooldownMs, energyCost: T.soulSiphon.energyCost },
+    effect: {
+      kind: 'active',
+      action: 'eth_soul_siphon',
+      cooldownMs: T.soulSiphon.cooldownMs,
+      energyCost: T.soulSiphon.energyCost,
+      compose: [{ p: 'strike', at: 'front', range: T.soulSiphon.range, damage: T.soulSiphon.damage, tint: 0xcf7aff, healPerHit: T.soulSiphon.healPerHit, maxHeals: T.soulSiphon.maxHeals }],
+    },
   },
   {
     id: 'eth_sanctuary',
@@ -149,6 +173,12 @@ export const WIZARD_ETHEREAL_SKILLS: SkillDef[] = [
     cost: 1,
     prereq: 'eth_sanctuary',
     tier: 9,
-    effect: { kind: 'active', action: 'eth_ankh', cooldownMs: T.ankh.cooldownMs, energyCost: T.ankh.energyCost },
+    effect: {
+      kind: 'active',
+      action: 'eth_ankh',
+      cooldownMs: T.ankh.cooldownMs,
+      energyCost: T.ankh.energyCost,
+      compose: [{ p: 'ward', armedMs: T.ankh.armedMs, banner: 'Ankh of Life armed' }],
+    },
   },
 ];

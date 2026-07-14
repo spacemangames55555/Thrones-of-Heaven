@@ -55,7 +55,13 @@ export const DARK_MATTER_TREE_SKILLS: SkillDef[] = [
     description: 'Activate: a fast, cheap dark-energy bolt on a short cooldown — your spammable ranged attack. Your starting offense.',
     cost: 1,
     tier: 0,
-    effect: { kind: 'active', action: 'necro_dm_blip', cooldownMs: DM_TUNING.blip.cooldownMs, energyCost: DM_TUNING.blip.energyCost },
+    effect: {
+      kind: 'active',
+      action: 'necro_dm_blip',
+      cooldownMs: DM_TUNING.blip.cooldownMs,
+      energyCost: DM_TUNING.blip.energyCost,
+      compose: [{ p: 'bolt', damage: DM_TUNING.blip.damage, speed: DM_TUNING.blip.speed, range: DM_TUNING.blip.range, radius: DM_TUNING.blip.radius, tint: 0xb98bff }],
+    },
   },
   {
     id: 'necro_dm_bomb',
@@ -65,7 +71,13 @@ export const DARK_MATTER_TREE_SKILLS: SkillDef[] = [
     cost: 1,
     prereq: 'necro_dm_blip',
     tier: 1,
-    effect: { kind: 'active', action: 'necro_dm_bomb', cooldownMs: DM_TUNING.bomb.cooldownMs, energyCost: DM_TUNING.bomb.energyCost },
+    effect: {
+      kind: 'active',
+      action: 'necro_dm_bomb',
+      cooldownMs: DM_TUNING.bomb.cooldownMs,
+      energyCost: DM_TUNING.bomb.energyCost,
+      compose: [{ p: 'bolt', damage: DM_TUNING.bomb.directDamage, speed: DM_TUNING.bomb.speed, range: DM_TUNING.bomb.range, radius: DM_TUNING.bomb.radius, tint: 0x7a3fb0, splash: { radius: DM_TUNING.bomb.splashRadius, damage: DM_TUNING.bomb.splashDamage } }],
+    },
   },
   {
     id: 'necro_dm_tainted',
@@ -75,7 +87,13 @@ export const DARK_MATTER_TREE_SKILLS: SkillDef[] = [
     cost: 1,
     prereq: 'necro_dm_bomb',
     tier: 2,
-    effect: { kind: 'active', action: 'necro_dm_tainted', cooldownMs: DM_TUNING.tainted.cooldownMs, energyCost: DM_TUNING.tainted.energyCost },
+    effect: {
+      kind: 'active',
+      action: 'necro_dm_tainted',
+      cooldownMs: DM_TUNING.tainted.cooldownMs,
+      energyCost: DM_TUNING.tainted.energyCost,
+      compose: [{ p: 'bolt', damage: DM_TUNING.tainted.damage, speed: DM_TUNING.tainted.speed, range: DM_TUNING.tainted.range, radius: DM_TUNING.tainted.radius, tint: 0x9a5cff, vuln: { mult: DM_TUNING.tainted.defenseReduction, durationMs: DM_TUNING.tainted.debuffMs, banner: 'Defenses tainted' } }],
+    },
   },
   {
     id: 'necro_dm_hex',
@@ -85,7 +103,17 @@ export const DARK_MATTER_TREE_SKILLS: SkillDef[] = [
     cost: 1,
     prereq: 'necro_dm_tainted',
     tier: 3,
-    effect: { kind: 'active', action: 'necro_dm_hex', cooldownMs: DM_TUNING.hex.cooldownMs, energyCost: DM_TUNING.hex.energyCost },
+    effect: {
+      kind: 'active',
+      action: 'necro_dm_hex',
+      cooldownMs: DM_TUNING.hex.cooldownMs,
+      energyCost: DM_TUNING.hex.energyCost,
+      compose: [{
+        p: 'strike', at: 'nearest', range: DM_TUNING.hex.range, radius: DM_TUNING.hex.radius, damage: DM_TUNING.hex.damage, tint: 0x6a3fb0,
+        slowFactor: DM_TUNING.hex.slowFactor, slowMs: DM_TUNING.hex.durationMs, weaken: DM_TUNING.hex.weaken, weakenMs: DM_TUNING.hex.durationMs,
+        missBanner: 'No target in range',
+      }],
+    },
   },
   {
     id: 'necro_dm_abyssal',
@@ -95,7 +123,13 @@ export const DARK_MATTER_TREE_SKILLS: SkillDef[] = [
     cost: 1,
     prereq: 'necro_dm_hex',
     tier: 4,
-    effect: { kind: 'active', action: 'necro_dm_abyssal', cooldownMs: DM_TUNING.abyssal.cooldownMs, energyCost: DM_TUNING.abyssal.energyCost },
+    effect: {
+      kind: 'active',
+      action: 'necro_dm_abyssal',
+      cooldownMs: DM_TUNING.abyssal.cooldownMs,
+      energyCost: DM_TUNING.abyssal.energyCost,
+      compose: [{ p: 'cone', range: DM_TUNING.abyssal.range, halfAngleDeg: DM_TUNING.abyssal.coneHalfAngleDeg, damage: DM_TUNING.abyssal.damage, tint: 0x9a5cff }],
+    },
   },
   {
     id: 'necro_dm_rift',
@@ -105,7 +139,13 @@ export const DARK_MATTER_TREE_SKILLS: SkillDef[] = [
     cost: 1,
     prereq: 'necro_dm_abyssal',
     tier: 5,
-    effect: { kind: 'active', action: 'necro_dm_rift', cooldownMs: DM_TUNING.rift.cooldownMs, energyCost: DM_TUNING.rift.energyCost },
+    effect: {
+      kind: 'active',
+      action: 'necro_dm_rift',
+      cooldownMs: DM_TUNING.rift.cooldownMs,
+      energyCost: DM_TUNING.rift.energyCost,
+      compose: [{ p: 'strike', at: 'ahead', range: DM_TUNING.rift.range, radius: DM_TUNING.rift.radius, damage: DM_TUNING.rift.damage, tint: 0x7a3fb0 }],
+    },
   },
   {
     id: BLIGHT_ID,

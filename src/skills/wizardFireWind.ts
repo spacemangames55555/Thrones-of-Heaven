@@ -65,7 +65,13 @@ export const WIZARD_FIREWIND_SKILLS: SkillDef[] = [
     description: 'Activate: hurl a fiery bolt that strikes the first enemy it hits. Your reliable ranged attack.',
     cost: 1,
     tier: 0,
-    effect: { kind: 'active', action: 'wiz_fireball', cooldownMs: T.fireball.cooldownMs, energyCost: T.fireball.energyCost },
+    effect: {
+      kind: 'active',
+      action: 'wiz_fireball',
+      cooldownMs: T.fireball.cooldownMs,
+      energyCost: T.fireball.energyCost,
+      compose: [{ p: 'bolt', via: 'aimed', damage: T.fireball.damage, speed: T.fireball.speed, range: T.fireball.range, radius: T.fireball.radius, tint: 0xff7a2a }],
+    },
   },
   {
     id: 'wiz_fw_flicker',
@@ -85,7 +91,13 @@ export const WIZARD_FIREWIND_SKILLS: SkillDef[] = [
     cost: 1,
     prereq: 'wiz_fw_flicker',
     tier: 2,
-    effect: { kind: 'active', action: 'wiz_combust', cooldownMs: T.combust.cooldownMs, energyCost: T.combust.energyCost },
+    effect: {
+      kind: 'active',
+      action: 'wiz_combust',
+      cooldownMs: T.combust.cooldownMs,
+      energyCost: T.combust.energyCost,
+      compose: [{ p: 'bolt', via: 'wizard', damage: T.combust.directDamage, speed: T.combust.speed, range: T.combust.range, radius: T.combust.radius, tint: 0xff5a2a, splash: { radius: T.combust.splashRadius, damage: T.combust.splashDamage } }],
+    },
   },
   {
     id: 'wiz_fw_dust_devil',
@@ -95,7 +107,13 @@ export const WIZARD_FIREWIND_SKILLS: SkillDef[] = [
     cost: 1,
     prereq: 'wiz_fw_combust',
     tier: 3,
-    effect: { kind: 'active', action: 'wiz_dust_devil', cooldownMs: T.dustDevil.cooldownMs, energyCost: T.dustDevil.energyCost },
+    effect: {
+      kind: 'active',
+      action: 'wiz_dust_devil',
+      cooldownMs: T.dustDevil.cooldownMs,
+      energyCost: T.dustDevil.energyCost,
+      compose: [{ p: 'cone', range: T.dustDevil.range, halfAngleDeg: T.dustDevil.coneHalfAngleDeg, damage: T.dustDevil.damage, tint: 0x9ad8ff }],
+    },
   },
   {
     id: 'wiz_fw_gust',
@@ -115,7 +133,13 @@ export const WIZARD_FIREWIND_SKILLS: SkillDef[] = [
     cost: 1,
     prereq: 'wiz_fw_gust',
     tier: 5,
-    effect: { kind: 'active', action: 'wiz_lava', cooldownMs: T.lava.cooldownMs, energyCost: T.lava.energyCost },
+    effect: {
+      kind: 'active',
+      action: 'wiz_lava',
+      cooldownMs: T.lava.cooldownMs,
+      energyCost: T.lava.energyCost,
+      compose: [{ p: 'hazard', at: 'ahead', placeAhead: T.lava.placeAhead, radius: T.lava.radius, tickDamage: T.lava.tickDamage, tickMs: T.lava.tickMs, durationMs: T.lava.durationMs }],
+    },
   },
   {
     id: 'wiz_fw_immolation',
@@ -125,7 +149,13 @@ export const WIZARD_FIREWIND_SKILLS: SkillDef[] = [
     cost: 1,
     prereq: 'wiz_fw_lava',
     tier: 6,
-    effect: { kind: 'active', action: 'wiz_immolation', cooldownMs: T.immolation.cooldownMs, energyCost: T.immolation.energyCost },
+    effect: {
+      kind: 'active',
+      action: 'wiz_immolation',
+      cooldownMs: T.immolation.cooldownMs,
+      energyCost: T.immolation.energyCost,
+      compose: [{ p: 'strike', at: 'self', radius: T.immolation.radius, damage: T.immolation.damage, tint: 0xff7a2a }],
+    },
   },
   {
     id: 'wiz_fw_jet_stream',
@@ -135,7 +165,13 @@ export const WIZARD_FIREWIND_SKILLS: SkillDef[] = [
     cost: 1,
     prereq: 'wiz_fw_immolation',
     tier: 7,
-    effect: { kind: 'active', action: 'wiz_jet_stream', cooldownMs: T.jetStream.cooldownMs, energyCost: T.jetStream.energyCost },
+    effect: {
+      kind: 'active',
+      action: 'wiz_jet_stream',
+      cooldownMs: T.jetStream.cooldownMs,
+      energyCost: T.jetStream.energyCost,
+      compose: [{ p: 'line', length: T.jetStream.length, width: T.jetStream.width, damage: T.jetStream.damage, tint: 0xbfe6ff }],
+    },
   },
   {
     id: 'wiz_fw_tornado',
@@ -145,7 +181,13 @@ export const WIZARD_FIREWIND_SKILLS: SkillDef[] = [
     cost: 1,
     prereq: 'wiz_fw_jet_stream',
     tier: 8,
-    effect: { kind: 'active', action: 'wiz_tornado', cooldownMs: T.tornado.cooldownMs, energyCost: T.tornado.energyCost },
+    effect: {
+      kind: 'active',
+      action: 'wiz_tornado',
+      cooldownMs: T.tornado.cooldownMs,
+      energyCost: T.tornado.energyCost,
+      compose: [{ p: 'strike', at: 'self', radius: T.tornado.radius, damage: T.tornado.damage, tint: 0xbfe6ff, pulses: T.tornado.pulses, pulseMs: T.tornado.pulseMs }],
+    },
   },
   {
     id: WIZ_STORM_ID,

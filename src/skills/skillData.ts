@@ -142,9 +142,103 @@ export type ActiveActionId =
  *  - transformation: a capstone — timed stats + an appearance change (tint), reverts,
  *    with an optional damaging aura.
  */
+/**
+ * COMPOSED ACTIONS — the class-kit framework's declarative active layer.
+ * An ACTIVE skill may carry `compose`: a list of steps, each one SHARED
+ * PRIMITIVE plus tunable numbers. The scene executes composed actions
+ * generically (runComposedSteps) — no dispatcher case, so a standard new
+ * class is pure data. Bespoke dispatcher cases remain legal for genuinely
+ * unique mechanics (Crystal Forms, the bone-suit, Singularity, summons…).
+ *
+ * PRIMITIVES (each maps 1:1 onto a proven scene helper):
+ *  strike — ring/arc AoE at self / in front / at a point ahead / on the
+ *           nearest enemy, with optional riders: stun, taunt, root,
+ *           knockback, slow, weaken (poison- or intimidate-channel),
+ *           heal-per-hit, wind-up telegraph, multi-pulse.
+ *  bolt   — player projectile (plain, wizard-path, or aim-assisted) with
+ *           optional pierce / splash / impact-DoT / defense-down window.
+ *  cone   — true wedge hit in the facing direction (optional knockback).
+ *  line   — wall/segment hit along the facing direction.
+ *  hazard — persistent ground zone (damage ticks, slow, weaken).
+ *  heal / shield / ward — self heal, absorb pool, cheat-death arm.
+ *  drain  — hit the nearest foe in front and heal a fraction dealt.
+ *  plague — contagious DoT that spreads between enemies.
+ * Damage fields: `damage` is skill-scaled (skillDamage); `damageRaw` is
+ * unscaled (legacy Tank numbers); `damageMult` multiplies playerDamage().
+ */
+export type ComposedStep =
+  | {
+      p: 'strike';
+      at: 'self' | 'front' | 'ahead' | 'nearest';
+      /** front: tuning range (offset = range × reach, hit radius = range).
+       *  ahead/nearest: the placement/search distance. self: unused. */
+      range?: number;
+      /** front offset factor (default 0.6; Shield Swing uses its arcReach). */
+      reach?: number;
+      /** hit radius when it differs from `range` (self / ahead / nearest). */
+      radius?: number;
+      damage?: number;
+      damageRaw?: number;
+      damageMult?: number;
+      tint?: number;
+      noRing?: boolean;
+      windUpMs?: number;
+      pulses?: number;
+      pulseMs?: number;
+      stunMs?: number;
+      tauntMs?: number;
+      rootMs?: number;
+      knockback?: number;
+      knockbackStunMs?: number;
+      slowFactor?: number;
+      slowMs?: number;
+      weaken?: number;
+      weakenMs?: number;
+      weakenChannel?: 'poison' | 'intimidate';
+      weakenOnlyIfHit?: boolean;
+      healPerHit?: number;
+      maxHeals?: number;
+      missBanner?: string;
+    }
+  | {
+      p: 'bolt';
+      via?: 'plain' | 'wizard' | 'aimed';
+      damage: number;
+      speed: number;
+      range: number;
+      radius: number;
+      tint: number;
+      pierce?: number;
+      splash?: { radius: number; damage: number };
+      dot?: { dmgPerTick: number; tickMs: number; durationMs: number; radius: number; color: number };
+      vuln?: { mult: number; durationMs: number; banner?: string };
+    }
+  | { p: 'cone'; range: number; halfAngleDeg: number; damage: number; tint: number; knockback?: number; knockbackStunMs?: number }
+  | { p: 'line'; length: number; width: number; damage: number; tint: number }
+  | {
+      p: 'hazard';
+      at: 'self' | 'ahead';
+      placeAhead?: number;
+      radius: number;
+      tickDamage: number;
+      tickMs: number;
+      durationMs: number;
+      slowFactor?: number;
+      weaken?: number;
+      fill?: number;
+      stroke?: number;
+      ring?: number;
+      banner?: string;
+    }
+  | { p: 'heal'; amount: number; ring?: number }
+  | { p: 'shield'; amount: number; durationMs: number; banner?: string }
+  | { p: 'ward'; armedMs: number; banner?: string }
+  | { p: 'drain'; range: number; reach?: number; damage: number; healPct: number; tint: number }
+  | { p: 'plague'; applyRange: number; applyRadius: number; dotDamage: number; dotTickMs: number; dotDurationMs: number; spreadRadius: number; maxSpread: number; tint: number };
+
 export type SkillEffect =
   | { kind: 'passive'; stats: SkillStatMods }
-  | { kind: 'active'; cooldownMs: number; action: ActiveActionId; energyCost?: number }
+  | { kind: 'active'; cooldownMs: number; action: ActiveActionId; energyCost?: number; compose?: ComposedStep[] }
   | { kind: 'buff'; cooldownMs: number; durationMs: number; stats: SkillStatMods; energyCost?: number; tint?: number }
   | { kind: 'debuff'; cooldownMs: number; durationMs: number; radius: number; energyCost?: number }
   | {
