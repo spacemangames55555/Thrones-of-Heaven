@@ -10,11 +10,12 @@ interface ClassOption {
   comingSoon?: boolean;
 }
 
-/** The selectable classes (all three are now playable). */
+/** The selectable classes (all four are now playable). */
 const CLASS_OPTIONS: ClassOption[] = [
   { id: 'blacksmith', name: 'Blacksmith', blurb: 'Tanky bruiser. High HP, melee + shield skills across three Crystal trees.', fill: 0x5a3a12, stroke: 0xffd24a },
   { id: 'wizard', name: 'Wizard', blurb: 'Fragile glass-cannon caster. Low HP, fast, devastating Fire/Wind spells.', fill: 0x21347a, stroke: 0x6aa6ff },
   { id: 'necromancer', name: 'Necromancer', blurb: 'Slavic death-sorcerer. In-between durability; bone strikes, taunts, a root, and the Marrownaut bone-suit across the Marrow tree.', fill: 0x2a2433, stroke: 0x9a6cff },
+  { id: 'druid', name: 'Druid', blurb: 'A walking ecosystem of fury and life. No two Druids will ever look alike.', fill: 0x24361c, stroke: 0x8ac86a },
 ];
 
 /**

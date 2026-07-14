@@ -76,7 +76,8 @@ try {
 
   // 2) Every playable class boots to a clean fresh start (nothing auto-starts —
   //    this is the guard against generated home-city chains hijacking openings).
-  for (const cls of ['blacksmith', 'wizard', 'necromancer']) {
+  //    Druid runs LAST on purpose: the WA-opening check below plays on in ITS session.
+  for (const cls of ['blacksmith', 'wizard', 'necromancer', 'druid']) {
     await newGame(cls);
     const s = await page.evaluate(() => {
       const ms = window.__game.scene.getScene('MainScene');
@@ -108,7 +109,121 @@ try {
       }
       return ms;
     };
+    // __quietSpot(): relocate the player to a walkable spot with NO combat enemy
+    // within 800px — the shared isolation precondition for the combat-primitive checks.
+    window.__quietSpot = () => {
+      const ms = window.__ready();
+      for (let i = 1; i <= 40; i++) {
+        const x = ms.player.x + (i % 2 ? 1 : -1) * i * 380;
+        const y = ms.player.y + ((i % 3) - 1) * 320;
+        const w = ms.activeMap().nearestWalkableWorld(x, y);
+        if (w && ms.combatEnemiesInRange(w.x, w.y, 800).length === 0) {
+          ms.player.sprite.body.reset(w.x, w.y);
+          return true;
+        }
+      }
+      return false;
+    };
   });
+
+  // 2b. THE WA OPENING PLAYS FOR A REAL DRUID: the fresh-start loop above ended on a
+  // live Druid run whose forced first pick (the probe's card click) chose one of the
+  // three tree openers. The pick must be unlocked + equipped (needsFirstSkill now
+  // false), and THE PICKED SKILL must win the opening Sasquatch fight through the
+  // real activation path.
+  const druidOpening = await page.evaluate(async () => {
+    const ms = window.__ready();
+    const wait = (t) => new Promise((r) => setTimeout(r, t));
+    const classId = ms.classId;
+    const needs = ms.skills.needsFirstSkill();
+    const starter = ms.skills.loadout().filter(Boolean)[0] ?? null;
+    const openers = ['dru_tap_mantis', 'dru_res_lye', 'dru_wk_chill']; // the three tier-0 damaging actives
+    const starterDef = ms.classSkillsAll['druid'].skills.find((d) => d.id === starter);
+    const action = starterDef && starterDef.effect.kind === 'active' ? starterDef.effect.action : null;
+    const sas = ms.sasquatch;
+    if (!sas || !sas.isAlive || !action) return { classId, needs, starter, fought: false };
+    ms.player.sprite.body.reset(sas.x - 50, sas.y); // stand beside it, facing right
+    ms.player.facingX = 1;
+    ms.player.facingY = 0;
+    let casts = 0;
+    while (sas.isAlive && casts < 40) {
+      ms.runActiveSkill(action); // whichever opener was picked (cooldown bypassed; same code path)
+      casts++;
+      await wait(220); // flurry pulses / bolt travel
+      ms.playerHealth.full();
+      ms.playerHealth.shield = 1e9;
+    }
+    return { classId, needs, starter, isOpener: openers.includes(starter), fought: true, casts, defeated: !sas.isAlive };
+  });
+  ok(
+    'druid: WA opening plays — the forced first pick wins the Sasquatch fight',
+    druidOpening.classId === 'druid' && druidOpening.needs === false && druidOpening.isOpener === true && druidOpening.fought && druidOpening.defeated,
+    JSON.stringify(druidOpening),
+  );
+
+  // 2c. EVERY COMMIT-1 EXTENSION THROUGH A REAL DRUID SKILL: stealth (Snow Leopard),
+  // the dual-use bolt (Lye, heal path), both friendly zones (Sage Burn mobile +
+  // Healing Spores static), chain (Lightning Strike across two foes), the pair
+  // summon (Chimpanzee Pair) and the untargetable timed summons (Scavengers).
+  const druidKit = await page.evaluate(async () => {
+    const ms = window.__ready();
+    const wait = (t) => new Promise((r) => setTimeout(r, t));
+    if (!window.__quietSpot()) return { setup: 'no quiet spot' };
+    // Stealth via the real skill.
+    ms.runActiveSkill('dru_stealth');
+    const stealth = ms.playerStealthActive;
+    ms.breakPlayerStealth();
+    // Lye's heal path (no enemy in range → mend self).
+    ms.playerHealth.current = Math.max(1, ms.playerHealth.max - 50);
+    const hp0 = ms.playerHealth.current;
+    ms.runActiveSkill('dru_lye');
+    const lyeHealed = ms.playerHealth.current - hp0;
+    // Both friendly-zone variants.
+    ms.runActiveSkill('dru_sage_burn'); // mobile (follows)
+    ms.runActiveSkill('dru_spores'); // static
+    const zones = ms.friendlyZones.map((z) => z.follow);
+    // Chain via Lightning Strike across two real foes.
+    const w1 = ms.activeMap().nearestWalkableWorld(ms.player.x + 150, ms.player.y);
+    const f1 = ms.spawnAngel('darkcaster', w1.x, w1.y);
+    const w2 = ms.activeMap().nearestWalkableWorld(ms.player.x + 300, ms.player.y);
+    const f2 = ms.spawnAngel('darkcaster', w2.x, w2.y);
+    await wait(250);
+    const h1 = f1.health.current;
+    const h2 = f2.health.current;
+    ms.runActiveSkill('dru_lightning');
+    await wait(150);
+    const chainPrims = ms.lastComposedPrimitives.join(',');
+    const chained = h1 - f1.health.current > 0 && h2 - f2.health.current > 0;
+    f1.destroy();
+    f2.destroy();
+    // Summon variants via the real skills.
+    ms.summons.clear();
+    ms.runActiveSkill('dru_chimp_pair');
+    const chimps = ms.summons.list.filter((s) => s.config.key === 'druid_chimpanzee').length;
+    ms.runActiveSkill('dru_scavengers');
+    const scavs = ms.summons.list.filter((s) => s.config.key === 'druid_scavenger');
+    const scavengers = scavs.length;
+    const scavUntargetable = scavs.length > 0 && scavs.every((s) => !s.drawsAggro);
+    // Clean up everything this check armed.
+    ms.summons.clear();
+    ms.clearFriendlyZones();
+    ms.breakPlayerStealth();
+    ms.playerHealth.full();
+    return { setup: 'ok', stealth, lyeHealed, zones, chainPrims, chained, chimps, scavengers, scavUntargetable };
+  });
+  ok(
+    'druid: every framework extension fires through a real Druid skill',
+    druidKit.setup === 'ok' &&
+      druidKit.stealth &&
+      druidKit.lyeHealed === 24 &&
+      JSON.stringify(druidKit.zones) === '[true,false]' &&
+      druidKit.chainPrims === 'chain' &&
+      druidKit.chained &&
+      druidKit.chimps === 2 &&
+      druidKit.scavengers === 3 &&
+      druidKit.scavUntargetable,
+    JSON.stringify(druidKit),
+  );
 
   // 3) The GLOBE sparse world (Europe + Africa consolidated at true Earth
   // positions): travel, chunks, gates. The region SHIPPED — if the world
@@ -1010,23 +1125,8 @@ try {
   // 3v. DRUID FRAMEWORK EXTENSIONS (permanent): the composable primitives +
   // summon variants Commit 1 added, each exercised through its real runtime
   // seam. Each check establishes its own preconditions (a QUIET walkable spot
-  // with no combat enemy near, freshly-spawned targets) and fails loudly when
-  // setup fails. A shared helper relocates the player to an isolated spot.
-  await page.evaluate(() => {
-    window.__quietSpot = () => {
-      const ms = window.__ready();
-      for (let i = 1; i <= 40; i++) {
-        const x = ms.player.x + (i % 2 ? 1 : -1) * i * 380;
-        const y = ms.player.y + ((i % 3) - 1) * 320;
-        const w = ms.activeMap().nearestWalkableWorld(x, y);
-        if (w && ms.combatEnemiesInRange(w.x, w.y, 800).length === 0) {
-          ms.player.sprite.body.reset(w.x, w.y);
-          return true;
-        }
-      }
-      return false;
-    };
-  });
+  // via the shared __quietSpot helper, freshly-spawned targets) and fails
+  // loudly when setup fails.
 
   // 3v-1. CHAIN-BOUNCE: one cast hits the nearest enemy then arcs to two more,
   // never re-hitting, with strictly falling damage per jump.
