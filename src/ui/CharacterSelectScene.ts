@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import type { ClassId } from '../skills/skillData';
+import { homeStartLabelForClass } from '../world/class-canon';
 
 interface ClassOption {
   id: ClassId;
@@ -44,7 +45,7 @@ export class CharacterSelectScene extends Phaser.Scene {
       .setDepth(2);
 
     const cardW = Math.min(384, w - 28);
-    const cardH = 104;
+    const cardH = 116; // room for the "Starts in:" home-city line under the blurb
     const gap = 16;
     const totalH = CLASS_OPTIONS.length * cardH + (CLASS_OPTIONS.length - 1) * gap;
     let y = Math.max(h * 0.22, h / 2 - totalH / 2);
@@ -69,6 +70,12 @@ export class CharacterSelectScene extends Phaser.Scene {
     }
     this.add
       .text(cx - w / 2 + 16, y + 44, opt.blurb, { fontFamily: 'system-ui, sans-serif', fontSize: '13px', color: enabled ? '#d6e2f2' : '#6a6577', wordWrap: { width: w - 32 } })
+      .setOrigin(0, 0)
+      .setDepth(3);
+    // CLASS HOME STARTS: where a new character of this class spawns (data-driven
+    // from the manifest's homeClass zones; Earth homes = the WA start).
+    this.add
+      .text(cx - w / 2 + 16, y + h - 20, `Starts in: ${homeStartLabelForClass(opt.id)}`, { fontFamily: 'system-ui, sans-serif', fontSize: '11px', color: enabled ? '#ffe9a8' : '#6a6577', fontStyle: 'bold' })
       .setOrigin(0, 0)
       .setDepth(3);
 
