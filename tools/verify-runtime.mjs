@@ -252,6 +252,60 @@ try {
       JSON.stringify(s),
     );
 
+    // 2n. REAL NECROMANCER ART (the first shipped 8-way sprite drop-in): all
+    // eight rotation frames + the canonical key minted at the canonical 32×48,
+    // and the avatar TURNS with its real movement facing (east / north / a
+    // diagonal / south each select their frame through setDirection).
+    if (cls === 'necromancer') {
+      const necroArt = await page.evaluate(() => {
+        const ms = window.__ready();
+        const dirs = ['south', 'south-east', 'east', 'north-east', 'north', 'north-west', 'west', 'south-west'];
+        const frames = dirs.every((d) => ms.textures.exists(`necro-figure-${d}`));
+        const base = ms.textures.get('necro-figure').getSourceImage();
+        const keyAt = (x, y) => {
+          ms.player.setDirection(x, y);
+          return ms.player.sprite.texture.key;
+        };
+        const east = keyAt(1, 0);
+        const north = keyAt(0, -1);
+        const diag = keyAt(1, 1);
+        const south = keyAt(0, 1);
+        ms.player.setDirection(0, 0); // stop — facing (and the frame) stay put
+        return { applied: ms.spriteOverridesApplied, frames, size: [base.width, base.height], east, north, diag, south };
+      });
+      ok(
+        'necromancer art: the 8-way sprite drop-in applied at canonical size and the avatar turns with its facing',
+        necroArt.applied >= 1 &&
+          necroArt.frames &&
+          necroArt.size[0] === 32 &&
+          necroArt.size[1] === 48 &&
+          necroArt.east === 'necro-figure-east' &&
+          necroArt.north === 'necro-figure-north' &&
+          necroArt.diag === 'necro-figure-south-east' &&
+          necroArt.south === 'necro-figure-south',
+        JSON.stringify(necroArt),
+      );
+    }
+
+    // A class WITHOUT rotation art keeps its single code-drawn texture no
+    // matter how it moves (the fallback half of the 8-way contract).
+    if (cls === 'blacksmith') {
+      const singleTex = await page.evaluate(() => {
+        const ms = window.__ready();
+        ms.player.setDirection(1, 0);
+        const k1 = ms.player.sprite.texture.key;
+        ms.player.setDirection(0, -1);
+        const k2 = ms.player.sprite.texture.key;
+        ms.player.setDirection(0, 0);
+        return { k1, k2 };
+      });
+      ok(
+        'sprite fallback: a class without rotation art keeps its single texture while moving',
+        singleTex.k1 === 'player-figure' && singleTex.k2 === 'player-figure',
+        JSON.stringify(singleTex),
+      );
+    }
+
     // 2m. EVERY MAGE COMMIT-1 EXTENSION THROUGH A REAL MAGE SKILL, in the live
     // Mage session: Wormhole Rift (teleport + origin portal), Crystal Strike →
     // Crystal Shatter (stacks banked then detonated), Entangled Chains (binding),
