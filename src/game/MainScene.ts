@@ -1102,7 +1102,10 @@ export class MainScene extends Phaser.Scene {
   private launchMode: 'new' | 'continue' = 'new';
   /** The active class for this run (chosen at character-select for a new game, or read
    *  from the save on continue). Drives the avatar, base stats, and the active skill tree. */
-  private classId: ClassId = 'blacksmith';
+  /** The LIVE character's class — the single source of truth for "who am I".
+   *  Public: the forced first-skill picker derives its class from THIS, never
+   *  from a cached/module-level id (the wizard-on-witchdoctor regression). */
+  classId: ClassId = 'blacksmith';
   /** True once create() has finished building + (optionally) loading — gates autosave. */
   private gameReady = false;
   /** True while applySave() is restoring — suppresses autosave so it can't write partial state. */
@@ -1832,6 +1835,7 @@ export class MainScene extends Phaser.Scene {
     };
     layout();
     this.scale.on(Phaser.Scale.Events.RESIZE, layout);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.scale.off(Phaser.Scale.Events.RESIZE, layout)); // never leak across scene restarts
 
     // Gameplay keys (never gated by DEV_MODE): Attack (also the on-screen button)
     // and a desktop-convenience Dash key alongside the on-screen Dash button.
@@ -5799,6 +5803,7 @@ export class MainScene extends Phaser.Scene {
     };
     layout();
     this.scale.on(Phaser.Scale.Events.RESIZE, layout);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.scale.off(Phaser.Scale.Events.RESIZE, layout)); // never leak across scene restarts
   }
 
   /** Show the bar for the boss the player is currently engaged with (active + near).
@@ -6654,6 +6659,7 @@ export class MainScene extends Phaser.Scene {
     };
     layout();
     this.scale.on(Phaser.Scale.Events.RESIZE, layout);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.scale.off(Phaser.Scale.Events.RESIZE, layout)); // never leak across scene restarts
   }
 
   /** A brief, non-intrusive "Saved ✓" flash next to the menu button (autosave feedback). */
@@ -9224,6 +9230,7 @@ export class MainScene extends Phaser.Scene {
       this.fadeOverlay.setPosition(this.scale.width / 2, this.scale.height / 2).setSize(this.scale.width, this.scale.height);
     };
     this.scale.on(Phaser.Scale.Events.RESIZE, layout);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.scale.off(Phaser.Scale.Events.RESIZE, layout)); // never leak across scene restarts
   }
 
   // --- DEV: world travel ---
@@ -11229,6 +11236,7 @@ export class MainScene extends Phaser.Scene {
     };
     layout();
     this.scale.on(Phaser.Scale.Events.RESIZE, layout);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.scale.off(Phaser.Scale.Events.RESIZE, layout)); // never leak across scene restarts
   }
 
   /**
@@ -11260,6 +11268,7 @@ export class MainScene extends Phaser.Scene {
     };
     layout();
     this.scale.on(Phaser.Scale.Events.RESIZE, layout);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.scale.off(Phaser.Scale.Events.RESIZE, layout)); // never leak across scene restarts
   }
 
   /** Refresh the Holy Power counter + gate its visibility to the holy endgame. Called

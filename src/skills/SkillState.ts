@@ -1,4 +1,5 @@
 import {
+  CLASS_SKILLS,
   classSkills,
   combineMods,
   isEquippableSkill,
@@ -244,7 +245,45 @@ export class SkillState {
     this.loadoutByClass = {};
     const lo = state?.loadoutByClass ?? {};
     for (const k of Object.keys(lo)) this.loadoutByClass[k] = [...(lo[k] ?? [])];
+    this.sanitize(); // SAVE INTEGRITY: strip cross-class contamination + refund
     this.pruneLoadout(); // drop unknown/locked ids (e.g. the old free kit) + re-floor
     this.onChange?.();
+  }
+
+  /** What the last {@link sanitize} pass found (runtime-gate/report observability). */
+  lastSanitize: { stripped: string[]; refunded: number } = { stripped: [], refunded: 0 };
+
+  /**
+   * SAVE INTEGRITY (the mis-shown-picker regression): a skill recorded under a
+   * class it does NOT belong to (e.g. a Wizard opener granted while the picker
+   * showed the wrong class) is FOREIGN — it can never be used, but its point is
+   * gone and the anti-soft-lock accounting misreads it. Strip every foreign id
+   * and REFUND its cost. Runs on every load, so contaminated saves heal
+   * themselves; clean saves are untouched (byte-identical round-trips).
+   */
+  sanitize(): { stripped: string[]; refunded: number } {
+    const stripped: string[] = [];
+    let refunded = 0;
+    for (const k of Object.keys(this.unlocked)) {
+      const legal = new Set(classSkills(k as ClassId).skills.map((s) => s.id));
+      for (const id of [...this.unlocked[k]]) {
+        if (legal.has(id)) continue;
+        this.unlocked[k].delete(id);
+        stripped.push(`${k}:${id}`);
+        // The foreign skill's cost (looked up wherever it really lives; default 1).
+        let cost = 1;
+        for (const c of Object.keys(CLASS_SKILLS) as ClassId[]) {
+          const d = CLASS_SKILLS[c].skills.find((s) => s.id === id);
+          if (d) {
+            cost = d.cost;
+            break;
+          }
+        }
+        refunded += cost;
+      }
+    }
+    this.unspentPoints += refunded;
+    this.lastSanitize = { stripped, refunded };
+    return this.lastSanitize;
   }
 }
