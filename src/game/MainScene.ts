@@ -114,6 +114,9 @@ import { RESTORATION_TUNING, CLAY_ID, OIL_IMMUNITY_ID, OIL_VITALITY_ID } from '.
 import { SPACETIME_TUNING } from '../skills/mageSpacetime';
 import { ARCANE_TUNING, MAGE_ABSORPTION_ID } from '../skills/mageArcane';
 import { CRYSTALBLADE_TUNING } from '../skills/mageCrystalblade';
+import { BARD_SONGS_TUNING, ECHO_OF_PASSION_ID, SONG_OF_LORE_ID, CHANT_OF_ANCESTORS_ID } from '../skills/bardSongs';
+import { BARD_BATTLE_TUNING } from '../skills/bardBattle';
+import { BARD_SONIC_TUNING, SONIC_ECHOES_ID } from '../skills/bardSonic';
 import { PlayerPower } from '../player/PlayerPower';
 import { URIEL_SCENE } from '../story/urielData';
 import { URIEL_SENDOFF_LINES, RIFT_SCENE } from '../story/riftSceneData';
@@ -632,6 +635,9 @@ export class MainScene extends Phaser.Scene {
   /** COMBO ULTIMATE (War Song): while set, auto-chained melee strikes fire on a
    *  cadence with no input (the timed buff half runs through skillTimed). */
   comboUltimate: { until: number; nextAt: number; intervalMs: number; range: number; damage: number; jumps: number; jumpRange: number; falloff: number; tint: number } | null = null;
+  /** HARMONIC AMPLIFICATION (Bard): while charges remain, each strike detonates an
+   *  extra splash around its hit point, consuming one charge. Public for the gate. */
+  harmonicCharges = 0;
   /**
    * CHANNELED-BEAM state (the channel primitive). Transient: a single active channel locks
    * one enemy, ticks damage, optionally trickles energy, and is cancelled by movement / any
@@ -1799,6 +1805,8 @@ export class MainScene extends Phaser.Scene {
 
   /** Single XP entry point for every source (kills, quest, dev keys). */
   private gainXP(amount: number): void {
+    // SONG OF LORE (Bard keyed buff): boosted XP gain while the song runs.
+    if (this.skillTimed.some((t) => t.id === SONG_OF_LORE_ID)) amount *= BARD_SONGS_TUNING.songOfLore.xpMult;
     const levelsGained = this.progression.addXP(amount);
     if (levelsGained > 0) {
       this.skills.awardPoints(levelsGained); // 1 skill point per level gained
@@ -2103,6 +2111,8 @@ export class MainScene extends Phaser.Scene {
     if (this.isPlayerCcImmune()) dr += CONTROL_TUNING.ironWill.damageReduction;
     this.baseIncomingMult = Phaser.Math.Clamp(1 - dr, 0.1, 2);
     if (this.playerHealth) this.playerHealth.incomingMultiplier = this.baseIncomingMult;
+    // SONIC ECHOES (Bard keyed passive): the ECHO extension is armed while unlocked.
+    this.setEcho(this.skills.isUnlocked(SONIC_ECHOES_ID) ? BARD_SONIC_TUNING.echoes.pct : 0, BARD_SONIC_TUNING.echoes.delayMs);
     // Block chance + strength (Double Block / Dual Shield) — rolled per hit in Health.
     if (this.playerHealth) {
       this.playerHealth.blockChance = Phaser.Math.Clamp(m.blockChance ?? 0, 0, 0.9);
@@ -2397,6 +2407,49 @@ export class MainScene extends Phaser.Scene {
       const c = CRYSTALBLADE_TUNING.crystalShatter;
       const res = this.shatterCrystallize(px, py, c.radius, this.skillDamage(c.damagePerStack));
       if (res.stacks === 0) this.showBanner('No crystal to shatter', 900);
+    } else if (action === 'bard_stage_dive') {
+      // Bard Battle #6 — leap into the crowd: damage + KNOCKDOWN along the path (Charge).
+      this.startCharge(BARD_BATTLE_TUNING.stageDive);
+    } else if (action === 'bard_amplify') {
+      // Bard Battle #7 — arm the next N strikes with a resonant splash.
+      this.harmonicCharges = BARD_BATTLE_TUNING.amplify.charges;
+      this.spawnSkillRing(px, py, 70, 0xffd0b0);
+      this.showBanner('Harmonics amplified', 1100);
+    } else if (action === 'bard_coda') {
+      // Bard Battle #9 — the conditional finisher: ×bonus vs stunned/slowed targets.
+      const c = BARD_BATTLE_TUNING.coda;
+      this.finisherHitAll(px, py, c.radius, this.skillDamage(c.damage), c.bonusMult);
+    } else if (action === 'bard_war_song') {
+      // Bard Battle #10 ultimate — the combo state: auto-chained strikes + momentum.
+      const c = BARD_BATTLE_TUNING.warSong;
+      this.startComboUltimate('bard_bt_war_song', {
+        durationMs: c.durationMs, intervalMs: c.intervalMs, range: c.range, damage: c.damage,
+        jumps: c.jumps, jumpRange: c.jumpRange, falloff: c.falloff, tint: c.tint,
+        stats: { damageReduction: c.damageReduction, moveSpeedMult: c.moveSpeedMult },
+      });
+      this.showBanner('WAR SONG', 1400);
+    } else if (action === 'bard_surge') {
+      // Bard Sonic #5 — dash forward leaving a vibrating trail (charge + Lava-lite patches).
+      const c = BARD_SONIC_TUNING.surge;
+      const { dx, dy } = this.facingUnit();
+      this.startCharge({ distance: c.distance, damage: c.damage, knockdownMs: c.knockdownMs });
+      for (const d of [c.distance * 0.25, c.distance * 0.55, c.distance * 0.85]) {
+        this.spawnSpellHazard(px + dx * d, py + dy * d, c.trailRadius, this.skillDamage(c.trailTickDamage), c.trailDurationMs, c.trailTickMs, { fill: 0x4a5a9f, stroke: 0xb8d8ff });
+      }
+    } else if (action === 'bard_distortion') {
+      // Bard Sonic #7 — the CONFUSION extension: an enemy turns on its own.
+      const c = BARD_SONIC_TUNING.distortion;
+      const turned = this.confuseNearestEnemy(px, py, c.range, c.chance, c.durationMs, c.chipDamage, c.chipMs);
+      this.showBanner(turned ? 'The song turns them' : 'The note slips past', 1100);
+    } else if (action === 'bard_wall') {
+      // Bard Sonic #8 — a WALL of three hazard cells laid ACROSS the facing line.
+      const c = BARD_SONIC_TUNING.wall;
+      const { dx, dy } = this.facingUnit();
+      const cxx = px + dx * c.placeAhead;
+      const cyy = py + dy * c.placeAhead;
+      for (const side of [-1, 0, 1]) {
+        this.spawnSpellHazard(cxx - dy * side * c.cellSpacing, cyy + dx * side * c.cellSpacing, c.cellRadius, this.skillDamage(c.tickDamage), c.durationMs, c.tickMs, { slowFactor: c.slowFactor, fill: 0x4a5a9f, stroke: 0xb8d8ff });
+      }
     }
   }
 
@@ -2459,6 +2512,13 @@ export class MainScene extends Phaser.Scene {
         const preHits = s.healPerHit !== undefined ? Math.min(s.maxHeals ?? Infinity, this.combatEnemiesInRange(x, y, radius).length) : 0;
         const dmg = this.composedDamage(s);
         if (dmg > 0) this.aoeHitAll(x, y, radius, dmg);
+        // HARMONIC AMPLIFICATION (Bard): a charged strike detonates a splash too.
+        if (dmg > 0 && this.harmonicCharges > 0) {
+          this.harmonicCharges--;
+          const c = BARD_BATTLE_TUNING.amplify;
+          this.spawnSkillRing(x, y, c.splashRadius, 0xffd0b0);
+          this.aoeHitAll(x, y, c.splashRadius, this.skillDamage(c.splashDamage));
+        }
         if (s.stunMs) this.stunEnemiesInRange(x, y, radius, s.stunMs);
         if (s.knockback) this.knockbackEnemiesInRange(x, y, radius, s.knockback, s.knockbackStunMs ?? 200);
         if (s.slowFactor !== undefined && s.slowMs) this.slowEnemiesInRange(x, y, radius, s.slowMs, s.slowFactor);
@@ -4136,7 +4196,8 @@ export class MainScene extends Phaser.Scene {
 
   /** True while the player ignores crowd control (Iron Will passive or Iron Pyrite form). */
   private isPlayerCcImmune(): boolean {
-    return this.skills.isUnlocked(IRON_WILL_ID) || this.skillTimed.some((t) => t.id === IRON_PYRITE_ID);
+    // Iron Will (passive) / Iron Pyrite (form) / Chant of the Ancestors (Bard timed buff).
+    return this.skills.isUnlocked(IRON_WILL_ID) || this.skillTimed.some((t) => t.id === IRON_PYRITE_ID || t.id === CHANT_OF_ANCESTORS_ID);
   }
 
   /**
@@ -4453,7 +4514,9 @@ export class MainScene extends Phaser.Scene {
     if (this.time.now - this.lastEnergySpendTime > ENERGY_REGEN_DELAY_MS && this.energy.current < this.energy.max) {
       // ARCANE ABSORPTION (Mage keyed passive): extra essence regen while unlocked.
       const absorb = this.skills.isUnlocked(MAGE_ABSORPTION_ID) ? ARCANE_TUNING.absorption.regenPerSec : 0;
-      this.energy.heal(((ENERGY_REGEN_PER_SEC + absorb) * delta) / 1000);
+      // ECHO OF PASSION (Bard keyed buff): extra essence regen while the pulse runs.
+      const passion = this.skillTimed.some((t) => t.id === ECHO_OF_PASSION_ID) ? BARD_SONGS_TUNING.echoOfPassion.energyPerSec : 0;
+      this.energy.heal(((ENERGY_REGEN_PER_SEC + absorb + passion) * delta) / 1000);
     }
   }
 
