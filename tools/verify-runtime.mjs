@@ -59,6 +59,31 @@ try {
     Object.defineProperty(document, 'hidden', { get: () => false });
     Object.defineProperty(document, 'visibilityState', { get: () => 'visible' });
   });
+  // HARNESS HELPERS registered on EVERY navigation (init script), so checks that
+  // run mid-loop (fresh sessions) can use them too. The post-loop evaluate below
+  // re-defines the same helpers — identical behavior, kept for readability.
+  await page.addInitScript(() => {
+    window.__ready = () => {
+      const ms = window.__game.scene.getScene('MainScene');
+      if (ms.playerDead) ms.respawnPlayer();
+      ms.playerHealth.full();
+      ms.playerHealth.shield = 1e9;
+      return ms;
+    };
+    window.__quietSpot = () => {
+      const ms = window.__ready();
+      for (let i = 1; i <= 40; i++) {
+        const x = ms.player.x + (i % 2 ? 1 : -1) * i * 380;
+        const y = ms.player.y + ((i % 3) - 1) * 320;
+        const w = ms.activeMap().nearestWalkableWorld(x, y);
+        if (w && ms.combatEnemiesInRange(w.x, w.y, 800).length === 0) {
+          ms.player.sprite.body.reset(w.x, w.y);
+          return true;
+        }
+      }
+      return false;
+    };
+  });
   page.on('pageerror', (e) => pageErrors.push(e.message));
 
   async function newGame(classId) {
@@ -158,9 +183,10 @@ try {
     blacksmith: { world: 'globe', zone: 'munich-anvil-hold', opener: 'mun-01-mentor', kind: 'region' },
     wizard: { world: 'egypt', zone: 'cairo-nile-crown', opener: 'cai-01-mentor', kind: 'cairo' },
     necromancer: { world: 'globe', zone: 'murmansk-bone-harbor', opener: 'mur-01-mentor', kind: 'region' },
+    mage: { world: 'globe', zone: 'moscow-crystal-court', opener: 'mos-01-mentor', kind: 'region' },
     druid: { world: 'earth', zone: null, opener: 'honest-days-work', kind: 'earth' },
   };
-  for (const cls of ['blacksmith', 'wizard', 'necromancer', 'druid']) {
+  for (const cls of ['blacksmith', 'wizard', 'necromancer', 'mage', 'druid']) {
     await newGame(cls);
     const home = HOMES[cls];
     const s = await page.evaluate(
@@ -221,6 +247,76 @@ try {
       s.world === home.world && s.active === null && atHome && s.mentorDist >= 0 && s.mentorDist < 400 && s.openerBefore === 'available' && s.button === true && openerDone,
       JSON.stringify(s),
     );
+
+    // 2m. EVERY MAGE COMMIT-1 EXTENSION THROUGH A REAL MAGE SKILL, in the live
+    // Mage session: Wormhole Rift (teleport + origin portal), Crystal Strike →
+    // Crystal Shatter (stacks banked then detonated), Entangled Chains (binding),
+    // and Arcane Missiles (seeking bolts hit a foe 90° off the firing line).
+    if (cls === 'mage') {
+      const mageKit = await page.evaluate(async () => {
+        const ms = window.__ready();
+        const wait = (t) => new Promise((r) => setTimeout(r, t));
+        if (!window.__quietSpot()) return { setup: 'no quiet spot' };
+        const spawnAt = (dx, dy) => {
+          const w = ms.activeMap().nearestWalkableWorld(ms.player.x + dx, ms.player.y + dy);
+          return ms.spawnAngel('darkcaster', w.x, w.y);
+        };
+        // Wormhole Rift: move + a portal hazard left at the origin.
+        const from = { x: ms.player.x, y: ms.player.y };
+        ms.player.facingX = 1;
+        ms.player.facingY = 0;
+        ms.runActiveSkill('mage_wormhole');
+        const wormMoved = Math.hypot(ms.player.x - from.x, ms.player.y - from.y);
+        const h = ms.spellHazards[ms.spellHazards.length - 1];
+        const portal = h ? Math.hypot(h.x - from.x, h.y - from.y) < 5 : false;
+        // Crystal Strike banks a stack; Crystal Shatter detonates it.
+        const a = spawnAt(60, 0);
+        await wait(200);
+        ms.player.facingX = a.x >= ms.player.x ? 1 : -1;
+        ms.player.facingY = 0;
+        ms.runActiveSkill('mage_crystal_strike');
+        await wait(100);
+        const stacks = ms.crystallize.get(a) ?? 0;
+        const hpA = a.health.current;
+        ms.runActiveSkill('mage_shatter');
+        await wait(100);
+        const shattered = hpA - a.health.current > 0 && !ms.crystallize.has(a);
+        // Entangled Chains binds the cluster.
+        const b = spawnAt(140, 60);
+        const c = spawnAt(140, -60);
+        await wait(200);
+        ms.runActiveSkill('mage_entangle');
+        const bound = ms.entangled ? ms.entangled.members.length : 0;
+        ms.clearEntangle();
+        a.destroy();
+        b.destroy();
+        c.destroy();
+        // Arcane Missiles: a lone foe due NORTH, fired due EAST — homing must connect.
+        const wN = ms.activeMap().nearestWalkableWorld(ms.player.x, ms.player.y - 220);
+        const foe = ms.spawnAngel('darkcaster', wN.x, wN.y);
+        await wait(200);
+        ms.player.facingX = 1;
+        ms.player.facingY = 0;
+        const hp0 = foe.health.current;
+        ms.runActiveSkill('mage_missiles');
+        const t0 = Date.now();
+        let drop = 0;
+        while (Date.now() - t0 < 2500) {
+          await wait(120);
+          drop = hp0 - foe.health.current;
+          if (drop > 0) break;
+        }
+        foe.destroy();
+        ms.crystallize.clear();
+        ms.playerHealth.full();
+        return { setup: 'ok', wormMoved, portal, stacks, shattered, bound, drop };
+      });
+      ok(
+        'mage: every framework extension fires through a real Mage skill',
+        mageKit.setup === 'ok' && mageKit.wormMoved > 120 && mageKit.portal && mageKit.stacks === 1 && mageKit.shattered && mageKit.bound >= 2 && mageKit.drop > 0,
+        JSON.stringify(mageKit),
+      );
+    }
   }
 
   // HARNESS HELPERS (the precondition contract). __ready(): revive + heal +
