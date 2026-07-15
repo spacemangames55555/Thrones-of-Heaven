@@ -118,6 +118,8 @@ import {
   EFFIGY_TUNING,
   REVENANT_CONFIG,
   REVENANT_TUNING,
+  ASTRAL_DECOY_CONFIG,
+  ASTRAL_DECOY_TUNING,
 } from '../summon/summonData';
 import { TAPESTRY_TUNING, BEAR_MIGHT_ID, ELEPHANT_RAGE_ID } from '../skills/druidTapestry';
 import { RESTORATION_TUNING, CLAY_ID, OIL_IMMUNITY_ID, OIL_VITALITY_ID } from '../skills/druidRestoration';
@@ -133,6 +135,9 @@ import { WD_SPIRIT_TUNING } from '../skills/witchdoctorSpirit';
 import { SAM_BLADE_TUNING, RAZORS_EDGE_ID } from '../skills/samuraiBlade';
 import { SAM_STANCE_TUNING, COUNTERSTRIKE_ID, IMMOVABLE_MIND_ID } from '../skills/samuraiStances';
 import { SAM_BOW_TUNING } from '../skills/samuraiBow';
+import { MONK_PALM_TUNING } from '../skills/monkIronPalm';
+import { MONK_CHI_TUNING } from '../skills/monkChi';
+import { MONK_SPIRIT_TUNING, ENLIGHTENED_MIND_ID, MEDITATION_ID } from '../skills/monkSpiritual';
 import { PlayerPower } from '../player/PlayerPower';
 import { URIEL_SCENE } from '../story/urielData';
 import { URIEL_SENDOFF_LINES, RIFT_SCENE } from '../story/riftSceneData';
@@ -679,7 +684,7 @@ export class MainScene extends Phaser.Scene {
   /** PARRY window: while now < until, the next incoming MELEE hit is fully
    *  NEGATED and the attacker takes the riposte (one hit per window; an unused
    *  window lapses silently). Ranged hits always pass through. Public for the gate. */
-  parry: { until: number; riposteDamage: number } | null = null;
+  parry: { until: number; riposteDamage: number; deflectProjectiles: boolean; projectileRiposteMult: number } | null = null;
   /** COUNTERSTRIKE upgrade (armed only while owned): extra riposte damage +
    *  a Resolve/energy refund on each successful parry. */
   parryRiposteBonus = 0;
@@ -695,6 +700,17 @@ export class MainScene extends Phaser.Scene {
   iaijutsu: { until: number; mult: number; stunMs: number } | null = null;
   /** RAZOR'S EDGE (keyed passive, armed while owned): strikes apply this bleed. */
   strikeBleed: { dmgPerTick: number; tickMs: number; durationMs: number } | null = null;
+  // --- Monk framework primitives (composable/bespoke; class-agnostic) ---
+  /** MOBILE DAMAGE PULSE ZONE (Prayer Wheel): while set, a ring FOLLOWS the
+   *  caster and pulses damage around them on a cadence. Public for the gate. */
+  pulseRing: { until: number; nextAt: number; intervalMs: number; radius: number; damage: number; tint: number } | null = null;
+  /** ALLY RULE: set by a bespoke action that WHIFFED for lack of a valid target
+   *  ("no ally") — activateSkill refunds the cooldown + energy so a graceful
+   *  miss never wastes anything. */
+  actionWhiffed = false;
+  /** EMPOWERED STRIKES (count-N consume-buff): the next `remaining` strikes deal
+   *  damage × mult, each hit spending one charge (the Iaijutsu shape, N deep). */
+  empoweredStrikes: { remaining: number; mult: number } | null = null;
   /**
    * CHANNELED-BEAM state (the channel primitive). Transient: a single active channel locks
    * one enemy, ticks damage, optionally trickles energy, and is cancelled by movement / any
@@ -1749,6 +1765,7 @@ export class MainScene extends Phaser.Scene {
     this.updateFriendlyZones(); // heal-over-time zones for the player + summons (static + mobile)
     this.updateConfusion(); // Bard confusion: expiry + a confused enemy chips at its fellow
     this.updateVoodoo(); // Witch Doctor: bind expiry + spirit assault + spirit split pulses
+    this.updatePulseRing(); // Monk: the following damage pulse ring
     this.updateComboUltimate(); // Bard War Song: the auto-chain cadence
     this.updateDots(); // poison DoTs + Plague contagion spread + stacking DoTs
     this.updateChannel(delta); // channeled beam: tick damage + energy trickle + redraw
@@ -2105,6 +2122,9 @@ export class MainScene extends Phaser.Scene {
     this.parry = null; // Samurai timing state never survives a reset
     this.perfectFormUntil = 0;
     this.iaijutsu = null;
+    this.pulseRing = null; // Monk state never survives a reset either
+    this.actionWhiffed = false;
+    this.empoweredStrikes = null;
     this.breakPlayerStealth();
     this.clearDots();
     this.summons.clear();
@@ -2283,7 +2303,16 @@ export class MainScene extends Phaser.Scene {
     this.skillCooldownDur[id] = effCd;
 
     if (e.kind === 'active') {
+      // ALLY RULE (Monk framework): a bespoke action that whiffed for lack of a
+      // valid target flags actionWhiffed — refund the cooldown + energy so a
+      // graceful "no ally" costs nothing.
+      this.actionWhiffed = false;
       this.runActiveSkill(e.action);
+      if (this.actionWhiffed) {
+        this.actionWhiffed = false;
+        this.skillCooldownUntil[id] = 0;
+        if (energyCost > 0) this.energy.heal(energyCost);
+      }
     } else if (e.kind === 'buff' || e.kind === 'transformation') {
       const aura = e.kind === 'transformation' ? { auraDamage: e.auraDamage, auraRadius: e.auraRadius } : {};
       // STANCE EXCLUSIVITY (Samurai framework): entering a toggled form EXITS any
@@ -2682,6 +2711,79 @@ export class MainScene extends Phaser.Scene {
         { p: 'bolt', damage: c.boltDamage, speed: c.boltSpeed, range: c.boltRange, radius: c.boltRadius, tint: 0xd8e8ff },
         c.fireDelayMs,
       );
+    } else if (action === 'monk_deflect') {
+      // Monk Iron Palm #5 — the parry window's MONK config (extension #1): melee
+      // AND projectiles turned aside, projectiles riposted at the lighter mult.
+      const c = MONK_PALM_TUNING.deflect;
+      this.openParryWindow(c.windowMs, this.skillDamage(c.riposteDamage), { deflectProjectiles: true, projectileRiposteMult: c.projectileRiposteMult });
+    } else if (action === 'monk_rising') {
+      // Monk Iron Palm #7 — the dash-through rising strike (the charge machinery).
+      const c = MONK_PALM_TUNING.rising;
+      this.startCharge({ distance: c.distance, damage: this.skillDamage(c.damage), knockdownMs: c.knockdownMs });
+    } else if (action === 'monk_empower') {
+      // Monk Iron Palm #8 — the count-N consume-buff: next N strikes hit ×mult.
+      const c = MONK_PALM_TUNING.empower;
+      this.empoweredStrikes = { remaining: c.charges, mult: c.mult };
+      this.spawnSkillRing(px, py, 50, 0xa8ffd0);
+      this.showBanner('The fists fill with chi', 1100);
+    } else if (action === 'monk_hundred') {
+      // Monk Iron Palm #10 ultimate — the combo-ultimate machinery on a 280ms beat.
+      const c = MONK_PALM_TUNING.hundred;
+      this.startComboUltimate('monk_ip_hundred', {
+        durationMs: c.durationMs, intervalMs: c.intervalMs, range: c.range, damage: c.damage,
+        jumps: c.jumps, jumpRange: c.jumpRange, falloff: c.falloff, tint: c.tint,
+        stats: { attackSpeedMult: c.attackSpeedMult },
+      });
+      this.showBanner('HUNDRED HANDS', 1400);
+    } else if (action === 'monk_tranquil') {
+      // Monk Chi #4 — one perfect stillness: a burst of Chi (energy) back.
+      const c = MONK_CHI_TUNING.tranquil;
+      this.energy.heal(c.energy);
+      this.spawnSkillRing(px, py, 60, 0xa8ffd0);
+      this.showBanner('The breath returns', 900);
+    } else if (action === 'monk_acupuncture') {
+      // Monk Chi #7 — mend + STRIP ONE harmful effect clinging to the player
+      // (a hostile DoT stack first, then the slow, then either weaken).
+      const c = MONK_CHI_TUNING.acupuncture;
+      this.playerHealth.heal(c.heal);
+      this.spawnSkillRing(px, py, 60, 0xa8ffd0);
+      this.spawnDamageNumber(px, py - 30, c.heal, '#a8ffd0');
+      const now = this.time.now;
+      if (this.casterDotStacks.length > 0) this.casterDotStacks.pop();
+      else if (now < this.casterSlowUntil) this.casterSlowUntil = 0;
+      else if (now < this.casterWeakenUntil) this.casterWeakenUntil = 0;
+      else if (now < this.poisonWeakenUntil) { this.poisonWeakenUntil = 0; this.poisonWeakenFactor = 0; }
+      else { this.showBanner('Nothing to strip', 900); return; }
+      this.showBanner('The needle finds the poison', 1100);
+    } else if (action === 'monk_infusion') {
+      // Monk Chi #8 — the HP-cost heal to a friendly (the ALLY RULE: a whiff
+      // refunds the cooldown + energy via actionWhiffed).
+      const c = MONK_CHI_TUNING.infusion;
+      if (!this.transferHealToAlly(c.range, c.cost, c.heal)) this.actionWhiffed = true;
+    } else if (action === 'monk_enigma') {
+      // Monk Spirit #2 — the confusion reuse: it no longer knows what it sees.
+      const c = MONK_SPIRIT_TUNING.enigma;
+      const turned = this.confuseNearestEnemy(px, py, c.range, c.chance, c.durationMs, c.chipDamage, c.chipMs);
+      this.showBanner(turned ? 'It turns on its own' : 'The presence slips past', 1100);
+    } else if (action === 'monk_divine') {
+      // Monk Spirit #3 — the ally-bond reuse, behind the ALLY RULE: with no live
+      // companion the bond has nowhere to land — a graceful refunded whiff.
+      const c = MONK_SPIRIT_TUNING.divine;
+      if (this.summons.list.some((sm) => sm.isAlive)) {
+        this.startAllyBond(c.sharePct, c.durationMs);
+      } else {
+        this.showBanner('No companion to bond with', 1000);
+        this.actionWhiffed = true;
+      }
+    } else if (action === 'monk_astral') {
+      // Monk Spirit #5 — the decoy reuse in the Monk's colors (magnet tank).
+      this.summonAlliedUnits(ASTRAL_DECOY_CONFIG, 1, ASTRAL_DECOY_TUNING.maxConcurrent, ASTRAL_DECOY_TUNING.durationMs);
+      this.showBanner('The spirit-self walks', 1100);
+    } else if (action === 'monk_wheel') {
+      // Monk Spirit #7 — the MOBILE pulse ring (extension #3): it turns WITH you.
+      const c = MONK_SPIRIT_TUNING.wheel;
+      this.startPulseRing(c.durationMs, c.intervalMs, c.radius, this.skillDamage(c.damage), c.tint);
+      this.showBanner('The wheel turns', 1100);
     }
   }
 
@@ -2752,6 +2854,12 @@ export class MainScene extends Phaser.Scene {
             this.stunEnemiesInRange(x, y, radius, this.iaijutsu.stunMs);
           }
           this.iaijutsu = null;
+        }
+        // EMPOWERED STRIKES (Monk): the count-N consume-buff — each striking
+        // pulse spends ONE ×mult charge; the buff clears when the last is spent.
+        if (dmg > 0 && this.empoweredStrikes) {
+          dmg *= this.empoweredStrikes.mult;
+          if (--this.empoweredStrikes.remaining <= 0) this.empoweredStrikes = null;
         }
         if (dmg > 0) this.aoeHitAll(x, y, radius, dmg);
         // RAZOR'S EDGE (Samurai keyed passive): strikes leave a bleed DoT.
@@ -2863,8 +2971,18 @@ export class MainScene extends Phaser.Scene {
       if (s.banner) this.showBanner(s.banner, 1400);
     } else if (s.p === 'heal') {
       this.playerHealth.heal(s.amount);
-      this.spawnSkillRing(px, py, 60, s.ring ?? 0xa8ffd0);
+      this.spawnSkillRing(px, py, s.radius ?? 60, s.ring ?? 0xa8ffd0);
       this.spawnDamageNumber(px, py - 30, s.amount, '#a8ffd0');
+      // MONK dual extension: with a radius, the mend reaches every allied summon
+      // (the Astral decoy counts as a friendly) inside it.
+      if (s.radius) {
+        for (const sm of this.summons.list) {
+          if (sm.isAlive && Phaser.Math.Distance.Between(sm.x, sm.y, px, py) <= s.radius) {
+            sm.health.heal(s.amount);
+            this.spawnDamageNumber(sm.x, sm.y - 26, s.amount, '#a8ffd0');
+          }
+        }
+      }
     } else if (s.p === 'shield') {
       this.playerHealth.shield = s.amount;
       this.shieldUntil = this.time.now + s.durationMs;
@@ -3790,9 +3908,37 @@ export class MainScene extends Phaser.Scene {
    *  incoming MELEE hit is fully negated and the attacker eats `riposteDamage`
    *  (plus the Counterstrike bonus while owned). One hit per window; unused
    *  windows lapse silently; ranged hits never enter the gate. */
-  openParryWindow(windowMs: number, riposteDamage: number): void {
-    this.parry = { until: this.time.now + windowMs, riposteDamage };
+  openParryWindow(windowMs: number, riposteDamage: number, opts?: { deflectProjectiles?: boolean; projectileRiposteMult?: number }): void {
+    // DEFLECT (Monk config of the same window): opts.deflectProjectiles turns
+    // aside PROJECTILE hits too, riposting at the (lighter) projectile multiplier.
+    // The Samurai's parry passes no opts — melee-only, untouched.
+    this.parry = { until: this.time.now + windowMs, riposteDamage, deflectProjectiles: opts?.deflectProjectiles ?? false, projectileRiposteMult: opts?.projectileRiposteMult ?? 1 };
     this.spawnSkillRing(this.player.x, this.player.y, 40, 0xd8e8ff);
+  }
+
+  /** THE PROJECTILE DEFLECT GATE: the ranged damage path calls this first; only
+   *  a window opened WITH deflectProjectiles intercepts (the Samurai parry never
+   *  does). The riposte snaps back at the nearest enemy, scaled by the lighter
+   *  projectile multiplier. One hit per window, same as the melee gate. */
+  private deflectProjectileGate(): boolean {
+    const now = this.time.now;
+    if (!this.parry || now >= this.parry.until || !this.parry.deflectProjectiles) return false;
+    const riposte = this.parry.riposteDamage * this.parry.projectileRiposteMult + this.parryRiposteBonus;
+    this.parry = null; // one hit per window
+    if (this.parryRefundEnergy > 0) this.energy.heal(this.parryRefundEnergy);
+    const striker = this.nearestEnemy(this.player.x, this.player.y, 520);
+    if (striker) {
+      const dealt = striker.takeHit(riposte);
+      if (dealt > 0) {
+        this.dmgDealtAccum += dealt;
+        this.spawnDamageNumber(striker.x, striker.y - 24, dealt, '#a8ffd0');
+      }
+    }
+    this.spawnSkillRing(this.player.x, this.player.y, 46, 0xa8ffd0);
+    this.floatingText.show(this.player.x, this.player.y - 34, 'DEFLECT', '#a8ffd0', { fontSize: 14, riseBy: 16, durationMs: 700, depth: 14 });
+    this.parryCount++;
+    this.lastCombatTime = now;
+    return true;
   }
 
   /** PERFECT FORM (ultimate upgrade): for `durationMs` EVERY incoming melee hit
@@ -3850,6 +3996,71 @@ export class MainScene extends Phaser.Scene {
       if (this.playerDead) return;
       this.runComposedSteps([bolt]);
     });
+  }
+
+  // --- Monk framework: pulse ring + the ally rule -------------------------------
+
+  /** MOBILE DAMAGE PULSE ZONE: a ring that FOLLOWS the caster, pulsing damage
+   *  around them every `intervalMs` (the mobile friendly zone's follow idea,
+   *  damage-flavored). One at a time; re-cast restarts it. */
+  startPulseRing(durationMs: number, intervalMs: number, radius: number, damage: number, tint = 0xffd8a0): void {
+    this.pulseRing = { until: this.time.now + durationMs, nextAt: this.time.now, intervalMs, radius, damage, tint };
+  }
+
+  /** Per-frame: the pulse ring ticks AT THE CASTER'S CURRENT POSITION. */
+  private updatePulseRing(): void {
+    const pr = this.pulseRing;
+    if (!pr) return;
+    if (this.time.now >= pr.until || this.playerDead) {
+      this.pulseRing = null;
+      return;
+    }
+    if (this.time.now < pr.nextAt) return;
+    pr.nextAt = this.time.now + pr.intervalMs;
+    this.spawnSkillRing(this.player.x, this.player.y, pr.radius, pr.tint);
+    if (this.combatEnemiesInRange(this.player.x, this.player.y, pr.radius).length > 0) {
+      this.aoeHitAll(this.player.x, this.player.y, pr.radius, pr.damage);
+    }
+  }
+
+  /** ALLY RULE: the most-injured LIVE friendly unit (allied summon — the Astral
+   *  decoy counts) within `range` of the caster, or null when none stands. */
+  mostInjuredAlly(range: number): AlliedSummon | null {
+    let best: AlliedSummon | null = null;
+    let bestRatio = Number.POSITIVE_INFINITY;
+    for (const sm of this.summons.list) {
+      if (!sm.isAlive) continue;
+      if (Phaser.Math.Distance.Between(sm.x, sm.y, this.player.x, this.player.y) > range) continue;
+      const ratio = sm.health.current / sm.health.max;
+      if (ratio < bestRatio) {
+        bestRatio = ratio;
+        best = sm;
+      }
+    }
+    return best;
+  }
+
+  /** HP-COST HEAL TO A FRIENDLY (Life Infusion): pay `cost` of your own health
+   *  to mend the most-injured ally by `heal`. Returns false (a graceful whiff —
+   *  the caller's cooldown/energy are refunded) when no ally stands or the
+   *  caster can't afford the cost. */
+  transferHealToAlly(range: number, cost: number, heal: number): boolean {
+    const ally = this.mostInjuredAlly(range);
+    if (!ally) {
+      this.showBanner('No ally to receive it', 1000);
+      return false;
+    }
+    if (this.playerHealth.current <= cost) {
+      this.showBanner('Not enough life to give', 1000);
+      return false;
+    }
+    this.playerHealth.current -= cost; // the gift is willing — it bypasses shields
+    this.spawnDamageNumber(this.player.x, this.player.y - 26, cost, '#ff7a7a');
+    ally.health.heal(heal);
+    this.spawnDamageNumber(ally.x, ally.y - 26, heal, '#a8ffd0');
+    this.spawnSkillRing(ally.x, ally.y, 50, 0xa8ffd0);
+    this.lastCombatTime = this.time.now;
+    return true;
   }
 
   // --- DoT (damage-over-time) + contagion primitive (Toxic Bolt / Plague) -------
@@ -4648,6 +4859,12 @@ export class MainScene extends Phaser.Scene {
    *  buff). Both bounce damage to nearby attackers; `amount` is the HP just lost. */
   private onPlayerHurt(amount: number): void {
     if (this.playerDead) return;
+    // MEDITATION (Monk): the rapid mend BREAKS the moment any blow lands.
+    if (amount > 0 && this.skillTimed.some((t) => t.id === MEDITATION_ID)) {
+      this.skillTimed = this.skillTimed.filter((t) => t.id !== MEDITATION_ID);
+      this.recomputeSkillEffects();
+      this.showBanner('Meditation broken', 1000);
+    }
     // REFLECT (Ethereal buff): bounce a fraction of the damage taken back at nearby foes.
     const reflectPct = this.combinedSkillMods().reflectPct ?? 0;
     if (reflectPct > 0 && amount > 0) {
@@ -4667,8 +4884,8 @@ export class MainScene extends Phaser.Scene {
   /** True while the player ignores crowd control (Iron Will passive or Iron Pyrite form). */
   private isPlayerCcImmune(): boolean {
     // Iron Will (passive) / Iron Pyrite (form) / Chant of the Ancestors (Bard timed buff).
-    // IMMOVABLE MIND (Samurai) joins the permanent-immunity half of the rule.
-    return this.skills.isUnlocked(IRON_WILL_ID) || this.skills.isUnlocked(IMMOVABLE_MIND_ID) || this.skillTimed.some((t) => t.id === IRON_PYRITE_ID || t.id === CHANT_OF_ANCESTORS_ID);
+    // IMMOVABLE MIND (Samurai) and ENLIGHTENED MIND (Monk) join the permanent half.
+    return this.skills.isUnlocked(IRON_WILL_ID) || this.skills.isUnlocked(IMMOVABLE_MIND_ID) || this.skills.isUnlocked(ENLIGHTENED_MIND_ID) || this.skillTimed.some((t) => t.id === IRON_PYRITE_ID || t.id === CHANT_OF_ANCESTORS_ID);
   }
 
   /**
@@ -4997,6 +5214,9 @@ export class MainScene extends Phaser.Scene {
     this.parry = null; // Samurai timing state never survives a reset
     this.perfectFormUntil = 0;
     this.iaijutsu = null;
+    this.pulseRing = null; // Monk state never survives a reset either
+    this.actionWhiffed = false;
+    this.empoweredStrikes = null;
     this.breakPlayerStealth();
     this.clearDots();
     this.despawnRegionChampion(); // death resets a champion encounter cleanly
@@ -5391,6 +5611,7 @@ export class MainScene extends Phaser.Scene {
    *  family's on-hit debuffs (the dark-caster's slow/weaken + stacking DoT). */
   private onProjectileHitPlayer(damage: number, tag?: string): void {
     if (this.playerDead) return;
+    if (this.deflectProjectileGate()) return; // Monk DEFLECT: the bolt is turned aside
     const dealt = this.playerHealth.damage(damage);
     this.player.flash();
     this.spawnDamageNumber(this.player.x, this.player.y - 26, dealt, '#ffd27a');
@@ -6479,6 +6700,9 @@ export class MainScene extends Phaser.Scene {
       this.parry = null;
       this.perfectFormUntil = 0;
       this.iaijutsu = null;
+      this.pulseRing = null;
+      this.actionWhiffed = false;
+      this.empoweredStrikes = null;
       this.breakPlayerStealth();
       this.clearDots(); // drop any poison DoTs
       this.summons.clear(); // summons are transient — never carried across a load
@@ -9118,6 +9342,9 @@ export class MainScene extends Phaser.Scene {
     this.parry = null; // Samurai timing state never survives a reset
     this.perfectFormUntil = 0;
     this.iaijutsu = null;
+    this.pulseRing = null; // Monk state never survives a reset either
+    this.actionWhiffed = false;
+    this.empoweredStrikes = null;
     this.breakPlayerStealth();
     this.clearDots();
 
@@ -10487,6 +10714,9 @@ export class MainScene extends Phaser.Scene {
     this.parry = null; // Samurai timing state never survives a reset
     this.perfectFormUntil = 0;
     this.iaijutsu = null;
+    this.pulseRing = null; // Monk state never survives a reset either
+    this.actionWhiffed = false;
+    this.empoweredStrikes = null;
     this.breakPlayerStealth();
     this.clearDots();
     this.summons.clear();
