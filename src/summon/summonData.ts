@@ -551,6 +551,180 @@ export const POLAR_BEAR_CONFIG: AlliedSummonConfig = {
   leashRange: POLAR_BEAR_TUNING.leashRange,
 };
 
+// ─── WITCH DOCTOR FRAMEWORK UNITS (the doll + the decoy; class-agnostic data) ──
+//
+// VOODOO DOLL — the bind's physical anchor, on the summon foundation: a small
+// stationary-ish "tank" that trails the player, DRAWS light aggro (MINION tier —
+// enemies near it will strike it, which is what arms the REFLECT upgrade), and
+// lives exactly as long as the bind. It attacks nothing; the player's own melee
+// strikes landing on it are what MIRROR to the bound target (MainScene wiring).
+export const VOODOO_DOLL_TUNING = {
+  /** The doll's HP: killable — the bind ends early if the doll is destroyed. */
+  maxHP: 90,
+  /** Bind duration (also the doll's lifespan; re-cast re-binds fresh). */
+  bindDurationMs: 12000,
+  /** How far the bind can reach when cast (nearest enemy within this). */
+  castRange: 340,
+  /** The cast's INITIAL spirit damage to the newly bound target. */
+  castDamage: 18,
+  /** MIRROR: fraction of a doll-striking melee hit sent to the bound target. */
+  mirrorPct: 0.6,
+  /** REFLECT upgrade (armed only while Soulbound Hex is owned): damage returned
+   *  to an enemy whose contact hit lands on the doll. */
+  reflectDamage: 12,
+  /** STITCH upgrade (Shadow Stitch): mirrored damage also splashes to enemies
+   *  within this radius of the bound target, at this fraction of the mirror. */
+  stitchRadius: 130,
+  stitchPct: 0.5,
+  /** SPIRIT ASSAULT upgrade: periodic ticking damage to the bound target that
+   *  BYPASSES defenses (direct health hit), while bound. */
+  assault: { damage: 6, tickMs: 1000 },
+  aggroRadius: 130, // light pull: nearby enemies will strike the doll (REFLECT's food)
+  followRange: 170,
+  moveTilesPerSec: 4.5,
+  bodyRadius: 14,
+  summonCooldownMs: 10000,
+  summonEnergyCost: 18,
+  tint: 0xc9a05a, // burlap-and-thread
+} as const;
+
+export const VOODOO_DOLL_CONFIG: AlliedSummonConfig = {
+  key: 'wd_doll',
+  name: 'Voodoo Doll',
+  behavior: 'tank',
+  maxHP: VOODOO_DOLL_TUNING.maxHP,
+  durationMs: VOODOO_DOLL_TUNING.bindDurationMs,
+  aggroRadius: VOODOO_DOLL_TUNING.aggroRadius,
+  followRange: VOODOO_DOLL_TUNING.followRange,
+  moveTilesPerSec: VOODOO_DOLL_TUNING.moveTilesPerSec,
+  bodyRadius: VOODOO_DOLL_TUNING.bodyRadius,
+  tint: VOODOO_DOLL_TUNING.tint,
+  drawsAggro: true,
+  aggroPriority: AGGRO_TIER.MINION, // light pull — below any true tank/decoy
+};
+
+// SPIRIT DECOY — a spectral duplicate of the player: MAGNET-tier aggro (the Polar
+// Bear/Monster tier), attacks NOTHING (pure 'tank' behavior), has HP, expires.
+export const SPIRIT_DECOY_TUNING = {
+  maxHP: 160,
+  durationMs: 10000,
+  aggroRadius: 260, // the magnet: enemies within this prefer the decoy
+  followRange: 180,
+  moveTilesPerSec: 5.5,
+  bodyRadius: 16,
+  maxConcurrent: 1,
+  summonCooldownMs: 14000,
+  summonEnergyCost: 20,
+  tint: 0x8fe8d0, // pale spirit-teal
+} as const;
+
+export const SPIRIT_DECOY_CONFIG: AlliedSummonConfig = {
+  key: 'wd_decoy',
+  name: 'Spirit Decoy',
+  behavior: 'tank', // follows + soaks; never attacks
+  maxHP: SPIRIT_DECOY_TUNING.maxHP,
+  durationMs: SPIRIT_DECOY_TUNING.durationMs,
+  aggroRadius: SPIRIT_DECOY_TUNING.aggroRadius,
+  followRange: SPIRIT_DECOY_TUNING.followRange,
+  moveTilesPerSec: SPIRIT_DECOY_TUNING.moveTilesPerSec,
+  bodyRadius: SPIRIT_DECOY_TUNING.bodyRadius,
+  tint: SPIRIT_DECOY_TUNING.tint,
+  drawsAggro: true,
+  aggroPriority: AGGRO_TIER.MAGNET, // the Polar Bear's magnet tier — enemies prefer it
+};
+
+// MINI-DECOY (Spectral Echoes): tiny short-lived illusions on the decoy seam —
+// they pull light aggro (MINION tier, below any true tank) and simply stand there.
+export const MINI_DECOY_TUNING = {
+  maxHP: 30,
+  durationMs: 4000,
+  aggroRadius: 140,
+  followRange: 150,
+  moveTilesPerSec: 5,
+  bodyRadius: 11,
+  count: 3,
+  tint: 0x8fe8d0,
+} as const;
+
+export const MINI_DECOY_CONFIG: AlliedSummonConfig = {
+  key: 'wd_mini_decoy',
+  name: 'Spirit Echo',
+  behavior: 'tank',
+  maxHP: MINI_DECOY_TUNING.maxHP,
+  durationMs: MINI_DECOY_TUNING.durationMs,
+  aggroRadius: MINI_DECOY_TUNING.aggroRadius,
+  followRange: MINI_DECOY_TUNING.followRange,
+  moveTilesPerSec: MINI_DECOY_TUNING.moveTilesPerSec,
+  bodyRadius: MINI_DECOY_TUNING.bodyRadius,
+  tint: MINI_DECOY_TUNING.tint,
+  drawsAggro: true,
+  aggroPriority: AGGRO_TIER.MINION,
+};
+
+// CURSED EFFIGY (Witch Doctor): a PLANTED magnet — the decoy machinery rooted in
+// place (moveTilesPerSec 0): it never walks, it just soaks what was meant for others.
+export const EFFIGY_TUNING = {
+  maxHP: 200,
+  durationMs: 12000,
+  aggroRadius: 240,
+  bodyRadius: 16,
+  maxConcurrent: 1,
+  tint: 0xb08a5a,
+} as const;
+
+export const EFFIGY_CONFIG: AlliedSummonConfig = {
+  key: 'wd_effigy',
+  name: 'Cursed Effigy',
+  behavior: 'tank',
+  maxHP: EFFIGY_TUNING.maxHP,
+  durationMs: EFFIGY_TUNING.durationMs,
+  aggroRadius: EFFIGY_TUNING.aggroRadius,
+  followRange: 1e9, // never re-approaches: planted where cast
+  moveTilesPerSec: 0, // rooted — the "planted" half of the decoy seam
+  bodyRadius: EFFIGY_TUNING.bodyRadius,
+  tint: EFFIGY_TUNING.tint,
+  drawsAggro: true,
+  aggroPriority: AGGRO_TIER.MAGNET,
+};
+
+// SOUL REVENANT (Witch Doctor ultimate): a mighty attacking guard — calibrated
+// between the Polar Bear (450 HP / 18 dmg) and the Dark Matter Monster (600 / 26).
+export const REVENANT_TUNING = {
+  maxHP: 520,
+  attackDamage: 22,
+  attackCooldownMs: 1100,
+  attackRange: 60,
+  seekRange: 430,
+  leashRange: 660,
+  durationMs: 25000,
+  aggroRadius: 290, // the guard: a Monster-class magnet pull
+  followRange: 180,
+  moveTilesPerSec: 5,
+  bodyRadius: 25,
+  maxConcurrent: 1,
+  tint: 0x6ad0b8,
+} as const;
+
+export const REVENANT_CONFIG: AlliedSummonConfig = {
+  key: 'wd_revenant',
+  name: 'Soul Revenant',
+  behavior: 'attacker',
+  maxHP: REVENANT_TUNING.maxHP,
+  durationMs: REVENANT_TUNING.durationMs,
+  aggroRadius: REVENANT_TUNING.aggroRadius,
+  followRange: REVENANT_TUNING.followRange,
+  moveTilesPerSec: REVENANT_TUNING.moveTilesPerSec,
+  bodyRadius: REVENANT_TUNING.bodyRadius,
+  tint: REVENANT_TUNING.tint,
+  drawsAggro: true,
+  aggroPriority: AGGRO_TIER.MAGNET, // it guards: enemies prefer the revenant
+  attackDamage: REVENANT_TUNING.attackDamage,
+  attackCooldownMs: REVENANT_TUNING.attackCooldownMs,
+  attackRange: REVENANT_TUNING.attackRange,
+  seekRange: REVENANT_TUNING.seekRange,
+  leashRange: REVENANT_TUNING.leashRange,
+};
+
 // ─── PET-TARGETED BUFFS (new buff target = your summons) ───────────────────────
 //
 // A buff that boosts the player's SUMMONS rather than the player. The manager keeps a list

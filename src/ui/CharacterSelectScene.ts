@@ -19,6 +19,7 @@ const CLASS_OPTIONS: ClassOption[] = [
   { id: 'druid', name: 'Druid', blurb: 'A walking ecosystem of fury and life. No two Druids will ever look alike.', fill: 0x24361c, stroke: 0x8ac86a },
   { id: 'mage', name: 'Mage', blurb: 'The surgeon of reality. Where others cast spells, the Mage rewrites the laws.', fill: 0x2a1a4a, stroke: 0xc09aff },
   { id: 'bard', name: 'Bard', blurb: 'Memory-keeper and war-drum. Where the Bard plays, the battlefield dances.', fill: 0x3a2430, stroke: 0xffb8d0 },
+  { id: 'witchdoctor', name: 'Witch Doctor', blurb: 'The drum speaks and the spirits answer. Somewhere far away, his enemy feels every blow.', fill: 0x24342c, stroke: 0x8fe8d0 },
 ];
 
 /**

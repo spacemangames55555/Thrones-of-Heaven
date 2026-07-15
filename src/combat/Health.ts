@@ -15,6 +15,10 @@ export class Health {
   onBlock?: () => void;
   /** Optional hook fired when damage is actually taken (amount removed > 0). */
   onDamaged?: (amount: number) => void;
+  /** Optional REDIRECT hook (Witch Doctor ally-bond): siphons part of the
+   *  post-multiplier damage to another pool BEFORE block/shield/HP; returns the
+   *  amount redirected (subtracted from what this pool then takes). Unset = none. */
+  redirect?: (amount: number) => number;
   /** Absorb pool (Mana Shield): post-multiplier/block damage drains this BEFORE current
    *  HP. Default 0 = no shield. The scene tops it up on cast and clears it on expiry. */
   shield = 0;
@@ -44,6 +48,8 @@ export class Health {
   /** Apply damage (scaled by incomingMultiplier, then a chance to block); returns removed. */
   damage(amount: number): number {
     let amt = amount * this.incomingMultiplier;
+    // ALLY-BOND redirect: part of the hit lands elsewhere before block/shield/HP.
+    if (this.redirect && amt > 0) amt = Math.max(0, amt - this.redirect(amt));
     if (this.blockChance > 0 && Math.random() < Math.min(0.9, this.blockChance)) {
       amt *= 1 - this.blockReduction;
       this.onBlock?.();

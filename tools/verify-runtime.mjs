@@ -185,9 +185,10 @@ try {
     necromancer: { world: 'globe', zone: 'murmansk-bone-harbor', opener: 'mur-01-mentor', kind: 'region' },
     mage: { world: 'globe', zone: 'moscow-crystal-court', opener: 'mos-01-mentor', kind: 'region' },
     bard: { world: 'globe', zone: 'london-grey-chorus', opener: 'lon-01-mentor', kind: 'region' },
+    witchdoctor: { world: 'globe', zone: 'kinshasa-river-drum', opener: 'kin-01-mentor', kind: 'region' },
     druid: { world: 'earth', zone: null, opener: 'honest-days-work', kind: 'earth' },
   };
-  for (const cls of ['blacksmith', 'wizard', 'necromancer', 'mage', 'bard', 'druid']) {
+  for (const cls of ['blacksmith', 'wizard', 'necromancer', 'mage', 'bard', 'witchdoctor', 'druid']) {
     await newGame(cls);
     const home = HOMES[cls];
     const s = await page.evaluate(
@@ -558,6 +559,131 @@ try {
           bardKit.echoInitial > 0 &&
           bardKit.echoTotal > bardKit.echoInitial,
         JSON.stringify(bardKit),
+      );
+    }
+
+    // 2q. EVERY WITCH DOCTOR EXTENSION THROUGH A REAL SKILL, in the live Witch
+    // Doctor session: Voodoo Doll (bind + the mirror % measured on a live target),
+    // Shadow Stitch armed by the REAL unlock path (the splash hits a neighbor),
+    // Spirit Projection (the decoy draws real aggro), and Spirit Split (both
+    // halves run). Plus the DECAY-TINT check: every Alchemy of Decay skill
+    // declares its decayDomain and its declared FX tints carry the SHIPPED domain
+    // colors (red/blue/violet). Cosmetic only — no combat-triangle mechanics.
+    if (cls === 'witchdoctor') {
+      const wdKit = await page.evaluate(async () => {
+        const ms = window.__ready();
+        const wait = (t) => new Promise((r) => setTimeout(r, t));
+        if (!window.__quietSpot()) return { setup: 'no quiet spot' };
+        ms.summons.clear();
+        const spawnAt = (dx, dy) => {
+          const w = ms.activeMap().nearestWalkableWorld(ms.player.x + dx, ms.player.y + dy);
+          return ms.spawnAngel('darkcaster', w.x, w.y);
+        };
+        // VOODOO DOLL (the real skill): bind a FAR pinned target (inside the
+        // skill's 340px cast range, far beyond any melee reach) — the cast hits,
+        // then a strike on the doll mirrors exactly mirrorPct (0.6 × raw 20 = 12).
+        const a = spawnAt(300, 0);
+        await wait(200);
+        ms.stunEnemiesInRange(a.x, a.y, 40, 9000);
+        ms.player.facingX = 1;
+        ms.player.facingY = 0;
+        const hp0 = a.health.current;
+        ms.runActiveSkill('wd_doll');
+        const initial = hp0 - a.health.current;
+        const bound = !!ms.voodoo && ms.voodoo.target === a;
+        ms.runComposedSteps([{ p: 'strike', at: 'front', range: 70, damageRaw: 20, tint: 0xc9a05a }]);
+        await wait(120);
+        const mirrored = hp0 - a.health.current - initial;
+        // SHADOW STITCH through the REAL unlock path (doll → … → stitch), then the
+        // mirror splashes the bound target's neighbor at stitchPct.
+        const defs = ms.classSkillsAll['witchdoctor'].skills;
+        ms.skills.awardPoints(6);
+        for (const id of ['wd_vd_doll', 'wd_vd_decoy', 'wd_vd_vision', 'wd_vd_shackles', 'wd_vd_hex', 'wd_vd_stitch']) {
+          if (!ms.skills.isUnlocked(id)) ms.skills.unlock(defs.find((d) => d.id === id));
+        }
+        const stitchArmed = !!ms.voodooStitch;
+        const b = spawnAt(440, 50);
+        await wait(200);
+        ms.stunEnemiesInRange(b.x, b.y, 40, 6000);
+        b.sprite.body.reset(a.x + 60, a.y + 30);
+        const hpA = a.health.current;
+        const hpB = b.health.current;
+        ms.runComposedSteps([{ p: 'strike', at: 'front', range: 70, damageRaw: 20, tint: 0xc9a05a }]);
+        await wait(120);
+        const stitch = { toTarget: hpA - a.health.current, toNeighbor: hpB - b.health.current };
+        b.destroy();
+        // SPIRIT PROJECTION (the real skill): the decoy draws a real enemy's aggro.
+        const e = spawnAt(-150, 0);
+        await wait(200);
+        ms.stunEnemiesInRange(e.x, e.y, 40, 6000);
+        ms.runActiveSkill('wd_decoy');
+        const decoy = ms.summons.list.find((s) => s.config.key === 'wd_decoy') ?? null;
+        await wait(700); // past the aggro re-eval interval
+        const t1 = ms.enemyAggroTarget(e, e.x, e.y);
+        const decoyDraws = decoy ? Math.hypot(t1.x - decoy.x, t1.y - decoy.y) < 60 : false;
+        e.destroy();
+        ms.summons.clearKey('wd_decoy');
+        // SPIRIT SPLIT (the real skill): the decoy walks + the doll auto-pulses
+        // into the (still pinned, still bound) target with no strike.
+        ms.stunEnemiesInRange(a.x, a.y, 40, 6000);
+        const hpS = a.health.current;
+        ms.runActiveSkill('wd_spirit_split');
+        const splitOn = ms.spiritSplit !== null && ms.summons.list.some((s) => s.config.key === 'wd_decoy');
+        await wait(1600); // ~2 pulses at 700ms
+        const pulsed = hpS - a.health.current;
+        ms.spiritSplit = null;
+        a.destroy();
+        ms.summons.clear();
+        ms.voodoo = null;
+        ms.playerHealth.full();
+        return { setup: 'ok', bound, initial, mirrored, stitchArmed, stitch, decoyDraws, splitOn, pulsed };
+      });
+      ok(
+        'witchdoctor: doll mirror % + stitch splash + decoy aggro + spirit split, each through the real skill',
+        wdKit.setup === 'ok' &&
+          wdKit.bound &&
+          wdKit.initial > 0 &&
+          wdKit.mirrored === 12 &&
+          wdKit.stitchArmed &&
+          wdKit.stitch.toTarget === 12 &&
+          wdKit.stitch.toNeighbor === 6 &&
+          wdKit.decoyDraws &&
+          wdKit.splitOn &&
+          wdKit.pulsed > 0,
+        JSON.stringify(wdKit),
+      );
+
+      // 2r. DECAY DOMAINS (Casey's ruling, permanent — COSMETIC ONLY): all ten
+      // Alchemy of Decay skills declare a decayDomain, and every DECLARED FX tint
+      // (compose tints/strokes/DoT colors + buff/transformation tints) carries its
+      // domain's SHIPPED color. Bespoke casts without declared data (Brew's ring,
+      // the Nova's tri-tint) draw their rings from DOMAIN_TINT in their dispatcher
+      // cases — by construction, they cannot drift from canon.
+      const decay = await page.evaluate(() => {
+        const ms = window.__game.scene.getScene('MainScene');
+        const DOMAIN = { physical: 0xe04a3a, mental: 0x3a6de0, spiritual: 0x9a4ae0 }; // the shipped canon (enemy-roster)
+        const skills = ms.classSkillsAll['witchdoctor'].skills.filter((d) => d.tree === 'wd_decay');
+        const missing = skills.filter((d) => !d.decayDomain).map((d) => d.id);
+        const bad = [];
+        for (const d of skills) {
+          if (!d.decayDomain || d.decayDomain === 'all') continue;
+          const want = DOMAIN[d.decayDomain];
+          const tints = [];
+          const e = d.effect;
+          if (e.tint !== undefined) tints.push(e.tint);
+          for (const st of e.compose ?? []) {
+            for (const k of ['tint', 'stroke']) if (st[k] !== undefined) tints.push(st[k]);
+            if (st.dot?.color !== undefined) tints.push(st.dot.color);
+          }
+          if (tints.length > 0 && !tints.includes(want)) bad.push(`${d.id}: declared tints miss the ${d.decayDomain} color`);
+        }
+        const allDomains = skills.filter((d) => d.decayDomain === 'all').map((d) => d.id);
+        return { count: skills.length, missing, bad, allDomains };
+      });
+      ok(
+        'witchdoctor decay domains: all 10 Alchemy skills declare a domain; declared FX tints carry the shipped colors',
+        decay.count === 10 && decay.missing.length === 0 && decay.bad.length === 0 && decay.allDomains.length === 2,
+        JSON.stringify(decay),
       );
     }
   }
@@ -1591,6 +1717,9 @@ try {
     ms.comboUltimate = null;
     ms.harmonicCharges = 0;
     ms.setEcho(0);
+    ms.voodoo = null;
+    ms.allyBond = null;
+    ms.spiritSplit = null;
     ms.clearDots();
     ms.playerHealth.full();
     ms.energy.full();
@@ -1599,7 +1728,7 @@ try {
   });
   ok(
     'skill framework: every skill in every tree executes; composed actions match their declared primitives',
-    skillSweep.errors.length === 0 && skillSweep.mismatches.length === 0 && skillSweep.composed === 83 && skillSweep.total >= 180,
+    skillSweep.errors.length === 0 && skillSweep.mismatches.length === 0 && skillSweep.composed === 94 && skillSweep.total >= 210,
     `total=${skillSweep.total} composed=${skillSweep.composed} bespokeActive=${skillSweep.bespokeActive} timed/other=${skillSweep.other} passive=${skillSweep.passive}` +
       (skillSweep.errors.length ? ` ERRORS=${JSON.stringify(skillSweep.errors.slice(0, 3))}` : '') +
       (skillSweep.mismatches.length ? ` MISMATCH=${JSON.stringify(skillSweep.mismatches.slice(0, 3))}` : ''),
@@ -2148,6 +2277,265 @@ try {
     'bard ext — combo ultimate: rapid auto-chained strikes + a buff, ending on time',
     comboRun.setup === 'ok' && comboRun.buffOn && comboRun.midHits >= 3 && comboRun.totalDrop > 0 && comboRun.ended && comboRun.noMore,
     JSON.stringify(comboRun),
+  );
+
+  // 3ab. WITCH DOCTOR FRAMEWORK EXTENSIONS (permanent): the voodoo doll system
+  // (bind + mirror % + the three upgrade hooks + despawn/re-bind), the spirit
+  // decoy, the ally-bond damage share, and the Spirit Split composite — each
+  // through its real runtime seam from an isolated spot.
+
+  // 3ab-1. DOLL BIND + MIRROR %: the cast deals its initial spirit damage and
+  // binds; a melee strike landing ON THE DOLL mirrors exactly mirrorPct to the
+  // bound target far away; a broken bind mirrors nothing.
+  const dollRun = await page.evaluate(async () => {
+    const ms = window.__ready();
+    const wait = (t) => new Promise((r) => setTimeout(r, t));
+    if (!window.__quietSpot()) return { setup: 'no quiet spot' };
+    ms.summons.clear();
+    const w = ms.activeMap().nearestWalkableWorld(ms.player.x + 420, ms.player.y);
+    const a = ms.spawnAngel('darkcaster', w.x, w.y);
+    await wait(200);
+    ms.stunEnemiesInRange(a.x, a.y, 40, 8000); // pin FAR away (mirror is rangeless)
+    ms.player.facingX = 1;
+    ms.player.facingY = 0;
+    const hp0 = a.health.current;
+    const bound = ms.castVoodooDoll(600, 15, 8000, 0.5);
+    const initial = hp0 - a.health.current;
+    const doll = ms.voodoo?.doll ?? null;
+    const dollNear = doll ? Math.hypot(doll.x - ms.player.x, doll.y - ms.player.y) < 120 : false;
+    const farNow = Math.hypot(a.x - ms.player.x, a.y - ms.player.y);
+    ms.runComposedSteps([{ p: 'strike', at: 'front', range: 70, damageRaw: 20, tint: 0xc9a05a }]); // lands on the doll
+    await wait(120);
+    const mirrored = hp0 - a.health.current - initial;
+    // Break the bind (destroy the doll) → the next strike mirrors NOTHING.
+    ms.summons.clearKey('wd_doll');
+    await wait(250); // update() prunes the broken bind
+    const unbound = ms.voodoo === null;
+    const hp1 = a.health.current;
+    ms.runComposedSteps([{ p: 'strike', at: 'front', range: 70, damageRaw: 20, tint: 0xc9a05a }]);
+    await wait(120);
+    const afterBreak = hp1 - a.health.current;
+    a.destroy();
+    ms.summons.clear();
+    ms.voodoo = null;
+    return { setup: 'ok', bound, initial, dollNear, farNow, mirrored, unbound, afterBreak };
+  });
+  ok(
+    'wd ext — voodoo doll: cast binds + hits; a strike on the doll mirrors exactly mirrorPct at range; a broken bind mirrors nothing',
+    dollRun.setup === 'ok' && dollRun.bound && dollRun.initial === 15 && dollRun.dollNear && dollRun.farNow > 300 && dollRun.mirrored === 10 && dollRun.unbound && dollRun.afterBreak === 0,
+    JSON.stringify(dollRun),
+  );
+
+  // 3ab-2. UPGRADE HOOKS: STITCH SPLASH (the mirror splashes to the target's
+  // neighbor), REFLECT (a contact hit on the doll bites the striker back), and
+  // SPIRIT ASSAULT (periodic defense-bypassing ticks while bound) — each armed
+  // by its flag exactly as the owned-skill wiring arms it.
+  const hooksRun = await page.evaluate(async () => {
+    const ms = window.__ready();
+    const wait = (t) => new Promise((r) => setTimeout(r, t));
+    if (!window.__quietSpot()) return { setup: 'no quiet spot' };
+    ms.summons.clear();
+    const spawnAt = (dx, dy) => {
+      const w = ms.activeMap().nearestWalkableWorld(ms.player.x + dx, ms.player.y + dy);
+      return ms.spawnAngel('darkcaster', w.x, w.y);
+    };
+    const a = spawnAt(400, 0); // the bound target
+    const b = spawnAt(460, 40); // its neighbor (stitch food)
+    await wait(200);
+    ms.stunEnemiesInRange(ms.player.x + 430, ms.player.y, 220, 9000); // pin the pair
+    a.sprite.body.reset(ms.player.x + 400, ms.player.y);
+    b.sprite.body.reset(ms.player.x + 460, ms.player.y + 40);
+    ms.player.facingX = 1;
+    ms.player.facingY = 0;
+    ms.castVoodooDoll(600, 0, 9000, 0.5);
+    const boundA = ms.voodoo?.target === a;
+    ms.voodooStitch = { radius: 140, pct: 0.5 }; // arm STITCH (as the owned skill would)
+    const hpA = a.health.current;
+    const hpB = b.health.current;
+    ms.runComposedSteps([{ p: 'strike', at: 'front', range: 70, damageRaw: 20, tint: 0xc9a05a }]);
+    await wait(120);
+    const mirrorA = hpA - a.health.current; // 20 × 0.5
+    const stitchB = hpB - b.health.current; // mirror × 0.5
+    ms.voodooStitch = null;
+    // REFLECT: a striker adjacent to the doll lands a contact hit through the REAL
+    // enemy-contact seam; the doll soaks it and bites back.
+    ms.voodooReflectDamage = 12;
+    const doll = ms.voodoo.doll;
+    const c = spawnAt(40, 60);
+    await wait(200);
+    ms.stunEnemiesInRange(c.x, c.y, 40, 6000);
+    c.sprite.body.reset(doll.x + 20, doll.y);
+    const dollHp0 = doll.health.current;
+    const hpC = c.health.current;
+    const soaked = ms.redirectContactToSummon(c.x, c.y, 10); // the seam enemy contact uses
+    await wait(100);
+    const reflect = { soaked, dollTook: dollHp0 - doll.health.current, bite: hpC - c.health.current };
+    ms.voodooReflectDamage = 0;
+    c.destroy();
+    // SPIRIT ASSAULT: armed → periodic ticks land on the bound target with no input.
+    ms.voodooAssault = { damage: 6, tickMs: 400, nextAt: 0 };
+    const hpA2 = a.health.current;
+    await wait(1000); // ~2-3 ticks
+    const assaultTicks = hpA2 - a.health.current;
+    ms.voodooAssault = null;
+    a.destroy();
+    b.destroy();
+    ms.summons.clear();
+    ms.voodoo = null;
+    return { setup: 'ok', boundA, mirrorA, stitchB, reflect, assaultTicks };
+  });
+  ok(
+    'wd ext — doll upgrades: stitch splashes the neighbor; a contact hit on the doll reflects; spirit assault ticks while bound',
+    hooksRun.setup === 'ok' &&
+      hooksRun.boundA &&
+      hooksRun.mirrorA === 10 &&
+      hooksRun.stitchB === 5 &&
+      hooksRun.reflect.soaked &&
+      hooksRun.reflect.dollTook === 10 &&
+      hooksRun.reflect.bite === 12 &&
+      hooksRun.assaultTicks >= 12,
+    JSON.stringify(hooksRun),
+  );
+
+  // 3ab-3. DESPAWN ON TARGET DEATH + RE-CAST RE-BINDS: killing the bound target
+  // removes the doll; a fresh cast binds the next enemy.
+  const rebindRun = await page.evaluate(async () => {
+    const ms = window.__ready();
+    const wait = (t) => new Promise((r) => setTimeout(r, t));
+    if (!window.__quietSpot()) return { setup: 'no quiet spot' };
+    ms.summons.clear();
+    const spawnAt = (dx) => {
+      const w = ms.activeMap().nearestWalkableWorld(ms.player.x + dx, ms.player.y);
+      return ms.spawnAngel('darkcaster', w.x, w.y);
+    };
+    const a = spawnAt(120);
+    await wait(200);
+    ms.stunEnemiesInRange(a.x, a.y, 40, 6000);
+    ms.castVoodooDoll(400, 0, 8000, 0.5);
+    const boundFirst = ms.voodoo?.target === a;
+    a.takeHit(1e9); // the bound target dies
+    await wait(300); // update() prunes: the doll despawns with its target
+    const dollGone = ms.voodoo === null && !ms.summons.list.some((s) => s.config.key === 'wd_doll');
+    const b = spawnAt(140);
+    await wait(200);
+    ms.stunEnemiesInRange(b.x, b.y, 40, 6000);
+    const recast = ms.castVoodooDoll(400, 0, 8000, 0.5);
+    const boundSecond = ms.voodoo?.target === b && ms.summons.list.some((s) => s.config.key === 'wd_doll');
+    a.destroy();
+    b.destroy();
+    ms.summons.clear();
+    ms.voodoo = null;
+    return { setup: 'ok', boundFirst, dollGone, recast, boundSecond };
+  });
+  ok(
+    'wd ext — bind lifecycle: the doll despawns when its target dies; a re-cast re-binds fresh',
+    rebindRun.setup === 'ok' && rebindRun.boundFirst && rebindRun.dollGone && rebindRun.recast && rebindRun.boundSecond,
+    JSON.stringify(rebindRun),
+  );
+
+  // 3ab-4. SPIRIT DECOY: magnet-tier aggro (a real enemy retargets onto it),
+  // attacks nothing, has HP, expires — aggro falls back to the player after.
+  const decoyRun = await page.evaluate(async () => {
+    const ms = window.__ready();
+    const wait = (t) => new Promise((r) => setTimeout(r, t));
+    if (!window.__quietSpot()) return { setup: 'no quiet spot' };
+    ms.summons.clear();
+    const w = ms.activeMap().nearestWalkableWorld(ms.player.x + 150, ms.player.y);
+    const e = ms.spawnAngel('darkcaster', w.x, w.y);
+    await wait(200);
+    ms.stunEnemiesInRange(e.x, e.y, 40, 8000); // hold it so distance stays stable
+    const t0 = ms.enemyAggroTarget(e, e.x, e.y);
+    const onPlayerBefore = Math.hypot(t0.x - ms.player.x, t0.y - ms.player.y) < 8;
+    const d = ms.spawnSpiritDecoy(1600); // short-lived for the expiry half
+    const passive = d.config.behavior === 'tank' && d.config.attackDamage === undefined && d.health.max > 0;
+    await wait(700); // past the aggro re-eval interval
+    const t1 = ms.enemyAggroTarget(e, e.x, e.y);
+    const onDecoy = Math.hypot(t1.x - d.x, t1.y - d.y) < 60;
+    await wait(1400); // past the decoy's lifespan
+    const expired = !ms.summons.list.some((s) => s.config.key === 'wd_decoy');
+    await wait(600); // next re-eval → back to the player
+    const t2 = ms.enemyAggroTarget(e, e.x, e.y);
+    const backToPlayer = Math.hypot(t2.x - ms.player.x, t2.y - ms.player.y) < 8;
+    e.destroy();
+    ms.summons.clear();
+    return { setup: 'ok', onPlayerBefore, passive, onDecoy, expired, backToPlayer };
+  });
+  ok(
+    'wd ext — spirit decoy: draws real aggro at magnet tier, attacks nothing, expires; aggro falls back',
+    decoyRun.setup === 'ok' && decoyRun.onPlayerBefore && decoyRun.passive && decoyRun.onDecoy && decoyRun.expired && decoyRun.backToPlayer,
+    JSON.stringify(decoyRun),
+  );
+
+  // 3ab-5. ALLY-BOND: while bonded, sharePct of a player hit lands on the live
+  // summon instead (the player pool takes only the remainder); unbonded hits land whole.
+  const bondRun = await page.evaluate(async () => {
+    const ms = window.__ready();
+    const wait = (t) => new Promise((r) => setTimeout(r, t));
+    if (!window.__quietSpot()) return { setup: 'no quiet spot' };
+    ms.summons.clear();
+    ms.voodoo = null;
+    const d = ms.spawnSpiritDecoy(20000); // the bond's other half
+    await wait(100);
+    ms.startAllyBond(0.4, 5000);
+    const dHp0 = d.health.current;
+    const shield0 = ms.playerHealth.shield;
+    ms.playerHealth.damage(20); // the REAL player-damage path (redirect runs inside)
+    const shared = dHp0 - d.health.current; // 20 × 0.4
+    const playerTook = shield0 - ms.playerHealth.shield; // the remainder (god-shield absorbs it)
+    ms.allyBond = null; // bond ends → hits land whole again
+    const dHp1 = d.health.current;
+    const shield1 = ms.playerHealth.shield;
+    ms.playerHealth.damage(20);
+    const sharedAfter = dHp1 - d.health.current;
+    const playerTookAfter = shield1 - ms.playerHealth.shield;
+    ms.summons.clear();
+    ms.playerHealth.shield = 1e9;
+    return { setup: 'ok', shared, playerTook, sharedAfter, playerTookAfter };
+  });
+  // NOTE: assert the RATIOS, not raw numbers — the session's player may carry an
+  // incoming-damage multiplier, which scales both halves identically.
+  ok(
+    'wd ext — ally-bond: the share lands on the summon, the player takes the remainder; whole again once it ends',
+    bondRun.setup === 'ok' &&
+      bondRun.playerTookAfter > 0 &&
+      Math.abs(bondRun.shared - bondRun.playerTookAfter * 0.4) < 0.01 &&
+      Math.abs(bondRun.playerTook - bondRun.playerTookAfter * 0.6) < 0.01 &&
+      bondRun.sharedAfter === 0,
+    JSON.stringify(bondRun),
+  );
+
+  // 3ab-6. SPIRIT SPLIT (composite): the decoy walks while the doll auto-mirrors
+  // pulses on its cadence with NO player strike; the state ends on time.
+  const splitRun = await page.evaluate(async () => {
+    const ms = window.__ready();
+    const wait = (t) => new Promise((r) => setTimeout(r, t));
+    if (!window.__quietSpot()) return { setup: 'no quiet spot' };
+    ms.summons.clear();
+    const w = ms.activeMap().nearestWalkableWorld(ms.player.x + 380, ms.player.y);
+    const a = ms.spawnAngel('darkcaster', w.x, w.y);
+    await wait(200);
+    ms.stunEnemiesInRange(a.x, a.y, 40, 9000);
+    ms.player.facingX = 1;
+    ms.player.facingY = 0;
+    ms.castVoodooDoll(600, 0, 9000, 0.5);
+    const hp0 = a.health.current;
+    ms.startSpiritSplit(1700, 400, 10);
+    const decoyWalks = ms.summons.list.some((s) => s.config.key === 'wd_decoy');
+    await wait(2000); // pulses at ~400/800/1200/1600, then the window closes
+    const pulsed = hp0 - a.health.current;
+    const ended = ms.spiritSplit === null;
+    const hp1 = a.health.current;
+    await wait(600);
+    const noMore = hp1 - a.health.current === 0;
+    a.destroy();
+    ms.summons.clear();
+    ms.voodoo = null;
+    return { setup: 'ok', decoyWalks, pulsed, ended, noMore };
+  });
+  ok(
+    'wd ext — spirit split: both halves run — the decoy walks while the doll auto-pulses; ends on time',
+    splitRun.setup === 'ok' && splitRun.decoyWalks && splitRun.pulsed >= 30 && splitRun.ended && splitRun.noMore,
+    JSON.stringify(splitRun),
   );
 
   // 3aa. SKILL TREE UX (Casey's spec, permanent) — driven by REAL taps on the real
