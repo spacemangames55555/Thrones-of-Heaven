@@ -1523,6 +1523,105 @@ try {
     `portrait=${JSON.stringify(orientPortrait)} landscape=${JSON.stringify(orientLandscape)} (tolerance ≥ 85%)`,
   );
 
+  // 3n1c. DEATH RESPAWN = NEAREST SAFE POINT (permanent). Old rule: every death
+  // teleported to Earth's town-spawn COORDINATES in whatever world you were in —
+  // mid-void in the globe. New rule per world kind:
+  //   sparse (globe) → the nearest zone settlement arrival to where you fell;
+  //   dense (earth/egypt) → the nearest existing spawn/entry point.
+  // Death itself (banner, resets, summons cleared) is unchanged.
+  const dieHere = () =>
+    page.evaluate(async () => {
+      const ms = window.__ready();
+      const from = { x: ms.player.x, y: ms.player.y };
+      ms.playerHealth.shield = 0;
+      ms.playerHealth.current = 1;
+      ms.onProjectileHitPlayer(10); // a real lethal hit → the real death funnel
+      await new Promise((r) => setTimeout(r, 2300)); // banner (1500ms) + respawn
+      return { from, world: ms.activeWorld, x: ms.player.x, y: ms.player.y, alive: !ms.playerDead };
+    });
+  // (1) Mid-spine in the GLOBE: stand well outside Rome, between settlements.
+  const globeDeath = await (async () => {
+    await page.evaluate(() => {
+      const ms = window.__ready();
+      const rome = ms.regionZoneArrivals['rome-eternal-seat'];
+      ms.player.sprite.body.reset(rome.x + 2600, rome.y - 2200); // mid-void, off any settlement
+    });
+    const d = await dieHere();
+    return page.evaluate(
+      ({ d }) => {
+        const ms = window.__game.scene.getScene('MainScene');
+        let nearest = null;
+        let bestD = Infinity;
+        for (const id of Object.keys(ms.regionZoneArrivals)) {
+          const a = ms.regionZoneArrivals[id];
+          const dist = Math.hypot(a.x - d.from.x, a.y - d.from.y);
+          if (dist < bestD) {
+            bestD = dist;
+            nearest = { id, ...a };
+          }
+        }
+        return {
+          ...d,
+          nearestZone: nearest.id,
+          atNearest: Math.hypot(d.x - nearest.x, d.y - nearest.y) < 10,
+          movedAcrossWorld: Math.hypot(d.x - d.from.x, d.y - d.from.y) > 60000, // the old-rule symptom
+        };
+      },
+      { d },
+    );
+  })();
+  ok(
+    'death respawn (globe): a mid-spine death respawns at the NEAREST settlement arrival, never across the world',
+    globeDeath.world === 'globe' && globeDeath.alive && globeDeath.atNearest && !globeDeath.movedAcrossWorld,
+    JSON.stringify(globeDeath),
+  );
+  // (2) EARTH: die away from town → the nearest of town spawn / world entry.
+  const earthDeath = await (async () => {
+    await page.evaluate(() => {
+      const ms = window.__ready();
+      const spot = ms.worlds['earth'].map.nearestWalkableWorld(ms.town.spawn.x + 2400, ms.town.spawn.y + 900);
+      ms.applyWorldSwap('earth', spot);
+    });
+    await page.waitForTimeout(900);
+    const d = await dieHere();
+    return page.evaluate(
+      ({ d }) => {
+        const ms = window.__game.scene.getScene('MainScene');
+        const cands = [ms.worlds['earth'].defaultArrival, ms.town.spawn];
+        const nearest = cands.reduce((a, b) => (Math.hypot(a.x - d.from.x, a.y - d.from.y) <= Math.hypot(b.x - d.from.x, b.y - d.from.y) ? a : b));
+        return { ...d, atNearest: Math.hypot(d.x - nearest.x, d.y - nearest.y) < 10 };
+      },
+      { d },
+    );
+  })();
+  ok('death respawn (earth): a sensible local point — the nearest of town spawn / world entry', earthDeath.world === 'earth' && earthDeath.alive && earthDeath.atNearest, JSON.stringify(earthDeath));
+  // (3) EGYPT: die away from the entry → back at the world entry.
+  const egyptDeath = await (async () => {
+    await page.evaluate(() => {
+      const ms = window.__ready();
+      const entry = ms.worlds['egypt'].defaultArrival;
+      const spot = ms.worlds['egypt'].map.nearestWalkableWorld(entry.x + 1800, entry.y + 700);
+      ms.applyWorldSwap('egypt', spot);
+    });
+    await page.waitForTimeout(900);
+    const d = await dieHere();
+    return page.evaluate(
+      ({ d }) => {
+        const ms = window.__game.scene.getScene('MainScene');
+        const entry = ms.worlds['egypt'].defaultArrival;
+        return { ...d, atEntry: Math.hypot(d.x - entry.x, d.y - entry.y) < 10 };
+      },
+      { d },
+    );
+  })();
+  ok('death respawn (egypt): a sensible local point — the world entry', egyptDeath.world === 'egypt' && egyptDeath.alive && egyptDeath.atEntry, JSON.stringify(egyptDeath));
+  // Back to the globe at Rome for whatever follows (the pre-check state).
+  await page.evaluate(async () => {
+    const ms = window.__ready();
+    ms.devTravelEurope();
+    await new Promise((r) => setTimeout(r, 2400));
+  });
+
   // 3n2. TRUE POSITIONS (the consolidation's core claim): Rome AND Luxor sit at
   // their real manifest lat/lng through the ONE globe calibration, with real
   // land rendered beneath, and a Levant/Anatolia land bridge of walkable void
