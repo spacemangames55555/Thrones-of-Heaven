@@ -387,7 +387,15 @@ export type ComposedStep =
       ring?: number;
       banner?: string;
     }
-  | { p: 'heal'; amount: number; ring?: number }
+  | {
+      /** HEAL. Default: the caster only. MONK dual extension: with `radius`, also
+       *  mends every allied summon (decoy included) within radius of the caster —
+       *  the damage half of a dual ring/cone is a separate strike/cone step. */
+      p: 'heal';
+      amount: number;
+      ring?: number;
+      radius?: number;
+    }
   | { p: 'shield'; amount: number; durationMs: number; banner?: string }
   | { p: 'ward'; armedMs: number; banner?: string }
   | { p: 'drain'; range: number; reach?: number; damage: number; healPct: number; tint: number }

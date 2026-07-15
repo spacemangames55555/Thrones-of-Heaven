@@ -1973,6 +1973,7 @@ try {
     ms.parry = null;
     ms.perfectFormUntil = 0;
     ms.iaijutsu = null;
+    ms.pulseRing = null;
     ms.darkVulnUntil = 0;
     ms.clearDots();
     ms.playerHealth.full();
@@ -2981,6 +2982,120 @@ try {
     JSON.stringify(dashRun),
   );
 
+  // 3ah. MONK FRAMEWORK EXTENSIONS (permanent): the DEFLECT parry config (melee
+  // AND projectiles, distinct riposte scaling, Samurai config untouched), the
+  // dual ring (damage + heal in one cast, decoy included), the mobile damage
+  // pulse ring, and the ally rule (HP-cost transfer heals the decoy; a cast
+  // with no ally whiffs gracefully).
+  const monkExt = await page.evaluate(async () => {
+    const ms = window.__ready();
+    const wait = (t) => new Promise((r) => setTimeout(r, t));
+    if (!window.__quietSpot()) return { setup: 'no quiet spot' };
+    ms.summons.clear();
+    const spawnAt = (dx, dy) => {
+      const w = ms.activeMap().nearestWalkableWorld(ms.player.x + dx, ms.player.y + dy);
+      return ms.spawnAngel('darkcaster', w.x, w.y);
+    };
+    // DEFLECT vs a projectile: half-scaled riposte snaps back at the nearest foe.
+    const a = spawnAt(80, 0);
+    await wait(200);
+    ms.stunEnemiesInRange(a.x, a.y, 40, 9000);
+    ms.playerHealth.shield = 0;
+    ms.playerHealth.full();
+    const hp0 = ms.playerHealth.current;
+    const aHp0 = a.health.current;
+    ms.openParryWindow(800, 20, { deflectProjectiles: true, projectileRiposteMult: 0.5 });
+    ms.onProjectileHitPlayer(10); // the REAL ranged damage path
+    const deflect = { negated: ms.playerHealth.current === hp0, riposte: aHp0 - a.health.current, consumed: ms.parry === null };
+    // The SAME config vs melee: full riposte (distinct scaling) through the wolf seam.
+    const wolf = ms.spawnTownsfolk(ms.player.x + 60, ms.player.y, null, 'wolf');
+    await wait(200);
+    const wHp0 = wolf.health.current;
+    const hp1 = ms.playerHealth.current;
+    ms.openParryWindow(800, 6, { deflectProjectiles: true, projectileRiposteMult: 0.5 });
+    ms.onTownsfolkHitPlayer(wolf);
+    const meleeHalf = { negated: ms.playerHealth.current === hp1, riposte: wHp0 - wolf.health.current };
+    wolf.takeHit(1e9);
+    // The SAMURAI config (no opts) stays MELEE-ONLY: the bolt passes through and
+    // the window survives for the melee hit it was opened for.
+    ms.playerHealth.full();
+    const hp2 = ms.playerHealth.current;
+    ms.openParryWindow(800, 20);
+    ms.onProjectileHitPlayer(10);
+    const samuraiUntouched = { boltTook: hp2 - ms.playerHealth.current, windowSurvived: ms.parry !== null };
+    ms.parry = null;
+    // DUAL RING: one cast damages the pinned foe AND heals the caster + the decoy.
+    const decoy = ms.spawnSpiritDecoy(20000);
+    await wait(150);
+    decoy.health.current -= 20;
+    ms.playerHealth.current = ms.playerHealth.max - 30;
+    const dHp0 = decoy.health.current;
+    const pHp0 = ms.playerHealth.current;
+    const aHp1 = a.health.current;
+    decoy.sprite.body.reset(ms.player.x - 60, ms.player.y);
+    ms.runComposedSteps([
+      { p: 'strike', at: 'self', radius: 120, damageRaw: 15, tint: 0xffd8a0 },
+      { p: 'heal', amount: 12, radius: 120 },
+    ]);
+    await wait(120);
+    const dual = { foe: aHp1 - a.health.current, self: ms.playerHealth.current - pHp0, decoy: decoy.health.current - dHp0 };
+    // MOBILE PULSE RING: ticks here, then FOLLOWS to a second foe far away.
+    ms.startPulseRing(2600, 350, 130, 10);
+    const aHp2 = a.health.current;
+    await wait(800);
+    const nearTicks = aHp2 - a.health.current;
+    const b = spawnAt(420, 0);
+    await wait(150);
+    ms.stunEnemiesInRange(b.x, b.y, 40, 6000);
+    ms.player.sprite.body.reset(b.x - 60, b.y); // walk away — the ring must come along
+    const bHp0 = b.health.current;
+    await wait(800);
+    const followTicks = bHp0 - b.health.current;
+    await wait(1300);
+    const ringEnded = ms.pulseRing === null;
+    // ALLY RULE: the HP-cost transfer heals the decoy; with no ally it whiffs gracefully.
+    ms.playerHealth.full();
+    decoy.health.current = Math.max(1, decoy.health.max - 40);
+    const dHp1 = decoy.health.current;
+    const pHp1 = ms.playerHealth.current;
+    const gave = ms.transferHealToAlly(500, 15, 25);
+    const infusion = { gave, decoyHealed: decoy.health.current - dHp1, playerPaid: pHp1 - ms.playerHealth.current };
+    ms.summons.clear();
+    const whiffed = ms.transferHealToAlly(500, 15, 25) === false; // no ally → graceful false
+    a.destroy();
+    b.destroy();
+    ms.playerHealth.full();
+    ms.playerHealth.shield = 1e9;
+    return { setup: 'ok', deflect, meleeHalf, samuraiUntouched, dual, nearTicks, followTicks, ringEnded, infusion, whiffed };
+  });
+  ok(
+    'monk ext — deflect: turns aside a real bolt (half riposte) AND a real wolf bite (full); the samurai config stays melee-only',
+    monkExt.setup === 'ok' &&
+      monkExt.deflect.negated &&
+      monkExt.deflect.riposte === 10 &&
+      monkExt.deflect.consumed &&
+      monkExt.meleeHalf.negated &&
+      monkExt.meleeHalf.riposte === 6 &&
+      monkExt.samuraiUntouched.boltTook > 0 &&
+      monkExt.samuraiUntouched.windowSurvived,
+    JSON.stringify({ deflect: monkExt.deflect, meleeHalf: monkExt.meleeHalf, samurai: monkExt.samuraiUntouched }),
+  );
+  ok(
+    'monk ext — dual ring: one cast damages the live enemy and heals the caster + the decoy',
+    monkExt.setup === 'ok' && monkExt.dual.foe === 15 && monkExt.dual.self === 12 && monkExt.dual.decoy === 12,
+    JSON.stringify(monkExt.dual),
+  );
+  ok(
+    'monk ext — pulse ring: ticks in place, FOLLOWS the caster to a second foe, ends on time',
+    monkExt.setup === 'ok' && monkExt.nearTicks >= 10 && monkExt.followTicks >= 10 && monkExt.ringEnded,
+    JSON.stringify({ near: monkExt.nearTicks, follow: monkExt.followTicks, ended: monkExt.ringEnded }),
+  );
+  ok(
+    'monk ext — ally rule: the HP-cost transfer heals the decoy; with no ally it whiffs gracefully (no crash)',
+    monkExt.setup === 'ok' && monkExt.infusion.gave && monkExt.infusion.decoyHealed === 25 && monkExt.infusion.playerPaid === 15 && monkExt.whiffed,
+    JSON.stringify(monkExt.infusion),
+  );
+
   // 3aa. SKILL TREE UX (Casey's spec, permanent) — driven by REAL taps on the real
   // screen: instant spend (no confirmation window) respects locks and points with
   // shake/toast feedback; the name-bar "Add" button round-trips through the hotkey
@@ -3082,7 +3197,7 @@ try {
   // the release dismisses it, and NOTHING was spent by the completed hold.
   await page.mouse.move(214, rowY(rows.iBuy + 3));
   await page.mouse.down();
-  await page.waitForTimeout(2500); // past HOLD_MS (2000)
+  await page.waitForTimeout(3500); // well past HOLD_MS (2000) — headless frames can lag under suite load
   const held = await page.evaluate(
     ({ rows }) => {
       const ms = window.__game.scene.getScene('MainScene');
