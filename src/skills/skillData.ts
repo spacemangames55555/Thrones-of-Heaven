@@ -34,12 +34,15 @@ import { DRUID_WILDKIN_SKILLS, DRUID_WILDKIN_TREE } from './druidWildKin';
 import { MAGE_SPACETIME_SKILLS, MAGE_SPACETIME_TREE } from './mageSpacetime';
 import { MAGE_ARCANE_SKILLS, MAGE_ARCANE_TREE } from './mageArcane';
 import { MAGE_CRYSTAL_SKILLS, MAGE_CRYSTAL_TREE } from './mageCrystalblade';
+import { BARD_SONGS_SKILLS, BARD_SONGS_TREE } from './bardSongs';
+import { BARD_BATTLE_SKILLS, BARD_BATTLE_TREE } from './bardBattle';
+import { BARD_SONIC_SKILLS, BARD_SONIC_TREE } from './bardSonic';
 
 /** How many active skills the player can equip to on-screen slots. */
 export const LOADOUT_SLOTS = 6;
 
 /** The playable classes. Only the Blacksmith has trees this batch; others slot in later. */
-export type ClassId = 'blacksmith' | 'necromancer' | 'wizard' | 'druid' | 'mage';
+export type ClassId = 'blacksmith' | 'necromancer' | 'wizard' | 'druid' | 'mage' | 'bard';
 
 /** Stat modifiers a skill contributes — used by PASSIVE (permanent) and by timed
  *  BUFF / TRANSFORMATION effects (while active). All optional; absent = no change. */
@@ -190,7 +193,31 @@ export type ActiveActionId =
   | 'mage_facet_cleave'
   | 'mage_crystal_pulse'
   | 'mage_shatter'
-  | 'mage_crystal_nova';
+  | 'mage_crystal_nova'
+  // Bard — Songs of the Ancestors (ranged/support).
+  | 'bard_dissonant'
+  | 'bard_hum'
+  | 'bard_harmonics'
+  | 'bard_rally'
+  // Bard — Battle Resonance (melee only, per the range doctrine).
+  | 'bard_mosh'
+  | 'bard_cascade'
+  | 'bard_whistle'
+  | 'bard_heavy_swing'
+  | 'bard_stage_dive'
+  | 'bard_amplify'
+  | 'bard_freq_shield'
+  | 'bard_coda'
+  | 'bard_war_song'
+  // Bard — Sonic Chaos (ranged).
+  | 'bard_sonic_blast'
+  | 'bard_pulse'
+  | 'bard_surge'
+  | 'bard_power_chord'
+  | 'bard_distortion'
+  | 'bard_wall'
+  | 'bard_pentatonic'
+  | 'bard_riff';
 
 /**
  * The five supported EFFECT KINDS. The scene applies them generically:
@@ -287,8 +314,11 @@ export type ComposedStep =
        *  flight (turn rate rad/sec, default 6) — the missile-barrage primitive. */
       seek?: boolean;
       seekTurnRate?: number;
+      /** IMPACT rider (Bard framework, plain bolts): control applied where the bolt
+       *  lands. ROTATING RIDERS = several bolt steps, each with a different onHit. */
+      onHit?: { stunMs?: number; slowFactor?: number; slowMs?: number; weaken?: number; weakenMs?: number; knockback?: number };
     }
-  | { p: 'cone'; range: number; halfAngleDeg: number; damage: number; tint: number; knockback?: number; knockbackStunMs?: number; slowFactor?: number; slowMs?: number }
+  | { p: 'cone'; range: number; halfAngleDeg: number; damage: number; tint: number; knockback?: number; knockbackStunMs?: number; slowFactor?: number; slowMs?: number; stunMs?: number }
   | { p: 'line'; length: number; width: number; damage: number; tint: number }
   | {
       p: 'hazard';
@@ -322,6 +352,9 @@ export type ComposedStep =
       damage: number;
       falloff: number;
       tint: number;
+      /** STRIKE-CHAIN (Bard framework): draw the melee swing crescent per hop
+       *  instead of only the arc lines — the chain machinery as a melee combo. */
+      swingFx?: boolean;
     }
   | {
       /** DUAL-USE bolt (smart-target): with an enemy within `range` it fires a
@@ -470,6 +503,10 @@ export interface SkillDef {
   /** DATA-ONLY animal tag (Druid Tapestry skills): feeds the future visual-trait
    *  system — no rendering reads it today. */
   readonly trait?: string;
+  /** DATA-ONLY ensemble scaling (Bard): DORMANT per-ally multipliers for the party
+   *  era ("allies" = self + any future party). SOLO values are the live numbers in
+   *  the effect/TUNING; nothing reads these until parties exist. */
+  readonly ensemble?: Readonly<Record<string, number>>;
 }
 
 /** EQUIPPABLE = goes into a loadout slot + gets an on-screen button (everything that
@@ -487,6 +524,8 @@ const NON_DAMAGING_ACTIVE_ACTIONS: ReadonlySet<ActiveActionId> = new Set([
   'dru_viper', 'dru_wolverine', 'dru_chimp_pair', 'dru_scavengers', 'dru_polar_bear',
   // Mage utility actives (the slow field, shield, essence restore, and the pure-control binding).
   'mage_time_dilation', 'mage_quantum_shield', 'mage_mana_surge', 'mage_entangle',
+  // Bard utility actives (heal aura/burst, the no-damage control zone, shield, splash charges, confusion).
+  'bard_hum', 'bard_rally', 'bard_harmonics', 'bard_freq_shield', 'bard_amplify', 'bard_distortion',
 ]);
 
 /**
@@ -534,6 +573,10 @@ const NON_AIMABLE_ACTIONS: ReadonlySet<ActiveActionId> = new Set<ActiveActionId>
   // Arcane Blast / Antimatter / Graviton / Wormhole / Black Hole / Singularity are directional.
   'mage_contraction', 'mage_time_dilation', 'mage_quantum_shield', 'mage_missiles', 'mage_leech', 'mage_mana_surge', 'mage_entangle',
   'mage_crystal_shard', 'mage_crystal_pulse', 'mage_shatter', 'mage_crystal_nova',
+  // Bard: self-zones / self-bursts / auto-targeting casts. Dissonant/Harmonics/Wall
+  // (placed), Mosh/Whistle/Heavy/Dive/Blast/Surge/Chord/Pentatonic are directional.
+  'bard_hum', 'bard_rally', 'bard_freq_shield', 'bard_amplify', 'bard_coda', 'bard_war_song',
+  'bard_pulse', 'bard_distortion', 'bard_cascade', 'bard_riff',
 ]);
 
 /**
@@ -680,6 +723,32 @@ const MAGE: ClassSkills = {
   ],
 };
 
+// ─── BARD (London's memory-keeper and war-drum) ────────────────────────────────
+//
+// RANGE DOCTRINE (Casey's ruling): Battle Resonance's offense is MELEE ONLY;
+// Songs + Sonic Chaos offense is RANGED (buffs/auras rangeless). Sanctioned
+// exceptions: Piercing Whistle (short melee-range cone utility) and Resonance
+// Pulse (self-centered peel). Kit-free like the others; every tree's tier-0 is
+// a damaging active: Dissonant Symphony / Mosh / Sonic Blast. Every skill
+// carries a dormant `ensemble` block for the party era ("Rhythm" is prose over
+// standard energy).
+const BARD: ClassSkills = {
+  classId: 'bard',
+  trees: [
+    { id: BARD_SONGS_TREE, name: 'Songs' }, // 10 ranged/support skills (opens on Dissonant Symphony)
+    { id: BARD_BATTLE_TREE, name: 'Battle' }, // 10 MELEE skills (opens on Mosh)
+    { id: BARD_SONIC_TREE, name: 'Sonic Chaos' }, // 10 ranged skills (opens on Sonic Blast)
+  ],
+  skills: [
+    // --- SONGS OF THE ANCESTORS (10 skills, linear; ranged/support). Data in bardSongs.ts. ---
+    ...BARD_SONGS_SKILLS,
+    // --- BATTLE RESONANCE (10 skills, linear; MELEE ONLY). Data in bardBattle.ts. ---
+    ...BARD_BATTLE_SKILLS,
+    // --- SONIC CHAOS (10 skills, linear; ranged). Data in bardSonic.ts. ---
+    ...BARD_SONIC_SKILLS,
+  ],
+};
+
 /** Per-class trees + skills. The scene reads the ACTIVE class's entry. */
 export const CLASS_SKILLS: Record<ClassId, ClassSkills> = {
   blacksmith: BLACKSMITH,
@@ -687,6 +756,7 @@ export const CLASS_SKILLS: Record<ClassId, ClassSkills> = {
   necromancer: NECROMANCER,
   druid: DRUID,
   mage: MAGE,
+  bard: BARD,
 };
 
 /** Look up a class's full skill set (trees + skills). */

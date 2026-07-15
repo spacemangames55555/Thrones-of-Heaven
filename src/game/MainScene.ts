@@ -114,6 +114,9 @@ import { RESTORATION_TUNING, CLAY_ID, OIL_IMMUNITY_ID, OIL_VITALITY_ID } from '.
 import { SPACETIME_TUNING } from '../skills/mageSpacetime';
 import { ARCANE_TUNING, MAGE_ABSORPTION_ID } from '../skills/mageArcane';
 import { CRYSTALBLADE_TUNING } from '../skills/mageCrystalblade';
+import { BARD_SONGS_TUNING, ECHO_OF_PASSION_ID, SONG_OF_LORE_ID, CHANT_OF_ANCESTORS_ID } from '../skills/bardSongs';
+import { BARD_BATTLE_TUNING } from '../skills/bardBattle';
+import { BARD_SONIC_TUNING, SONIC_ECHOES_ID } from '../skills/bardSonic';
 import { PlayerPower } from '../player/PlayerPower';
 import { URIEL_SCENE } from '../story/urielData';
 import { URIEL_SENDOFF_LINES, RIFT_SCENE } from '../story/riftSceneData';
@@ -619,6 +622,22 @@ export class MainScene extends Phaser.Scene {
   /** CRYSTALLIZE stacks per enemy (applied by strike riders; consumed by Shatter).
    *  Public-readable for the runtime gate. Pruned on shatter/death/reset. */
   crystallize = new Map<CombatEnemy, number>();
+  // --- Bard framework primitives (composable/bespoke; class-agnostic) ---
+  /** CONFUSION: while now < until, this enemy's aggro is redirected onto its nearest
+   *  FELLOW enemy (it moves to and chips at it). Wears off cleanly (pruned per frame).
+   *  Public-readable for the runtime gate. */
+  confused = new Map<CombatEnemy, { target: CombatEnemy; until: number; chipDamage: number; chipMs: number; nextChipAt: number }>();
+  /** ECHO (Sonic Echoes): while echoPct > 0, player attack resolutions repeat once
+   *  after echoDelayMs at echoPct of the damage. The echo itself never re-echoes. */
+  echoPct = 0;
+  echoDelayMs = 380;
+  private echoing = false;
+  /** COMBO ULTIMATE (War Song): while set, auto-chained melee strikes fire on a
+   *  cadence with no input (the timed buff half runs through skillTimed). */
+  comboUltimate: { until: number; nextAt: number; intervalMs: number; range: number; damage: number; jumps: number; jumpRange: number; falloff: number; tint: number } | null = null;
+  /** HARMONIC AMPLIFICATION (Bard): while charges remain, each strike detonates an
+   *  extra splash around its hit point, consuming one charge. Public for the gate. */
+  harmonicCharges = 0;
   /**
    * CHANNELED-BEAM state (the channel primitive). Transient: a single active channel locks
    * one enemy, ticks damage, optionally trickles energy, and is cancelled by movement / any
@@ -1188,7 +1207,16 @@ export class MainScene extends Phaser.Scene {
     // UI camera ignores them). Enemy bolts damage the player; impacts spawn a poof.
     this.projectiles = new ProjectileSystem(this, this.map, this.worldFx);
     this.projectiles.onPlayerHit = (dmg, tag) => this.onProjectileHitPlayer(dmg, tag);
-    this.projectiles.onEnemyHit = (x, y, radius, dmg, hitSet) => this.resolveHolyBoltHit(x, y, radius, dmg, hitSet);
+    this.projectiles.onEnemyHit = (x, y, radius, dmg, hitSet, rider) => {
+      const landed = this.resolveHolyBoltHit(x, y, radius, dmg, hitSet);
+      if (landed) {
+        // IMPACT RIDER (Bard framework): control applied where the bolt lands.
+        if (rider) this.applyImpactRider(x, y, radius + 26, rider as { stunMs?: number; slowFactor?: number; slowMs?: number; weaken?: number; weakenMs?: number; knockback?: number });
+        // ECHO: a delayed re-resolution at the impact point at echoPct strength.
+        this.maybeEcho(() => this.resolveHolyBoltHit(x, y, radius + 10, dmg * this.echoPct));
+      }
+      return landed;
+    };
     this.projectiles.onImpact = (x, y, color) => this.spawnBoltImpact(x, y, color);
     // Splash bolts (Wizard's Combust + storm-empowered bolts) burst into an AoE on impact.
     this.projectiles.onSplash = (x, y, radius, dmg) => {
@@ -1650,6 +1678,8 @@ export class MainScene extends Phaser.Scene {
     this.applyEnemySlows();
     this.updateSpellHazards(); // ground zones (Lava / Black Ice / Freezing Rain / Biohazard / Pestilence)
     this.updateFriendlyZones(); // heal-over-time zones for the player + summons (static + mobile)
+    this.updateConfusion(); // Bard confusion: expiry + a confused enemy chips at its fellow
+    this.updateComboUltimate(); // Bard War Song: the auto-chain cadence
     this.updateDots(); // poison DoTs + Plague contagion spread + stacking DoTs
     this.updateChannel(delta); // channeled beam: tick damage + energy trickle + redraw
     this.projectiles.update(delta, this.player.x, this.player.y, PROJECTILE_PLAYER_HIT_RADIUS);
@@ -1775,6 +1805,8 @@ export class MainScene extends Phaser.Scene {
 
   /** Single XP entry point for every source (kills, quest, dev keys). */
   private gainXP(amount: number): void {
+    // SONG OF LORE (Bard keyed buff): boosted XP gain while the song runs.
+    if (this.skillTimed.some((t) => t.id === SONG_OF_LORE_ID)) amount *= BARD_SONGS_TUNING.songOfLore.xpMult;
     const levelsGained = this.progression.addXP(amount);
     if (levelsGained > 0) {
       this.skills.awardPoints(levelsGained); // 1 skill point per level gained
@@ -1988,6 +2020,8 @@ export class MainScene extends Phaser.Scene {
     this.clearFriendlyZones();
     this.clearEntangle();
     this.crystallize.clear();
+    this.confused.clear();
+    this.comboUltimate = null;
     this.breakPlayerStealth();
     this.clearDots();
     this.summons.clear();
@@ -2077,6 +2111,8 @@ export class MainScene extends Phaser.Scene {
     if (this.isPlayerCcImmune()) dr += CONTROL_TUNING.ironWill.damageReduction;
     this.baseIncomingMult = Phaser.Math.Clamp(1 - dr, 0.1, 2);
     if (this.playerHealth) this.playerHealth.incomingMultiplier = this.baseIncomingMult;
+    // SONIC ECHOES (Bard keyed passive): the ECHO extension is armed while unlocked.
+    this.setEcho(this.skills.isUnlocked(SONIC_ECHOES_ID) ? BARD_SONIC_TUNING.echoes.pct : 0, BARD_SONIC_TUNING.echoes.delayMs);
     // Block chance + strength (Double Block / Dual Shield) — rolled per hit in Health.
     if (this.playerHealth) {
       this.playerHealth.blockChance = Phaser.Math.Clamp(m.blockChance ?? 0, 0, 0.9);
@@ -2371,6 +2407,49 @@ export class MainScene extends Phaser.Scene {
       const c = CRYSTALBLADE_TUNING.crystalShatter;
       const res = this.shatterCrystallize(px, py, c.radius, this.skillDamage(c.damagePerStack));
       if (res.stacks === 0) this.showBanner('No crystal to shatter', 900);
+    } else if (action === 'bard_stage_dive') {
+      // Bard Battle #6 — leap into the crowd: damage + KNOCKDOWN along the path (Charge).
+      this.startCharge(BARD_BATTLE_TUNING.stageDive);
+    } else if (action === 'bard_amplify') {
+      // Bard Battle #7 — arm the next N strikes with a resonant splash.
+      this.harmonicCharges = BARD_BATTLE_TUNING.amplify.charges;
+      this.spawnSkillRing(px, py, 70, 0xffd0b0);
+      this.showBanner('Harmonics amplified', 1100);
+    } else if (action === 'bard_coda') {
+      // Bard Battle #9 — the conditional finisher: ×bonus vs stunned/slowed targets.
+      const c = BARD_BATTLE_TUNING.coda;
+      this.finisherHitAll(px, py, c.radius, this.skillDamage(c.damage), c.bonusMult);
+    } else if (action === 'bard_war_song') {
+      // Bard Battle #10 ultimate — the combo state: auto-chained strikes + momentum.
+      const c = BARD_BATTLE_TUNING.warSong;
+      this.startComboUltimate('bard_bt_war_song', {
+        durationMs: c.durationMs, intervalMs: c.intervalMs, range: c.range, damage: c.damage,
+        jumps: c.jumps, jumpRange: c.jumpRange, falloff: c.falloff, tint: c.tint,
+        stats: { damageReduction: c.damageReduction, moveSpeedMult: c.moveSpeedMult },
+      });
+      this.showBanner('WAR SONG', 1400);
+    } else if (action === 'bard_surge') {
+      // Bard Sonic #5 — dash forward leaving a vibrating trail (charge + Lava-lite patches).
+      const c = BARD_SONIC_TUNING.surge;
+      const { dx, dy } = this.facingUnit();
+      this.startCharge({ distance: c.distance, damage: c.damage, knockdownMs: c.knockdownMs });
+      for (const d of [c.distance * 0.25, c.distance * 0.55, c.distance * 0.85]) {
+        this.spawnSpellHazard(px + dx * d, py + dy * d, c.trailRadius, this.skillDamage(c.trailTickDamage), c.trailDurationMs, c.trailTickMs, { fill: 0x4a5a9f, stroke: 0xb8d8ff });
+      }
+    } else if (action === 'bard_distortion') {
+      // Bard Sonic #7 — the CONFUSION extension: an enemy turns on its own.
+      const c = BARD_SONIC_TUNING.distortion;
+      const turned = this.confuseNearestEnemy(px, py, c.range, c.chance, c.durationMs, c.chipDamage, c.chipMs);
+      this.showBanner(turned ? 'The song turns them' : 'The note slips past', 1100);
+    } else if (action === 'bard_wall') {
+      // Bard Sonic #8 — a WALL of three hazard cells laid ACROSS the facing line.
+      const c = BARD_SONIC_TUNING.wall;
+      const { dx, dy } = this.facingUnit();
+      const cxx = px + dx * c.placeAhead;
+      const cyy = py + dy * c.placeAhead;
+      for (const side of [-1, 0, 1]) {
+        this.spawnSpellHazard(cxx - dy * side * c.cellSpacing, cyy + dx * side * c.cellSpacing, c.cellRadius, this.skillDamage(c.tickDamage), c.durationMs, c.tickMs, { slowFactor: c.slowFactor, fill: 0x4a5a9f, stroke: 0xb8d8ff });
+      }
     }
   }
 
@@ -2433,6 +2512,13 @@ export class MainScene extends Phaser.Scene {
         const preHits = s.healPerHit !== undefined ? Math.min(s.maxHeals ?? Infinity, this.combatEnemiesInRange(x, y, radius).length) : 0;
         const dmg = this.composedDamage(s);
         if (dmg > 0) this.aoeHitAll(x, y, radius, dmg);
+        // HARMONIC AMPLIFICATION (Bard): a charged strike detonates a splash too.
+        if (dmg > 0 && this.harmonicCharges > 0) {
+          this.harmonicCharges--;
+          const c = BARD_BATTLE_TUNING.amplify;
+          this.spawnSkillRing(x, y, c.splashRadius, 0xffd0b0);
+          this.aoeHitAll(x, y, c.splashRadius, this.skillDamage(c.splashDamage));
+        }
         if (s.stunMs) this.stunEnemiesInRange(x, y, radius, s.stunMs);
         if (s.knockback) this.knockbackEnemiesInRange(x, y, radius, s.knockback, s.knockbackStunMs ?? 200);
         if (s.slowFactor !== undefined && s.slowMs) this.slowEnemiesInRange(x, y, radius, s.slowMs, s.slowFactor);
@@ -2492,6 +2578,7 @@ export class MainScene extends Phaser.Scene {
           ...(s.splash ? { splashRadius: s.splash.radius, splashDamage: this.skillDamage(s.splash.damage) } : {}),
           ...(s.dot ? { dotOnImpact: { dmgPerTick: this.skillDamage(s.dot.dmgPerTick), tickMs: s.dot.tickMs, durationMs: s.dot.durationMs, radius: s.dot.radius, color: s.dot.color } } : {}),
           ...(s.seek ? { seek: true, ...(s.seekTurnRate !== undefined ? { seekTurnRate: s.seekTurnRate } : {}) } : {}),
+          ...(s.onHit ? { impactRider: s.onHit } : {}),
         });
       }
       if (s.vuln) {
@@ -2508,6 +2595,7 @@ export class MainScene extends Phaser.Scene {
       this.aoeHitAll(px, py, s.range, this.skillDamage(s.damage), inWedge);
       if (s.knockback) this.knockbackEnemiesInRange(px, py, s.range, s.knockback, s.knockbackStunMs ?? 200, inWedge);
       if (s.slowFactor !== undefined && s.slowMs) this.slowEnemiesInRange(px, py, s.range, s.slowMs, s.slowFactor, inWedge);
+      if (s.stunMs) this.stunEnemiesInRange(px, py, s.range, s.stunMs, inWedge);
     } else if (s.p === 'line') {
       const { dx, dy } = this.facingUnit();
       const x2 = px + dx * s.length;
@@ -2579,6 +2667,8 @@ export class MainScene extends Phaser.Scene {
       for (let arc = 0; arc <= s.jumps && target; arc++) {
         hit.add(target);
         this.spawnLineFx(fromX, fromY, target.x, target.y, 6, s.tint);
+        // STRIKE-CHAIN (Bard framework): melee chains sweep a crescent per hop.
+        if (s.swingFx) this.swingFx.show(fromX, fromY, 60, s.tint, Math.atan2(target.y - fromY, target.x - fromX));
         this.spawnSkillRing(target.x, target.y, 26, s.tint);
         const dealt = target.takeHit(dmg);
         if (dealt > 0) {
@@ -3149,6 +3239,127 @@ export class MainScene extends Phaser.Scene {
     return { hit, stacks };
   }
 
+  // --- Bard framework: confusion + echo + finisher + combo ultimate -------------
+
+  /**
+   * CONFUSION: try to confuse the nearest enemy within `range` of (x,y) — on a
+   * successful `chance` roll its aggro is redirected onto its nearest FELLOW enemy
+   * for `durationMs` (it walks to it and chips at it on a cadence), then wears off
+   * cleanly. Returns true when an enemy was confused.
+   */
+  confuseNearestEnemy(x: number, y: number, range: number, chance: number, durationMs: number, chipDamage = 8, chipMs = 700): boolean {
+    const e = this.nearestEnemy(x, y, range);
+    if (!e) return false;
+    if (Math.random() > chance) {
+      this.floatingText.show(e.x, e.y - 30, 'resisted', '#c8b8e8', { fontSize: 12, riseBy: 12, durationMs: 700, depth: 14 });
+      return false;
+    }
+    // Its nearest FELLOW enemy — no fellow in earshot, no one to turn on.
+    let target: CombatEnemy | null = null;
+    let bestD = 480;
+    for (const o of this.combatEnemiesInRange(e.x, e.y, 480)) {
+      if (o === e) continue;
+      const d = Phaser.Math.Distance.Between(e.x, e.y, o.x, o.y);
+      if (d < bestD) {
+        bestD = d;
+        target = o;
+      }
+    }
+    if (!target) return false;
+    this.confused.set(e, { target, until: this.time.now + durationMs, chipDamage, chipMs, nextChipAt: this.time.now + chipMs });
+    this.floatingText.show(e.x, e.y - 34, '?', '#ffb0e0', { fontSize: 18, riseBy: 14, durationMs: 1000, depth: 14 });
+    return true;
+  }
+
+  /** Per-frame: prune lapsed/dead confusions; a confused enemy adjacent to its
+   *  turned-on fellow CHIPS at it on its cadence (it "attacks its own"). */
+  private updateConfusion(): void {
+    if (this.confused.size === 0) return;
+    const now = this.time.now;
+    for (const [e, cf] of this.confused) {
+      if (now >= cf.until || !e.isAlive || !cf.target.isAlive) {
+        this.confused.delete(e); // wears off cleanly — normal aggro resumes
+        continue;
+      }
+      if (now >= cf.nextChipAt && Phaser.Math.Distance.Between(e.x, e.y, cf.target.x, cf.target.y) <= 52) {
+        cf.nextChipAt = now + cf.chipMs;
+        const dealt = cf.target.takeHit(cf.chipDamage);
+        if (dealt > 0) this.spawnDamageNumber(cf.target.x, cf.target.y - 24, dealt, '#ffb0e0');
+      }
+    }
+  }
+
+  /** ECHO: while armed (echoPct > 0), repeat a player attack resolution once after
+   *  echoDelayMs at echoPct strength. The echo itself never re-echoes (guard). */
+  setEcho(pct: number, delayMs = 380): void {
+    this.echoPct = pct;
+    this.echoDelayMs = delayMs;
+  }
+
+  private maybeEcho(repeat: () => void): void {
+    if (this.echoPct <= 0 || this.echoing) return;
+    this.time.delayedCall(this.echoDelayMs, () => {
+      if (this.playerDead) return;
+      this.echoing = true;
+      repeat();
+      this.echoing = false;
+    });
+  }
+
+  /** CONDITIONAL FINISHER (the Execute pattern, per-enemy): hit everything within
+   *  `radius` of (x,y); targets that are STUNNED or SLOWED/weakened take
+   *  damage × bonusMult. Returns how many were hit / how many qualified. */
+  finisherHitAll(x: number, y: number, radius: number, damage: number, bonusMult: number, tint = 0xffd0a0): { hit: number; bonus: number } {
+    let hit = 0;
+    let bonus = 0;
+    this.spawnSkillRing(x, y, radius, tint);
+    for (const e of this.combatEnemiesInRange(x, y, radius)) {
+      const qualifies = this.stunnedEnemies.has(e) || this.slowedEnemies.has(e);
+      const dealt = e.takeHit(qualifies ? damage * bonusMult : damage);
+      if (dealt > 0) {
+        this.dmgDealtAccum += dealt;
+        this.spawnDamageNumber(e.x, e.y - 24, dealt, qualifies ? '#ffd0a0' : '#ffffff');
+      }
+      hit++;
+      if (qualifies) bonus++;
+    }
+    this.lastCombatTime = this.time.now;
+    return { hit, bonus };
+  }
+
+  /** COMBO ULTIMATE (War Song): enter a short timed state of rapid AUTO-CHAINED
+   *  melee strikes (the chain machinery on a cadence, no input) plus a stat buff
+   *  (via the timed-skill system). Tunables all come from `cfg`. */
+  startComboUltimate(id: string, cfg: { durationMs: number; intervalMs: number; range: number; damage: number; jumps: number; jumpRange: number; falloff: number; tint: number; stats: SkillStatMods }): void {
+    this.comboUltimate = {
+      until: this.time.now + cfg.durationMs,
+      nextAt: this.time.now,
+      intervalMs: cfg.intervalMs,
+      range: cfg.range,
+      damage: cfg.damage,
+      jumps: cfg.jumps,
+      jumpRange: cfg.jumpRange,
+      falloff: cfg.falloff,
+      tint: cfg.tint,
+    };
+    this.startTimedSkill(id, cfg.durationMs, cfg.stats, cfg.tint);
+  }
+
+  /** Per-frame: the combo ultimate's auto-strike cadence (ends with its window). */
+  private updateComboUltimate(): void {
+    const cu = this.comboUltimate;
+    if (!cu) return;
+    if (this.time.now >= cu.until || this.playerDead) {
+      this.comboUltimate = null;
+      return;
+    }
+    if (this.time.now < cu.nextAt) return;
+    cu.nextAt = this.time.now + cu.intervalMs;
+    if (!this.nearestEnemy(this.player.x, this.player.y, cu.range)) return; // no one in reach this beat
+    // One auto STRIKE-CHAIN through whatever stands near (the shared chain machinery).
+    this.runComposedSteps([{ p: 'chain', range: cu.range, jumps: cu.jumps, jumpRange: cu.jumpRange, damage: cu.damage, falloff: cu.falloff, tint: cu.tint, swingFx: true }]);
+  }
+
   /**
    * GENERIC MULTI-UNIT SUMMON (Druid framework): spawn `count` units of `config`
    * ahead of the player in ONE cast — count 2 lands a linked PAIR side-by-side
@@ -3530,6 +3741,9 @@ export class MainScene extends Phaser.Scene {
    *  enemies are hit — this is what lets the CONE (Dust Devil) and LINE/WALL (Jet Stream)
    *  AoE reuse the exact same full-reward path with a real, non-circular hitbox. */
   private aoeHitAll(x: number, y: number, range: number, dmg: number, where?: (ex: number, ey: number) => boolean): void {
+    // ECHO (Bard framework): while armed, the resolution repeats once, delayed,
+    // at echoPct strength (the guard inside maybeEcho stops echoes of echoes).
+    this.maybeEcho(() => this.aoeHitAll(x, y, range, dmg * this.echoPct, where));
     if (this.sasquatch.isAlive && this.sasquatch.distanceTo(x, y) <= range && (!where || where(this.sasquatch.x, this.sasquatch.y))) {
       const dealt = this.sasquatch.takeHit(dmg);
       if (dealt > 0) this.dmgDealtAccum += dealt; // lifesteal accounting
@@ -3572,6 +3786,10 @@ export class MainScene extends Phaser.Scene {
    */
   private enemyAggroTarget(enemy: object, ex: number, ey: number): { x: number; y: number } {
     const now = this.time.now;
+    // CONFUSION (Bard framework) overrides everything for THIS enemy: it pursues
+    // its turned-on fellow until the effect wears off (pruned in updateConfusion).
+    const cf = this.confused.get(enemy as CombatEnemy);
+    if (cf && now < cf.until && cf.target.isAlive) return { x: cf.target.x, y: cf.target.y };
     const stealthed = now < this.playerStealthUntil; // a hidden player can't be focused
     // Necromancer TAUNT is a LIVE override (don't wait for the next re-eval): focus the player.
     if (now < this.tauntUntil && !stealthed) return { x: this.player.x, y: this.player.y };
@@ -3857,10 +4075,19 @@ export class MainScene extends Phaser.Scene {
   }
 
   /** STUN: freeze every enemy within range in place for `ms` (generic primitive).
-   *  ENTANGLED CHAINS: stunning a bound enemy stuns every member of its binding. */
-  private stunEnemiesInRange(x: number, y: number, range: number, ms: number): void {
+   *  ENTANGLED CHAINS: stunning a bound enemy stuns every member of its binding.
+   *  APPLY-IMPACT-RIDER helper (Bard bolts): control at a bolt's landing point. */
+  private applyImpactRider(x: number, y: number, radius: number, r: { stunMs?: number; slowFactor?: number; slowMs?: number; weaken?: number; weakenMs?: number; knockback?: number }): void {
+    if (r.stunMs) this.stunEnemiesInRange(x, y, radius, r.stunMs);
+    if (r.slowFactor !== undefined && r.slowMs) this.slowEnemiesInRange(x, y, radius, r.slowMs, r.slowFactor);
+    if (r.weaken !== undefined && r.weakenMs) this.setPoisonWeaken(r.weaken, r.weakenMs);
+    if (r.knockback) this.knockbackEnemiesInRange(x, y, radius, r.knockback, 200);
+  }
+
+  private stunEnemiesInRange(x: number, y: number, range: number, ms: number, where?: (ex: number, ey: number) => boolean): void {
     const until = this.time.now + ms;
     for (const e of this.combatEnemiesInRange(x, y, range)) {
+      if (where && !where(e.x, e.y)) continue; // shape filter (the Whistle cone)
       for (const t of [e, ...this.entangleControlPeers(e)]) {
         this.stunnedEnemies.set(t, until);
         this.freezeEnemyBody(t, true);
@@ -3969,7 +4196,8 @@ export class MainScene extends Phaser.Scene {
 
   /** True while the player ignores crowd control (Iron Will passive or Iron Pyrite form). */
   private isPlayerCcImmune(): boolean {
-    return this.skills.isUnlocked(IRON_WILL_ID) || this.skillTimed.some((t) => t.id === IRON_PYRITE_ID);
+    // Iron Will (passive) / Iron Pyrite (form) / Chant of the Ancestors (Bard timed buff).
+    return this.skills.isUnlocked(IRON_WILL_ID) || this.skillTimed.some((t) => t.id === IRON_PYRITE_ID || t.id === CHANT_OF_ANCESTORS_ID);
   }
 
   /**
@@ -4252,6 +4480,8 @@ export class MainScene extends Phaser.Scene {
     this.clearFriendlyZones();
     this.clearEntangle();
     this.crystallize.clear();
+    this.confused.clear();
+    this.comboUltimate = null;
     this.breakPlayerStealth();
     this.clearDots();
     this.despawnRegionChampion(); // death resets a champion encounter cleanly
@@ -4284,7 +4514,9 @@ export class MainScene extends Phaser.Scene {
     if (this.time.now - this.lastEnergySpendTime > ENERGY_REGEN_DELAY_MS && this.energy.current < this.energy.max) {
       // ARCANE ABSORPTION (Mage keyed passive): extra essence regen while unlocked.
       const absorb = this.skills.isUnlocked(MAGE_ABSORPTION_ID) ? ARCANE_TUNING.absorption.regenPerSec : 0;
-      this.energy.heal(((ENERGY_REGEN_PER_SEC + absorb) * delta) / 1000);
+      // ECHO OF PASSION (Bard keyed buff): extra essence regen while the pulse runs.
+      const passion = this.skillTimed.some((t) => t.id === ECHO_OF_PASSION_ID) ? BARD_SONGS_TUNING.echoOfPassion.energyPerSec : 0;
+      this.energy.heal(((ENERGY_REGEN_PER_SEC + absorb + passion) * delta) / 1000);
     }
   }
 
@@ -5721,6 +5953,8 @@ export class MainScene extends Phaser.Scene {
       this.clearFriendlyZones(); // heal zones are runtime-only too
       this.clearEntangle();
       this.crystallize.clear();
+      this.confused.clear();
+      this.comboUltimate = null;
       this.breakPlayerStealth();
       this.clearDots(); // drop any poison DoTs
       this.summons.clear(); // summons are transient — never carried across a load
@@ -8327,6 +8561,8 @@ export class MainScene extends Phaser.Scene {
     this.clearFriendlyZones();
     this.clearEntangle();
     this.crystallize.clear();
+    this.confused.clear();
+    this.comboUltimate = null;
     this.breakPlayerStealth();
     this.clearDots();
 
@@ -9687,6 +9923,8 @@ export class MainScene extends Phaser.Scene {
     this.clearFriendlyZones();
     this.clearEntangle();
     this.crystallize.clear();
+    this.confused.clear();
+    this.comboUltimate = null;
     this.breakPlayerStealth();
     this.clearDots();
     this.summons.clear();

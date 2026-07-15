@@ -18,6 +18,7 @@ const CLASS_OPTIONS: ClassOption[] = [
   { id: 'necromancer', name: 'Necromancer', blurb: 'Slavic death-sorcerer. In-between durability; bone strikes, taunts, a root, and the Marrownaut bone-suit across the Marrow tree.', fill: 0x2a2433, stroke: 0x9a6cff },
   { id: 'druid', name: 'Druid', blurb: 'A walking ecosystem of fury and life. No two Druids will ever look alike.', fill: 0x24361c, stroke: 0x8ac86a },
   { id: 'mage', name: 'Mage', blurb: 'The surgeon of reality. Where others cast spells, the Mage rewrites the laws.', fill: 0x2a1a4a, stroke: 0xc09aff },
+  { id: 'bard', name: 'Bard', blurb: 'Memory-keeper and war-drum. Where the Bard plays, the battlefield dances.', fill: 0x3a2430, stroke: 0xffb8d0 },
 ];
 
 /**
@@ -46,10 +47,13 @@ export class CharacterSelectScene extends Phaser.Scene {
       .setDepth(2);
 
     const cardW = Math.min(384, w - 28);
-    const cardH = 116; // room for the "Starts in:" home-city line under the blurb
-    const gap = 16;
+    // ADAPTIVE height: six+ classes must all fit above the fold on 926px — shrink
+    // the cards (never below 96) instead of letting the last one slip off-screen.
+    const gap = 12;
+    const topY = h * 0.18;
+    const cardH = Math.max(96, Math.min(116, Math.floor((h - topY - 16 - (CLASS_OPTIONS.length - 1) * gap) / CLASS_OPTIONS.length)));
     const totalH = CLASS_OPTIONS.length * cardH + (CLASS_OPTIONS.length - 1) * gap;
-    let y = Math.max(h * 0.22, h / 2 - totalH / 2);
+    let y = Math.max(topY, h / 2 - totalH / 2);
     for (const opt of CLASS_OPTIONS) {
       this.makeCard(cx, y, cardW, cardH, opt);
       y += cardH + gap;

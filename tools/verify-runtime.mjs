@@ -184,9 +184,10 @@ try {
     wizard: { world: 'egypt', zone: 'cairo-nile-crown', opener: 'cai-01-mentor', kind: 'cairo' },
     necromancer: { world: 'globe', zone: 'murmansk-bone-harbor', opener: 'mur-01-mentor', kind: 'region' },
     mage: { world: 'globe', zone: 'moscow-crystal-court', opener: 'mos-01-mentor', kind: 'region' },
+    bard: { world: 'globe', zone: 'london-grey-chorus', opener: 'lon-01-mentor', kind: 'region' },
     druid: { world: 'earth', zone: null, opener: 'honest-days-work', kind: 'earth' },
   };
-  for (const cls of ['blacksmith', 'wizard', 'necromancer', 'mage', 'druid']) {
+  for (const cls of ['blacksmith', 'wizard', 'necromancer', 'mage', 'bard', 'druid']) {
     await newGame(cls);
     const home = HOMES[cls];
     const s = await page.evaluate(
@@ -361,6 +362,202 @@ try {
         'mage polish: one pooled swing arc per strike pulse; the FX cap holds under Flurry spam',
         polish.single === 1 && polish.perPulse === 3 && polish.capHeld,
         JSON.stringify(polish),
+      );
+    }
+
+    // 2o. BARD RANGE DOCTRINE (Casey's ruling, permanent): Battle Resonance's
+    // offense is MELEE ONLY — no projectiles, no ranged placements (Piercing
+    // Whistle's SHORT cone is the sanctioned reach concession). Songs/Sonic
+    // offense is RANGED — every damaging active projects or places at range
+    // (Resonance Pulse's self-burst is the sanctioned peel; Sonic Surge and
+    // Wall of Sound count as placements — the trail/wall lands away from the
+    // Bard). Checked BOTH as data (the skill definitions) and LIVE (no Battle
+    // skill ever puts a bolt in flight; Power Chord does).
+    if (cls === 'bard') {
+      const doctrine = await page.evaluate(async () => {
+        const ms = window.__ready();
+        const wait = (t) => new Promise((r) => setTimeout(r, t));
+        if (!window.__quietSpot()) return { setup: 'no quiet spot' };
+        const defs = ms.classSkillsAll['bard'].skills;
+        const nonDamaging = ['bard_hum', 'bard_rally', 'bard_harmonics', 'bard_freq_shield', 'bard_amplify', 'bard_distortion'];
+        const placements = ['bard_wall', 'bard_surge']; // ranged by placement (wall cells / dash trail)
+        const violations = [];
+        for (const d of defs) {
+          const e = d.effect;
+          if (e.kind !== 'active') continue;
+          const steps = e.compose ?? [];
+          if (d.tree === 'bard_battle') {
+            if (steps.some((s) => s.p === 'bolt' || s.p === 'hazard' || s.at === 'ahead')) violations.push(`${d.id}: ranged step in the melee tree`);
+            for (const s of steps) {
+              if (s.p === 'cone' && s.range > 120) violations.push(`${d.id}: long cone in the melee tree`);
+              if (s.p === 'chain' && s.range > 100) violations.push(`${d.id}: ranged chain in the melee tree`);
+              if (s.p === 'strike' && s.at === 'front' && (s.range ?? 0) > 100) violations.push(`${d.id}: long strike in the melee tree`);
+            }
+          } else {
+            if (nonDamaging.includes(e.action) || d.id === 'bard_sc_pulse') continue; // utility / the sanctioned peel
+            const damaging = placements.includes(e.action) || steps.some((s) => (s.damage ?? 0) > 0 || (s.damageRaw ?? 0) > 0 || (s.damageMult ?? 0) > 0);
+            const ranged =
+              placements.includes(e.action) ||
+              steps.some(
+                (s) => s.p === 'bolt' || (s.at === 'ahead' && (s.range ?? s.placeAhead ?? 0) >= 180) || (s.p === 'cone' && s.range >= 200) || (s.p === 'chain' && s.range >= 300) || (s.p === 'hazard' && (s.placeAhead ?? 0) >= 180),
+              );
+            if (damaging && !ranged) violations.push(`${d.id}: melee resolution in a ranged tree`);
+          }
+        }
+        // LIVE half: fire every Battle damaging active in an EMPTY field and watch
+        // the projectile system — nothing may take flight (Heavy Swing's delayed
+        // blow and War Song's opening beats are inside each window).
+        let battleBolts = 0;
+        for (const action of ['bard_mosh', 'bard_cascade', 'bard_whistle', 'bard_heavy_swing', 'bard_stage_dive', 'bard_coda', 'bard_war_song']) {
+          ms.runActiveSkill(action);
+          const t0 = Date.now();
+          while (Date.now() - t0 < 750) {
+            battleBolts = Math.max(battleBolts, ms.projectiles.count);
+            await wait(80);
+          }
+        }
+        ms.comboUltimate = null;
+        for (const t of ms.skillTimed) if (t.id === 'bard_bt_war_song') t.endsAt = 0;
+        // The CONTRAST: a Sonic skill genuinely projects.
+        ms.player.facingX = 1;
+        ms.player.facingY = 0;
+        ms.runActiveSkill('bard_power_chord');
+        const chordBolts = ms.projectiles.count;
+        await wait(900); // let the chord land/expire before the next check
+        return { setup: 'ok', violations, battleBolts, chordBolts };
+      });
+      ok(
+        'bard range doctrine: Battle is melee-only (no projectile, ever); Songs/Sonic damage projects or places at range',
+        doctrine.setup === 'ok' && doctrine.violations.length === 0 && doctrine.battleBolts === 0 && doctrine.chordBolts >= 1,
+        JSON.stringify(doctrine),
+      );
+
+      // 2p. EVERY BARD COMMIT-1 EXTENSION THROUGH A REAL BARD SKILL, in the live
+      // Bard session: Sonic Distortion (confusion), Coda (conditional finisher),
+      // Pentatonic Overload (rotating riders), Resonance Cascade (strike-chain),
+      // War Song (combo ultimate), and Sonic Echoes (armed by the REAL unlock,
+      // repeating a real Dissonant Symphony hit with no further input).
+      const bardKit = await page.evaluate(async () => {
+        const ms = window.__ready();
+        const wait = (t) => new Promise((r) => setTimeout(r, t));
+        if (!window.__quietSpot()) return { setup: 'no quiet spot' };
+        const spawnAt = (dx, dy) => {
+          const w = ms.activeMap().nearestWalkableWorld(ms.player.x + dx, ms.player.y + dy);
+          return ms.spawnAngel('darkcaster', w.x, w.y);
+        };
+        // SONIC DISTORTION → confusion (an 80% chance skill: retry a few beats).
+        const a = spawnAt(120, 0);
+        const b = spawnAt(170, 0);
+        await wait(200);
+        ms.stunEnemiesInRange(ms.player.x + 145, ms.player.y, 220, 2600); // pin the pair (kiting-proof)
+        let turned = false;
+        for (let i = 0; i < 6 && !turned; i++) {
+          ms.runActiveSkill('bard_distortion');
+          turned = ms.confused.size > 0;
+        }
+        ms.confused.clear();
+        a.destroy();
+        b.destroy();
+        // CODA → the conditional finisher: ×2.5 into the stunned target.
+        const stunned = spawnAt(80, 60);
+        const fresh = spawnAt(80, -60);
+        await wait(200);
+        ms.stunEnemiesInRange(stunned.x, stunned.y, 30, 1500); // afflict ONE
+        stunned.sprite.body.reset(ms.player.x + 80, ms.player.y + 60);
+        fresh.sprite.body.reset(ms.player.x + 80, ms.player.y - 60);
+        const h1 = stunned.health.current;
+        const h2 = fresh.health.current;
+        ms.runActiveSkill('bard_coda');
+        await wait(100);
+        // NOTE: the ×2.5 blow can EXCEED the darkcaster's max HP — death clamps the
+        // drop, so assert "clearly amplified", not the exact multiplier (3z-3 owns that).
+        const codaRatio = (h1 - stunned.health.current) / Math.max(0.001, h2 - fresh.health.current);
+        stunned.destroy();
+        fresh.destroy();
+        // PENTATONIC OVERLOAD → rotating riders: one cast, DIFFERENT riders land —
+        // damage + the slow bolt + the weaken bolt. (The stun bolt is racy to observe:
+        // the knockback bolt's own 200ms mini-stun can overwrite its timer — 3z-4
+        // owns per-rider exactness.)
+        const c = spawnAt(200, 0);
+        await wait(200);
+        ms.player.facingX = c.x >= ms.player.x ? 1 : -1;
+        ms.player.facingY = 0;
+        const hpC = c.health.current;
+        ms.runActiveSkill('bard_pentatonic');
+        await wait(700); // flight + impacts
+        const riders = { hit: hpC - c.health.current > 0, slow: ms.slowedEnemies.has(c), weaken: ms.time.now < ms.poisonWeakenUntil && ms.poisonWeakenFactor > 0 };
+        ms.poisonWeakenUntil = 0;
+        ms.poisonWeakenFactor = 0;
+        c.destroy();
+        // RESONANCE CASCADE → the melee strike-chain: three foes, falloff, a crescent per hop.
+        const foes = [spawnAt(70, 0), spawnAt(180, 0), spawnAt(290, 0)];
+        await wait(200);
+        ms.stunEnemiesInRange(ms.player.x + 180, ms.player.y, 400, 2500); // casters kite: pin the line
+        foes.forEach((f, i) => f.sprite.body.reset(ms.player.x + 70 + i * 110, ms.player.y));
+        ms.player.facingX = 1;
+        ms.player.facingY = 0;
+        const hp0 = foes.map((f) => f.health.current);
+        const swings0 = ms.swingFx.spawnedTotal;
+        ms.runActiveSkill('bard_cascade');
+        await wait(150);
+        const drops = foes.map((f, i) => hp0[i] - f.health.current);
+        const cascade = { falls: drops.every((d) => d > 0) && drops[0] > drops[1] && drops[1] > drops[2], swings: ms.swingFx.spawnedTotal - swings0 };
+        for (const f of foes) f.destroy();
+        // WAR SONG → the combo ultimate: the buff runs and strikes auto-chain on the beat.
+        const w1 = spawnAt(60, 0);
+        await wait(200);
+        ms.stunEnemiesInRange(w1.x, w1.y, 400, 3000);
+        w1.sprite.body.reset(ms.player.x + 60, ms.player.y); // pin in melee reach for the beats
+        const hpW = w1.health.current;
+        const swingsW = ms.swingFx.spawnedTotal;
+        ms.runActiveSkill('bard_war_song');
+        const warBuff = ms.skillTimed.some((t) => t.id === 'bard_bt_war_song');
+        await wait(1600); // ~3 beats at 450ms
+        const war = { buff: warBuff, beats: ms.swingFx.spawnedTotal - swingsW, drop: hpW - w1.health.current };
+        ms.comboUltimate = null;
+        for (const t of ms.skillTimed) if (t.id === 'bard_bt_war_song') t.endsAt = 0;
+        w1.destroy();
+        // SONIC ECHOES → the echo extension, armed by the REAL unlock path.
+        const defs = ms.classSkillsAll['bard'].skills;
+        ms.skills.awardPoints(3);
+        for (const id of ['bard_sc_blast', 'bard_sc_pulse', 'bard_sc_echoes']) {
+          if (!ms.skills.isUnlocked(id)) ms.skills.unlock(defs.find((d) => d.id === id));
+        }
+        const echoArmed = Math.abs(ms.echoPct - 0.35) < 1e-6;
+        const e1 = spawnAt(200, 0);
+        await wait(200);
+        ms.stunEnemiesInRange(e1.x, e1.y, 40, 2500); // hold it so the delayed echo lands
+        e1.sprite.body.reset(ms.player.x + 200, ms.player.y);
+        ms.player.facingX = 1;
+        ms.player.facingY = 0;
+        const hpE = e1.health.current;
+        ms.runActiveSkill('bard_dissonant');
+        await wait(150);
+        const echoInitial = hpE - e1.health.current;
+        await wait(650); // past the 380ms echo delay
+        const echoTotal = hpE - e1.health.current;
+        e1.destroy();
+        ms.confused.clear();
+        ms.playerHealth.full();
+        return { setup: 'ok', turned, codaRatio: +codaRatio.toFixed(2), riders, cascade, war, echoArmed, echoInitial, echoTotal };
+      });
+      ok(
+        'bard: every framework extension fires through a real Bard skill',
+        bardKit.setup === 'ok' &&
+          bardKit.turned &&
+          bardKit.codaRatio > 1.8 &&
+          bardKit.riders.hit &&
+          bardKit.riders.weaken &&
+          bardKit.riders.slow &&
+          bardKit.cascade.falls &&
+          bardKit.cascade.swings === 3 &&
+          bardKit.war.buff &&
+          bardKit.war.beats >= 2 &&
+          bardKit.war.drop > 0 &&
+          bardKit.echoArmed &&
+          bardKit.echoInitial > 0 &&
+          bardKit.echoTotal > bardKit.echoInitial,
+        JSON.stringify(bardKit),
       );
     }
   }
@@ -1390,6 +1587,10 @@ try {
     ms.breakPlayerStealth();
     ms.clearEntangle();
     ms.crystallize.clear();
+    ms.confused.clear();
+    ms.comboUltimate = null;
+    ms.harmonicCharges = 0;
+    ms.setEcho(0);
     ms.clearDots();
     ms.playerHealth.full();
     ms.energy.full();
@@ -1398,7 +1599,7 @@ try {
   });
   ok(
     'skill framework: every skill in every tree executes; composed actions match their declared primitives',
-    skillSweep.errors.length === 0 && skillSweep.mismatches.length === 0 && skillSweep.composed === 69 && skillSweep.total >= 150,
+    skillSweep.errors.length === 0 && skillSweep.mismatches.length === 0 && skillSweep.composed === 83 && skillSweep.total >= 180,
     `total=${skillSweep.total} composed=${skillSweep.composed} bespokeActive=${skillSweep.bespokeActive} timed/other=${skillSweep.other} passive=${skillSweep.passive}` +
       (skillSweep.errors.length ? ` ERRORS=${JSON.stringify(skillSweep.errors.slice(0, 3))}` : '') +
       (skillSweep.mismatches.length ? ` MISMATCH=${JSON.stringify(skillSweep.mismatches.slice(0, 3))}` : ''),
@@ -1750,6 +1951,204 @@ try {
     return { setup: 'ok', drop };
   });
   ok('mage ext — seeking bolt: fired 90° off-target, it curves in and hits', seekRun.setup === 'ok' && seekRun.drop > 0, JSON.stringify(seekRun));
+
+  // 3z. BARD FRAMEWORK EXTENSIONS (permanent): confusion, echo, the conditional
+  // finisher, rotating bolt riders, the melee strike-chain, and the combo
+  // ultimate — each through its real runtime seam from an isolated spot.
+
+  // 3z-1. CONFUSION: a confused enemy pursues its nearest FELLOW (aggro redirected),
+  // chips at it when adjacent, and the effect wears off cleanly.
+  const confRun = await page.evaluate(async () => {
+    const ms = window.__ready();
+    const wait = (t) => new Promise((r) => setTimeout(r, t));
+    if (!window.__quietSpot()) return { setup: 'no quiet spot' };
+    const spawnAt = (dx, dy) => {
+      const w = ms.activeMap().nearestWalkableWorld(ms.player.x + dx, ms.player.y + dy);
+      return ms.spawnAngel('darkcaster', w.x, w.y);
+    };
+    const a = spawnAt(120, 0);
+    const b = spawnAt(170, 0); // the fellow, standing beside A
+    await wait(200);
+    ms.stunEnemiesInRange(ms.player.x + 145, ms.player.y, 220, 2600); // hold both in place (kiting-proof)
+    const confused = ms.confuseNearestEnemy(ms.player.x, ms.player.y, 200, 1, 1600, 9, 300);
+    const entry = ms.confused.get(a);
+    const targetsFellow = !!entry && entry.target === b;
+    const t1 = ms.enemyAggroTarget(a, a.x, a.y);
+    const aggroOnFellow = Math.hypot(t1.x - b.x, t1.y - b.y) < 4;
+    const hpB = b.health.current;
+    await wait(900); // adjacent → chip hits land on the fellow
+    const chipped = hpB - b.health.current;
+    await wait(1000); // past durationMs → wears off cleanly
+    const woreOff = !ms.confused.has(a);
+    const t2 = ms.enemyAggroTarget(a, a.x, a.y);
+    const backToPlayer = Math.hypot(t2.x - ms.player.x, t2.y - ms.player.y) < 4;
+    a.destroy();
+    b.destroy();
+    return { setup: 'ok', confused, targetsFellow, aggroOnFellow, chipped, woreOff, backToPlayer };
+  });
+  ok(
+    'bard ext — confusion: aggro redirects onto the nearest fellow, chips it, wears off cleanly',
+    confRun.setup === 'ok' && confRun.confused && confRun.targetsFellow && confRun.aggroOnFellow && confRun.chipped > 0 && confRun.woreOff && confRun.backToPlayer,
+    JSON.stringify(confRun),
+  );
+
+  // 3z-2. ECHO: an armed echo repeats a strike after the delay at echoPct strength;
+  // disarmed, nothing repeats.
+  const echoRun = await page.evaluate(async () => {
+    const ms = window.__ready();
+    const wait = (t) => new Promise((r) => setTimeout(r, t));
+    if (!window.__quietSpot()) return { setup: 'no quiet spot' };
+    const w = ms.activeMap().nearestWalkableWorld(ms.player.x + 60, ms.player.y);
+    const a = ms.spawnAngel('darkcaster', w.x, w.y);
+    await wait(200);
+    ms.stunEnemiesInRange(a.x, a.y, 40, 3000); // hold it in place so the delayed echo lands
+    ms.setEcho(0.5, 300);
+    const hp0 = a.health.current;
+    ms.player.facingX = 1;
+    ms.player.facingY = 0;
+    ms.runComposedSteps([{ p: 'strike', at: 'front', range: 80, damageRaw: 20, tint: 0xd8c8ff }]);
+    await wait(120);
+    const initial = hp0 - a.health.current;
+    await wait(500); // past the 300ms echo delay
+    const total = hp0 - a.health.current;
+    ms.setEcho(0);
+    const hp1 = a.health.current;
+    ms.runComposedSteps([{ p: 'strike', at: 'front', range: 80, damageRaw: 20, tint: 0xd8c8ff }]);
+    await wait(500);
+    const disarmed = hp1 - a.health.current;
+    a.destroy();
+    return { setup: 'ok', initial, total, disarmed };
+  });
+  ok(
+    'bard ext — echo: a delayed second hit at echoPct; nothing repeats once disarmed',
+    echoRun.setup === 'ok' && echoRun.initial === 20 && echoRun.total === 30 && echoRun.disarmed === 20,
+    JSON.stringify(echoRun),
+  );
+
+  // 3z-3. CONDITIONAL FINISHER: a stunned/slowed target takes damage × bonusMult;
+  // an unafflicted one takes base damage.
+  const finRun = await page.evaluate(async () => {
+    const ms = window.__ready();
+    const wait = (t) => new Promise((r) => setTimeout(r, t));
+    if (!window.__quietSpot()) return { setup: 'no quiet spot' };
+    const spawnAt = (dx, dy) => {
+      const w = ms.activeMap().nearestWalkableWorld(ms.player.x + dx, ms.player.y + dy);
+      return ms.spawnAngel('darkcaster', w.x, w.y);
+    };
+    const stunned = spawnAt(80, 60);
+    const fresh = spawnAt(80, -60);
+    await wait(200);
+    ms.stunEnemiesInRange(stunned.x, stunned.y, 30, 1500); // afflict ONE
+    const h1 = stunned.health.current;
+    const h2 = fresh.health.current;
+    const res = ms.finisherHitAll(ms.player.x, ms.player.y, 200, 15, 2);
+    await wait(100);
+    const dropStunned = h1 - stunned.health.current;
+    const dropFresh = h2 - fresh.health.current;
+    stunned.destroy();
+    fresh.destroy();
+    return { setup: 'ok', res, dropStunned, dropFresh };
+  });
+  ok(
+    'bard ext — conditional finisher: double damage to the stunned target, base to the fresh one',
+    finRun.setup === 'ok' && finRun.res.hit === 2 && finRun.res.bonus === 1 && finRun.dropStunned === 30 && finRun.dropFresh === 15,
+    JSON.stringify(finRun),
+  );
+
+  // 3z-4. ROTATING RIDERS: a composed multi-bolt whose bolts carry DIFFERENT
+  // impact riders — the struck enemy ends up stunned AND slowed.
+  const riderRun = await page.evaluate(async () => {
+    const ms = window.__ready();
+    const wait = (t) => new Promise((r) => setTimeout(r, t));
+    if (!window.__quietSpot()) return { setup: 'no quiet spot' };
+    const w = ms.activeMap().nearestWalkableWorld(ms.player.x + 200, ms.player.y);
+    const a = ms.spawnAngel('darkcaster', w.x, w.y);
+    await wait(200);
+    ms.player.facingX = a.x >= ms.player.x ? 1 : -1;
+    ms.player.facingY = 0;
+    const hp0 = a.health.current;
+    ms.runComposedSteps([
+      { p: 'bolt', damage: 8, speed: 520, range: 320, radius: 9, tint: 0xd8c8ff, onHit: { stunMs: 1200 } },
+      { p: 'bolt', damage: 8, speed: 520, range: 320, radius: 9, tint: 0xb8e8ff, onHit: { slowFactor: 0.5, slowMs: 2000 } },
+    ]);
+    await wait(700); // flight + impacts
+    const hit = hp0 - a.health.current > 0;
+    const stunnedApplied = ms.stunnedEnemies.has(a);
+    const slowApplied = ms.slowedEnemies.has(a);
+    a.destroy();
+    return { setup: 'ok', hit, stunnedApplied, slowApplied };
+  });
+  ok(
+    'bard ext — rotating riders: each bolt lands its own rider (stun from one, slow from the other)',
+    riderRun.setup === 'ok' && riderRun.hit && riderRun.stunnedApplied && riderRun.slowApplied,
+    JSON.stringify(riderRun),
+  );
+
+  // 3z-5. MELEE STRIKE-CHAIN: a melee-range chain leaps through three foes with
+  // falloff and sweeps one swing crescent per hop.
+  const meleeChain = await page.evaluate(async () => {
+    const ms = window.__ready();
+    const wait = (t) => new Promise((r) => setTimeout(r, t));
+    if (!window.__quietSpot()) return { setup: 'no quiet spot' };
+    const spawnAt = (dx) => {
+      const w = ms.activeMap().nearestWalkableWorld(ms.player.x + dx, ms.player.y);
+      return ms.spawnAngel('darkcaster', w.x, w.y);
+    };
+    const foes = [spawnAt(70), spawnAt(180), spawnAt(290)];
+    await wait(200);
+    // Casters KITE: pin the line — stun, then hard-place at the exact melee spacing.
+    ms.stunEnemiesInRange(ms.player.x + 180, ms.player.y, 400, 2500);
+    foes.forEach((f, i) => f.sprite.body.reset(ms.player.x + 70 + i * 110, ms.player.y));
+    ms.player.facingX = 1;
+    ms.player.facingY = 0;
+    const hp0 = foes.map((f) => f.health.current);
+    const swings0 = ms.swingFx.spawnedTotal;
+    ms.runComposedSteps([{ p: 'chain', range: 90, jumps: 2, jumpRange: 140, damage: 24, falloff: 0.5, tint: 0xd8c8ff, swingFx: true }]);
+    await wait(150);
+    const drops = foes.map((f, i) => hp0[i] - f.health.current);
+    const swings = ms.swingFx.spawnedTotal - swings0;
+    for (const f of foes) f.destroy();
+    return { setup: 'ok', drops, swings };
+  });
+  ok(
+    'bard ext — strike-chain: a melee hit leaps through three foes with falloff, one crescent per hop',
+    meleeChain.setup === 'ok' && meleeChain.drops.every((d) => d > 0) && meleeChain.drops[0] > meleeChain.drops[1] && meleeChain.drops[1] > meleeChain.drops[2] && meleeChain.swings === 3,
+    JSON.stringify(meleeChain),
+  );
+
+  // 3z-6. COMBO ULTIMATE: entering the state lands MULTIPLE auto-chained strikes
+  // with no further input while its buff runs, then the state ends on time.
+  const comboRun = await page.evaluate(async () => {
+    const ms = window.__ready();
+    const wait = (t) => new Promise((r) => setTimeout(r, t));
+    if (!window.__quietSpot()) return { setup: 'no quiet spot' };
+    const w = ms.activeMap().nearestWalkableWorld(ms.player.x + 60, ms.player.y);
+    const a = ms.spawnAngel('darkcaster', w.x, w.y);
+    await wait(200);
+    // Casters KITE: pin the target in melee reach for the whole combo window.
+    ms.stunEnemiesInRange(a.x, a.y, 400, 3000);
+    a.sprite.body.reset(ms.player.x + 60, ms.player.y);
+    const hp0 = a.health.current;
+    const swings0 = ms.swingFx.spawnedTotal;
+    ms.startComboUltimate('gate_combo_test', { durationMs: 1400, intervalMs: 300, range: 120, damage: 10, jumps: 1, jumpRange: 140, falloff: 0.5, tint: 0xd8c8ff, stats: { damageMult: 0.2 } });
+    const buffOn = ms.skillTimed.some((t) => t.id === 'gate_combo_test');
+    await wait(1000);
+    const midHits = ms.swingFx.spawnedTotal - swings0;
+    await wait(900); // past durationMs → the state must end
+    const ended = ms.comboUltimate === null;
+    const totalDrop = hp0 - a.health.current;
+    const finalHits = ms.swingFx.spawnedTotal - swings0;
+    await wait(300);
+    const noMore = ms.swingFx.spawnedTotal - swings0 === finalHits;
+    for (const t of ms.skillTimed) t.endsAt = 0; // clean the test buff
+    a.destroy();
+    return { setup: 'ok', buffOn, midHits, totalDrop, ended, noMore };
+  });
+  ok(
+    'bard ext — combo ultimate: rapid auto-chained strikes + a buff, ending on time',
+    comboRun.setup === 'ok' && comboRun.buffOn && comboRun.midHits >= 3 && comboRun.totalDrop > 0 && comboRun.ended && comboRun.noMore,
+    JSON.stringify(comboRun),
+  );
 
   // 4) THE GATE: zero page errors across everything above.
   ok('zero page errors during boot + travel', pageErrors.length === 0, pageErrors.slice(0, 3).join(' | '));
