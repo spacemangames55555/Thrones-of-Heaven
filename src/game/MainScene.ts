@@ -2523,7 +2523,9 @@ export class MainScene extends Phaser.Scene {
       this.startSpiritSplit(c.durationMs, c.intervalMs, this.skillDamage(c.pulseDamage));
     } else if (action === 'wd_brew') {
       // Witch Doctor Decay #6 — the confusion reuse: the mind decays first.
+      // (decayDomain 'mental': the cast ring carries the shipped MENTAL blue.)
       const c = WD_DECAY_TUNING.brew;
+      this.spawnSkillRing(px, py, 60, DOMAIN_TINT.mental);
       const turned = this.confuseNearestEnemy(px, py, c.range, c.chance, c.durationMs, c.chipDamage, c.chipMs);
       this.showBanner(turned ? 'The brew takes hold' : 'It shakes off the fumes', 1100);
     } else if (action === 'wd_nova') {

@@ -185,9 +185,10 @@ try {
     necromancer: { world: 'globe', zone: 'murmansk-bone-harbor', opener: 'mur-01-mentor', kind: 'region' },
     mage: { world: 'globe', zone: 'moscow-crystal-court', opener: 'mos-01-mentor', kind: 'region' },
     bard: { world: 'globe', zone: 'london-grey-chorus', opener: 'lon-01-mentor', kind: 'region' },
+    witchdoctor: { world: 'globe', zone: 'kinshasa-river-drum', opener: 'kin-01-mentor', kind: 'region' },
     druid: { world: 'earth', zone: null, opener: 'honest-days-work', kind: 'earth' },
   };
-  for (const cls of ['blacksmith', 'wizard', 'necromancer', 'mage', 'bard', 'druid']) {
+  for (const cls of ['blacksmith', 'wizard', 'necromancer', 'mage', 'bard', 'witchdoctor', 'druid']) {
     await newGame(cls);
     const home = HOMES[cls];
     const s = await page.evaluate(
@@ -558,6 +559,131 @@ try {
           bardKit.echoInitial > 0 &&
           bardKit.echoTotal > bardKit.echoInitial,
         JSON.stringify(bardKit),
+      );
+    }
+
+    // 2q. EVERY WITCH DOCTOR EXTENSION THROUGH A REAL SKILL, in the live Witch
+    // Doctor session: Voodoo Doll (bind + the mirror % measured on a live target),
+    // Shadow Stitch armed by the REAL unlock path (the splash hits a neighbor),
+    // Spirit Projection (the decoy draws real aggro), and Spirit Split (both
+    // halves run). Plus the DECAY-TINT check: every Alchemy of Decay skill
+    // declares its decayDomain and its declared FX tints carry the SHIPPED domain
+    // colors (red/blue/violet). Cosmetic only — no combat-triangle mechanics.
+    if (cls === 'witchdoctor') {
+      const wdKit = await page.evaluate(async () => {
+        const ms = window.__ready();
+        const wait = (t) => new Promise((r) => setTimeout(r, t));
+        if (!window.__quietSpot()) return { setup: 'no quiet spot' };
+        ms.summons.clear();
+        const spawnAt = (dx, dy) => {
+          const w = ms.activeMap().nearestWalkableWorld(ms.player.x + dx, ms.player.y + dy);
+          return ms.spawnAngel('darkcaster', w.x, w.y);
+        };
+        // VOODOO DOLL (the real skill): bind a FAR pinned target (inside the
+        // skill's 340px cast range, far beyond any melee reach) — the cast hits,
+        // then a strike on the doll mirrors exactly mirrorPct (0.6 × raw 20 = 12).
+        const a = spawnAt(300, 0);
+        await wait(200);
+        ms.stunEnemiesInRange(a.x, a.y, 40, 9000);
+        ms.player.facingX = 1;
+        ms.player.facingY = 0;
+        const hp0 = a.health.current;
+        ms.runActiveSkill('wd_doll');
+        const initial = hp0 - a.health.current;
+        const bound = !!ms.voodoo && ms.voodoo.target === a;
+        ms.runComposedSteps([{ p: 'strike', at: 'front', range: 70, damageRaw: 20, tint: 0xc9a05a }]);
+        await wait(120);
+        const mirrored = hp0 - a.health.current - initial;
+        // SHADOW STITCH through the REAL unlock path (doll → … → stitch), then the
+        // mirror splashes the bound target's neighbor at stitchPct.
+        const defs = ms.classSkillsAll['witchdoctor'].skills;
+        ms.skills.awardPoints(6);
+        for (const id of ['wd_vd_doll', 'wd_vd_decoy', 'wd_vd_vision', 'wd_vd_shackles', 'wd_vd_hex', 'wd_vd_stitch']) {
+          if (!ms.skills.isUnlocked(id)) ms.skills.unlock(defs.find((d) => d.id === id));
+        }
+        const stitchArmed = !!ms.voodooStitch;
+        const b = spawnAt(440, 50);
+        await wait(200);
+        ms.stunEnemiesInRange(b.x, b.y, 40, 6000);
+        b.sprite.body.reset(a.x + 60, a.y + 30);
+        const hpA = a.health.current;
+        const hpB = b.health.current;
+        ms.runComposedSteps([{ p: 'strike', at: 'front', range: 70, damageRaw: 20, tint: 0xc9a05a }]);
+        await wait(120);
+        const stitch = { toTarget: hpA - a.health.current, toNeighbor: hpB - b.health.current };
+        b.destroy();
+        // SPIRIT PROJECTION (the real skill): the decoy draws a real enemy's aggro.
+        const e = spawnAt(-150, 0);
+        await wait(200);
+        ms.stunEnemiesInRange(e.x, e.y, 40, 6000);
+        ms.runActiveSkill('wd_decoy');
+        const decoy = ms.summons.list.find((s) => s.config.key === 'wd_decoy') ?? null;
+        await wait(700); // past the aggro re-eval interval
+        const t1 = ms.enemyAggroTarget(e, e.x, e.y);
+        const decoyDraws = decoy ? Math.hypot(t1.x - decoy.x, t1.y - decoy.y) < 60 : false;
+        e.destroy();
+        ms.summons.clearKey('wd_decoy');
+        // SPIRIT SPLIT (the real skill): the decoy walks + the doll auto-pulses
+        // into the (still pinned, still bound) target with no strike.
+        ms.stunEnemiesInRange(a.x, a.y, 40, 6000);
+        const hpS = a.health.current;
+        ms.runActiveSkill('wd_spirit_split');
+        const splitOn = ms.spiritSplit !== null && ms.summons.list.some((s) => s.config.key === 'wd_decoy');
+        await wait(1600); // ~2 pulses at 700ms
+        const pulsed = hpS - a.health.current;
+        ms.spiritSplit = null;
+        a.destroy();
+        ms.summons.clear();
+        ms.voodoo = null;
+        ms.playerHealth.full();
+        return { setup: 'ok', bound, initial, mirrored, stitchArmed, stitch, decoyDraws, splitOn, pulsed };
+      });
+      ok(
+        'witchdoctor: doll mirror % + stitch splash + decoy aggro + spirit split, each through the real skill',
+        wdKit.setup === 'ok' &&
+          wdKit.bound &&
+          wdKit.initial > 0 &&
+          wdKit.mirrored === 12 &&
+          wdKit.stitchArmed &&
+          wdKit.stitch.toTarget === 12 &&
+          wdKit.stitch.toNeighbor === 6 &&
+          wdKit.decoyDraws &&
+          wdKit.splitOn &&
+          wdKit.pulsed > 0,
+        JSON.stringify(wdKit),
+      );
+
+      // 2r. DECAY DOMAINS (Casey's ruling, permanent — COSMETIC ONLY): all ten
+      // Alchemy of Decay skills declare a decayDomain, and every DECLARED FX tint
+      // (compose tints/strokes/DoT colors + buff/transformation tints) carries its
+      // domain's SHIPPED color. Bespoke casts without declared data (Brew's ring,
+      // the Nova's tri-tint) draw their rings from DOMAIN_TINT in their dispatcher
+      // cases — by construction, they cannot drift from canon.
+      const decay = await page.evaluate(() => {
+        const ms = window.__game.scene.getScene('MainScene');
+        const DOMAIN = { physical: 0xe04a3a, mental: 0x3a6de0, spiritual: 0x9a4ae0 }; // the shipped canon (enemy-roster)
+        const skills = ms.classSkillsAll['witchdoctor'].skills.filter((d) => d.tree === 'wd_decay');
+        const missing = skills.filter((d) => !d.decayDomain).map((d) => d.id);
+        const bad = [];
+        for (const d of skills) {
+          if (!d.decayDomain || d.decayDomain === 'all') continue;
+          const want = DOMAIN[d.decayDomain];
+          const tints = [];
+          const e = d.effect;
+          if (e.tint !== undefined) tints.push(e.tint);
+          for (const st of e.compose ?? []) {
+            for (const k of ['tint', 'stroke']) if (st[k] !== undefined) tints.push(st[k]);
+            if (st.dot?.color !== undefined) tints.push(st.dot.color);
+          }
+          if (tints.length > 0 && !tints.includes(want)) bad.push(`${d.id}: declared tints miss the ${d.decayDomain} color`);
+        }
+        const allDomains = skills.filter((d) => d.decayDomain === 'all').map((d) => d.id);
+        return { count: skills.length, missing, bad, allDomains };
+      });
+      ok(
+        'witchdoctor decay domains: all 10 Alchemy skills declare a domain; declared FX tints carry the shipped colors',
+        decay.count === 10 && decay.missing.length === 0 && decay.bad.length === 0 && decay.allDomains.length === 2,
+        JSON.stringify(decay),
       );
     }
   }
