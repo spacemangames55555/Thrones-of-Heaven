@@ -711,6 +711,8 @@ export class MainScene extends Phaser.Scene {
   /** EMPOWERED STRIKES (count-N consume-buff): the next `remaining` strikes deal
    *  damage × mult, each hit spending one charge (the Iaijutsu shape, N deep). */
   empoweredStrikes: { remaining: number; mult: number } | null = null;
+  /** How many sprite drop-in overrides applied at create() (gate-observable). */
+  spriteOverridesApplied = 0;
   /**
    * CHANNELED-BEAM state (the channel primitive). Transient: a single active channel locks
    * one enemy, ticks damage, optionally trickles energy, and is cancelled by movement / any
@@ -1163,7 +1165,8 @@ export class MainScene extends Phaser.Scene {
   create(): void {
     // SPRITE DROP-INS first: any loaded override mints its canonical texture
     // key BEFORE entities ensure theirs (their guards then skip the gray-box).
-    applySpriteOverrides(this);
+    // The applied count is public so the runtime gate can assert shipped art landed.
+    this.spriteOverridesApplied = applySpriteOverrides(this);
 
     const data = washingtonMap as unknown as WashingtonMap;
 

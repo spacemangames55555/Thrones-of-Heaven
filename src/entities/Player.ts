@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { RUN_SPEED } from '../game/settings';
+import { rotationTextureFor } from '../render/spriteOverrides';
 
 const TEXTURE_KEY = 'player-figure'; // Blacksmith (gold soul/herald) avatar
 const WIZARD_TEXTURE_KEY = 'wizard-figure'; // Wizard (Egyptian sorcerer) avatar
@@ -40,6 +41,9 @@ export class Player {
    *  (dark-caster bolts) compose with — and never clobber — skill/class speed math. */
   slowFactor = 1;
 
+  /** The class figure's BASE texture key — rotation frames derive from it. */
+  private baseKey: string;
+
   constructor(scene: Phaser.Scene, x: number, y: number, classId: string = 'blacksmith') {
     Player.ensureTexture(scene);
     Player.ensureWizardTexture(scene);
@@ -51,7 +55,8 @@ export class Player {
     Player.ensureSamuraiTexture(scene);
     Player.ensureMonkTexture(scene);
 
-    this.sprite = scene.physics.add.sprite(x, y, textureForClass(classId));
+    this.baseKey = textureForClass(classId);
+    this.sprite = scene.physics.add.sprite(x, y, this.baseKey);
     this.sprite.setCollideWorldBounds(true);
     this.sprite.setDepth(10);
 
@@ -78,9 +83,18 @@ export class Player {
       y = dirY / len;
       this.facingX = x;
       this.facingY = y;
+      this.applyFacingFrame();
     }
     const s = RUN_SPEED * this.speedMultiplier * this.slowFactor;
     this.sprite.setVelocity(x * s, y * s);
+  }
+
+  /** 8-WAY ART: when real rotation frames shipped for this class figure (the
+   *  sprite-override rotations path), turn the avatar with its facing. Classes
+   *  without rotation art keep their single texture — nothing changes. */
+  private applyFacingFrame(): void {
+    const dirKey = rotationTextureFor(this.baseKey, this.facingX, this.facingY);
+    if (dirKey && this.sprite.texture.key !== dirKey) this.sprite.setTexture(dirKey);
   }
 
   /** Last-moved direction (defaults to facing down), for the melee swing. */
@@ -110,7 +124,9 @@ export class Player {
   /** Re-skin the avatar for a class (used when a save loads a different class). Keeps
    *  any active tint/transform; only swaps the base texture. */
   setClassSkin(classId: string): void {
-    this.sprite.setTexture(textureForClass(classId));
+    this.baseKey = textureForClass(classId);
+    this.sprite.setTexture(this.baseKey);
+    this.applyFacingFrame(); // 8-way art picks the frame for the current facing
   }
 
   get x(): number {
