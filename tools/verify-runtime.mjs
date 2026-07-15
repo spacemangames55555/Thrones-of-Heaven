@@ -186,9 +186,10 @@ try {
     mage: { world: 'globe', zone: 'moscow-crystal-court', opener: 'mos-01-mentor', kind: 'region' },
     bard: { world: 'globe', zone: 'london-grey-chorus', opener: 'lon-01-mentor', kind: 'region' },
     witchdoctor: { world: 'globe', zone: 'kinshasa-river-drum', opener: 'kin-01-mentor', kind: 'region' },
+    samurai: { world: 'globe', zone: 'kyoto-thousand-gates', opener: 'kyo-01-mentor', kind: 'region' },
     druid: { world: 'earth', zone: null, opener: 'honest-days-work', kind: 'earth' },
   };
-  for (const cls of ['blacksmith', 'wizard', 'necromancer', 'mage', 'bard', 'witchdoctor', 'druid']) {
+  for (const cls of ['blacksmith', 'wizard', 'necromancer', 'mage', 'bard', 'witchdoctor', 'samurai', 'druid']) {
     await newGame(cls);
     const home = HOMES[cls];
     const s = await page.evaluate(
@@ -684,6 +685,121 @@ try {
         'witchdoctor decay domains: all 10 Alchemy skills declare a domain; declared FX tints carry the shipped colors',
         decay.count === 10 && decay.missing.length === 0 && decay.bad.length === 0 && decay.allDomains.length === 2,
         JSON.stringify(decay),
+      );
+    }
+
+    // 2s. EVERY SAMURAI EXTENSION THROUGH A REAL SKILL, in the live Samurai
+    // session: Parry (the real skill's window negates a live wolf's hit and the
+    // riposte lands), Iaijutsu (its multiplier MEASURED against the same real
+    // strike unbuffed), stance exclusivity (the three real toggles through the
+    // real activation path), and Perfect Form (auto-parrying a real pack while
+    // the blade keeps swinging).
+    if (cls === 'samurai') {
+      const samKit = await page.evaluate(async () => {
+        const ms = window.__ready();
+        const wait = (t) => new Promise((r) => setTimeout(r, t));
+        if (!window.__quietSpot()) return { setup: 'no quiet spot' };
+        // PARRY through the real skill: the window negates a live wolf's hit.
+        ms.playerHealth.shield = 0;
+        ms.playerHealth.full();
+        const wolf = ms.spawnTownsfolk(ms.player.x + 60, ms.player.y, null, 'wolf');
+        await wait(200);
+        const hp0 = ms.playerHealth.current;
+        const wolfHp0 = wolf.health.current;
+        const count0 = ms.parryCount;
+        ms.runActiveSkill('sam_parry');
+        const windowOpen = ms.parry !== null;
+        ms.onTownsfolkHitPlayer(wolf); // the wolf's REAL melee hit path
+        const parry = { windowOpen, negated: ms.playerHealth.current === hp0, riposte: wolfHp0 - wolf.health.current, counted: ms.parryCount === count0 + 1 };
+        if (wolf.isAlive) wolf.takeHit(1e9);
+        ms.playerHealth.shield = 1e9;
+        // IAIJUTSU: the SAME real strike measured unbuffed, then sheathed — the
+        // ratio is the multiplier (2.5), the hit stuns, the buff consumes.
+        const w = ms.activeMap().nearestWalkableWorld(ms.player.x + 60, ms.player.y);
+        const a = ms.spawnAngel('darkcaster', w.x, w.y);
+        await wait(200);
+        a.sprite.body.reset(ms.player.x + 60, ms.player.y);
+        ms.player.facingX = 1;
+        ms.player.facingY = 0;
+        const b0 = a.health.current;
+        ms.runActiveSkill('sam_first_cut');
+        await wait(100);
+        const base = b0 - a.health.current;
+        a.destroy();
+        // The sheathed measurement lands on a FRESH foe (2.5× First Cut would
+        // overkill what the base measurement already wounded).
+        const a2 = ms.spawnAngel('darkcaster', w.x, w.y);
+        await wait(200);
+        a2.sprite.body.reset(ms.player.x + 60, ms.player.y);
+        ms.runActiveSkill('sam_iaijutsu');
+        const b1 = a2.health.current;
+        ms.runActiveSkill('sam_first_cut');
+        await wait(100);
+        const iai = { base, sheathed: b1 - a2.health.current, stunned: ms.stunnedEnemies.has(a2), consumed: ms.iaijutsu === null };
+        a2.destroy();
+        // STANCE EXCLUSIVITY through the REAL activation path (unlock → activateSkill):
+        // entering each stance exits the previous; re-casting the active one exits it.
+        const defs = ms.classSkillsAll['samurai'].skills;
+        ms.skills.awardPoints(4);
+        for (const id of ['sam_st_guard_break', 'sam_st_water', 'sam_st_stone', 'sam_st_fire']) {
+          if (!ms.skills.isUnlocked(id)) ms.skills.unlock(defs.find((d) => d.id === id));
+        }
+        const active = () => ['sam_st_water', 'sam_st_stone', 'sam_st_fire'].filter((id) => ms.skillTimed.some((t) => t.id === id));
+        ms.activateSkill('sam_st_water');
+        const s1 = active();
+        ms.activateSkill('sam_st_stone');
+        const s2 = active();
+        ms.activateSkill('sam_st_fire');
+        const s3 = active();
+        ms.activateSkill('sam_st_fire'); // toggle OFF — no stance remains
+        const s4 = active();
+        const stances = { s1: s1.join(','), s2: s2.join(','), s3: s3.join(','), s4: s4.join(',') };
+        // PERFECT FORM under a REAL pack: three wolves' hits all auto-parry while
+        // the blade keeps swinging freely.
+        ms.playerHealth.shield = 0;
+        ms.playerHealth.full();
+        const pack = [0, 1, 2].map((i) => ms.spawnTownsfolk(ms.player.x + 50 + i * 30, ms.player.y + (i - 1) * 40, null, 'wolf'));
+        await wait(250);
+        const countP = ms.parryCount;
+        ms.runActiveSkill('sam_perfect_form');
+        const formBuff = ms.skillTimed.some((t) => t.id === 'sam_st_perfect');
+        // Per-hit SYNCHRONOUS deltas: each parried wolf hit must remove exactly 0
+        // HP (a stray ranged enemy wandering in mid-wait can't pollute this).
+        let taken = 0;
+        for (const p of pack) {
+          const before = ms.playerHealth.current;
+          ms.onTownsfolkHitPlayer(p); // each wolf's REAL hit, auto-parried
+          taken += before - ms.playerHealth.current;
+          ms.runActiveSkill('sam_first_cut'); // the player never stops acting
+          await wait(120);
+        }
+        const form = { formBuff, untouched: taken === 0, parries: ms.parryCount - countP };
+        ms.perfectFormUntil = 0;
+        for (const t of ms.skillTimed) t.endsAt = 0;
+        for (const p of pack) if (p.isAlive) p.takeHit(1e9);
+        ms.playerHealth.full();
+        ms.playerHealth.shield = 1e9;
+        return { setup: 'ok', parry, iai, stances, form };
+      });
+      ok(
+        'samurai: parry vs a live wolf + iaijutsu ratio + stance exclusivity + perfect form, each through the real skill',
+        samKit.setup === 'ok' &&
+          samKit.parry.windowOpen &&
+          samKit.parry.negated &&
+          samKit.parry.riposte > 0 &&
+          samKit.parry.counted &&
+          samKit.iai.base > 0 &&
+          Math.abs(samKit.iai.sheathed / samKit.iai.base - 2.5) < 0.05 &&
+          samKit.iai.stunned &&
+          samKit.iai.consumed &&
+          samKit.stances.s1 === 'sam_st_water' &&
+          samKit.stances.s2 === 'sam_st_stone' &&
+          samKit.stances.s3 === 'sam_st_fire' &&
+          samKit.stances.s4 === '' &&
+          samKit.form.formBuff &&
+          samKit.form.untouched &&
+          samKit.form.parries === 3,
+        JSON.stringify(samKit),
       );
     }
   }
@@ -1720,6 +1836,10 @@ try {
     ms.voodoo = null;
     ms.allyBond = null;
     ms.spiritSplit = null;
+    ms.parry = null;
+    ms.perfectFormUntil = 0;
+    ms.iaijutsu = null;
+    ms.darkVulnUntil = 0;
     ms.clearDots();
     ms.playerHealth.full();
     ms.energy.full();
@@ -1728,7 +1848,7 @@ try {
   });
   ok(
     'skill framework: every skill in every tree executes; composed actions match their declared primitives',
-    skillSweep.errors.length === 0 && skillSweep.mismatches.length === 0 && skillSweep.composed === 94 && skillSweep.total >= 210,
+    skillSweep.errors.length === 0 && skillSweep.mismatches.length === 0 && skillSweep.composed === 107 && skillSweep.total >= 240,
     `total=${skillSweep.total} composed=${skillSweep.composed} bespokeActive=${skillSweep.bespokeActive} timed/other=${skillSweep.other} passive=${skillSweep.passive}` +
       (skillSweep.errors.length ? ` ERRORS=${JSON.stringify(skillSweep.errors.slice(0, 3))}` : '') +
       (skillSweep.mismatches.length ? ` MISMATCH=${JSON.stringify(skillSweep.mismatches.slice(0, 3))}` : ''),
@@ -2538,6 +2658,190 @@ try {
     JSON.stringify(splitRun),
   );
 
+  // 3ae. SAMURAI FRAMEWORK EXTENSIONS (permanent): parry/riposte (+ its two
+  // upgrade hooks), the Iaijutsu count-1 consume-buff, and dash-and-fire — each
+  // through its real runtime seam. Melee hits are driven through the REAL enemy
+  // melee handler (a live wolf's hit path); ranged through the projectile path.
+
+  // 3ae-1. PARRY: a real wolf melee hit inside the window is fully negated and
+  // the riposte lands; an EXPIRED window takes the hit normally; a RANGED hit
+  // passes through an open window untouched (melee only).
+  const parryRun = await page.evaluate(async () => {
+    const ms = window.__ready();
+    const wait = (t) => new Promise((r) => setTimeout(r, t));
+    if (!window.__quietSpot()) return { setup: 'no quiet spot' };
+    ms.playerHealth.shield = 0; // observe real HP (restored at the end)
+    ms.playerHealth.full();
+    const wolf = ms.spawnTownsfolk(ms.player.x + 60, ms.player.y, null, 'wolf');
+    await wait(200);
+    // NOTE: wolves are squishy (15 HP) — the riposte numbers here stay SMALL so
+    // the same live wolf survives every phase (a fresh one arrives for the
+    // Counterstrike phase to be safe).
+    const hp0 = ms.playerHealth.current;
+    const wolfHp0 = wolf.health.current;
+    const count0 = ms.parryCount;
+    ms.openParryWindow(800, 4);
+    ms.onTownsfolkHitPlayer(wolf); // the REAL wolf-melee seam
+    const negated = ms.playerHealth.current === hp0;
+    const riposte = wolfHp0 - wolf.health.current;
+    const consumed = ms.parry === null && ms.parryCount === count0 + 1;
+    // EXPIRED window → the hit lands normally, no riposte.
+    ms.openParryWindow(120, 4);
+    await wait(400);
+    const hp1 = ms.playerHealth.current;
+    const wolfHp1 = wolf.health.current;
+    ms.onTownsfolkHitPlayer(wolf);
+    const expiredTook = hp1 - ms.playerHealth.current;
+    const expiredNoRiposte = wolf.health.current === wolfHp1;
+    // RANGED passes through an OPEN window (melee only) — and the window survives.
+    ms.playerHealth.full();
+    ms.openParryWindow(800, 4);
+    const hp2 = ms.playerHealth.current;
+    ms.onProjectileHitPlayer(10);
+    const rangedTook = hp2 - ms.playerHealth.current;
+    const windowSurvived = ms.parry !== null;
+    ms.parry = null;
+    wolf.takeHit(1e9);
+    // COUNTERSTRIKE hooks (armed exactly as the owned skill arms them): riposte
+    // bonus + a Resolve/energy refund on the successful parry — on a FRESH wolf.
+    const wolf2 = ms.spawnTownsfolk(ms.player.x + 60, ms.player.y, null, 'wolf');
+    await wait(200);
+    ms.parryRiposteBonus = 10;
+    ms.parryRefundEnergy = 8;
+    ms.energy.current = 40;
+    const wolfHp2 = wolf2.health.current;
+    ms.openParryWindow(800, 4);
+    ms.onTownsfolkHitPlayer(wolf2);
+    const counter = { riposte: wolfHp2 - wolf2.health.current, energy: ms.energy.current };
+    ms.parryRiposteBonus = 0;
+    ms.parryRefundEnergy = 0;
+    wolf2.takeHit(1e9);
+    ms.playerHealth.full();
+    ms.playerHealth.shield = 1e9;
+    return { setup: 'ok', negated, riposte, consumed, expiredTook, expiredNoRiposte, rangedTook, windowSurvived, counter };
+  });
+  ok(
+    'samurai ext — parry: negates a real wolf hit + ripostes; expired window takes it; ranged passes through; Counterstrike bonus + refund',
+    parryRun.setup === 'ok' &&
+      parryRun.negated &&
+      parryRun.riposte === 4 &&
+      parryRun.consumed &&
+      parryRun.expiredTook > 0 &&
+      parryRun.expiredNoRiposte &&
+      parryRun.rangedTook > 0 &&
+      parryRun.windowSurvived &&
+      parryRun.counter.riposte === 14 &&
+      parryRun.counter.energy === 48,
+    JSON.stringify(parryRun),
+  );
+
+  // 3ae-2. IAIJUTSU: the armed sheathe multiplies EXACTLY ONE strike (and stuns
+  // what it hits), then consumes; a lapsed buff clears without effect.
+  const iaiRun = await page.evaluate(async () => {
+    const ms = window.__ready();
+    const wait = (t) => new Promise((r) => setTimeout(r, t));
+    if (!window.__quietSpot()) return { setup: 'no quiet spot' };
+    const w = ms.activeMap().nearestWalkableWorld(ms.player.x + 60, ms.player.y);
+    const a = ms.spawnAngel('darkcaster', w.x, w.y);
+    await wait(200);
+    a.sprite.body.reset(ms.player.x + 60, ms.player.y);
+    ms.player.facingX = 1;
+    ms.player.facingY = 0;
+    ms.armIaijutsu(1500, 3, 800);
+    const hp0 = a.health.current;
+    ms.runComposedSteps([{ p: 'strike', at: 'front', range: 70, damageRaw: 10, tint: 0xffe9a8 }]);
+    await wait(100);
+    const first = hp0 - a.health.current; // 10 × 3
+    const stunned = ms.stunnedEnemies.has(a);
+    const consumed = ms.iaijutsu === null;
+    const hp1 = a.health.current;
+    ms.runComposedSteps([{ p: 'strike', at: 'front', range: 70, damageRaw: 10, tint: 0xffe9a8 }]);
+    await wait(100);
+    const second = hp1 - a.health.current; // back to base
+    // A LAPSED sheathe clears without effect.
+    ms.armIaijutsu(100, 3, 800);
+    await wait(300);
+    const hp2 = a.health.current;
+    ms.runComposedSteps([{ p: 'strike', at: 'front', range: 70, damageRaw: 10, tint: 0xffe9a8 }]);
+    await wait(100);
+    const lapsed = { drop: hp2 - a.health.current, cleared: ms.iaijutsu === null };
+    a.destroy();
+    return { setup: 'ok', first, stunned, consumed, second, lapsed };
+  });
+  ok(
+    'samurai ext — iaijutsu: exactly one strike multiplied (×3) + stun, then consumed; a lapsed sheathe clears cleanly',
+    iaiRun.setup === 'ok' && iaiRun.first === 30 && iaiRun.stunned && iaiRun.consumed && iaiRun.second === 10 && iaiRun.lapsed.drop === 10 && iaiRun.lapsed.cleared,
+    JSON.stringify(iaiRun),
+  );
+
+  // 3ae-3. PERFECT FORM: every incoming melee hit auto-parries (multiple, from a
+  // real wolf's hit path) WHILE the player strikes freely; the state ends on time.
+  const formRun = await page.evaluate(async () => {
+    const ms = window.__ready();
+    const wait = (t) => new Promise((r) => setTimeout(r, t));
+    if (!window.__quietSpot()) return { setup: 'no quiet spot' };
+    ms.playerHealth.shield = 0;
+    ms.playerHealth.full();
+    const wolf = ms.spawnTownsfolk(ms.player.x + 60, ms.player.y, null, 'wolf');
+    await wait(200);
+    const hp0 = ms.playerHealth.current;
+    const wolfHp0 = wolf.health.current;
+    const count0 = ms.parryCount;
+    ms.player.facingX = 1;
+    ms.player.facingY = 0;
+    ms.startPerfectForm(2000, 2); // small riposte: the 15 HP wolf must survive all three
+    for (let i = 0; i < 3; i++) {
+      wolf.sprite.body.reset(ms.player.x + 60, ms.player.y);
+      ms.onTownsfolkHitPlayer(wolf); // real melee hits, auto-parried
+      if (i < 2) ms.runComposedSteps([{ p: 'strike', at: 'front', range: 70, damageRaw: 2, tint: 0xffe9a8 }]); // acting freely
+      await wait(120);
+    }
+    const untouched = ms.playerHealth.current === hp0;
+    const parries = ms.parryCount - count0;
+    const wolfDrop = wolfHp0 - wolf.health.current; // 3 ripostes ×2 + 2 free strikes ×2
+    await wait(1800); // past the window
+    const hp1 = ms.playerHealth.current;
+    ms.onTownsfolkHitPlayer(wolf);
+    const afterEnds = hp1 - ms.playerHealth.current;
+    wolf.takeHit(1e9);
+    ms.playerHealth.full();
+    ms.playerHealth.shield = 1e9;
+    return { setup: 'ok', untouched, parries, wolfDrop, afterEnds };
+  });
+  ok(
+    'samurai ext — perfect form: multiple real melee hits auto-parried while striking freely; the state ends on time',
+    formRun.setup === 'ok' && formRun.untouched && formRun.parries === 3 && formRun.wolfDrop === 10 && formRun.afterEnds > 0,
+    JSON.stringify(formRun),
+  );
+
+  // 3ae-4. DASH-AND-FIRE: the charge moves the player while the mid-dash bolt
+  // flies ahead and lands on a target downrange (the Surge composite pattern
+  // with a projectile).
+  const dashRun = await page.evaluate(async () => {
+    const ms = window.__ready();
+    const wait = (t) => new Promise((r) => setTimeout(r, t));
+    if (!window.__quietSpot()) return { setup: 'no quiet spot' };
+    const w = ms.activeMap().nearestWalkableWorld(ms.player.x + 320, ms.player.y);
+    const a = ms.spawnAngel('darkcaster', w.x, w.y);
+    await wait(200);
+    ms.stunEnemiesInRange(a.x, a.y, 40, 4000);
+    ms.player.facingX = 1;
+    ms.player.facingY = 0;
+    const from = { x: ms.player.x, y: ms.player.y };
+    const hp0 = a.health.current;
+    ms.dashAndFire({ distance: 200, damage: 0, knockdownMs: 0 }, { p: 'bolt', damage: 12, speed: 520, range: 420, radius: 9, tint: 0xd8e8ff }, 120);
+    await wait(1000); // dash + bolt flight
+    const moved = Math.hypot(ms.player.x - from.x, ms.player.y - from.y);
+    const drop = hp0 - a.health.current;
+    a.destroy();
+    return { setup: 'ok', moved, drop };
+  });
+  ok(
+    'samurai ext — dash-and-fire: the dash carries the player while the mid-dash bolt lands downrange',
+    dashRun.setup === 'ok' && dashRun.moved > 120 && dashRun.drop === 12,
+    JSON.stringify(dashRun),
+  );
+
   // 3aa. SKILL TREE UX (Casey's spec, permanent) — driven by REAL taps on the real
   // screen: instant spend (no confirmation window) respects locks and points with
   // shake/toast feedback; the name-bar "Add" button round-trips through the hotkey
@@ -2773,7 +3077,9 @@ try {
         const b = r.getBounds();
         return b.x < -1 || b.y < -1 || b.x + b.width > g.scale.width + 1 || b.y + b.height > g.scale.height + 1;
       });
-      return { w: g.scale.width, cards: cards.length, off: off.length };
+      // One card per REGISTERED class — the count tracks the roster automatically.
+      const registered = Object.keys(g.scene.getScene('MainScene').classSkillsAll).length;
+      return { w: g.scale.width, cards: cards.length, registered, off: off.length };
     });
     // Into a run (top-left card = blacksmith) → open the skill tree in landscape.
     await page.evaluate(() => window.__game.scene.getScene('CharacterSelectScene').scene.start('MainScene', { mode: 'new', classId: 'blacksmith' }));
@@ -2815,7 +3121,7 @@ try {
   })();
   ok(
     'orientation: the select screen + skill tree lay out fully on screen in landscape (column flow)',
-    landscapeMenus.select.w === 926 && landscapeMenus.select.cards === 7 && landscapeMenus.select.off === 0 && landscapeMenus.tree.bars >= 16 && landscapeMenus.tree.off === 0,
+    landscapeMenus.select.w === 926 && landscapeMenus.select.cards === landscapeMenus.select.registered && landscapeMenus.select.off === 0 && landscapeMenus.tree.bars >= 16 && landscapeMenus.tree.off === 0,
     JSON.stringify(landscapeMenus),
   );
   await page.setViewportSize({ width: 428, height: 926 }); // restore portrait for anything after

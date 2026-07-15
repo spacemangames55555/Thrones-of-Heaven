@@ -20,6 +20,7 @@ const CLASS_OPTIONS: ClassOption[] = [
   { id: 'mage', name: 'Mage', blurb: 'The surgeon of reality. Where others cast spells, the Mage rewrites the laws.', fill: 0x2a1a4a, stroke: 0xc09aff },
   { id: 'bard', name: 'Bard', blurb: 'Memory-keeper and war-drum. Where the Bard plays, the battlefield dances.', fill: 0x3a2430, stroke: 0xffb8d0 },
   { id: 'witchdoctor', name: 'Witch Doctor', blurb: 'The drum speaks and the spirits answer. Somewhere far away, his enemy feels every blow.', fill: 0x24342c, stroke: 0x8fe8d0 },
+  { id: 'samurai', name: 'Samurai', blurb: 'One breath. One cut.', fill: 0x3a2020, stroke: 0xffd8b0 },
 ];
 
 /**
@@ -82,10 +83,18 @@ export class CharacterSelectScene extends Phaser.Scene {
     if (opt.comingSoon) {
       this.add.text(cx + w / 2 - 16, y + 16, 'COMING SOON', { fontFamily: 'system-ui, sans-serif', fontSize: '12px', color: '#9a86b8', fontStyle: 'bold' }).setOrigin(1, 0).setDepth(3);
     }
-    this.add
-      .text(cx - w / 2 + 16, y + 44, opt.blurb, { fontFamily: 'system-ui, sans-serif', fontSize: '13px', color: enabled ? '#d6e2f2' : '#6a6577', wordWrap: { width: w - 32 } })
+    // TRUNCATE-TO-FIT: with eight classes the grid can go narrow (two columns in
+    // portrait) — long blurbs are trimmed word by word (…) so they never spill
+    // over the card's "Starts in" line.
+    const blurb = this.add
+      .text(cx - w / 2 + 16, y + 44, opt.blurb, { fontFamily: 'system-ui, sans-serif', fontSize: w < 280 ? '11px' : '13px', color: enabled ? '#d6e2f2' : '#6a6577', wordWrap: { width: w - 32 } })
       .setOrigin(0, 0)
       .setDepth(3);
+    const words = opt.blurb.split(' ');
+    while (blurb.height > h - 70 && words.length > 1) {
+      words.pop();
+      blurb.setText(`${words.join(' ')}…`);
+    }
     // CLASS HOME STARTS: where a new character of this class spawns (data-driven
     // from the manifest's homeClass zones; Earth homes = the WA start).
     this.add

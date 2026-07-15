@@ -40,12 +40,15 @@ import { BARD_SONIC_SKILLS, BARD_SONIC_TREE } from './bardSonic';
 import { WD_VOODOO_SKILLS, WD_VOODOO_TREE } from './witchdoctorVoodoo';
 import { WD_DECAY_SKILLS, WD_DECAY_TREE } from './witchdoctorDecay';
 import { WD_SPIRIT_SKILLS, WD_SPIRIT_TREE } from './witchdoctorSpirit';
+import { SAM_BLADE_SKILLS, SAM_BLADE_TREE } from './samuraiBlade';
+import { SAM_STANCE_SKILLS, SAM_STANCE_TREE } from './samuraiStances';
+import { SAM_BOW_SKILLS, SAM_BOW_TREE } from './samuraiBow';
 
 /** How many active skills the player can equip to on-screen slots. */
 export const LOADOUT_SLOTS = 6;
 
 /** The playable classes. Only the Blacksmith has trees this batch; others slot in later. */
-export type ClassId = 'blacksmith' | 'necromancer' | 'wizard' | 'druid' | 'mage' | 'bard' | 'witchdoctor';
+export type ClassId = 'blacksmith' | 'necromancer' | 'wizard' | 'druid' | 'mage' | 'bard' | 'witchdoctor' | 'samurai';
 
 /** Stat modifiers a skill contributes — used by PASSIVE (permanent) and by timed
  *  BUFF / TRANSFORMATION effects (while active). All optional; absent = no change. */
@@ -243,7 +246,30 @@ export type ActiveActionId =
   | 'wd_spirit_walk'
   | 'wd_soul_bind'
   | 'wd_effigy'
-  | 'wd_revenant';
+  | 'wd_revenant'
+  // Samurai actives (bespoke ids; composed skills share the executor).
+  | 'sam_first_cut'
+  | 'sam_twin_fangs'
+  | 'sam_iaijutsu'
+  | 'sam_crescent'
+  | 'sam_dragonfly'
+  | 'sam_challenge'
+  | 'sam_petal'
+  | 'sam_thousand_cuts'
+  | 'sam_guard_break'
+  | 'sam_parry'
+  | 'sam_breath'
+  | 'sam_kiai'
+  | 'sam_perfect_form'
+  | 'sam_yumi'
+  | 'sam_piercing'
+  | 'sam_hamstring'
+  | 'sam_whistling'
+  | 'sam_running_draw'
+  | 'sam_flaming'
+  | 'sam_rain'
+  | 'sam_pinning'
+  | 'sam_heavens_arc';
 
 /**
  * The five supported EFFECT KINDS. The scene applies them generically:
@@ -342,7 +368,7 @@ export type ComposedStep =
       seekTurnRate?: number;
       /** IMPACT rider (Bard framework, plain bolts): control applied where the bolt
        *  lands. ROTATING RIDERS = several bolt steps, each with a different onHit. */
-      onHit?: { stunMs?: number; slowFactor?: number; slowMs?: number; weaken?: number; weakenMs?: number; knockback?: number };
+      onHit?: { stunMs?: number; slowFactor?: number; slowMs?: number; weaken?: number; weakenMs?: number; knockback?: number; rootMs?: number };
     }
   | { p: 'cone'; range: number; halfAngleDeg: number; damage: number; tint: number; knockback?: number; knockbackStunMs?: number; slowFactor?: number; slowMs?: number; stunMs?: number }
   | { p: 'line'; length: number; width: number; damage: number; tint: number }
@@ -445,6 +471,9 @@ export type SkillEffect =
        *  (the exit cast is never cooldown-gated; the entry cooldown keeps running,
        *  so no flicker re-entry). `durationMs` is ignored while toggled. */
       toggle?: boolean;
+      /** STANCE EXCLUSIVITY (Samurai framework): toggled forms sharing a group are
+       *  mutually exclusive — entering one exits any other in the same group. */
+      stanceGroup?: string;
     }
   /**
    * CHANNELED BEAM (tap-to-channel, auto-lock NEAREST enemy, interrupt-on-act). On a single
@@ -559,6 +588,8 @@ const NON_DAMAGING_ACTIVE_ACTIONS: ReadonlySet<ActiveActionId> = new Set([
   // Witch Doctor utility actives (decoys/effigy/revenant, confusions, totem, the
   // no-damage hex zone, blood pact, stealth, the ally-bond).
   'wd_decoy', 'wd_cursed_vision', 'wd_echoes', 'wd_brew', 'wd_totem', 'wd_hex_ritual', 'wd_blood_pact', 'wd_spirit_walk', 'wd_soul_bind', 'wd_effigy', 'wd_revenant',
+  // Samurai utility actives (the reactive parry window + the Resolve/health breath).
+  'sam_parry', 'sam_breath',
 ]);
 
 /**
@@ -615,6 +646,10 @@ const NON_AIMABLE_ACTIONS: ReadonlySet<ActiveActionId> = new Set<ActiveActionId>
   'wd_doll', 'wd_decoy', 'wd_cursed_vision', 'wd_shackles', 'wd_echoes', 'wd_spirit_split',
   'wd_life_drain', 'wd_brew', 'wd_nova', 'wd_totem', 'wd_blood_pact', 'wd_spirit_walk',
   'wd_soul_bind', 'wd_effigy', 'wd_ritual', 'wd_revenant',
+  // Samurai: self-arming states, the nearest-target mark, and the restores.
+  // First Cut/Twin Fangs/Crescent/Dragonfly/Petal/Guard Break/Kiai and every
+  // arrow stay directional (drag-to-aim).
+  'sam_iaijutsu', 'sam_challenge', 'sam_thousand_cuts', 'sam_parry', 'sam_breath', 'sam_perfect_form',
 ]);
 
 /**
@@ -811,6 +846,30 @@ const WITCHDOCTOR: ClassSkills = {
   ],
 };
 
+// ─── SAMURAI (Kyoto's blade — Casey's ruling: pure DPS, defense through timing) ─
+//
+// Three trees on the same no-kit rules: WAY OF THE BLADE (melee: Iaijutsu, the
+// dash-through cut, Thousand Cuts), WAY OF THE STANCES (the three mutually-
+// exclusive toggles + Parry/Counterstrike/Perfect Form), and WAY OF THE BOW
+// (arrows on the shipped bolt riders + Running Draw). "Resolve" is prose over
+// standard energy. Tier-0s: First Cut, Guard Break, Yumi Shot.
+const SAMURAI: ClassSkills = {
+  classId: 'samurai',
+  trees: [
+    { id: SAM_BLADE_TREE, name: 'Blade' }, // 10 melee skills (opens on First Cut)
+    { id: SAM_STANCE_TREE, name: 'Stances' }, // 10 stance/timing skills (opens on Guard Break)
+    { id: SAM_BOW_TREE, name: 'Bow' }, // 10 ranged skills (opens on Yumi Shot)
+  ],
+  skills: [
+    // --- WAY OF THE BLADE (10 skills, linear; melee). Data in samuraiBlade.ts. ---
+    ...SAM_BLADE_SKILLS,
+    // --- WAY OF THE STANCES (10 skills, linear; toggles + parry). Data in samuraiStances.ts. ---
+    ...SAM_STANCE_SKILLS,
+    // --- WAY OF THE BOW (10 skills, linear; ranged). Data in samuraiBow.ts. ---
+    ...SAM_BOW_SKILLS,
+  ],
+};
+
 export const CLASS_SKILLS: Record<ClassId, ClassSkills> = {
   blacksmith: BLACKSMITH,
   wizard: WIZARD,
@@ -819,6 +878,7 @@ export const CLASS_SKILLS: Record<ClassId, ClassSkills> = {
   mage: MAGE,
   bard: BARD,
   witchdoctor: WITCHDOCTOR,
+  samurai: SAMURAI,
 };
 
 /** Look up a class's full skill set (trees + skills). */
