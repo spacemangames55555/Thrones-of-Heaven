@@ -32,6 +32,11 @@ export interface ProjectileSpawn {
   /** Optional origin tag passed through to onPlayerHit (e.g. 'caster-bolt' so the
    *  scene can apply that family's on-hit debuffs). Purely additive metadata. */
   tag?: string;
+  /** SEEKING (player bolts, Mage framework): the bolt HOMES toward the nearest live
+   *  enemy in flight, turning at `seekTurnRate` rad/sec (default 6). The scene
+   *  resolves the target via onSeekTarget. */
+  seek?: boolean;
+  seekTurnRate?: number;
 }
 
 /** One pooled bolt: a glowing sprite plus its flight state. */
@@ -54,6 +59,8 @@ class Bolt {
   readonly hits = new Set<object>();
   dotOnImpact?: ProjectileSpawn['dotOnImpact'];
   tag?: string;
+  seek = false;
+  seekTurnRate = 6;
 
   constructor(scene: Phaser.Scene, layer: Phaser.GameObjects.Layer) {
     this.sprite = scene.add.image(0, 0, TEXTURE_KEY).setDepth(13).setVisible(false);
@@ -79,6 +86,8 @@ class Bolt {
     this.hits.clear();
     this.dotOnImpact = s.dotOnImpact;
     this.tag = s.tag;
+    this.seek = s.seek ?? false;
+    this.seekTurnRate = s.seekTurnRate ?? 6;
     this.sprite
       .setPosition(s.x, s.y)
       .setTint(this.color)
@@ -130,6 +139,9 @@ export class ProjectileSystem {
   /** Called when a DoT player bolt impacts so the scene can apply a poison field at the
    *  landing point (Toxic Bolt). Only fired for bolts spawned with dotOnImpact. */
   onImpactDot?: (x: number, y: number, dot: NonNullable<ProjectileSpawn['dotOnImpact']>) => void;
+  /** SEEKING bolts: the nearest live enemy to (x,y) within `range` — the scene owns
+   *  the enemy lists, so it resolves the homing target. Null = fly straight. */
+  onSeekTarget?: (x: number, y: number, range: number) => { x: number; y: number } | null;
 
   constructor(scene: Phaser.Scene, map: GameMap, layer: Phaser.GameObjects.Layer) {
     this.scene = scene;
@@ -165,6 +177,18 @@ export class ProjectileSystem {
     const dt = deltaMs / 1000;
     for (const b of this.pool) {
       if (!b.active) continue;
+      // SEEKING (player bolts): curve toward the nearest live enemy at the turn rate.
+      if (b.seek && b.faction === 'player' && this.onSeekTarget) {
+        const t = this.onSeekTarget(b.sprite.x, b.sprite.y, Math.max(0, b.maxRange - b.traveled) + 120);
+        if (t) {
+          const want = Math.atan2(t.y - b.sprite.y, t.x - b.sprite.x);
+          const cur = Math.atan2(b.dirY, b.dirX);
+          const turned = Phaser.Math.Angle.RotateTo(cur, want, b.seekTurnRate * dt);
+          b.dirX = Math.cos(turned);
+          b.dirY = Math.sin(turned);
+          b.sprite.setRotation(turned);
+        }
+      }
       const step = b.speed * dt;
       b.sprite.x += b.dirX * step;
       b.sprite.y += b.dirY * step;

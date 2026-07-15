@@ -199,6 +199,8 @@ export type ActiveActionId =
  *  friendzone — heal-over-time ground area for the player + summons
  *               (static, or mobile with follow: true).
  *  stealth — the player leaves all enemy targeting for a window; attacking breaks it.
+ *  teleport — short blink in the facing direction (tunable distance); with a
+ *             hazard step first it forms the Wormhole composite.
  * Damage fields: `damage` is skill-scaled (skillDamage); `damageRaw` is
  * unscaled (legacy Tank numbers); `damageMult` multiplies playerDamage().
  */
@@ -235,6 +237,11 @@ export type ComposedStep =
       healPerHit?: number;
       maxHeals?: number;
       missBanner?: string;
+      /** CRYSTALLIZE rider (Mage framework): enemies hit gain this many crystallize
+       *  stacks (capped at crystallizeMax; default cap 6). A consume skill (Shatter)
+       *  detonates ALL stacks on enemies in its radius for damage per stack. */
+      crystallize?: number;
+      crystallizeMax?: number;
     }
   | {
       p: 'bolt';
@@ -248,6 +255,10 @@ export type ComposedStep =
       splash?: { radius: number; damage: number };
       dot?: { dmgPerTick: number; tickMs: number; durationMs: number; radius: number; color: number };
       vuln?: { mult: number; durationMs: number; banner?: string };
+      /** SEEKING rider (Mage framework): the bolt HOMES toward the nearest enemy in
+       *  flight (turn rate rad/sec, default 6) — the missile-barrage primitive. */
+      seek?: boolean;
+      seekTurnRate?: number;
     }
   | { p: 'cone'; range: number; halfAngleDeg: number; damage: number; tint: number; knockback?: number; knockbackStunMs?: number; slowFactor?: number; slowMs?: number }
   | { p: 'line'; length: number; width: number; damage: number; tint: number }
@@ -318,6 +329,14 @@ export type ComposedStep =
       p: 'stealth';
       durationMs: number;
       banner?: string;
+    }
+  // ── MAGE FRAMEWORK EXTENSION (additive; class-agnostic like every primitive) ──
+  | {
+      /** TELEPORT: a short blink in the facing direction (the Blink machinery with
+       *  a tunable distance). Composes with `hazard at:'self'` placed FIRST for the
+       *  Wormhole pattern: the origin keeps a damaging portal while you exit through it. */
+      p: 'teleport';
+      distance: number;
     };
 
 export type SkillEffect =

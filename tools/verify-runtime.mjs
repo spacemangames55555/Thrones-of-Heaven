@@ -1470,6 +1470,142 @@ try {
     JSON.stringify(variantRun),
   );
 
+  // 3x. MAGE FRAMEWORK EXTENSIONS (permanent): entangled chains, crystallize +
+  // shatter, the wormhole composite, and seeking bolts — each exercised through
+  // its real runtime seam from an isolated spot (loud setup failures).
+
+  // 3x-1. ENTANGLED CHAINS: bind three foes; damage to one is SHARED to the others,
+  // a stun on one stuns all; unbinding stops the sharing.
+  const entangleRun = await page.evaluate(async () => {
+    const ms = window.__ready();
+    const wait = (t) => new Promise((r) => setTimeout(r, t));
+    if (!window.__quietSpot()) return { setup: 'no quiet spot' };
+    const spawnAt = (dx, dy) => {
+      const w = ms.activeMap().nearestWalkableWorld(ms.player.x + dx, ms.player.y + dy);
+      return ms.spawnAngel('darkcaster', w.x, w.y);
+    };
+    const a = spawnAt(120, 0);
+    const b = spawnAt(200, 80);
+    const c = spawnAt(200, -80);
+    await wait(200);
+    const bound = ms.entangleNearby(ms.player.x, ms.player.y, 320, 3, 0.5, 6000);
+    const hp0 = [a, b, c].map((e) => e.health.current);
+    a.takeHit(40); // direct hit on ONE bound member
+    await wait(100);
+    const drops = [a, b, c].map((e, i) => hp0[i] - e.health.current);
+    const shared = drops[0] > 0 && drops[1] > 0 && drops[2] > 0 && drops[1] < drops[0] && drops[2] < drops[0];
+    // Control share: stun a small ring around A only → B must be stunned too.
+    ms.stunEnemiesInRange(a.x, a.y, 40, 800);
+    const stunShared = ms.stunnedEnemies.has(b) && ms.stunnedEnemies.has(c);
+    // Unbind: damage no longer shares.
+    ms.clearEntangle();
+    const b1 = b.health.current;
+    a.takeHit(30);
+    await wait(100);
+    const afterClear = b1 - b.health.current;
+    for (const e of [a, b, c]) e.destroy();
+    return { setup: 'ok', bound, drops, shared, stunShared, afterClear };
+  });
+  ok(
+    'mage ext — entangled chains: damage + stuns shared across the binding; unbind stops it',
+    entangleRun.setup === 'ok' && entangleRun.bound === 3 && entangleRun.shared && entangleRun.stunShared && entangleRun.afterClear === 0,
+    JSON.stringify(entangleRun),
+  );
+
+  // 3x-2. CRYSTALLIZE + SHATTER: the strike rider applies stacks (capped), Shatter
+  // consumes EXACTLY the stacks in radius (per-stack damage; out-of-radius stacks stay).
+  const crysRun = await page.evaluate(async () => {
+    const ms = window.__ready();
+    const wait = (t) => new Promise((r) => setTimeout(r, t));
+    if (!window.__quietSpot()) return { setup: 'no quiet spot' };
+    const wA = ms.activeMap().nearestWalkableWorld(ms.player.x + 130, ms.player.y);
+    const a = ms.spawnAngel('darkcaster', wA.x, wA.y);
+    const wB = ms.activeMap().nearestWalkableWorld(ms.player.x + 640, ms.player.y);
+    const b = ms.spawnAngel('darkcaster', wB.x, wB.y);
+    await wait(200);
+    // The RIDER: a strike around the player crystallizes what it hits (B is out of reach).
+    ms.runComposedSteps([{ p: 'strike', at: 'self', radius: 200, damageRaw: 1, tint: 0xbfe0ff, crystallize: 2 }]);
+    const riderStacks = ms.crystallize.get(a) ?? 0;
+    ms.addCrystallize(a, 10, 6); // cap check: 2 + 10 → clamped to 6
+    ms.addCrystallize(b, 3, 6); // stacks OUTSIDE the coming shatter radius
+    const capped = ms.crystallize.get(a) ?? 0;
+    const hpA = a.health.current;
+    const res = ms.shatterCrystallize(ms.player.x, ms.player.y, 300, 10);
+    await wait(100);
+    const dropA = hpA - a.health.current;
+    const out = {
+      setup: 'ok', riderStacks, capped, res,
+      dropA,
+      aCleared: !ms.crystallize.has(a),
+      bKept: ms.crystallize.get(b) === 3,
+    };
+    a.destroy();
+    b.destroy();
+    ms.crystallize.clear();
+    return out;
+  });
+  ok(
+    'mage ext — crystallize/shatter: rider applies, cap holds, shatter consumes exactly the stacks in radius',
+    crysRun.setup === 'ok' && crysRun.riderStacks === 2 && crysRun.capped === 6 && crysRun.res.hit === 1 && crysRun.res.stacks === 6 && crysRun.dropA >= 40 && crysRun.aCleared && crysRun.bKept,
+    JSON.stringify(crysRun),
+  );
+
+  // 3x-3. WORMHOLE COMPOSITE: [hazard at self, teleport] moves the player and leaves
+  // a damaging portal at the ORIGIN that ticks on an enemy standing in it.
+  const wormRun = await page.evaluate(async () => {
+    const ms = window.__ready();
+    const wait = (t) => new Promise((r) => setTimeout(r, t));
+    if (!window.__quietSpot()) return { setup: 'no quiet spot' };
+    const from = { x: ms.player.x, y: ms.player.y };
+    ms.player.facingX = 1;
+    ms.player.facingY = 0;
+    ms.runComposedSteps([
+      { p: 'hazard', at: 'self', radius: 90, tickDamage: 8, tickMs: 250, durationMs: 2500, fill: 0x8a5cff, stroke: 0xc09aff },
+      { p: 'teleport', distance: 220 },
+    ]);
+    const moved = Math.hypot(ms.player.x - from.x, ms.player.y - from.y);
+    const h = ms.spellHazards[ms.spellHazards.length - 1];
+    const portalAtOrigin = h ? Math.hypot(h.x - from.x, h.y - from.y) < 5 : false;
+    const w = ms.activeMap().nearestWalkableWorld(from.x, from.y);
+    const foe = ms.spawnAngel('darkcaster', w.x, w.y);
+    await wait(150);
+    const hp0 = foe.health.current;
+    await wait(800); // several portal ticks
+    const ticked = hp0 - foe.health.current;
+    foe.destroy();
+    return { setup: 'ok', moved, portalAtOrigin, ticked };
+  });
+  ok(
+    'mage ext — wormhole: teleports the player, the origin portal damages what stands in it',
+    wormRun.setup === 'ok' && wormRun.moved > 120 && wormRun.portalAtOrigin && wormRun.ticked > 0,
+    JSON.stringify(wormRun),
+  );
+
+  // 3x-4. SEEKING BOLT: fired 90° AWAY from the only enemy, the bolt curves in and
+  // still hits it (a straight bolt at that angle could never connect).
+  const seekRun = await page.evaluate(async () => {
+    const ms = window.__ready();
+    const wait = (t) => new Promise((r) => setTimeout(r, t));
+    if (!window.__quietSpot()) return { setup: 'no quiet spot' };
+    const w = ms.activeMap().nearestWalkableWorld(ms.player.x, ms.player.y - 220);
+    const foe = ms.spawnAngel('darkcaster', w.x, w.y); // due NORTH of the player
+    await wait(200);
+    ms.player.facingX = 1; // fire due EAST — 90° off the target
+    ms.player.facingY = 0;
+    const hp0 = foe.health.current;
+    ms.runComposedSteps([{ p: 'bolt', damage: 16, speed: 420, range: 600, radius: 9, tint: 0xc09aff, seek: true }]);
+    const t0 = Date.now();
+    let drop = 0;
+    while (Date.now() - t0 < 2500) {
+      await wait(120);
+      drop = hp0 - foe.health.current;
+      if (drop > 0) break;
+    }
+    foe.destroy();
+    return { setup: 'ok', drop };
+  });
+  ok('mage ext — seeking bolt: fired 90° off-target, it curves in and hits', seekRun.setup === 'ok' && seekRun.drop > 0, JSON.stringify(seekRun));
+
   // 4) THE GATE: zero page errors across everything above.
   ok('zero page errors during boot + travel', pageErrors.length === 0, pageErrors.slice(0, 3).join(' | '));
 } finally {
