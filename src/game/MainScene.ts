@@ -1514,6 +1514,14 @@ export class MainScene extends Phaser.Scene {
     this.uiCamera.setName('UICamera');
     cam.ignore(uiObjects);
     this.uiCamera.ignore(worldObjects);
+    // ORIENTATION: keep the UI camera's viewport matched to the canvas on every
+    // rotation/resize (added cameras don't auto-resize like the main one; the main
+    // camera keeps its zoom — landscape simply sees wider).
+    const uiCamResize = (): void => {
+      this.uiCamera.setSize(this.scale.width, this.scale.height);
+    };
+    this.scale.on(Phaser.Scale.Events.RESIZE, uiCamResize);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.scale.off(Phaser.Scale.Events.RESIZE, uiCamResize));
 
     // Initial quest UI state: tracker hidden (inactive), no title, marker points
     // the player toward the quest-giver.
