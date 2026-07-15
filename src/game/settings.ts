@@ -110,6 +110,7 @@ export const DEV_ZONE_LABEL_MAX_ZOOM = 0.5;
 // see labels/flashes disappear too early under extreme load.
 export const MAX_FLOATING_TEXTS = 48; // concurrent damage numbers / combat labels
 export const MAX_CIRCLE_FX = 48; // concurrent impact/pulse circles
+export const MAX_SWING_FX = 16; // concurrent melee swing crescents (strike primitive)
 
 // --- Progression / Leveling v1 ---------------------------------------------
 //

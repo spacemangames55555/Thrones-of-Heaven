@@ -21,8 +21,9 @@ export const CRYSTALBLADE_TUNING = {
   /** 1) CRYSTAL SHARD — ENTRY ranged spikes that SLOW (damage vs Icicle's 24;
    *  slow vs Frostbite's 0.5/4s). Strikes the nearest foe in range. */
   crystalShard: { range: 300, radius: 40, damage: 22, slowFactor: 0.6, slowMs: 2500, cooldownMs: 2000, energyCost: 9 },
-  /** 2) ENCAPSULATION — transformation: forge the crystal blade (melee mode;
-   *  vs Prism Quartz's +60%/12s/60s — weaker, faster cycling). */
+  /** 2) ENCAPSULATION — TOGGLE transformation: forge the crystal blade (melee mode;
+   *  no timer — cast to enter, cast again to exit; durationMs unused while toggled).
+   *  Damage vs Prism Quartz's +60%, here a sustained +35%. */
   encapsulation: { damageMult: 0.35, durationMs: 12000, cooldownMs: 30000, tint: 0x9ae0e8 },
   /** 3) CRYSTAL STRIKE — the core melee hit, banks 1 crystallize stack (vs Bash 26/64/2.5s). */
   crystalStrike: { damage: 24, range: 70, stacks: 1, maxStacks: 6, cooldownMs: 2500, energyCost: 8 },
@@ -69,11 +70,11 @@ export const MAGE_CRYSTAL_SKILLS: SkillDef[] = [
     id: 'mage_cb_encapsulation',
     tree: MAGE_CRYSTAL_TREE,
     name: 'Encapsulation',
-    description: `Activate: forge arcana into a living crystal blade for ${(T.encapsulation.durationMs / 1000).toFixed(0)}s — +${Math.round(T.encapsulation.damageMult * 100)}% damage while the edge holds.`,
+    description: `Activate: forge arcana into a living crystal blade — +${Math.round(T.encapsulation.damageMult * 100)}% damage while it is drawn. No timer: cast again to sheathe it.`,
     cost: 1,
     prereq: 'mage_cb_shard',
     tier: 1,
-    effect: { kind: 'transformation', cooldownMs: T.encapsulation.cooldownMs, durationMs: T.encapsulation.durationMs, tint: T.encapsulation.tint, stats: { damageMult: T.encapsulation.damageMult } },
+    effect: { kind: 'transformation', toggle: true, cooldownMs: T.encapsulation.cooldownMs, durationMs: T.encapsulation.durationMs, tint: T.encapsulation.tint, stats: { damageMult: T.encapsulation.damageMult } },
   },
   {
     id: 'mage_cb_strike',

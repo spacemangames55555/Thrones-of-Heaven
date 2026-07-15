@@ -382,6 +382,10 @@ export type SkillEffect =
       /** Optional radiant aura while transformed: damage per pulse + its radius. */
       auraDamage?: number;
       auraRadius?: number;
+      /** TOGGLE mode (Encapsulation): NO timer — cast to enter, cast again to exit
+       *  (the exit cast is never cooldown-gated; the entry cooldown keeps running,
+       *  so no flicker re-entry). `durationMs` is ignored while toggled. */
+      toggle?: boolean;
     }
   /**
    * CHANNELED BEAM (tap-to-channel, auto-lock NEAREST enemy, interrupt-on-act). On a single

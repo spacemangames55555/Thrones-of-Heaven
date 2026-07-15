@@ -316,6 +316,52 @@ try {
         mageKit.setup === 'ok' && mageKit.wormMoved > 120 && mageKit.portal && mageKit.stacks === 1 && mageKit.shattered && mageKit.bound >= 2 && mageKit.drop > 0,
         JSON.stringify(mageKit),
       );
+
+      // 2n. MAGE POLISH (permanent): Encapsulation is a TOGGLE (no timer; the exit
+      // cast is never cooldown-gated; the bonus tracks the state), and the strike
+      // primitive spawns exactly ONE pooled swing arc per pulse with its cap held
+      // under rapid Flurry spam. Runs through the REAL activation path (unlock →
+      // activateSkill), in the live Mage session.
+      const polish = await page.evaluate(async () => {
+        const ms = window.__ready();
+        const wait = (t) => new Promise((r) => setTimeout(r, t));
+        const defs = ms.classSkillsAll['mage'].skills;
+        ms.skills.awardPoints(2);
+        ms.skills.unlock(defs.find((d) => d.id === 'mage_cb_shard'));
+        ms.skills.unlock(defs.find((d) => d.id === 'mage_cb_encapsulation'));
+        const dmg0 = ms.combinedSkillMods().damageMult ?? 0;
+        ms.activateSkill('mage_cb_encapsulation'); // ENTER via the real button path
+        const entry = ms.skillTimed.find((t) => t.id === 'mage_cb_encapsulation');
+        const noTimer = !!entry && !Number.isFinite(entry.endsAt);
+        const dmgOn = (ms.combinedSkillMods().damageMult ?? 0) - dmg0;
+        await wait(400); // must NOT expire on its own
+        const stillOn = ms.skillTimed.some((t) => t.id === 'mage_cb_encapsulation');
+        ms.activateSkill('mage_cb_encapsulation'); // EXIT — allowed despite the entry cooldown
+        const off = !ms.skillTimed.some((t) => t.id === 'mage_cb_encapsulation');
+        const dmgOff = (ms.combinedSkillMods().damageMult ?? 0) - dmg0;
+        // SWING FX: exactly one arc per strike pulse; the pool cap holds under spam.
+        const t1 = ms.swingFx.spawnedTotal;
+        ms.runComposedSteps([{ p: 'strike', at: 'front', range: 70, damageRaw: 1, tint: 0xbfe0ff }]);
+        const single = ms.swingFx.spawnedTotal - t1;
+        const t2 = ms.swingFx.spawnedTotal;
+        ms.runActiveSkill('mage_crystal_flurry'); // 3 pulses (0/130/260ms)
+        await wait(600);
+        const perPulse = ms.swingFx.spawnedTotal - t2;
+        for (let i = 0; i < 20; i++) ms.runActiveSkill('mage_crystal_flurry'); // 60 arcs requested at once
+        await wait(700);
+        const capHeld = ms.swingFx.size <= 16 && ms.swingFx.activeCount <= 16;
+        return { noTimer, dmgOn: +dmgOn.toFixed(2), stillOn, off, dmgOff: +dmgOff.toFixed(2), single, perPulse, poolSize: ms.swingFx.size, capHeld };
+      });
+      ok(
+        'mage polish: Encapsulation toggles on/off with no timer; its bonus tracks the state',
+        polish.noTimer && polish.dmgOn === 0.35 && polish.stillOn && polish.off && polish.dmgOff === 0,
+        JSON.stringify(polish),
+      );
+      ok(
+        'mage polish: one pooled swing arc per strike pulse; the FX cap holds under Flurry spam',
+        polish.single === 1 && polish.perPulse === 3 && polish.capHeld,
+        JSON.stringify(polish),
+      );
     }
   }
 
