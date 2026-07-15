@@ -2150,6 +2150,161 @@ try {
     JSON.stringify(comboRun),
   );
 
+  // 3aa. SKILL TREE UX (Casey's spec, permanent) — driven by REAL taps on the real
+  // screen: instant spend (no confirmation window) respects locks and points with
+  // shake/toast feedback; the name-bar "Add" button round-trips through the hotkey
+  // picker into a slot; press-and-hold shows the description WITHOUT spending; and
+  // the forced first pick still completes through the real picker.
+  await newGame('blacksmith'); // newGame CLICKS the FirstSkillScene card — the real picker path
+  const firstPick = await page.evaluate(() => {
+    const ms = window.__game.scene.getScene('MainScene');
+    const st = ms.getSkillState();
+    return { pickerOpen: window.__game.scene.isActive('FirstSkillScene'), castable: st.activatableUnlocked().length, slot0: st.loadout()[0] ?? null };
+  });
+  ok(
+    'skill tree ux: the forced first pick still completes through the real picker',
+    !firstPick.pickerOpen && firstPick.castable >= 1 && firstPick.slot0 !== null,
+    JSON.stringify(firstPick),
+  );
+
+  // Open the tree UI (the real launch path: pauses MainScene under it), then read
+  // tree 0's rendered rows. Row i's bar center = listTop(134) + 8 + i*50 + 22.
+  const rows = await page.evaluate(() => {
+    const ms = window.__game.scene.getScene('MainScene');
+    ms.openSkillTree();
+    const st = ms.getSkillState();
+    const cls = ms.classSkillsAll[st.activeClass];
+    const treeId = cls.trees[0].id;
+    const nodes = cls.skills.filter((s) => s.tree === treeId).sort((a, b) => a.tier - b.tier);
+    const out = [];
+    const drawn = new Set();
+    for (const d of nodes) {
+      if (d.branch) {
+        if (drawn.has(d.branch.group)) continue;
+        drawn.add(d.branch.group);
+      }
+      out.push(d.id);
+    }
+    ms.skills.awardPoints(1);
+    const iBuy = out.findIndex((id) => st.canUnlock(cls.skills.find((s) => s.id === id)).ok);
+    return { ids: out, iBuy, points: st.unspentPoints };
+  });
+  await page.waitForTimeout(400);
+  const rowY = (i) => 134 + 8 + i * 50 + 22;
+
+  // (a) INSTANT SPEND: one real tap on an affordable row unlocks it on the spot — no window.
+  await page.mouse.click(214, rowY(rows.iBuy));
+  await page.waitForTimeout(300);
+  const spend = await page.evaluate(
+    ({ rows }) => {
+      const ms = window.__game.scene.getScene('MainScene');
+      const sts = window.__game.scene.getScene('SkillTreeScene');
+      const st = ms.getSkillState();
+      sts.lastReject = '';
+      return { unlocked: st.isUnlocked(rows.ids[rows.iBuy]), points: st.unspentPoints, modal: !!sts.popup || !!sts.readPopup };
+    },
+    { rows },
+  );
+  // (b) NO POINTS: same tap on the next (now prereq-met) row spends nothing + explains why.
+  await page.mouse.click(214, rowY(rows.iBuy + 1));
+  await page.waitForTimeout(250);
+  const broke = await page.evaluate(
+    ({ rows }) => {
+      const ms = window.__game.scene.getScene('MainScene');
+      const sts = window.__game.scene.getScene('SkillTreeScene');
+      const st = ms.getSkillState();
+      const out = { unlocked: st.isUnlocked(rows.ids[rows.iBuy + 1]), points: st.unspentPoints, reject: sts.lastReject };
+      ms.skills.awardPoints(1); // arm the LOCKED case: a point in hand, prereq unmet
+      sts.lastReject = '';
+      return out;
+    },
+    { rows },
+  );
+  // (c) LOCKED: with a point in hand, tapping a row two tiers ahead spends nothing.
+  await page.mouse.click(214, rowY(rows.iBuy + 3));
+  await page.waitForTimeout(250);
+  const locked = await page.evaluate(
+    ({ rows }) => {
+      const ms = window.__game.scene.getScene('MainScene');
+      const sts = window.__game.scene.getScene('SkillTreeScene');
+      const st = ms.getSkillState();
+      return { unlocked: st.isUnlocked(rows.ids[rows.iBuy + 3]), points: st.unspentPoints, reject: sts.lastReject };
+    },
+    { rows },
+  );
+  ok(
+    'skill tree ux: instant spend — an affordable tap unlocks instantly; no-points and locked taps spend nothing and say why',
+    rows.iBuy >= 0 &&
+      spend.unlocked &&
+      spend.points === 0 &&
+      !spend.modal &&
+      !broke.unlocked &&
+      broke.points === 0 &&
+      broke.reject.length > 0 &&
+      !locked.unlocked &&
+      locked.points === 1 &&
+      locked.reject.length > 0,
+    JSON.stringify({ rows: rows.iBuy, spend, broke, locked }),
+  );
+
+  // (d) HOLD TO READ on a LOCKED row: the description shows at HOLD_MS while held,
+  // the release dismisses it, and NOTHING was spent by the completed hold.
+  await page.mouse.move(214, rowY(rows.iBuy + 3));
+  await page.mouse.down();
+  await page.waitForTimeout(2500); // past HOLD_MS (2000)
+  const held = await page.evaluate(
+    ({ rows }) => {
+      const ms = window.__game.scene.getScene('MainScene');
+      const sts = window.__game.scene.getScene('SkillTreeScene');
+      return { reading: !!sts.readPopup, unlocked: ms.getSkillState().isUnlocked(rows.ids[rows.iBuy + 3]), points: ms.getSkillState().unspentPoints };
+    },
+    { rows },
+  );
+  await page.mouse.up();
+  await page.waitForTimeout(250);
+  const released = await page.evaluate(
+    ({ rows }) => {
+      const ms = window.__game.scene.getScene('MainScene');
+      const sts = window.__game.scene.getScene('SkillTreeScene');
+      return { reading: !!sts.readPopup, unlocked: ms.getSkillState().isUnlocked(rows.ids[rows.iBuy + 3]), points: ms.getSkillState().unspentPoints };
+    },
+    { rows },
+  );
+  ok(
+    'skill tree ux: hold-to-read shows the description on a locked skill and its release never spends',
+    held.reading && !held.unlocked && held.points === 1 && !released.reading && !released.unlocked && released.points === 1,
+    JSON.stringify({ held, released }),
+  );
+
+  // (e) ADD → HOTKEY PICKER → SLOT: row 0 is always an owned castable (the tier-0
+  // opener — picked or bought above). Tap its name-bar Add button (right side of
+  // the bar), then tap slot 3 in the picker; the skill must land there.
+  await page.mouse.click(366, rowY(0)); // the Add button: cx + nodeW/2 - 38 = 366
+  await page.waitForTimeout(300);
+  const pickerState = await page.evaluate(() => {
+    const sts = window.__game.scene.getScene('SkillTreeScene');
+    const p = sts.pickerSlotCenter(2);
+    return { open: !!sts.popup, slotX: p.x, slotY: p.y };
+  });
+  if (pickerState.open) await page.mouse.click(pickerState.slotX, pickerState.slotY);
+  await page.waitForTimeout(300);
+  const added = await page.evaluate(
+    ({ rows }) => {
+      const ms = window.__game.scene.getScene('MainScene');
+      const sts = window.__game.scene.getScene('SkillTreeScene');
+      const st = ms.getSkillState();
+      const out = { closed: !sts.popup, slotOf: st.slotIndexOf(rows.ids[0]) };
+      sts.close(); // resume MainScene for whatever runs after
+      return out;
+    },
+    { rows },
+  );
+  ok(
+    'skill tree ux: the name-bar Add button opens the hotkey picker and a slot tap assigns the skill there',
+    pickerState.open && added.closed && added.slotOf === 2,
+    JSON.stringify({ pickerState, added }),
+  );
+
   // 4) THE GATE: zero page errors across everything above.
   ok('zero page errors during boot + travel', pageErrors.length === 0, pageErrors.slice(0, 3).join(' | '));
 } finally {
