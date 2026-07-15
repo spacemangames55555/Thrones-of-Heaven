@@ -114,16 +114,113 @@ try {
     `cards=${selectCards} registered=[${registeredIds.join(',')}] started=[${startedIds.join(',')}]`,
   );
 
-  // 2) Every playable class boots to a clean fresh start (nothing auto-starts —
-  //    this is the guard against generated home-city chains hijacking openings).
-  //    Druid runs LAST on purpose: the WA-opening check below plays on in ITS session.
+  // 1c. PRE-RULING SAVE LOADS UNCHANGED (permanent): a v12 save (a Necromancer
+  // mid-WA, from before the class-home-starts ruling) must load EXACTLY where it
+  // was — never relocated to the class home. Crafted from a real session's save
+  // with its version wound back, then loaded through the real 'continue' path.
+  const preRuling = await (async () => {
+    await newGame('necromancer');
+    const staged = await page.evaluate(() => {
+      const ms = window.__game.scene.getScene('MainScene');
+      // Stand mid-WA on Earth (the pre-ruling life), then write a REAL save.
+      const spawn = ms.worlds['earth'].defaultArrival;
+      const spot = ms.worlds['earth'].map.nearestWalkableWorld(spawn.x + 400, spawn.y + 120);
+      ms.applyWorldSwap('earth', spot);
+      ms.writeSave();
+      const raw = JSON.parse(localStorage.getItem('toh_save'));
+      raw.saveVersion = 12; // wind back: this save predates the ruling
+      localStorage.setItem('toh_save', JSON.stringify(raw));
+      return spot;
+    });
+    await page.goto(`http://localhost:${PORT}/`, { waitUntil: 'load' });
+    await page.waitForFunction(() => !!window.__game && window.__game.scene.isActive('TitleScene'), { timeout: 25000 });
+    await page.evaluate(() => window.__game.scene.getScene('TitleScene').scene.start('MainScene', { mode: 'continue' }));
+    await page.waitForFunction(() => window.__game.scene.isActive('MainScene'), { timeout: 25000 });
+    await page.waitForTimeout(1500);
+    return page.evaluate((spot) => {
+      const ms = window.__game.scene.getScene('MainScene');
+      return { world: ms.activeWorld, classId: ms.classId, d: Math.hypot(ms.player.x - spot.x, ms.player.y - spot.y) };
+    }, staged);
+  })();
+  ok(
+    'pre-ruling save: a v12 Necromancer mid-WA loads exactly where it was (never relocated)',
+    preRuling.world === 'earth' && preRuling.classId === 'necromancer' && preRuling.d < 8,
+    JSON.stringify(preRuling),
+  );
+
+  // 2) CLASS HOME STARTS (Casey's ruling) + the fresh-start guard: every playable
+  //    class fresh-starts at its correct HOME (world + beside the mentor), the
+  //    home opener is AVAILABLE (manual — nothing auto-starts) and acceptable
+  //    immediately through the real mentor/giver UI path. The Druid keeps the
+  //    UNCHANGED WA start. Druid runs LAST: the WA-opening check below plays on
+  //    in ITS session.
+  const HOMES = {
+    blacksmith: { world: 'globe', zone: 'munich-anvil-hold', opener: 'mun-01-mentor', kind: 'region' },
+    wizard: { world: 'egypt', zone: 'cairo-nile-crown', opener: 'cai-01-mentor', kind: 'cairo' },
+    necromancer: { world: 'globe', zone: 'murmansk-bone-harbor', opener: 'mur-01-mentor', kind: 'region' },
+    druid: { world: 'earth', zone: null, opener: 'honest-days-work', kind: 'earth' },
+  };
   for (const cls of ['blacksmith', 'wizard', 'necromancer', 'druid']) {
     await newGame(cls);
-    const s = await page.evaluate(() => {
-      const ms = window.__game.scene.getScene('MainScene');
-      return { world: ms.activeWorld, active: ms.chain.activeQuest?.id ?? null };
-    });
-    ok(`fresh start (${cls}): Earth, no auto-started quest`, s.world === 'earth' && s.active === null, `world=${s.world} active=${s.active}`);
+    const home = HOMES[cls];
+    const s = await page.evaluate(
+      async ({ home }) => {
+        const ms = window.__game.scene.getScene('MainScene');
+        const wait = (t) => new Promise((r) => setTimeout(r, t));
+        ms.playerHealth.shield = 1e9; // home-city packs may engage during the check
+        const out = { world: ms.activeWorld, active: ms.chain.activeQuest?.id ?? null };
+        if (home.kind === 'region') {
+          const m = ms.regionMentors.find((x) => x.zoneId === home.zone);
+          out.mentorDist = m ? Math.hypot(m.pos.x - ms.player.x, m.pos.y - ms.player.y) : -1;
+          out.openerBefore = ms.chain.status(home.opener);
+          if (m) {
+            ms.player.sprite.body.reset(m.pos.x + 40, m.pos.y); // step up to the elder
+            await wait(500);
+            out.button = ms.mentorButton.isVisible;
+            ms.regionMentorTalk(); // the button's real handler (accept + complete)
+            await wait(300);
+            out.openerAfter = ms.chain.status(home.opener);
+          }
+        } else if (home.kind === 'cairo') {
+          out.mentorDist = Math.hypot(ms.cairoMentorPos.x - ms.player.x, ms.cairoMentorPos.y - ms.player.y);
+          out.openerBefore = ms.chain.status(home.opener);
+          ms.player.sprite.body.reset(ms.cairoMentorPos.x + 50, ms.cairoMentorPos.y);
+          await wait(500);
+          out.button = ms.cairoMentorButton.isVisible;
+          ms.cairoMentorTalk(); // the Keeper's real handler
+          await wait(300);
+          out.openerAfter = ms.chain.status(home.opener);
+        } else {
+          // 'earth' (the Druid): the UNCHANGED WA start — at the Enumclaw town
+          // spawn with the Act I opener's giver in sight, quest offered on talk.
+          out.spawnDist = Math.hypot(ms.town.spawn.x - ms.player.x, ms.town.spawn.y - ms.player.y);
+          const giver = ms.questGivers.find((g) => g.questIds.includes(home.opener));
+          const gp = giver ? giver.pos() : null;
+          out.mentorDist = gp ? Math.hypot(gp.x - ms.player.x, gp.y - ms.player.y) : -1;
+          out.openerBefore = ms.chain.status(home.opener);
+          if (giver) ms.openQuestGiverDialogue(giver); // the giver's real dialogue path
+        }
+        return out;
+      },
+      { home },
+    );
+    if (home.kind === 'earth') {
+      // Tap through the offer dialogue (taps advance/close; accept fires on close).
+      for (let i = 0; i < 10; i++) {
+        await page.waitForTimeout(280);
+        if (!(await page.evaluate(() => window.__game.scene.getScene('MainScene').dialogue.isOpen()))) break;
+        await page.mouse.click(214, 520);
+      }
+      s.openerAfter = await page.evaluate((id) => window.__game.scene.getScene('MainScene').chain.status(id), home.opener);
+      s.button = true; // the giver dialogue IS the earth path's interaction proof
+    }
+    const openerDone = home.kind === 'earth' ? s.openerAfter === 'active' : s.openerAfter === 'complete';
+    const atHome = home.kind === 'earth' ? s.spawnDist < 8 : true;
+    ok(
+      `home start (${cls}): lands at ${home.world} home beside the mentor; opener manual + immediately acceptable`,
+      s.world === home.world && s.active === null && atHome && s.mentorDist >= 0 && s.mentorDist < 400 && s.openerBefore === 'available' && s.button === true && openerDone,
+      JSON.stringify(s),
+    );
   }
 
   // HARNESS HELPERS (the precondition contract). __ready(): revive + heal +

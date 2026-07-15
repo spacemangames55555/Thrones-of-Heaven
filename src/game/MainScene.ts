@@ -43,7 +43,7 @@ import { ASIA_BUILT_ZONES, buildAsiaQuestDefs } from '../world/asia-built';
 import { FINAL_REGIONS_BUILT_ZONES, buildFinalRegionsQuestDefs } from '../world/final-regions-built';
 import { GroundLayer } from '../map/GroundLayer';
 import { CITY_DEFS, CITY_FAIYUM, type CityDef } from '../world/cities';
-import { MANIFEST_CLASS_FOR, KNOWN_CLASS_NAMES } from '../world/class-canon';
+import { MANIFEST_CLASS_FOR, KNOWN_CLASS_NAMES, homeZoneForClass } from '../world/class-canon';
 import { SparseWorldMap } from '../map/SparseWorldMap';
 import { WORLD_CALIBRATION, WORLD_SPAN_DEGREES } from '../world/world-calibration';
 import { createSparseWorld, stampZone, buildChunkMapData, CONTINENT_WORLD, type BuiltChunk } from '../world/world-builder';
@@ -1449,6 +1449,10 @@ export class MainScene extends Phaser.Scene {
     if (this.launchMode === 'continue') {
       const save = SaveSystem.read();
       if (save) this.applySave(save);
+    } else {
+      // CLASS-START (Casey's ruling): a brand-NEW character spawns in their class's
+      // home city. Continue-saves above restore their exact saved world/position.
+      this.applyClassHomeStart();
     }
     // No base kit: decide the starting loadout now that any save is restored — a new
     // character (or an old save with no damaging active) must pick a first skill before
@@ -8132,6 +8136,29 @@ export class MainScene extends Phaser.Scene {
     this.enterHeavenButton.setVisible(false);
     this.returnEarthButton.setVisible(false);
     this.cityGateButton.setVisible(false);
+  }
+
+  /**
+   * CLASS-START (Casey's ruling): every NEW character spawns in their class's home
+   * city, resolved from DATA so all 14 classes inherit it automatically as they ship:
+   *   classId → canon manifest name → the manifest zone whose homeClass matches →
+   *   that zone's world (PREBUILT_ZONE_WORLD ?? its continent's region world) →
+   *   a walkable spot BESIDE that zone's mentor (Cairo: the Keeper).
+   * Earth-homed classes (the Druid: Seattle → North America → 'earth') keep the
+   * SHIPPED WA start untouched, and the home openers stay MANUAL — the spawn just
+   * puts you next to the mentor. Runs through applyWorldSwap so residency pausing,
+   * the ground layer and chunk activation behave exactly like normal travel. NEW
+   * characters only — 'continue' restores the save's world/position instead.
+   */
+  private applyClassHomeStart(): void {
+    const zone = homeZoneForClass(this.classId);
+    if (!zone) return; // no canon home in the manifest → the default start
+    const worldId = (PREBUILT_ZONE_WORLD[zone.id] ?? CONTINENT_WORLD[zone.continent]) as WorldId;
+    if (!worldId || worldId === WORLD_EARTH || !this.worlds[worldId]) return; // Earth homes = the shipped WA start, unchanged
+    const mentor = worldId === WORLD_EGYPT ? this.cairoMentorPos : this.regionMentors.find((m) => m.zoneId === zone.id)?.pos;
+    const base = mentor ?? this.regionZoneArrivals[zone.id] ?? this.worlds[worldId].defaultArrival;
+    const dest = this.worlds[worldId].map.nearestWalkableWorld(base.x, base.y + 70); // beside the mentor, not on top
+    this.applyWorldSwap(worldId, dest);
   }
 
   /** Disable every currently-live Earth enemy body; remember them for resume. */

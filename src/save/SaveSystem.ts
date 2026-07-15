@@ -38,6 +38,10 @@ import {
  *  • v11→v12 (GLOBE CONSOLIDATION) removed the 'europe'/'africa' worlds in favor
  *    of the one whole-planet 'globe' world: saves in/remembering those worlds are
  *    re-pointed/dropped (see the step) — the player lands at the globe arrival.
+ *  • v12→v13 (CLASS HOME STARTS) changed where a brand-NEW character spawns (their
+ *    class's home city). NO data transform: a save's world/position is already
+ *    authoritative on load, so pre-ruling characters keep playing exactly where
+ *    they were — the bump only marks the behavior epoch.
  * In every additive case a pre-migration player is already past that content, so the
  * new quests are marked COMPLETE (prerequisites stay satisfied → no soft-lock), and
  * Uriel is flagged as already arrived so his scene never replays. v6 also keeps the
