@@ -672,6 +672,24 @@ export class MainScene extends Phaser.Scene {
   /** SPIRIT SPLIT: while set, the doll AUTO-MIRRORS a pulse on a cadence with no
    *  player strike (the decoy half is a normal summon walking alongside). */
   spiritSplit: { until: number; nextAt: number; intervalMs: number; pulseDamage: number } | null = null;
+  // --- Samurai framework primitives (composable/bespoke; class-agnostic) ---
+  /** PARRY window: while now < until, the next incoming MELEE hit is fully
+   *  NEGATED and the attacker takes the riposte (one hit per window; an unused
+   *  window lapses silently). Ranged hits always pass through. Public for the gate. */
+  parry: { until: number; riposteDamage: number } | null = null;
+  /** COUNTERSTRIKE upgrade (armed only while owned): extra riposte damage +
+   *  a Resolve/energy refund on each successful parry. */
+  parryRiposteBonus = 0;
+  parryRefundEnergy = 0;
+  /** PERFECT FORM: while now < until, EVERY incoming melee hit is auto-parried
+   *  (riposting for perfectFormRiposte) while the player keeps acting freely. */
+  perfectFormUntil = 0;
+  perfectFormRiposte = 0;
+  /** Lifetime successful parries (runtime-gate observability). */
+  parryCount = 0;
+  /** IAIJUTSU (count-1 consume-buff): the NEXT strike inside the window deals
+   *  damage × mult and briefly stuns what it hits, then the buff consumes. */
+  iaijutsu: { until: number; mult: number; stunMs: number } | null = null;
   /**
    * CHANNELED-BEAM state (the channel primitive). Transient: a single active channel locks
    * one enemy, ticks damage, optionally trickles energy, and is cancelled by movement / any
@@ -2075,6 +2093,9 @@ export class MainScene extends Phaser.Scene {
     this.voodoo = null; // WD bind state never survives a reset (summons are cleared too)
     this.allyBond = null;
     this.spiritSplit = null;
+    this.parry = null; // Samurai timing state never survives a reset
+    this.perfectFormUntil = 0;
+    this.iaijutsu = null;
     this.breakPlayerStealth();
     this.clearDots();
     this.summons.clear();
@@ -2252,6 +2273,16 @@ export class MainScene extends Phaser.Scene {
       this.runActiveSkill(e.action);
     } else if (e.kind === 'buff' || e.kind === 'transformation') {
       const aura = e.kind === 'transformation' ? { auraDamage: e.auraDamage, auraRadius: e.auraRadius } : {};
+      // STANCE EXCLUSIVITY (Samurai framework): entering a toggled form EXITS any
+      // other active toggle sharing its stanceGroup — one stance at a time.
+      if (e.kind === 'transformation' && e.toggle && e.stanceGroup) {
+        const defs = classSkills(this.skills.activeClass).skills;
+        this.skillTimed = this.skillTimed.filter((t) => {
+          if (t.id === id) return true;
+          const other = defs.find((d) => d.id === t.id)?.effect;
+          return !(other && other.kind === 'transformation' && other.toggle && other.stanceGroup === e.stanceGroup);
+        });
+      }
       // TOGGLE forms run WITHOUT a timer (Infinity never expires; the exit cast above ends them).
       const duration = e.kind === 'transformation' && e.toggle ? Number.POSITIVE_INFINITY : e.durationMs;
       this.startTimedSkill(id, duration, e.stats, e.tint, aura);
@@ -2631,7 +2662,17 @@ export class MainScene extends Phaser.Scene {
         if (!s.noRing && s.tint !== undefined) this.spawnSkillRing(x, y, radius, s.tint);
         // Soul-Siphon heals count enemies BEFORE the hit (the strike may kill).
         const preHits = s.healPerHit !== undefined ? Math.min(s.maxHeals ?? Infinity, this.combatEnemiesInRange(x, y, radius).length) : 0;
-        const dmg = this.composedDamage(s);
+        let dmg = this.composedDamage(s);
+        // IAIJUTSU (Samurai): the sheathed count-1 buff — the NEXT strike inside
+        // its window is multiplied + briefly stuns, then the buff consumes
+        // (a lapsed buff clears without effect on the next attempt).
+        if (dmg > 0 && this.iaijutsu) {
+          if (this.time.now < this.iaijutsu.until) {
+            dmg *= this.iaijutsu.mult;
+            this.stunEnemiesInRange(x, y, radius, this.iaijutsu.stunMs);
+          }
+          this.iaijutsu = null;
+        }
         if (dmg > 0) this.aoeHitAll(x, y, radius, dmg);
         // VOODOO DOLL (Witch Doctor): a melee strike landing on the doll mirrors
         // a fraction of its damage to the bound target at any range.
@@ -3659,6 +3700,74 @@ export class MainScene extends Phaser.Scene {
     this.spawnSpiritDecoy(durationMs);
     this.spiritSplit = { until: this.time.now + durationMs, nextAt: this.time.now + intervalMs, intervalMs, pulseDamage };
     this.showBanner('SPIRIT AND BODY DIVIDE', 1400);
+  }
+
+  // --- Samurai framework: parry/riposte + iaijutsu + dash-and-fire --------------
+
+  /** PARRY (the kit's centerpiece; reusable): open a brief window — the next
+   *  incoming MELEE hit is fully negated and the attacker eats `riposteDamage`
+   *  (plus the Counterstrike bonus while owned). One hit per window; unused
+   *  windows lapse silently; ranged hits never enter the gate. */
+  openParryWindow(windowMs: number, riposteDamage: number): void {
+    this.parry = { until: this.time.now + windowMs, riposteDamage };
+    this.spawnSkillRing(this.player.x, this.player.y, 40, 0xd8e8ff);
+  }
+
+  /** PERFECT FORM (ultimate upgrade): for `durationMs` EVERY incoming melee hit
+   *  is auto-parried (riposting for `riposteDamage`) while the player keeps
+   *  acting freely — defense through timing, never armor. */
+  startPerfectForm(durationMs: number, riposteDamage: number): void {
+    this.perfectFormUntil = this.time.now + durationMs;
+    this.perfectFormRiposte = riposteDamage;
+    this.showBanner('PERFECT FORM', 1400);
+  }
+
+  /** THE MELEE PARRY GATE: every enemy MELEE damage path calls this FIRST and
+   *  skips its hit when it returns true (negated + riposte landed). Ranged
+   *  paths (bolts, beams, DoT ticks) never call it. */
+  private parryGate(ex: number, ey: number): boolean {
+    const now = this.time.now;
+    const perfect = now < this.perfectFormUntil;
+    const windowOpen = this.parry !== null && now < this.parry.until;
+    if (!perfect && !windowOpen) {
+      if (this.parry) this.parry = null; // an expired window lapses silently
+      return false;
+    }
+    const riposte = (perfect ? this.perfectFormRiposte : this.parry!.riposteDamage) + this.parryRiposteBonus;
+    if (!perfect) this.parry = null; // one hit per window
+    if (this.parryRefundEnergy > 0) this.energy.heal(this.parryRefundEnergy); // COUNTERSTRIKE refund
+    const striker = this.nearestEnemy(ex, ey, 100);
+    if (striker) {
+      const dealt = striker.takeHit(riposte);
+      if (dealt > 0) {
+        this.dmgDealtAccum += dealt;
+        this.spawnDamageNumber(striker.x, striker.y - 24, dealt, '#ffe9a8');
+      }
+    }
+    this.spawnSkillRing(this.player.x, this.player.y, 46, 0xffe9a8);
+    this.floatingText.show(this.player.x, this.player.y - 34, 'PARRY', '#ffe9a8', { fontSize: 14, riseBy: 16, durationMs: 700, depth: 14 });
+    this.parryCount++;
+    this.lastCombatTime = now;
+    return true;
+  }
+
+  /** IAIJUTSU (count-1 consume-buff on the Amplification pattern): arm the sheathe —
+   *  the NEXT strike inside the window is multiplied + briefly stuns, then consumes. */
+  armIaijutsu(windowMs: number, mult: number, stunMs: number): void {
+    this.iaijutsu = { until: this.time.now + windowMs, mult, stunMs };
+    this.spawnSkillRing(this.player.x, this.player.y, 44, 0xffe9a8);
+    this.showBanner('Sheathed \u2014 one breath', 1000);
+  }
+
+  /** DASH-AND-FIRE: a charge that releases a composed BOLT mid-movement (fired
+   *  `fireDelayMs` into the dash, in the facing direction) — the Sonic Surge
+   *  dash-composite pattern with a projectile instead of a trail. */
+  dashAndFire(dash: { distance: number; damage: number; knockdownMs: number }, bolt: ComposedStep, fireDelayMs = 140): void {
+    this.startCharge(dash);
+    this.time.delayedCall(fireDelayMs, () => {
+      if (this.playerDead) return;
+      this.runComposedSteps([bolt]);
+    });
   }
 
   // --- DoT (damage-over-time) + contagion primitive (Toxic Bolt / Plague) -------
@@ -4711,6 +4820,7 @@ export class MainScene extends Phaser.Scene {
 
   private onSasquatchStrike(): void {
     if (this.playerDead) return;
+    if (this.parryGate(this.sasquatch.x, this.sasquatch.y)) return; // Samurai parry: melee negated + riposte
     if (this.redirectContactToSummon(this.sasquatch.x, this.sasquatch.y, SASQUATCH_DAMAGE)) return; // golem soaks it
     const dealt = this.playerHealth.damage(SASQUATCH_DAMAGE);
     this.player.flash();
@@ -4763,6 +4873,9 @@ export class MainScene extends Phaser.Scene {
     this.voodoo = null; // WD bind state never survives a reset (summons are cleared too)
     this.allyBond = null;
     this.spiritSplit = null;
+    this.parry = null; // Samurai timing state never survives a reset
+    this.perfectFormUntil = 0;
+    this.iaijutsu = null;
     this.breakPlayerStealth();
     this.clearDots();
     this.despawnRegionChampion(); // death resets a champion encounter cleanly
@@ -5018,6 +5131,7 @@ export class MainScene extends Phaser.Scene {
 
   private onSwarmerContact(s: SpiritSwarmer): void {
     if (this.playerDead) return;
+    if (this.parryGate(s.x, s.y)) return; // Samurai parry: melee negated + riposte
     if (this.redirectContactToSummon(s.x, s.y, SWARMER_CONTACT_DAMAGE)) return; // golem soaks it
     const dealt = this.playerHealth.damage(SWARMER_CONTACT_DAMAGE);
     this.player.flash();
@@ -5272,6 +5386,7 @@ export class MainScene extends Phaser.Scene {
   /** A Cherub's melee strike landed on the player. */
   private onCherubMelee(damage: number): void {
     if (this.playerDead) return;
+    if (this.parryGate(this.player.x, this.player.y)) return; // Samurai parry: melee negated + riposte
     const dealt = this.playerHealth.damage(damage);
     this.player.flash();
     this.spawnDamageNumber(this.player.x, this.player.y - 26, dealt, '#fff1b8');
@@ -6239,6 +6354,9 @@ export class MainScene extends Phaser.Scene {
       this.voodoo = null;
       this.allyBond = null;
       this.spiritSplit = null;
+      this.parry = null;
+      this.perfectFormUntil = 0;
+      this.iaijutsu = null;
       this.breakPlayerStealth();
       this.clearDots(); // drop any poison DoTs
       this.summons.clear(); // summons are transient — never carried across a load
@@ -6520,6 +6638,7 @@ export class MainScene extends Phaser.Scene {
    *  Act I wolves/sea lion/raiders hit for their own tuned amount. */
   private onTownsfolkHitPlayer(t?: Townsfolk): void {
     if (this.playerDead) return;
+    if (this.parryGate(t?.x ?? this.player.x, t?.y ?? this.player.y)) return; // Samurai parry: melee negated + riposte
     const dmg = (t && TOWNSFOLK_VARIANTS[t.variant].playerDamage) || TOWNSFOLK_PLAYER_DAMAGE;
     const dealt = this.playerHealth.damage(dmg);
     this.player.flash();
@@ -7713,6 +7832,7 @@ export class MainScene extends Phaser.Scene {
       if (!t.isAlive || this.playerDead) return;
       this.spawnSkillRing(cx, cy, BRUTE_STRIKE_RADIUS, 0x9a4ae0);
       if (Phaser.Math.Distance.Between(this.player.x, this.player.y, cx, cy) <= BRUTE_STRIKE_RADIUS + 12) {
+        if (this.parryGate(cx, cy)) return; // Samurai parry: melee negated + riposte
         const dealt = this.playerHealth.damage(BRUTE_STRIKE_DAMAGE);
         this.player.flash();
         this.spawnDamageNumber(this.player.x, this.player.y - 26, dealt, '#c08aff');
@@ -8872,6 +8992,9 @@ export class MainScene extends Phaser.Scene {
     this.voodoo = null; // WD bind state never survives a reset (summons are cleared too)
     this.allyBond = null;
     this.spiritSplit = null;
+    this.parry = null; // Samurai timing state never survives a reset
+    this.perfectFormUntil = 0;
+    this.iaijutsu = null;
     this.breakPlayerStealth();
     this.clearDots();
 
@@ -10237,6 +10360,9 @@ export class MainScene extends Phaser.Scene {
     this.voodoo = null; // WD bind state never survives a reset (summons are cleared too)
     this.allyBond = null;
     this.spiritSplit = null;
+    this.parry = null; // Samurai timing state never survives a reset
+    this.perfectFormUntil = 0;
+    this.iaijutsu = null;
     this.breakPlayerStealth();
     this.clearDots();
     this.summons.clear();

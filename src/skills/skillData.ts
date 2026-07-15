@@ -445,6 +445,9 @@ export type SkillEffect =
        *  (the exit cast is never cooldown-gated; the entry cooldown keeps running,
        *  so no flicker re-entry). `durationMs` is ignored while toggled. */
       toggle?: boolean;
+      /** STANCE EXCLUSIVITY (Samurai framework): toggled forms sharing a group are
+       *  mutually exclusive — entering one exits any other in the same group. */
+      stanceGroup?: string;
     }
   /**
    * CHANNELED BEAM (tap-to-channel, auto-lock NEAREST enemy, interrupt-on-act). On a single
