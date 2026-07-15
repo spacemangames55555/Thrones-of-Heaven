@@ -59,6 +59,31 @@ try {
     Object.defineProperty(document, 'hidden', { get: () => false });
     Object.defineProperty(document, 'visibilityState', { get: () => 'visible' });
   });
+  // HARNESS HELPERS registered on EVERY navigation (init script), so checks that
+  // run mid-loop (fresh sessions) can use them too. The post-loop evaluate below
+  // re-defines the same helpers — identical behavior, kept for readability.
+  await page.addInitScript(() => {
+    window.__ready = () => {
+      const ms = window.__game.scene.getScene('MainScene');
+      if (ms.playerDead) ms.respawnPlayer();
+      ms.playerHealth.full();
+      ms.playerHealth.shield = 1e9;
+      return ms;
+    };
+    window.__quietSpot = () => {
+      const ms = window.__ready();
+      for (let i = 1; i <= 40; i++) {
+        const x = ms.player.x + (i % 2 ? 1 : -1) * i * 380;
+        const y = ms.player.y + ((i % 3) - 1) * 320;
+        const w = ms.activeMap().nearestWalkableWorld(x, y);
+        if (w && ms.combatEnemiesInRange(w.x, w.y, 800).length === 0) {
+          ms.player.sprite.body.reset(w.x, w.y);
+          return true;
+        }
+      }
+      return false;
+    };
+  });
   page.on('pageerror', (e) => pageErrors.push(e.message));
 
   async function newGame(classId) {
@@ -158,9 +183,10 @@ try {
     blacksmith: { world: 'globe', zone: 'munich-anvil-hold', opener: 'mun-01-mentor', kind: 'region' },
     wizard: { world: 'egypt', zone: 'cairo-nile-crown', opener: 'cai-01-mentor', kind: 'cairo' },
     necromancer: { world: 'globe', zone: 'murmansk-bone-harbor', opener: 'mur-01-mentor', kind: 'region' },
+    mage: { world: 'globe', zone: 'moscow-crystal-court', opener: 'mos-01-mentor', kind: 'region' },
     druid: { world: 'earth', zone: null, opener: 'honest-days-work', kind: 'earth' },
   };
-  for (const cls of ['blacksmith', 'wizard', 'necromancer', 'druid']) {
+  for (const cls of ['blacksmith', 'wizard', 'necromancer', 'mage', 'druid']) {
     await newGame(cls);
     const home = HOMES[cls];
     const s = await page.evaluate(
@@ -221,6 +247,76 @@ try {
       s.world === home.world && s.active === null && atHome && s.mentorDist >= 0 && s.mentorDist < 400 && s.openerBefore === 'available' && s.button === true && openerDone,
       JSON.stringify(s),
     );
+
+    // 2m. EVERY MAGE COMMIT-1 EXTENSION THROUGH A REAL MAGE SKILL, in the live
+    // Mage session: Wormhole Rift (teleport + origin portal), Crystal Strike →
+    // Crystal Shatter (stacks banked then detonated), Entangled Chains (binding),
+    // and Arcane Missiles (seeking bolts hit a foe 90° off the firing line).
+    if (cls === 'mage') {
+      const mageKit = await page.evaluate(async () => {
+        const ms = window.__ready();
+        const wait = (t) => new Promise((r) => setTimeout(r, t));
+        if (!window.__quietSpot()) return { setup: 'no quiet spot' };
+        const spawnAt = (dx, dy) => {
+          const w = ms.activeMap().nearestWalkableWorld(ms.player.x + dx, ms.player.y + dy);
+          return ms.spawnAngel('darkcaster', w.x, w.y);
+        };
+        // Wormhole Rift: move + a portal hazard left at the origin.
+        const from = { x: ms.player.x, y: ms.player.y };
+        ms.player.facingX = 1;
+        ms.player.facingY = 0;
+        ms.runActiveSkill('mage_wormhole');
+        const wormMoved = Math.hypot(ms.player.x - from.x, ms.player.y - from.y);
+        const h = ms.spellHazards[ms.spellHazards.length - 1];
+        const portal = h ? Math.hypot(h.x - from.x, h.y - from.y) < 5 : false;
+        // Crystal Strike banks a stack; Crystal Shatter detonates it.
+        const a = spawnAt(60, 0);
+        await wait(200);
+        ms.player.facingX = a.x >= ms.player.x ? 1 : -1;
+        ms.player.facingY = 0;
+        ms.runActiveSkill('mage_crystal_strike');
+        await wait(100);
+        const stacks = ms.crystallize.get(a) ?? 0;
+        const hpA = a.health.current;
+        ms.runActiveSkill('mage_shatter');
+        await wait(100);
+        const shattered = hpA - a.health.current > 0 && !ms.crystallize.has(a);
+        // Entangled Chains binds the cluster.
+        const b = spawnAt(140, 60);
+        const c = spawnAt(140, -60);
+        await wait(200);
+        ms.runActiveSkill('mage_entangle');
+        const bound = ms.entangled ? ms.entangled.members.length : 0;
+        ms.clearEntangle();
+        a.destroy();
+        b.destroy();
+        c.destroy();
+        // Arcane Missiles: a lone foe due NORTH, fired due EAST — homing must connect.
+        const wN = ms.activeMap().nearestWalkableWorld(ms.player.x, ms.player.y - 220);
+        const foe = ms.spawnAngel('darkcaster', wN.x, wN.y);
+        await wait(200);
+        ms.player.facingX = 1;
+        ms.player.facingY = 0;
+        const hp0 = foe.health.current;
+        ms.runActiveSkill('mage_missiles');
+        const t0 = Date.now();
+        let drop = 0;
+        while (Date.now() - t0 < 2500) {
+          await wait(120);
+          drop = hp0 - foe.health.current;
+          if (drop > 0) break;
+        }
+        foe.destroy();
+        ms.crystallize.clear();
+        ms.playerHealth.full();
+        return { setup: 'ok', wormMoved, portal, stacks, shattered, bound, drop };
+      });
+      ok(
+        'mage: every framework extension fires through a real Mage skill',
+        mageKit.setup === 'ok' && mageKit.wormMoved > 120 && mageKit.portal && mageKit.stacks === 1 && mageKit.shattered && mageKit.bound >= 2 && mageKit.drop > 0,
+        JSON.stringify(mageKit),
+      );
+    }
   }
 
   // HARNESS HELPERS (the precondition contract). __ready(): revive + heal +
@@ -1246,14 +1342,17 @@ try {
     ms.summons.clearBuffs();
     ms.clearFriendlyZones();
     ms.breakPlayerStealth();
+    ms.clearEntangle();
+    ms.crystallize.clear();
     ms.clearDots();
     ms.playerHealth.full();
+    ms.energy.full();
     await wait(500);
     return out;
   });
   ok(
     'skill framework: every skill in every tree executes; composed actions match their declared primitives',
-    skillSweep.errors.length === 0 && skillSweep.mismatches.length === 0 && skillSweep.composed === 56 && skillSweep.total >= 120,
+    skillSweep.errors.length === 0 && skillSweep.mismatches.length === 0 && skillSweep.composed === 69 && skillSweep.total >= 150,
     `total=${skillSweep.total} composed=${skillSweep.composed} bespokeActive=${skillSweep.bespokeActive} timed/other=${skillSweep.other} passive=${skillSweep.passive}` +
       (skillSweep.errors.length ? ` ERRORS=${JSON.stringify(skillSweep.errors.slice(0, 3))}` : '') +
       (skillSweep.mismatches.length ? ` MISMATCH=${JSON.stringify(skillSweep.mismatches.slice(0, 3))}` : ''),
@@ -1469,6 +1568,142 @@ try {
     variantRun.setup === 'ok' && variantRun.pairAlive && variantRun.apart > 20 && variantRun.untargetable && variantRun.chipped > 0 && variantRun.foeIgnoresChip && variantRun.expired,
     JSON.stringify(variantRun),
   );
+
+  // 3x. MAGE FRAMEWORK EXTENSIONS (permanent): entangled chains, crystallize +
+  // shatter, the wormhole composite, and seeking bolts — each exercised through
+  // its real runtime seam from an isolated spot (loud setup failures).
+
+  // 3x-1. ENTANGLED CHAINS: bind three foes; damage to one is SHARED to the others,
+  // a stun on one stuns all; unbinding stops the sharing.
+  const entangleRun = await page.evaluate(async () => {
+    const ms = window.__ready();
+    const wait = (t) => new Promise((r) => setTimeout(r, t));
+    if (!window.__quietSpot()) return { setup: 'no quiet spot' };
+    const spawnAt = (dx, dy) => {
+      const w = ms.activeMap().nearestWalkableWorld(ms.player.x + dx, ms.player.y + dy);
+      return ms.spawnAngel('darkcaster', w.x, w.y);
+    };
+    const a = spawnAt(120, 0);
+    const b = spawnAt(200, 80);
+    const c = spawnAt(200, -80);
+    await wait(200);
+    const bound = ms.entangleNearby(ms.player.x, ms.player.y, 320, 3, 0.5, 6000);
+    const hp0 = [a, b, c].map((e) => e.health.current);
+    a.takeHit(40); // direct hit on ONE bound member
+    await wait(100);
+    const drops = [a, b, c].map((e, i) => hp0[i] - e.health.current);
+    const shared = drops[0] > 0 && drops[1] > 0 && drops[2] > 0 && drops[1] < drops[0] && drops[2] < drops[0];
+    // Control share: stun a small ring around A only → B must be stunned too.
+    ms.stunEnemiesInRange(a.x, a.y, 40, 800);
+    const stunShared = ms.stunnedEnemies.has(b) && ms.stunnedEnemies.has(c);
+    // Unbind: damage no longer shares.
+    ms.clearEntangle();
+    const b1 = b.health.current;
+    a.takeHit(30);
+    await wait(100);
+    const afterClear = b1 - b.health.current;
+    for (const e of [a, b, c]) e.destroy();
+    return { setup: 'ok', bound, drops, shared, stunShared, afterClear };
+  });
+  ok(
+    'mage ext — entangled chains: damage + stuns shared across the binding; unbind stops it',
+    entangleRun.setup === 'ok' && entangleRun.bound === 3 && entangleRun.shared && entangleRun.stunShared && entangleRun.afterClear === 0,
+    JSON.stringify(entangleRun),
+  );
+
+  // 3x-2. CRYSTALLIZE + SHATTER: the strike rider applies stacks (capped), Shatter
+  // consumes EXACTLY the stacks in radius (per-stack damage; out-of-radius stacks stay).
+  const crysRun = await page.evaluate(async () => {
+    const ms = window.__ready();
+    const wait = (t) => new Promise((r) => setTimeout(r, t));
+    if (!window.__quietSpot()) return { setup: 'no quiet spot' };
+    const wA = ms.activeMap().nearestWalkableWorld(ms.player.x + 130, ms.player.y);
+    const a = ms.spawnAngel('darkcaster', wA.x, wA.y);
+    const wB = ms.activeMap().nearestWalkableWorld(ms.player.x + 640, ms.player.y);
+    const b = ms.spawnAngel('darkcaster', wB.x, wB.y);
+    await wait(200);
+    // The RIDER: a strike around the player crystallizes what it hits (B is out of reach).
+    ms.runComposedSteps([{ p: 'strike', at: 'self', radius: 200, damageRaw: 1, tint: 0xbfe0ff, crystallize: 2 }]);
+    const riderStacks = ms.crystallize.get(a) ?? 0;
+    ms.addCrystallize(a, 10, 6); // cap check: 2 + 10 → clamped to 6
+    ms.addCrystallize(b, 3, 6); // stacks OUTSIDE the coming shatter radius
+    const capped = ms.crystallize.get(a) ?? 0;
+    const hpA = a.health.current;
+    const res = ms.shatterCrystallize(ms.player.x, ms.player.y, 300, 10);
+    await wait(100);
+    const dropA = hpA - a.health.current;
+    const out = {
+      setup: 'ok', riderStacks, capped, res,
+      dropA,
+      aCleared: !ms.crystallize.has(a),
+      bKept: ms.crystallize.get(b) === 3,
+    };
+    a.destroy();
+    b.destroy();
+    ms.crystallize.clear();
+    return out;
+  });
+  ok(
+    'mage ext — crystallize/shatter: rider applies, cap holds, shatter consumes exactly the stacks in radius',
+    crysRun.setup === 'ok' && crysRun.riderStacks === 2 && crysRun.capped === 6 && crysRun.res.hit === 1 && crysRun.res.stacks === 6 && crysRun.dropA >= 40 && crysRun.aCleared && crysRun.bKept,
+    JSON.stringify(crysRun),
+  );
+
+  // 3x-3. WORMHOLE COMPOSITE: [hazard at self, teleport] moves the player and leaves
+  // a damaging portal at the ORIGIN that ticks on an enemy standing in it.
+  const wormRun = await page.evaluate(async () => {
+    const ms = window.__ready();
+    const wait = (t) => new Promise((r) => setTimeout(r, t));
+    if (!window.__quietSpot()) return { setup: 'no quiet spot' };
+    const from = { x: ms.player.x, y: ms.player.y };
+    ms.player.facingX = 1;
+    ms.player.facingY = 0;
+    ms.runComposedSteps([
+      { p: 'hazard', at: 'self', radius: 90, tickDamage: 8, tickMs: 250, durationMs: 2500, fill: 0x8a5cff, stroke: 0xc09aff },
+      { p: 'teleport', distance: 220 },
+    ]);
+    const moved = Math.hypot(ms.player.x - from.x, ms.player.y - from.y);
+    const h = ms.spellHazards[ms.spellHazards.length - 1];
+    const portalAtOrigin = h ? Math.hypot(h.x - from.x, h.y - from.y) < 5 : false;
+    const w = ms.activeMap().nearestWalkableWorld(from.x, from.y);
+    const foe = ms.spawnAngel('darkcaster', w.x, w.y);
+    await wait(150);
+    const hp0 = foe.health.current;
+    await wait(800); // several portal ticks
+    const ticked = hp0 - foe.health.current;
+    foe.destroy();
+    return { setup: 'ok', moved, portalAtOrigin, ticked };
+  });
+  ok(
+    'mage ext — wormhole: teleports the player, the origin portal damages what stands in it',
+    wormRun.setup === 'ok' && wormRun.moved > 120 && wormRun.portalAtOrigin && wormRun.ticked > 0,
+    JSON.stringify(wormRun),
+  );
+
+  // 3x-4. SEEKING BOLT: fired 90° AWAY from the only enemy, the bolt curves in and
+  // still hits it (a straight bolt at that angle could never connect).
+  const seekRun = await page.evaluate(async () => {
+    const ms = window.__ready();
+    const wait = (t) => new Promise((r) => setTimeout(r, t));
+    if (!window.__quietSpot()) return { setup: 'no quiet spot' };
+    const w = ms.activeMap().nearestWalkableWorld(ms.player.x, ms.player.y - 220);
+    const foe = ms.spawnAngel('darkcaster', w.x, w.y); // due NORTH of the player
+    await wait(200);
+    ms.player.facingX = 1; // fire due EAST — 90° off the target
+    ms.player.facingY = 0;
+    const hp0 = foe.health.current;
+    ms.runComposedSteps([{ p: 'bolt', damage: 16, speed: 420, range: 600, radius: 9, tint: 0xc09aff, seek: true }]);
+    const t0 = Date.now();
+    let drop = 0;
+    while (Date.now() - t0 < 2500) {
+      await wait(120);
+      drop = hp0 - foe.health.current;
+      if (drop > 0) break;
+    }
+    foe.destroy();
+    return { setup: 'ok', drop };
+  });
+  ok('mage ext — seeking bolt: fired 90° off-target, it curves in and hits', seekRun.setup === 'ok' && seekRun.drop > 0, JSON.stringify(seekRun));
 
   // 4) THE GATE: zero page errors across everything above.
   ok('zero page errors during boot + travel', pageErrors.length === 0, pageErrors.slice(0, 3).join(' | '));

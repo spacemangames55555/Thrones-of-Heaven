@@ -19,6 +19,7 @@ export const MANIFEST_CLASS_FOR: Record<string, string> = {
   necromancer: 'Necromancer',
   wizard: 'Wizard', // Egypt's class — NOT Moscow's 'Mage' (see the canon rule)
   druid: 'Druid', // Seattle's class (built as a playable class today)
+  mage: 'Mage', // Moscow's class — NOT Egypt's 'Wizard' (see the canon rule)
   witchdoctor: 'Witch Doctor', // Kinshasa (Africa) — class kit not built yet
   monk: 'Monk', // Lhasa (Asia) — class kit not built yet
   samurai: 'Samurai', // Kyoto (Asia) — class kit not built yet

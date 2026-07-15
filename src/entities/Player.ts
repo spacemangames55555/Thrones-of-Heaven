@@ -5,6 +5,7 @@ const TEXTURE_KEY = 'player-figure'; // Blacksmith (gold soul/herald) avatar
 const WIZARD_TEXTURE_KEY = 'wizard-figure'; // Wizard (Egyptian sorcerer) avatar
 const NECRO_TEXTURE_KEY = 'necro-figure'; // Necromancer (Slavic death-sorcerer) avatar
 const DRUID_TEXTURE_KEY = 'druid-figure'; // Druid (Seattle wild-warden) avatar
+const MAGE_TEXTURE_KEY = 'mage-figure'; // Mage (Moscow reality-surgeon) avatar — NOT the Wizard (canon)
 const WIDTH = 32; // ~1 tile wide
 const HEIGHT = 48; // ~1.5 tiles tall — fixes the "character = one giant block" look
 
@@ -13,6 +14,7 @@ function textureForClass(classId: string): string {
   if (classId === 'wizard') return WIZARD_TEXTURE_KEY;
   if (classId === 'necromancer') return NECRO_TEXTURE_KEY;
   if (classId === 'druid') return DRUID_TEXTURE_KEY;
+  if (classId === 'mage') return MAGE_TEXTURE_KEY;
   return TEXTURE_KEY;
 }
 
@@ -35,6 +37,7 @@ export class Player {
     Player.ensureWizardTexture(scene);
     Player.ensureNecroTexture(scene);
     Player.ensureDruidTexture(scene);
+    Player.ensureMageTexture(scene);
 
     this.sprite = scene.physics.add.sprite(x, y, textureForClass(classId));
     this.sprite.setCollideWorldBounds(true);
@@ -235,6 +238,43 @@ export class Player {
     g.fillStyle(0x74c86a, 1);
     g.fillCircle(w - 6, 11, 3);
     g.generateTexture(DRUID_TEXTURE_KEY, w, h);
+    g.destroy();
+  }
+
+  /** The Mage avatar — Moscow's reality-surgeon (CANON: distinct from the Wizard): a
+   *  deep-violet high-collared coat with a pale lattice trim, a silver circlet, and a
+   *  crystal blade at the right hand. CODE-DRAWN PLACEHOLDER (a real sprite PNG drops
+   *  in later via the sprite override under this same key). Same footprint. */
+  private static ensureMageTexture(scene: Phaser.Scene): void {
+    if (scene.textures.exists(MAGE_TEXTURE_KEY)) return;
+    const w = WIDTH;
+    const h = HEIGHT;
+    const g = scene.make.graphics({ x: 0, y: 0 }, false);
+    // Dark outline + deep-violet coat body (a vertical caster capsule).
+    g.fillStyle(0x0c0818, 1);
+    g.fillRoundedRect(4, 8, w - 8, h - 10, 9);
+    g.fillStyle(0x3a2468, 1); // deep-violet coat
+    g.fillRoundedRect(6, 10, w - 12, h - 14, 7);
+    // Pale crystalline lattice trim: center seam + a high collar band.
+    g.fillStyle(0xbfe0ff, 1);
+    g.fillRect(w / 2 - 1, 18, 2, h - 24);
+    g.fillRoundedRect(8, 17, w - 16, 3, 1.5); // collar band
+    g.fillStyle(0x8a5cff, 1); // arcane clasp
+    g.fillCircle(w / 2, 22, 2.4);
+    // Head + a thin silver circlet.
+    g.fillStyle(0xe0d2c2, 1); // fair skin
+    g.fillCircle(w / 2, 13, 5.5);
+    g.fillStyle(0xd8e8f4, 1); // circlet
+    g.fillRect(w / 2 - 5, 9, 10, 1.6);
+    g.fillStyle(0x0c0818, 1); // eyes
+    g.fillCircle(w / 2 - 2, 13, 1.1);
+    g.fillCircle(w / 2 + 2, 13, 1.1);
+    // The crystal blade at the right hand: a pale shard with a violet glint.
+    g.fillStyle(0xbfe0ff, 1);
+    g.fillTriangle(w - 8, 14, w - 3, 14, w - 5.5, h - 12);
+    g.fillStyle(0x8a5cff, 0.9);
+    g.fillCircle(w - 5.5, 15, 2);
+    g.generateTexture(MAGE_TEXTURE_KEY, w, h);
     g.destroy();
   }
 }

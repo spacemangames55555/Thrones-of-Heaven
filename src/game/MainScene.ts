@@ -111,6 +111,9 @@ import {
 } from '../summon/summonData';
 import { TAPESTRY_TUNING, BEAR_MIGHT_ID, ELEPHANT_RAGE_ID } from '../skills/druidTapestry';
 import { RESTORATION_TUNING, CLAY_ID, OIL_IMMUNITY_ID, OIL_VITALITY_ID } from '../skills/druidRestoration';
+import { SPACETIME_TUNING } from '../skills/mageSpacetime';
+import { ARCANE_TUNING, MAGE_ABSORPTION_ID } from '../skills/mageArcane';
+import { CRYSTALBLADE_TUNING } from '../skills/mageCrystalblade';
 import { PlayerPower } from '../player/PlayerPower';
 import { URIEL_SCENE } from '../story/urielData';
 import { URIEL_SENDOFF_LINES, RIFT_SCENE } from '../story/riftSceneData';
@@ -601,6 +604,17 @@ export class MainScene extends Phaser.Scene {
    *  targeting (enemyAggroTarget holds enemies in place unless a summon draws them).
    *  0 = off. Entering wipes current aggro; ANY attack breaks it early. */
   playerStealthUntil = 0;
+  // --- Mage framework primitives (composable/bespoke; class-agnostic) ---
+  /** ENTANGLED CHAINS: while now < until, a PORTION (sharePct) of damage applied to
+   *  any bound member is SHARED to all members, and control (stun/slow) applied to
+   *  one is applied to all. One active binding at a time (re-cast rebinds). Public-
+   *  readable for the runtime gate. */
+  entangled: { members: CombatEnemy[]; sharePct: number; until: number; prevHooks: (((amt: number) => void) | undefined)[] } | null = null;
+  /** Re-entrancy guard: SHARED damage never cascades back through the hook. */
+  private entangleSharing = false;
+  /** CRYSTALLIZE stacks per enemy (applied by strike riders; consumed by Shatter).
+   *  Public-readable for the runtime gate. Pruned on shatter/death/reset. */
+  crystallize = new Map<CombatEnemy, number>();
   /**
    * CHANNELED-BEAM state (the channel primitive). Transient: a single active channel locks
    * one enemy, ticks damage, optionally trickles energy, and is cancelled by movement / any
@@ -1224,6 +1238,11 @@ export class MainScene extends Phaser.Scene {
     this.projectiles.onImpactDot = (x, y, dot) => this.applyDotInRange(x, y, dot.radius, dot.dmgPerTick, dot.tickMs, dot.durationMs, dot.color);
     // PIECE 2: light aim-assist — nudge player bolts toward a nearby enemy in the aim cone.
     this.projectiles.onAimAssist = (x, y, dx, dy) => this.aimAssist(x, y, dx, dy);
+    // SEEKING bolts (Mage framework): homing target = the nearest live enemy.
+    this.projectiles.onSeekTarget = (x, y, range) => {
+      const e = this.nearestEnemy(x, y, range);
+      return e ? { x: e.x, y: e.y } : null;
+    };
     // Persistent ground hazards (Greed): zones draw into the world-FX layer; a tick
     // applies player damage through the existing contact-damage path.
     this.hazards = new HazardField(this, this.worldFx);
@@ -1961,6 +1980,8 @@ export class MainScene extends Phaser.Scene {
     this.releaseAllStuns();
     this.clearSpellHazards();
     this.clearFriendlyZones();
+    this.clearEntangle();
+    this.crystallize.clear();
     this.breakPlayerStealth();
     this.clearDots();
     this.summons.clear();
@@ -2273,6 +2294,66 @@ export class MainScene extends Phaser.Scene {
     } else if (action === 'dru_polar_bear') {
       this.summonAlliedUnits(POLAR_BEAR_CONFIG, 1, POLAR_BEAR_TUNING.maxConcurrent); // Wild Kin #9 — the taunt tank
       this.showBanner('Polar Bear summoned', 1200);
+    } else if (action === 'mage_contraction') {
+      // Mage Spacetime #2 — condense space: drag enemies inward, then crush them.
+      const c = SPACETIME_TUNING.contraction;
+      this.spawnSkillRing(px, py, c.radius, 0x9ad0ff);
+      this.pullEnemiesInRange(px, py, c.radius, c.pull);
+      this.aoeHitAll(px, py, c.radius, this.skillDamage(c.damage));
+    } else if (action === 'mage_graviton') {
+      // Mage Spacetime #6 — a gravity well ahead: pull + STUN + minor damage.
+      const c = SPACETIME_TUNING.gravitonSurge;
+      const { dx, dy } = this.facingUnit();
+      const gx = px + dx * c.placeAhead;
+      const gy = py + dy * c.placeAhead;
+      this.spawnSkillRing(gx, gy, c.radius, 0x8a5cff);
+      this.pullEnemiesInRange(gx, gy, c.radius, c.pull);
+      this.stunEnemiesInRange(gx, gy, c.radius, c.stunMs);
+      this.aoeHitAll(gx, gy, c.radius, this.skillDamage(c.damage));
+    } else if (action === 'mage_singularity') {
+      this.castSingularity(SPACETIME_TUNING.singularityCollapse); // Spacetime #10 ultimate — the shared machinery
+    } else if (action === 'mage_arcane_blast') {
+      // Mage Arcane #2 — a fanned burst of arcane bolts (the Flicker pattern, own numbers).
+      const c = ARCANE_TUNING.arcaneBlast;
+      const { dx, dy } = this.facingUnit();
+      const baseAng = Math.atan2(dy, dx);
+      const spread = (c.spreadDeg * Math.PI) / 180;
+      const dmg = this.skillDamage(c.damageEach);
+      for (let i = 0; i < c.boltCount; i++) {
+        const t = c.boltCount > 1 ? i / (c.boltCount - 1) - 0.5 : 0;
+        const ang = baseAng + t * spread;
+        this.projectiles.spawn({ x: px + Math.cos(ang) * 18, y: py + Math.sin(ang) * 18, dirX: Math.cos(ang), dirY: Math.sin(ang), speed: c.speed, damage: dmg, maxRange: c.range, faction: 'player', color: 0xc09aff, radius: c.radius });
+      }
+      this.notifyBossesPlayerAction('ranged');
+    } else if (action === 'mage_leech') {
+      // Mage Arcane #6 — siphon essence from nearby foes, release ONE empowered bolt.
+      const c = ARCANE_TUNING.leechShot;
+      const drained = Math.min(c.maxEnemies, this.combatEnemiesInRange(px, py, c.radius).length);
+      if (drained > 0) {
+        this.energy.heal(drained * c.energyPerEnemy);
+        this.spawnSkillRing(px, py, c.radius, 0xc09aff);
+        this.spawnDamageNumber(px, py - 30, drained * c.energyPerEnemy, '#9ad8ff');
+      }
+      const { dx, dy } = this.facingUnit();
+      this.projectiles.spawn({ x: px + dx * 18, y: py + dy * 18, dirX: dx, dirY: dy, speed: c.speed, damage: this.skillDamage(c.boltDamage + drained * c.bonusPerEnemy), maxRange: c.range, faction: 'player', color: 0xd0b0ff, radius: c.boltRadius });
+      this.notifyBossesPlayerAction('ranged');
+    } else if (action === 'mage_mana_surge') {
+      // Mage Arcane #8 — burst-restore essence.
+      this.energy.heal(ARCANE_TUNING.manaSurge.restore);
+      this.spawnSkillRing(px, py, 70, 0x9ad8ff);
+      this.showBanner('Mana Surge', 1000);
+    } else if (action === 'mage_black_hole') {
+      this.castSingularity(ARCANE_TUNING.blackHole); // Arcane #9 — the shared pull machinery, smaller scale
+    } else if (action === 'mage_entangle') {
+      // Mage Arcane #10 ultimate — the entangled-chains extension.
+      const c = ARCANE_TUNING.entangledChains;
+      const bound = this.entangleNearby(px, py, c.radius, c.count, c.sharePct, c.durationMs);
+      this.showBanner(bound >= 2 ? `Entangled ${bound} foes` : 'No group to entangle', 1200);
+    } else if (action === 'mage_shatter') {
+      // Mage Crystalblade #8 — detonate ALL banked crystallize stacks nearby.
+      const c = CRYSTALBLADE_TUNING.crystalShatter;
+      const res = this.shatterCrystallize(px, py, c.radius, this.skillDamage(c.damagePerStack));
+      if (res.stacks === 0) this.showBanner('No crystal to shatter', 900);
     }
   }
 
@@ -2347,6 +2428,7 @@ export class MainScene extends Phaser.Scene {
         }
         if (s.tauntMs) this.tauntEnemiesInRange(x, y, radius, s.tauntMs);
         if (s.rootMs) this.rootNearestEnemy(x, y, radius, s.rootMs);
+        if (s.crystallize) for (const e of this.combatEnemiesInRange(x, y, radius)) this.addCrystallize(e, s.crystallize, s.crystallizeMax ?? 6);
         if (s.healPerHit !== undefined && preHits > 0) {
           this.playerHealth.heal(s.healPerHit * preHits);
           this.spawnDamageNumber(cx, cy - 30, s.healPerHit * preHits, '#cf7aff');
@@ -2388,6 +2470,7 @@ export class MainScene extends Phaser.Scene {
           ...(s.pierce !== undefined ? { pierce: s.pierce } : {}),
           ...(s.splash ? { splashRadius: s.splash.radius, splashDamage: this.skillDamage(s.splash.damage) } : {}),
           ...(s.dot ? { dotOnImpact: { dmgPerTick: this.skillDamage(s.dot.dmgPerTick), tickMs: s.dot.tickMs, durationMs: s.dot.durationMs, radius: s.dot.radius, color: s.dot.color } } : {}),
+          ...(s.seek ? { seek: true, ...(s.seekTurnRate !== undefined ? { seekTurnRate: s.seekTurnRate } : {}) } : {}),
         });
       }
       if (s.vuln) {
@@ -2544,6 +2627,10 @@ export class MainScene extends Phaser.Scene {
     } else if (s.p === 'stealth') {
       this.startPlayerStealth(s.durationMs);
       if (s.banner) this.showBanner(s.banner, 1200);
+    } else if (s.p === 'teleport') {
+      // TELEPORT (Mage framework): the Blink machinery with a tunable distance.
+      // Composed AFTER a self-hazard step it forms the Wormhole (portal stays behind).
+      this.doBlink(s.distance);
     }
   }
 
@@ -2584,10 +2671,12 @@ export class MainScene extends Phaser.Scene {
     this.tweens.add({ targets: spike, alpha: 0, duration: ms, onComplete: () => spike.destroy() });
   }
 
-  /** BLINK (Ethereal #5): instantly teleport forward, stopping short of blocking terrain. */
-  private doBlink(): void {
+  /** BLINK (Ethereal #5; also the composed `teleport` primitive): instantly teleport
+   *  forward, stopping short of blocking terrain. `distance` defaults to the Ethereal
+   *  tuning so eth_blink is unchanged; the Mage Wormhole passes its own. */
+  private doBlink(distance: number = ETHEREAL_TUNING.blink.distance): void {
     const { dx, dy } = this.facingUnit();
-    const c = ETHEREAL_TUNING.blink;
+    const c = { distance };
     const fromX = this.player.x;
     const fromY = this.player.y;
     // Step out along the facing direction, halting just before any blocking tile.
@@ -2928,6 +3017,115 @@ export class MainScene extends Phaser.Scene {
     if (this.playerStealthUntil === 0) return;
     this.playerStealthUntil = 0;
     this.player.sprite.setAlpha(1);
+  }
+
+  // --- Mage framework: entangled chains + crystallize/shatter ------------------
+
+  /**
+   * ENTANGLED CHAINS: bind up to `count` live enemies nearest (x,y) within `radius`
+   * together for `durationMs`. While bound, `sharePct` of any damage one takes is
+   * dealt to every other member (via the Health.onDamaged seam — EVERY damage path
+   * funnels through it), and control (stun/slow) applied to one applies to all.
+   * Returns how many were bound. Enemies without a health pool are skipped.
+   */
+  entangleNearby(x: number, y: number, radius: number, count: number, sharePct: number, durationMs: number, tint = 0xc09aff): number {
+    this.clearEntangle(); // one binding at a time — re-cast rebinds
+    const withHealth = (e: CombatEnemy): e is CombatEnemy & { health: Health } => {
+      const h = (e as unknown as { health?: Health }).health;
+      return !!h && typeof h.damage === 'function';
+    };
+    const members = this.combatEnemiesInRange(x, y, radius)
+      .filter(withHealth)
+      .sort((a, b) => Phaser.Math.Distance.Between(x, y, a.x, a.y) - Phaser.Math.Distance.Between(x, y, b.x, b.y))
+      .slice(0, count);
+    if (members.length < 2) return members.length; // nothing to share with
+    const prevHooks = members.map((m) => (m as unknown as { health: Health }).health.onDamaged);
+    this.entangled = { members, sharePct, until: this.time.now + durationMs, prevHooks };
+    for (const m of members) {
+      const h = (m as unknown as { health: Health }).health;
+      const prev = h.onDamaged;
+      h.onDamaged = (amt: number): void => {
+        prev?.(amt);
+        this.onEntangledDamaged(m, amt);
+      };
+      this.floatingText.show(m.x, m.y - 34, '⛓', '#c09aff', { fontSize: 15, riseBy: 12, durationMs: 900, depth: 14 });
+    }
+    // Chain FX between consecutive members (a one-shot visual of the binding).
+    for (let i = 1; i < members.length; i++) this.spawnLineFx(members[i - 1].x, members[i - 1].y, members[i].x, members[i].y, 4, tint);
+    return members.length;
+  }
+
+  /** The entangle DAMAGE share: `sharePct` of what one member took hits the others.
+   *  Guarded so shared damage never re-shares (no cascade). */
+  private onEntangledDamaged(source: CombatEnemy, amount: number): void {
+    const ent = this.entangled;
+    if (!ent || this.entangleSharing || this.time.now >= ent.until || !ent.members.includes(source)) return;
+    this.entangleSharing = true;
+    const share = amount * ent.sharePct;
+    for (const m of ent.members) {
+      if (m === source || !m.isAlive) continue;
+      const dealt = m.takeHit(share);
+      if (dealt > 0) {
+        this.dmgDealtAccum += dealt;
+        this.spawnDamageNumber(m.x, m.y - 24, dealt, '#c09aff');
+      }
+    }
+    this.entangleSharing = false;
+  }
+
+  /** The entangle CONTROL share: the OTHER live members bound with `e` (empty when
+   *  no live binding contains it). stun/slow apply their effect to these too. */
+  private entangleControlPeers(e: CombatEnemy): CombatEnemy[] {
+    const ent = this.entangled;
+    if (!ent || this.time.now >= ent.until || !ent.members.includes(e)) return [];
+    return ent.members.filter((m) => m !== e && m.isAlive);
+  }
+
+  /** Unbind NOW (expiry / re-cast / reset), restoring each member's previous hook. */
+  clearEntangle(): void {
+    const ent = this.entangled;
+    if (!ent) return;
+    this.entangled = null;
+    for (let i = 0; i < ent.members.length; i++) {
+      const h = (ent.members[i] as unknown as { health?: Health }).health;
+      if (h) h.onDamaged = ent.prevHooks[i];
+    }
+  }
+
+  /** CRYSTALLIZE: add `stacks` to an enemy (capped at `maxStacks`). Applied by the
+   *  strike rider; Shatter consumes them. */
+  addCrystallize(e: CombatEnemy, stacks: number, maxStacks: number): void {
+    if (!e.isAlive || stacks <= 0) return;
+    const next = Math.min(maxStacks, (this.crystallize.get(e) ?? 0) + stacks);
+    this.crystallize.set(e, next);
+    this.floatingText.show(e.x, e.y - 34, `❖${next}`, '#bfe0ff', { fontSize: 14, riseBy: 12, durationMs: 700, depth: 14 });
+  }
+
+  /** SHATTER: detonate ALL crystallize stacks on enemies within `radius` of (x,y) —
+   *  `damagePerStack` (already scaled by the caller) × that enemy's stacks, consuming
+   *  EXACTLY those stacks (out-of-radius stacks stay). Returns what it consumed. */
+  shatterCrystallize(x: number, y: number, radius: number, damagePerStack: number, tint = 0xbfe0ff): { hit: number; stacks: number } {
+    let hit = 0;
+    let stacks = 0;
+    this.spawnSkillRing(x, y, radius, tint);
+    for (const [e, n] of [...this.crystallize]) {
+      if (!e.isAlive) {
+        this.crystallize.delete(e); // prune the dead
+        continue;
+      }
+      if (Phaser.Math.Distance.Between(x, y, e.x, e.y) > radius) continue;
+      this.crystallize.delete(e); // consume exactly the detonated stacks
+      const dealt = e.takeHit(damagePerStack * n);
+      if (dealt > 0) {
+        this.dmgDealtAccum += dealt;
+        this.spawnDamageNumber(e.x, e.y - 24, dealt, '#bfe0ff');
+      }
+      this.spawnSkillRing(e.x, e.y, 26, tint);
+      hit++;
+      stacks += n;
+    }
+    this.lastCombatTime = this.time.now;
+    return { hit, stacks };
   }
 
   /**
@@ -3546,8 +3744,7 @@ export class MainScene extends Phaser.Scene {
   /** SINGULARITY (Dark Matter #10 capstone): a black-hole at a spot ahead that, over its
    *  life, PULLS nearby enemies toward its center AND deals heavy AoE damage each pulse.
    *  Reuses the placed-AoE pattern + a PULL (reverse of knockbackEnemiesInRange). */
-  private castSingularity(): void {
-    const c = DM_TUNING.singularity;
+  private castSingularity(c: { placeAhead: number; radius: number; durationMs: number; pulses: number; pullStrength: number; damagePerTick: number; banner?: string; tint?: number } = DM_TUNING.singularity): void {
     const { dx, dy } = this.facingUnit();
     const cx = this.player.x + dx * c.placeAhead;
     const cy = this.player.y + dy * c.placeAhead;
@@ -3555,12 +3752,12 @@ export class MainScene extends Phaser.Scene {
     for (let i = 0; i < c.pulses; i++) {
       this.time.delayedCall(i * step, () => {
         if (this.playerDead) return;
-        this.spawnSkillRing(cx, cy, c.radius * (1 - (i / c.pulses) * 0.35), 0x6a3fb0); // collapsing rings
+        this.spawnSkillRing(cx, cy, c.radius * (1 - (i / c.pulses) * 0.35), c.tint ?? 0x6a3fb0); // collapsing rings
         this.pullEnemiesInRange(cx, cy, c.radius, c.pullStrength);
         this.aoeHitAll(cx, cy, c.radius, this.skillDamage(c.damagePerTick));
       });
     }
-    this.showBanner('SINGULARITY', 1400);
+    this.showBanner(c.banner ?? 'SINGULARITY', 1400);
     this.lastCombatTime = this.time.now;
   }
 
@@ -3638,15 +3835,18 @@ export class MainScene extends Phaser.Scene {
     if (frozen) e.halt();
   }
 
-  /** STUN: freeze every enemy within range in place for `ms` (generic primitive). */
+  /** STUN: freeze every enemy within range in place for `ms` (generic primitive).
+   *  ENTANGLED CHAINS: stunning a bound enemy stuns every member of its binding. */
   private stunEnemiesInRange(x: number, y: number, range: number, ms: number): void {
     const until = this.time.now + ms;
     for (const e of this.combatEnemiesInRange(x, y, range)) {
-      this.stunnedEnemies.set(e, until);
-      this.freezeEnemyBody(e, true);
-      // A brief star spark over the stunned enemy (world FX) — pooled (fires per
-      // stunned enemy, so an AoE stun into a crowd would otherwise churn many Texts).
-      this.floatingText.show(e.x, e.y - 30, '✦', '#ffe9a8', { fontSize: 16, riseBy: 14, durationMs: ms, depth: 14 });
+      for (const t of [e, ...this.entangleControlPeers(e)]) {
+        this.stunnedEnemies.set(t, until);
+        this.freezeEnemyBody(t, true);
+        // A brief star spark over the stunned enemy (world FX) — pooled (fires per
+        // stunned enemy, so an AoE stun into a crowd would otherwise churn many Texts).
+        this.floatingText.show(t.x, t.y - 30, '✦', '#ffe9a8', { fontSize: 16, riseBy: 14, durationMs: ms, depth: 14 });
+      }
     }
   }
 
@@ -3703,9 +3903,12 @@ export class MainScene extends Phaser.Scene {
     const until = this.time.now + ms;
     for (const e of this.combatEnemiesInRange(x, y, range)) {
       if (where && !where(e.x, e.y)) continue; // shape filter (the Chill cone)
-      const cur = this.slowedEnemies.get(e);
-      // Keep the strongest slow + the latest expiry while refreshed (auras refresh each frame).
-      this.slowedEnemies.set(e, { until: Math.max(cur?.until ?? 0, until), factor: Math.min(cur?.factor ?? 1, factor) });
+      // ENTANGLED CHAINS: slowing a bound enemy slows every member of its binding.
+      for (const t of [e, ...this.entangleControlPeers(e)]) {
+        const cur = this.slowedEnemies.get(t);
+        // Keep the strongest slow + the latest expiry while refreshed (auras refresh each frame).
+        this.slowedEnemies.set(t, { until: Math.max(cur?.until ?? 0, until), factor: Math.min(cur?.factor ?? 1, factor) });
+      }
     }
   }
 
@@ -3841,6 +4044,8 @@ export class MainScene extends Phaser.Scene {
     }
     // PLAYER STEALTH: restore the avatar when the window lapses (attacks end it earlier).
     if (this.playerStealthUntil > 0 && this.time.now >= this.playerStealthUntil) this.breakPlayerStealth();
+    // ENTANGLED CHAINS: unbind (restore the damage hooks) when the window lapses.
+    if (this.entangled && this.time.now >= this.entangled.until) this.clearEntangle();
     // LIFESTEAL (Bloodlust): heal a fraction of the damage dealt since last frame.
     const lifesteal = this.combinedSkillMods().lifestealPct ?? 0;
     if (!this.playerDead && lifesteal > 0 && this.dmgDealtAccum > 0 && this.playerHealth.current < this.playerHealth.max) {
@@ -4024,6 +4229,8 @@ export class MainScene extends Phaser.Scene {
     this.summons.clear(); // allied summons don't survive the player's death
     this.clearSpellHazards();
     this.clearFriendlyZones();
+    this.clearEntangle();
+    this.crystallize.clear();
     this.breakPlayerStealth();
     this.clearDots();
     this.despawnRegionChampion(); // death resets a champion encounter cleanly
@@ -4054,7 +4261,9 @@ export class MainScene extends Phaser.Scene {
 
     // Energy regenerates continuously, pausing briefly after each spend.
     if (this.time.now - this.lastEnergySpendTime > ENERGY_REGEN_DELAY_MS && this.energy.current < this.energy.max) {
-      this.energy.heal((ENERGY_REGEN_PER_SEC * delta) / 1000);
+      // ARCANE ABSORPTION (Mage keyed passive): extra essence regen while unlocked.
+      const absorb = this.skills.isUnlocked(MAGE_ABSORPTION_ID) ? ARCANE_TUNING.absorption.regenPerSec : 0;
+      this.energy.heal(((ENERGY_REGEN_PER_SEC + absorb) * delta) / 1000);
     }
   }
 
@@ -5489,6 +5698,8 @@ export class MainScene extends Phaser.Scene {
       this.releaseAllStuns();
       this.clearSpellHazards(); // drop any Wizard Lava patches
       this.clearFriendlyZones(); // heal zones are runtime-only too
+      this.clearEntangle();
+      this.crystallize.clear();
       this.breakPlayerStealth();
       this.clearDots(); // drop any poison DoTs
       this.summons.clear(); // summons are transient — never carried across a load
@@ -8093,6 +8304,8 @@ export class MainScene extends Phaser.Scene {
     this.summons.clear();
     this.clearSpellHazards();
     this.clearFriendlyZones();
+    this.clearEntangle();
+    this.crystallize.clear();
     this.breakPlayerStealth();
     this.clearDots();
 
@@ -9451,6 +9664,8 @@ export class MainScene extends Phaser.Scene {
     this.releaseAllStuns();
     this.clearSpellHazards();
     this.clearFriendlyZones();
+    this.clearEntangle();
+    this.crystallize.clear();
     this.breakPlayerStealth();
     this.clearDots();
     this.summons.clear();
