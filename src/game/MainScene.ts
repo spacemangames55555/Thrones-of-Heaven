@@ -108,6 +108,9 @@ import {
   SCAVENGER_TUNING,
   POLAR_BEAR_CONFIG,
   POLAR_BEAR_TUNING,
+  VOODOO_DOLL_CONFIG,
+  SPIRIT_DECOY_CONFIG,
+  SPIRIT_DECOY_TUNING,
 } from '../summon/summonData';
 import { TAPESTRY_TUNING, BEAR_MIGHT_ID, ELEPHANT_RAGE_ID } from '../skills/druidTapestry';
 import { RESTORATION_TUNING, CLAY_ID, OIL_IMMUNITY_ID, OIL_VITALITY_ID } from '../skills/druidRestoration';
@@ -638,6 +641,27 @@ export class MainScene extends Phaser.Scene {
   /** HARMONIC AMPLIFICATION (Bard): while charges remain, each strike detonates an
    *  extra splash around its hit point, consuming one charge. Public for the gate. */
   harmonicCharges = 0;
+  // --- Witch Doctor framework primitives (composable/bespoke; class-agnostic) ---
+  /** VOODOO DOLL bind: while set, melee strikes that land on the doll MIRROR
+   *  mirrorPct of their damage to the bound target at any range. One bind at a
+   *  time; ends on doll death / target death / expiry; re-cast re-binds.
+   *  Public-readable for the runtime gate. */
+  voodoo: { target: CombatEnemy; doll: AlliedSummon; mirrorPct: number; until: number } | null = null;
+  /** DOLL UPGRADE — REFLECT (armed only while its skill is owned): an enemy whose
+   *  contact hit lands on the doll takes this much back. 0 = disarmed. */
+  voodooReflectDamage = 0;
+  /** DOLL UPGRADE — STITCH SPLASH: mirrored damage also hits enemies within
+   *  radius of the bound target at pct of the mirror. Null = disarmed. */
+  voodooStitch: { radius: number; pct: number } | null = null;
+  /** DOLL UPGRADE — SPIRIT ASSAULT: periodic defense-bypassing ticks to the bound
+   *  target while bound. Null = disarmed. */
+  voodooAssault: { damage: number; tickMs: number; nextAt: number } | null = null;
+  /** ALLY-BOND (friendly Entangled Chains): while active, sharePct of damage the
+   *  player would take is redirected to live summons (split evenly) instead. */
+  allyBond: { sharePct: number; until: number } | null = null;
+  /** SPIRIT SPLIT: while set, the doll AUTO-MIRRORS a pulse on a cadence with no
+   *  player strike (the decoy half is a normal summon walking alongside). */
+  spiritSplit: { until: number; nextAt: number; intervalMs: number; pulseDamage: number } | null = null;
   /**
    * CHANNELED-BEAM state (the channel primitive). Transient: a single active channel locks
    * one enemy, ticks damage, optionally trickles energy, and is cancelled by movement / any
@@ -1291,6 +1315,7 @@ export class MainScene extends Phaser.Scene {
     this.progression.onChange = () => this.refreshXpUi();
     this.playerHealth = new Health(this.progression.effectiveMaxHP);
     this.playerHealth.onDamaged = (amt) => this.onPlayerHurt(amt); // Counter Attack + Reflect
+    this.playerHealth.redirect = (amt) => this.allyBondRedirect(amt); // Witch Doctor ally-bond
     this.energy = new Health(MAX_ENERGY); // energy is a generic clamped pool
     // Derive the Sasquatch's lair from the home-town spawn (26 tiles north), so it
     // tracks Enumclaw rather than the old hard-coded Seattle-relative pixel.
@@ -1679,6 +1704,7 @@ export class MainScene extends Phaser.Scene {
     this.updateSpellHazards(); // ground zones (Lava / Black Ice / Freezing Rain / Biohazard / Pestilence)
     this.updateFriendlyZones(); // heal-over-time zones for the player + summons (static + mobile)
     this.updateConfusion(); // Bard confusion: expiry + a confused enemy chips at its fellow
+    this.updateVoodoo(); // Witch Doctor: bind expiry + spirit assault + spirit split pulses
     this.updateComboUltimate(); // Bard War Song: the auto-chain cadence
     this.updateDots(); // poison DoTs + Plague contagion spread + stacking DoTs
     this.updateChannel(delta); // channeled beam: tick damage + energy trickle + redraw
@@ -2022,6 +2048,9 @@ export class MainScene extends Phaser.Scene {
     this.crystallize.clear();
     this.confused.clear();
     this.comboUltimate = null;
+    this.voodoo = null; // WD bind state never survives a reset (summons are cleared too)
+    this.allyBond = null;
+    this.spiritSplit = null;
     this.breakPlayerStealth();
     this.clearDots();
     this.summons.clear();
@@ -2512,6 +2541,9 @@ export class MainScene extends Phaser.Scene {
         const preHits = s.healPerHit !== undefined ? Math.min(s.maxHeals ?? Infinity, this.combatEnemiesInRange(x, y, radius).length) : 0;
         const dmg = this.composedDamage(s);
         if (dmg > 0) this.aoeHitAll(x, y, radius, dmg);
+        // VOODOO DOLL (Witch Doctor): a melee strike landing on the doll mirrors
+        // a fraction of its damage to the bound target at any range.
+        if (dmg > 0) this.maybeVoodooMirror(x, y, radius, dmg);
         // HARMONIC AMPLIFICATION (Bard): a charged strike detonates a splash too.
         if (dmg > 0 && this.harmonicCharges > 0) {
           this.harmonicCharges--;
@@ -3385,6 +3417,158 @@ export class MainScene extends Phaser.Scene {
     return out;
   }
 
+  // --- Witch Doctor framework: voodoo doll + decoy + ally-bond + spirit split ---
+
+  /**
+   * VOODOO DOLL (the kit's centerpiece): bind the nearest enemy within `range`
+   * (dealing the cast's initial spirit damage) and place the doll — a small
+   * summon-foundation unit beside the player — for `bindDurationMs`. While bound,
+   * melee strikes that land ON THE DOLL mirror `mirrorPct` of their damage to the
+   * bound target AT ANY RANGE (maybeVoodooMirror). One doll at a time; a re-cast
+   * re-binds fresh; the bind ends on doll death / target death / expiry.
+   * `damage` arrives pre-scaled by the caller. Returns true when a bind landed.
+   */
+  castVoodooDoll(range: number, damage: number, bindDurationMs: number, mirrorPct: number): boolean {
+    const target = this.nearestEnemy(this.player.x, this.player.y, range);
+    if (!target) {
+      this.showBanner('No spirit to bind', 900);
+      return false;
+    }
+    const dealt = target.takeHit(damage);
+    if (dealt > 0) {
+      this.dmgDealtAccum += dealt;
+      this.spawnDamageNumber(target.x, target.y - 24, dealt, '#c9a0ff');
+    }
+    this.summons.clearKey(VOODOO_DOLL_CONFIG.key); // one doll — a re-cast re-binds
+    const doll = this.summonAlliedUnits(VOODOO_DOLL_CONFIG, 1, 1, bindDurationMs)[0];
+    this.voodoo = { target, doll, mirrorPct, until: this.time.now + bindDurationMs };
+    this.floatingText.show(target.x, target.y - 36, 'bound', '#c9a0ff', { fontSize: 12, riseBy: 14, durationMs: 900, depth: 14 });
+    this.lastCombatTime = this.time.now;
+    return true;
+  }
+
+  /** MELEE-STRIKE HOOK: a player strike whose hit area covers the doll mirrors
+   *  mirrorPct of the strike's damage to the bound target (any range). */
+  private maybeVoodooMirror(x: number, y: number, radius: number, dmg: number): void {
+    const v = this.voodoo;
+    if (!v || !v.doll.isAlive || !v.target.isAlive) return;
+    if (Phaser.Math.Distance.Between(v.doll.x, v.doll.y, x, y) > radius + v.doll.config.bodyRadius) return;
+    this.mirrorToBound(dmg * v.mirrorPct);
+  }
+
+  /** Land mirrored damage on the bound target (+ the STITCH splash around it when
+   *  that upgrade is armed). The stitch never re-hits the bound target itself. */
+  private mirrorToBound(amount: number): void {
+    const v = this.voodoo;
+    if (!v || !v.target.isAlive) return;
+    const dealt = v.target.takeHit(amount);
+    if (dealt > 0) {
+      this.dmgDealtAccum += dealt;
+      this.spawnDamageNumber(v.target.x, v.target.y - 24, dealt, '#c9a0ff');
+      this.spawnSkillRing(v.target.x, v.target.y, 34, 0xc9a05a);
+    }
+    if (this.voodooStitch) {
+      const st = this.voodooStitch;
+      for (const e of this.combatEnemiesInRange(v.target.x, v.target.y, st.radius)) {
+        if (e === v.target) continue;
+        const d = e.takeHit(amount * st.pct);
+        if (d > 0) {
+          this.dmgDealtAccum += d;
+          this.spawnDamageNumber(e.x, e.y - 24, d, '#a98aff');
+        }
+      }
+    }
+    this.lastCombatTime = this.time.now;
+  }
+
+  /** DOLL REFLECT (contact hits only): the enemy at (ex,ey) whose hit just landed
+   *  on the doll takes the armed reflect damage back. */
+  private maybeVoodooReflect(summon: AlliedSummon, ex: number, ey: number): void {
+    if (summon.config.key !== VOODOO_DOLL_CONFIG.key || this.voodooReflectDamage <= 0) return;
+    const striker = this.nearestEnemy(ex, ey, 60);
+    if (!striker) return;
+    const dealt = striker.takeHit(this.voodooReflectDamage);
+    if (dealt > 0) {
+      this.dmgDealtAccum += dealt;
+      this.spawnDamageNumber(striker.x, striker.y - 24, dealt, '#ffd0a0');
+    }
+  }
+
+  /** Per-frame: prune a lapsed/broken bind (the doll despawns when its target
+   *  dies), run the SPIRIT ASSAULT ticks, and drive the SPIRIT SPLIT pulses. */
+  private updateVoodoo(): void {
+    const now = this.time.now;
+    const v = this.voodoo;
+    if (v) {
+      if (now >= v.until || !v.doll.isAlive || !v.target.isAlive) {
+        if (!v.target.isAlive) this.summons.clearKey(VOODOO_DOLL_CONFIG.key); // despawns with its target
+        this.voodoo = null;
+      } else if (this.voodooAssault) {
+        // SPIRIT ASSAULT (armed only while owned): defense-bypassing direct ticks.
+        if (now >= this.voodooAssault.nextAt) {
+          this.voodooAssault.nextAt = now + this.voodooAssault.tickMs;
+          const dealt = v.target.takeHit(this.voodooAssault.damage);
+          if (dealt > 0) {
+            this.dmgDealtAccum += dealt;
+            this.spawnDamageNumber(v.target.x, v.target.y - 24, dealt, '#9a6cff');
+          }
+        }
+      }
+    }
+    const sp = this.spiritSplit;
+    if (sp) {
+      if (now >= sp.until || this.playerDead) {
+        this.spiritSplit = null;
+      } else if (now >= sp.nextAt) {
+        sp.nextAt = now + sp.intervalMs;
+        this.mirrorToBound(sp.pulseDamage); // the doll strikes itself — no input
+      }
+    }
+    if (this.allyBond && now >= this.allyBond.until) this.allyBond = null;
+  }
+
+  /** SPIRIT DECOY: a spectral duplicate on the summon foundation — MAGNET-tier
+   *  aggro (the Polar Bear's tier), attacks nothing, has HP, expires. */
+  spawnSpiritDecoy(durationMsOverride?: number): AlliedSummon {
+    const d = this.summonAlliedUnits(SPIRIT_DECOY_CONFIG, 1, SPIRIT_DECOY_TUNING.maxConcurrent, durationMsOverride)[0];
+    this.showBanner('The spirit steps out', 1100);
+    return d;
+  }
+
+  /** ALLY-BOND (friendly Entangled Chains): for `durationMs`, sharePct of damage
+   *  the player would take is redirected to live summons (split evenly) BEFORE
+   *  block/shield/HP — the player takes only the remainder. */
+  startAllyBond(sharePct: number, durationMs: number): void {
+    this.allyBond = { sharePct, until: this.time.now + durationMs };
+    this.spawnSkillRing(this.player.x, this.player.y, 90, 0x8fe8d0);
+    this.showBanner('Souls bound together', 1200);
+  }
+
+  /** The playerHealth.redirect hook: siphon the ally-bond share onto live summons.
+   *  Returns the amount redirected (Health subtracts it before shield/HP). */
+  private allyBondRedirect(amount: number): number {
+    const b = this.allyBond;
+    if (!b || this.time.now >= b.until) return 0;
+    const live = this.summons.list.filter((s) => s.isAlive);
+    if (live.length === 0) return 0;
+    const share = amount * b.sharePct;
+    const per = share / live.length;
+    for (const s of live) {
+      const dealt = s.takeHit(per);
+      if (dealt > 0) this.spawnDamageNumber(s.x, s.y - 30, dealt, '#bfefff');
+    }
+    return share;
+  }
+
+  /** SPIRIT SPLIT (composite of the doll + the decoy): for `durationMs` the decoy
+   *  walks (a normal magnet summon) while the doll AUTO-MIRRORS `pulseDamage` to
+   *  the bound target on a cadence with no player strike. */
+  startSpiritSplit(durationMs: number, intervalMs: number, pulseDamage: number): void {
+    this.spawnSpiritDecoy(durationMs);
+    this.spiritSplit = { until: this.time.now + durationMs, nextAt: this.time.now + intervalMs, intervalMs, pulseDamage };
+    this.showBanner('SPIRIT AND BODY DIVIDE', 1400);
+  }
+
   // --- DoT (damage-over-time) + contagion primitive (Toxic Bolt / Plague) -------
 
   /** Apply a poison DoT to every live enemy within (x,y,radius) — used by Toxic Bolt's
@@ -3843,6 +4027,8 @@ export class MainScene extends Phaser.Scene {
       this.spawnDamageNumber(g.x, g.y - 30, dealt, '#bfefff');
       this.lastCombatTime = this.time.now;
     }
+    // DOLL REFLECT (Witch Doctor upgrade): a contact hit landing on the doll bites back.
+    this.maybeVoodooReflect(g, ex, ey);
     return true;
   }
 
@@ -4482,6 +4668,9 @@ export class MainScene extends Phaser.Scene {
     this.crystallize.clear();
     this.confused.clear();
     this.comboUltimate = null;
+    this.voodoo = null; // WD bind state never survives a reset (summons are cleared too)
+    this.allyBond = null;
+    this.spiritSplit = null;
     this.breakPlayerStealth();
     this.clearDots();
     this.despawnRegionChampion(); // death resets a champion encounter cleanly
@@ -5955,6 +6144,9 @@ export class MainScene extends Phaser.Scene {
       this.crystallize.clear();
       this.confused.clear();
       this.comboUltimate = null;
+      this.voodoo = null;
+      this.allyBond = null;
+      this.spiritSplit = null;
       this.breakPlayerStealth();
       this.clearDots(); // drop any poison DoTs
       this.summons.clear(); // summons are transient — never carried across a load
@@ -8563,6 +8755,9 @@ export class MainScene extends Phaser.Scene {
     this.crystallize.clear();
     this.confused.clear();
     this.comboUltimate = null;
+    this.voodoo = null; // WD bind state never survives a reset (summons are cleared too)
+    this.allyBond = null;
+    this.spiritSplit = null;
     this.breakPlayerStealth();
     this.clearDots();
 
@@ -9925,6 +10120,9 @@ export class MainScene extends Phaser.Scene {
     this.crystallize.clear();
     this.confused.clear();
     this.comboUltimate = null;
+    this.voodoo = null; // WD bind state never survives a reset (summons are cleared too)
+    this.allyBond = null;
+    this.spiritSplit = null;
     this.breakPlayerStealth();
     this.clearDots();
     this.summons.clear();
