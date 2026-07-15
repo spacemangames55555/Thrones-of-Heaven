@@ -1751,6 +1751,204 @@ try {
   });
   ok('mage ext — seeking bolt: fired 90° off-target, it curves in and hits', seekRun.setup === 'ok' && seekRun.drop > 0, JSON.stringify(seekRun));
 
+  // 3z. BARD FRAMEWORK EXTENSIONS (permanent): confusion, echo, the conditional
+  // finisher, rotating bolt riders, the melee strike-chain, and the combo
+  // ultimate — each through its real runtime seam from an isolated spot.
+
+  // 3z-1. CONFUSION: a confused enemy pursues its nearest FELLOW (aggro redirected),
+  // chips at it when adjacent, and the effect wears off cleanly.
+  const confRun = await page.evaluate(async () => {
+    const ms = window.__ready();
+    const wait = (t) => new Promise((r) => setTimeout(r, t));
+    if (!window.__quietSpot()) return { setup: 'no quiet spot' };
+    const spawnAt = (dx, dy) => {
+      const w = ms.activeMap().nearestWalkableWorld(ms.player.x + dx, ms.player.y + dy);
+      return ms.spawnAngel('darkcaster', w.x, w.y);
+    };
+    const a = spawnAt(120, 0);
+    const b = spawnAt(170, 0); // the fellow, standing beside A
+    await wait(200);
+    ms.stunEnemiesInRange(ms.player.x + 145, ms.player.y, 220, 2600); // hold both in place (kiting-proof)
+    const confused = ms.confuseNearestEnemy(ms.player.x, ms.player.y, 200, 1, 1600, 9, 300);
+    const entry = ms.confused.get(a);
+    const targetsFellow = !!entry && entry.target === b;
+    const t1 = ms.enemyAggroTarget(a, a.x, a.y);
+    const aggroOnFellow = Math.hypot(t1.x - b.x, t1.y - b.y) < 4;
+    const hpB = b.health.current;
+    await wait(900); // adjacent → chip hits land on the fellow
+    const chipped = hpB - b.health.current;
+    await wait(1000); // past durationMs → wears off cleanly
+    const woreOff = !ms.confused.has(a);
+    const t2 = ms.enemyAggroTarget(a, a.x, a.y);
+    const backToPlayer = Math.hypot(t2.x - ms.player.x, t2.y - ms.player.y) < 4;
+    a.destroy();
+    b.destroy();
+    return { setup: 'ok', confused, targetsFellow, aggroOnFellow, chipped, woreOff, backToPlayer };
+  });
+  ok(
+    'bard ext — confusion: aggro redirects onto the nearest fellow, chips it, wears off cleanly',
+    confRun.setup === 'ok' && confRun.confused && confRun.targetsFellow && confRun.aggroOnFellow && confRun.chipped > 0 && confRun.woreOff && confRun.backToPlayer,
+    JSON.stringify(confRun),
+  );
+
+  // 3z-2. ECHO: an armed echo repeats a strike after the delay at echoPct strength;
+  // disarmed, nothing repeats.
+  const echoRun = await page.evaluate(async () => {
+    const ms = window.__ready();
+    const wait = (t) => new Promise((r) => setTimeout(r, t));
+    if (!window.__quietSpot()) return { setup: 'no quiet spot' };
+    const w = ms.activeMap().nearestWalkableWorld(ms.player.x + 60, ms.player.y);
+    const a = ms.spawnAngel('darkcaster', w.x, w.y);
+    await wait(200);
+    ms.stunEnemiesInRange(a.x, a.y, 40, 3000); // hold it in place so the delayed echo lands
+    ms.setEcho(0.5, 300);
+    const hp0 = a.health.current;
+    ms.player.facingX = 1;
+    ms.player.facingY = 0;
+    ms.runComposedSteps([{ p: 'strike', at: 'front', range: 80, damageRaw: 20, tint: 0xd8c8ff }]);
+    await wait(120);
+    const initial = hp0 - a.health.current;
+    await wait(500); // past the 300ms echo delay
+    const total = hp0 - a.health.current;
+    ms.setEcho(0);
+    const hp1 = a.health.current;
+    ms.runComposedSteps([{ p: 'strike', at: 'front', range: 80, damageRaw: 20, tint: 0xd8c8ff }]);
+    await wait(500);
+    const disarmed = hp1 - a.health.current;
+    a.destroy();
+    return { setup: 'ok', initial, total, disarmed };
+  });
+  ok(
+    'bard ext — echo: a delayed second hit at echoPct; nothing repeats once disarmed',
+    echoRun.setup === 'ok' && echoRun.initial === 20 && echoRun.total === 30 && echoRun.disarmed === 20,
+    JSON.stringify(echoRun),
+  );
+
+  // 3z-3. CONDITIONAL FINISHER: a stunned/slowed target takes damage × bonusMult;
+  // an unafflicted one takes base damage.
+  const finRun = await page.evaluate(async () => {
+    const ms = window.__ready();
+    const wait = (t) => new Promise((r) => setTimeout(r, t));
+    if (!window.__quietSpot()) return { setup: 'no quiet spot' };
+    const spawnAt = (dx, dy) => {
+      const w = ms.activeMap().nearestWalkableWorld(ms.player.x + dx, ms.player.y + dy);
+      return ms.spawnAngel('darkcaster', w.x, w.y);
+    };
+    const stunned = spawnAt(80, 60);
+    const fresh = spawnAt(80, -60);
+    await wait(200);
+    ms.stunEnemiesInRange(stunned.x, stunned.y, 30, 1500); // afflict ONE
+    const h1 = stunned.health.current;
+    const h2 = fresh.health.current;
+    const res = ms.finisherHitAll(ms.player.x, ms.player.y, 200, 15, 2);
+    await wait(100);
+    const dropStunned = h1 - stunned.health.current;
+    const dropFresh = h2 - fresh.health.current;
+    stunned.destroy();
+    fresh.destroy();
+    return { setup: 'ok', res, dropStunned, dropFresh };
+  });
+  ok(
+    'bard ext — conditional finisher: double damage to the stunned target, base to the fresh one',
+    finRun.setup === 'ok' && finRun.res.hit === 2 && finRun.res.bonus === 1 && finRun.dropStunned === 30 && finRun.dropFresh === 15,
+    JSON.stringify(finRun),
+  );
+
+  // 3z-4. ROTATING RIDERS: a composed multi-bolt whose bolts carry DIFFERENT
+  // impact riders — the struck enemy ends up stunned AND slowed.
+  const riderRun = await page.evaluate(async () => {
+    const ms = window.__ready();
+    const wait = (t) => new Promise((r) => setTimeout(r, t));
+    if (!window.__quietSpot()) return { setup: 'no quiet spot' };
+    const w = ms.activeMap().nearestWalkableWorld(ms.player.x + 200, ms.player.y);
+    const a = ms.spawnAngel('darkcaster', w.x, w.y);
+    await wait(200);
+    ms.player.facingX = a.x >= ms.player.x ? 1 : -1;
+    ms.player.facingY = 0;
+    const hp0 = a.health.current;
+    ms.runComposedSteps([
+      { p: 'bolt', damage: 8, speed: 520, range: 320, radius: 9, tint: 0xd8c8ff, onHit: { stunMs: 1200 } },
+      { p: 'bolt', damage: 8, speed: 520, range: 320, radius: 9, tint: 0xb8e8ff, onHit: { slowFactor: 0.5, slowMs: 2000 } },
+    ]);
+    await wait(700); // flight + impacts
+    const hit = hp0 - a.health.current > 0;
+    const stunnedApplied = ms.stunnedEnemies.has(a);
+    const slowApplied = ms.slowedEnemies.has(a);
+    a.destroy();
+    return { setup: 'ok', hit, stunnedApplied, slowApplied };
+  });
+  ok(
+    'bard ext — rotating riders: each bolt lands its own rider (stun from one, slow from the other)',
+    riderRun.setup === 'ok' && riderRun.hit && riderRun.stunnedApplied && riderRun.slowApplied,
+    JSON.stringify(riderRun),
+  );
+
+  // 3z-5. MELEE STRIKE-CHAIN: a melee-range chain leaps through three foes with
+  // falloff and sweeps one swing crescent per hop.
+  const meleeChain = await page.evaluate(async () => {
+    const ms = window.__ready();
+    const wait = (t) => new Promise((r) => setTimeout(r, t));
+    if (!window.__quietSpot()) return { setup: 'no quiet spot' };
+    const spawnAt = (dx) => {
+      const w = ms.activeMap().nearestWalkableWorld(ms.player.x + dx, ms.player.y);
+      return ms.spawnAngel('darkcaster', w.x, w.y);
+    };
+    const foes = [spawnAt(70), spawnAt(180), spawnAt(290)];
+    await wait(200);
+    // Casters KITE: pin the line — stun, then hard-place at the exact melee spacing.
+    ms.stunEnemiesInRange(ms.player.x + 180, ms.player.y, 400, 2500);
+    foes.forEach((f, i) => f.sprite.body.reset(ms.player.x + 70 + i * 110, ms.player.y));
+    ms.player.facingX = 1;
+    ms.player.facingY = 0;
+    const hp0 = foes.map((f) => f.health.current);
+    const swings0 = ms.swingFx.spawnedTotal;
+    ms.runComposedSteps([{ p: 'chain', range: 90, jumps: 2, jumpRange: 140, damage: 24, falloff: 0.5, tint: 0xd8c8ff, swingFx: true }]);
+    await wait(150);
+    const drops = foes.map((f, i) => hp0[i] - f.health.current);
+    const swings = ms.swingFx.spawnedTotal - swings0;
+    for (const f of foes) f.destroy();
+    return { setup: 'ok', drops, swings };
+  });
+  ok(
+    'bard ext — strike-chain: a melee hit leaps through three foes with falloff, one crescent per hop',
+    meleeChain.setup === 'ok' && meleeChain.drops.every((d) => d > 0) && meleeChain.drops[0] > meleeChain.drops[1] && meleeChain.drops[1] > meleeChain.drops[2] && meleeChain.swings === 3,
+    JSON.stringify(meleeChain),
+  );
+
+  // 3z-6. COMBO ULTIMATE: entering the state lands MULTIPLE auto-chained strikes
+  // with no further input while its buff runs, then the state ends on time.
+  const comboRun = await page.evaluate(async () => {
+    const ms = window.__ready();
+    const wait = (t) => new Promise((r) => setTimeout(r, t));
+    if (!window.__quietSpot()) return { setup: 'no quiet spot' };
+    const w = ms.activeMap().nearestWalkableWorld(ms.player.x + 60, ms.player.y);
+    const a = ms.spawnAngel('darkcaster', w.x, w.y);
+    await wait(200);
+    // Casters KITE: pin the target in melee reach for the whole combo window.
+    ms.stunEnemiesInRange(a.x, a.y, 400, 3000);
+    a.sprite.body.reset(ms.player.x + 60, ms.player.y);
+    const hp0 = a.health.current;
+    const swings0 = ms.swingFx.spawnedTotal;
+    ms.startComboUltimate('gate_combo_test', { durationMs: 1400, intervalMs: 300, range: 120, damage: 10, jumps: 1, jumpRange: 140, falloff: 0.5, tint: 0xd8c8ff, stats: { damageMult: 0.2 } });
+    const buffOn = ms.skillTimed.some((t) => t.id === 'gate_combo_test');
+    await wait(1000);
+    const midHits = ms.swingFx.spawnedTotal - swings0;
+    await wait(900); // past durationMs → the state must end
+    const ended = ms.comboUltimate === null;
+    const totalDrop = hp0 - a.health.current;
+    const finalHits = ms.swingFx.spawnedTotal - swings0;
+    await wait(300);
+    const noMore = ms.swingFx.spawnedTotal - swings0 === finalHits;
+    for (const t of ms.skillTimed) t.endsAt = 0; // clean the test buff
+    a.destroy();
+    return { setup: 'ok', buffOn, midHits, totalDrop, ended, noMore };
+  });
+  ok(
+    'bard ext — combo ultimate: rapid auto-chained strikes + a buff, ending on time',
+    comboRun.setup === 'ok' && comboRun.buffOn && comboRun.midHits >= 3 && comboRun.totalDrop > 0 && comboRun.ended && comboRun.noMore,
+    JSON.stringify(comboRun),
+  );
+
   // 4) THE GATE: zero page errors across everything above.
   ok('zero page errors during boot + travel', pageErrors.length === 0, pageErrors.slice(0, 3).join(' | '));
 } finally {

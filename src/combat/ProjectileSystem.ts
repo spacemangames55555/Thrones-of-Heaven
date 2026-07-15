@@ -37,6 +37,10 @@ export interface ProjectileSpawn {
    *  resolves the target via onSeekTarget. */
   seek?: boolean;
   seekTurnRate?: number;
+  /** IMPACT RIDER (player bolts, Bard framework): opaque control payload handed back
+   *  to the scene through onEnemyHit when the bolt lands on an enemy (stun/slow/
+   *  weaken/knockback at the impact point — the scene owns the effects). */
+  impactRider?: unknown;
 }
 
 /** One pooled bolt: a glowing sprite plus its flight state. */
@@ -61,6 +65,7 @@ class Bolt {
   tag?: string;
   seek = false;
   seekTurnRate = 6;
+  impactRider?: unknown;
 
   constructor(scene: Phaser.Scene, layer: Phaser.GameObjects.Layer) {
     this.sprite = scene.add.image(0, 0, TEXTURE_KEY).setDepth(13).setVisible(false);
@@ -88,6 +93,7 @@ class Bolt {
     this.tag = s.tag;
     this.seek = s.seek ?? false;
     this.seekTurnRate = s.seekTurnRate ?? 6;
+    this.impactRider = s.impactRider;
     this.sprite
       .setPosition(s.x, s.y)
       .setTint(this.color)
@@ -125,7 +131,7 @@ export class ProjectileSystem {
   /** Called for a PLAYER bolt each step: damage an enemy within (x,y,radius) that is NOT
    *  already in `hitSet` (pierce dedup), adding the one it hits; return true if a NEW enemy
    *  was hit. The scene owns the enemy lists, so it resolves the hit. */
-  onEnemyHit?: (x: number, y: number, radius: number, damage: number, hitSet?: Set<object>) => boolean;
+  onEnemyHit?: (x: number, y: number, radius: number, damage: number, hitSet?: Set<object>, impactRider?: unknown) => boolean;
   /** PIECE 2 — light aim-assist for PLAYER bolts: given a bolt's origin + intended
    *  direction, the scene returns a (possibly) nudged direction snapped toward the nearest
    *  enemy inside a small cone (or the same direction if none). Applied per bolt at spawn,
@@ -218,7 +224,7 @@ export class ProjectileSystem {
       }
       // PLAYER bolt: ask the scene to resolve a hit on a NEW enemy (pierce dedup via b.hits).
       // Each distinct enemy hit consumes one pierce; the bolt despawns when pierce is spent.
-      if (b.faction === 'player' && this.onEnemyHit?.(b.sprite.x, b.sprite.y, b.radius, b.damage, b.hits)) {
+      if (b.faction === 'player' && this.onEnemyHit?.(b.sprite.x, b.sprite.y, b.radius, b.damage, b.hits, b.impactRider)) {
         b.pierce -= 1;
         if (b.pierce <= 0) this.impact(b);
       }

@@ -287,8 +287,11 @@ export type ComposedStep =
        *  flight (turn rate rad/sec, default 6) — the missile-barrage primitive. */
       seek?: boolean;
       seekTurnRate?: number;
+      /** IMPACT rider (Bard framework, plain bolts): control applied where the bolt
+       *  lands. ROTATING RIDERS = several bolt steps, each with a different onHit. */
+      onHit?: { stunMs?: number; slowFactor?: number; slowMs?: number; weaken?: number; weakenMs?: number; knockback?: number };
     }
-  | { p: 'cone'; range: number; halfAngleDeg: number; damage: number; tint: number; knockback?: number; knockbackStunMs?: number; slowFactor?: number; slowMs?: number }
+  | { p: 'cone'; range: number; halfAngleDeg: number; damage: number; tint: number; knockback?: number; knockbackStunMs?: number; slowFactor?: number; slowMs?: number; stunMs?: number }
   | { p: 'line'; length: number; width: number; damage: number; tint: number }
   | {
       p: 'hazard';
@@ -322,6 +325,9 @@ export type ComposedStep =
       damage: number;
       falloff: number;
       tint: number;
+      /** STRIKE-CHAIN (Bard framework): draw the melee swing crescent per hop
+       *  instead of only the arc lines — the chain machinery as a melee combo. */
+      swingFx?: boolean;
     }
   | {
       /** DUAL-USE bolt (smart-target): with an enemy within `range` it fires a
