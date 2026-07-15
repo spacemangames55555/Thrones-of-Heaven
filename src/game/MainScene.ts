@@ -56,7 +56,7 @@ import { CHAMPION_SPECS } from '../world/champion-specs';
 import { triggerForBeat } from '../world/quest-factory';
 import type { Zone as ManifestZone, QuestBeat } from '../world/world-manifest';
 import { ProjectileSystem } from '../combat/ProjectileSystem';
-import { FloatingTextPool, CircleFxPool } from '../combat/FxPools';
+import { FloatingTextPool, CircleFxPool, SwingFxPool } from '../combat/FxPools';
 import { HazardField } from '../combat/HazardField';
 import { PickupSystem, type PickupCollected } from '../world/PickupSystem';
 import { HolyPower } from '../progression/HolyPower';
@@ -167,6 +167,7 @@ import {
   DEV_ZONE_LABEL_MAX_ZOOM,
   MAX_FLOATING_TEXTS,
   MAX_CIRCLE_FX,
+  MAX_SWING_FX,
   DMG_PER_LEVEL,
   MAX_ENERGY,
   ENERGY_REGEN_PER_SEC,
@@ -498,6 +499,9 @@ export class MainScene extends Phaser.Scene {
   // under-load churn — see src/combat/FxPools.ts). Reused, not re-allocated.
   private floatingText!: FloatingTextPool;
   private circleFx!: CircleFxPool;
+  /** Melee swing crescents (the strike primitive's generic FX). Public-readable
+   *  so the runtime gate can watch spawnedTotal / the pool cap. */
+  swingFx!: SwingFxPool;
   // Per-frame cache of the live combat-enemy list (perf): the concat+filter used to
   // allocate a fresh array on every AoE/DoT/contagion/aim/scan call — many per frame.
   private combatEnemyCache: CombatEnemy[] = [];
@@ -1179,6 +1183,7 @@ export class MainScene extends Phaser.Scene {
     // of allocating/freeing them per hit — the measured cause of the under-load stutter.
     this.floatingText = new FloatingTextPool(this, this.worldFx, MAX_FLOATING_TEXTS);
     this.circleFx = new CircleFxPool(this, this.worldFx, MAX_CIRCLE_FX);
+    this.swingFx = new SwingFxPool(this, this.worldFx, MAX_SWING_FX); // melee swing crescents (strike primitive)
     // The reusable projectile system draws bolts into the world-FX layer (so the
     // UI camera ignores them). Enemy bolts damage the player; impacts spawn a poof.
     this.projectiles = new ProjectileSystem(this, this.map, this.worldFx);
@@ -1505,6 +1510,7 @@ export class MainScene extends Phaser.Scene {
     // in-flight labels/flashes finish fading instead of sticking).
     this.floatingText.tick(this.time.now);
     this.circleFx.tick(this.time.now);
+    this.swingFx.tick(this.time.now);
     this.perfReadout?.sample(delta); // DEV-only FPS / frame-time + counts (runs every frame)
     this.updateCombatHud();
     this.updateClimaxQuestActivation(); // self-healing climax start + world catch-up (all worlds)
@@ -2118,6 +2124,15 @@ export class MainScene extends Phaser.Scene {
       this.endChannel(true);
       if (wasSame) return;
     }
+    // TOGGLE transformation (Encapsulation): casting again while the form is ACTIVE
+    // always EXITS — never cooldown-gated and free — while the ENTRY cooldown keeps
+    // running, so exit-and-instantly-re-enter flicker stays impossible.
+    if (e.kind === 'transformation' && e.toggle && this.skillTimed.some((t) => t.id === id)) {
+      this.skillTimed = this.skillTimed.filter((t) => t.id !== id);
+      this.recomputeSkillEffects();
+      this.showBanner(`${this.skillButtonLabel(def)} released`, 1100);
+      return;
+    }
     if (this.time.now < (this.skillCooldownUntil[id] ?? 0)) return; // on cooldown
     const energyCost = 'energyCost' in e ? e.energyCost ?? 0 : 0;
     if (energyCost > 0 && this.energy.current < energyCost) return; // not enough energy
@@ -2142,7 +2157,9 @@ export class MainScene extends Phaser.Scene {
       this.runActiveSkill(e.action);
     } else if (e.kind === 'buff' || e.kind === 'transformation') {
       const aura = e.kind === 'transformation' ? { auraDamage: e.auraDamage, auraRadius: e.auraRadius } : {};
-      this.startTimedSkill(id, e.durationMs, e.stats, e.tint, aura);
+      // TOGGLE forms run WITHOUT a timer (Infinity never expires; the exit cast above ends them).
+      const duration = e.kind === 'transformation' && e.toggle ? Number.POSITIVE_INFINITY : e.durationMs;
+      this.startTimedSkill(id, duration, e.stats, e.tint, aura);
       this.showBanner(`${this.skillButtonLabel(def)} active!`, 1400);
     } else if (e.kind === 'debuff') {
       this.runDebuffSkill(e.radius);
@@ -2407,6 +2424,10 @@ export class MainScene extends Phaser.Scene {
           x = target.x;
           y = target.y;
         }
+        // MELEE SWING FX (generic): a pooled crescent pivots at the caster toward the
+        // strike direction — every strike-based skill inherits it, one arc PER PULSE.
+        const swingAng = x === cx && y === cy ? Math.atan2(this.player.facingY, this.player.facingX) : Math.atan2(y - cy, x - cx);
+        this.swingFx.show(cx, cy, Math.min(radius, 110), s.tint ?? 0xffe9a8, swingAng);
         if (!s.noRing && s.tint !== undefined) this.spawnSkillRing(x, y, radius, s.tint);
         // Soul-Siphon heals count enemies BEFORE the hit (the strike may kill).
         const preHits = s.healPerHit !== undefined ? Math.min(s.maxHeals ?? Infinity, this.combatEnemiesInRange(x, y, radius).length) : 0;

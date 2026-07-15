@@ -118,6 +118,109 @@ export class FloatingTextPool {
   }
 }
 
+interface SwingItem {
+  obj: Phaser.GameObjects.Arc;
+  active: boolean;
+  startAt: number;
+  durationMs: number;
+  fromRot: number;
+  toRot: number;
+  fromAlpha: number;
+}
+
+const SWING_BASE_R = 40; // base crescent radius; per-show size is applied via scale
+const SWING_HALF_DEG = 32; // the crescent wedge's half-angle
+const SWING_SWEEP_RAD = 1.6; // how far the crescent pivots across the swing (total)
+
+/**
+ * Pooled MELEE SWING crescents (the strike primitive's generic swing FX): a wedge
+ * that SWEEPS — pivoting at the attacker from one side of the target direction to
+ * the other — while fading. Same manual-tick pooling as the other FX (no per-swing
+ * allocations; the oldest active arc recycles at the cap).
+ */
+export class SwingFxPool {
+  private readonly scene: Phaser.Scene;
+  private readonly layer: Phaser.GameObjects.Layer;
+  private readonly max: number;
+  private readonly items: SwingItem[] = [];
+  /** Total swings ever shown (runtime-gate observable: one per strike pulse). */
+  spawnedTotal = 0;
+
+  constructor(scene: Phaser.Scene, layer: Phaser.GameObjects.Layer, max: number) {
+    this.scene = scene;
+    this.layer = layer;
+    this.max = max;
+  }
+
+  get activeCount(): number {
+    let n = 0;
+    for (const it of this.items) if (it.active) n++;
+    return n;
+  }
+  get size(): number {
+    return this.items.length;
+  }
+
+  /** Sweep a crescent of `radius` pivoting at (x,y) across `angleRad` (the target
+   *  direction), tinted per skill. Reuses a pooled Arc; recycles the oldest if full. */
+  show(x: number, y: number, radius: number, color: number, angleRad: number, opts?: { alpha?: number; durationMs?: number; depth?: number }): void {
+    const alpha = opts?.alpha ?? 0.5;
+    const durationMs = opts?.durationMs ?? 160;
+    const depth = opts?.depth ?? 13;
+
+    let it = this.items.find((i) => !i.active);
+    if (!it) {
+      if (this.items.length < this.max) {
+        const o = this.scene.add.arc(0, 0, SWING_BASE_R, -SWING_HALF_DEG, SWING_HALF_DEG, false, 0xffffff, alpha).setDepth(depth);
+        this.layer.add(o);
+        it = { obj: o, active: false, startAt: 0, durationMs: 0, fromRot: 0, toRot: 0, fromAlpha: 1 };
+        this.items.push(it);
+      } else {
+        it = this.items.reduce((a, b) => (a.startAt <= b.startAt ? a : b)); // hard cap: recycle the oldest
+      }
+    }
+
+    const o = it.obj;
+    o.setFillStyle(color, alpha);
+    o.setDepth(depth);
+    o.setPosition(x, y);
+    o.setScale(Math.max(0.4, radius / SWING_BASE_R));
+    o.setAlpha(alpha);
+    o.setRotation(angleRad - SWING_SWEEP_RAD / 2);
+    o.setVisible(true);
+    it.active = true;
+    it.startAt = this.scene.time.now;
+    it.durationMs = durationMs;
+    it.fromRot = angleRad - SWING_SWEEP_RAD / 2;
+    it.toRot = angleRad + SWING_SWEEP_RAD / 2;
+    it.fromAlpha = alpha;
+    this.spawnedTotal++;
+  }
+
+  /** Advance every active swing (pivot + fade); deactivate when finished. */
+  tick(now: number): void {
+    for (const it of this.items) {
+      if (!it.active) continue;
+      const p = (now - it.startAt) / it.durationMs;
+      if (p >= 1) {
+        it.active = false;
+        it.obj.setVisible(false);
+        continue;
+      }
+      const e = 1 - (1 - p) * (1 - p); // Quad.out
+      it.obj.setRotation(it.fromRot + (it.toRot - it.fromRot) * e);
+      it.obj.setAlpha(it.fromAlpha * (1 - p * 0.9));
+    }
+  }
+
+  clear(): void {
+    for (const it of this.items) {
+      it.active = false;
+      it.obj.setVisible(false);
+    }
+  }
+}
+
 interface CircleItem {
   obj: Phaser.GameObjects.Arc;
   active: boolean;
