@@ -9,6 +9,7 @@ const MAGE_TEXTURE_KEY = 'mage-figure'; // Mage (Moscow reality-surgeon) avatar 
 const BARD_TEXTURE_KEY = 'bard-figure'; // Bard (London memory-keeper) avatar
 const WITCHDOCTOR_TEXTURE_KEY = 'witchdoctor-figure'; // Witch Doctor (Kinshasa spirit-speaker) avatar
 const SAMURAI_TEXTURE_KEY = 'samurai-figure'; // Samurai (Kyoto blade) avatar
+const MONK_TEXTURE_KEY = 'monk-figure'; // Monk (Lhasa ascetic) avatar
 const WIDTH = 32; // ~1 tile wide
 const HEIGHT = 48; // ~1.5 tiles tall — fixes the "character = one giant block" look
 
@@ -21,6 +22,7 @@ function textureForClass(classId: string): string {
   if (classId === 'bard') return BARD_TEXTURE_KEY;
   if (classId === 'witchdoctor') return WITCHDOCTOR_TEXTURE_KEY;
   if (classId === 'samurai') return SAMURAI_TEXTURE_KEY;
+  if (classId === 'monk') return MONK_TEXTURE_KEY;
   return TEXTURE_KEY;
 }
 
@@ -47,6 +49,7 @@ export class Player {
     Player.ensureBardTexture(scene);
     Player.ensureWitchDoctorTexture(scene);
     Player.ensureSamuraiTexture(scene);
+    Player.ensureMonkTexture(scene);
 
     this.sprite = scene.physics.add.sprite(x, y, textureForClass(classId));
     this.sprite.setCollideWorldBounds(true);
@@ -417,6 +420,46 @@ export class Player {
     g.fillRect(sx - 1, h - 32, 3, 2); // koiguchi
     g.fillRect(sx - 1, h - 18, 3, 2); // kojiri
     g.generateTexture(SAMURAI_TEXTURE_KEY, w, h);
+    g.destroy();
+  }
+
+  /** Draw the Lhasa MONK avatar (saffron-and-ochre robe, shaved head, prayer
+   *  beads) as a generated texture — a CODE-DRAWN PLACEHOLDER (a real sprite
+   *  PNG drops in later via the sprite override under this same key). Same
+   *  footprint as the other figures. */
+  private static ensureMonkTexture(scene: Phaser.Scene): void {
+    if (scene.textures.exists(MONK_TEXTURE_KEY)) return;
+    const w = WIDTH;
+    const h = HEIGHT;
+    const g = scene.make.graphics({ x: 0, y: 0 }, false);
+    // Dark outline + the saffron robe body.
+    g.fillStyle(0x3a2410, 1);
+    g.fillRoundedRect(4, 8, w - 8, h - 10, 9);
+    g.fillStyle(0xe8a03a, 1); // saffron robe
+    g.fillRoundedRect(6, 10, w - 12, h - 14, 7);
+    // The ochre over-robe draped across one shoulder (the other arm bare).
+    g.fillStyle(0xb0621e, 1);
+    g.fillRect(6, 20, (w - 12) * 0.55, h - 26);
+    g.fillRect(6, 16, 8, 8); // the shoulder fold
+    // Robe hem line.
+    g.fillStyle(0x8a4a16, 1);
+    g.fillRect(8, h - 9, w - 16, 2);
+    // Prayer beads: a short arc of dark dots across the chest.
+    g.fillStyle(0x4a2a18, 1);
+    g.fillCircle(w / 2 - 6, 24, 1.4);
+    g.fillCircle(w / 2 - 2, 26, 1.4);
+    g.fillCircle(w / 2 + 2, 26, 1.4);
+    g.fillCircle(w / 2 + 6, 24, 1.4);
+    // Shaved head (no helm, no hair) + calm eyes.
+    g.fillStyle(0xd8a878, 1);
+    g.fillCircle(w / 2, 13, 6);
+    g.fillStyle(0x2a1a10, 1);
+    g.fillCircle(w / 2 - 2.2, 14, 1);
+    g.fillCircle(w / 2 + 2.2, 14, 1);
+    // A faint chi-green wrist wrap on the bare arm (the class accent).
+    g.fillStyle(0xa8ffd0, 1);
+    g.fillRect(w - 11, 34, 4, 2.4);
+    g.generateTexture(MONK_TEXTURE_KEY, w, h);
     g.destroy();
   }
 }

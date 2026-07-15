@@ -118,6 +118,8 @@ import {
   EFFIGY_TUNING,
   REVENANT_CONFIG,
   REVENANT_TUNING,
+  ASTRAL_DECOY_CONFIG,
+  ASTRAL_DECOY_TUNING,
 } from '../summon/summonData';
 import { TAPESTRY_TUNING, BEAR_MIGHT_ID, ELEPHANT_RAGE_ID } from '../skills/druidTapestry';
 import { RESTORATION_TUNING, CLAY_ID, OIL_IMMUNITY_ID, OIL_VITALITY_ID } from '../skills/druidRestoration';
@@ -133,6 +135,9 @@ import { WD_SPIRIT_TUNING } from '../skills/witchdoctorSpirit';
 import { SAM_BLADE_TUNING, RAZORS_EDGE_ID } from '../skills/samuraiBlade';
 import { SAM_STANCE_TUNING, COUNTERSTRIKE_ID, IMMOVABLE_MIND_ID } from '../skills/samuraiStances';
 import { SAM_BOW_TUNING } from '../skills/samuraiBow';
+import { MONK_PALM_TUNING } from '../skills/monkIronPalm';
+import { MONK_CHI_TUNING } from '../skills/monkChi';
+import { MONK_SPIRIT_TUNING, ENLIGHTENED_MIND_ID, MEDITATION_ID } from '../skills/monkSpiritual';
 import { PlayerPower } from '../player/PlayerPower';
 import { URIEL_SCENE } from '../story/urielData';
 import { URIEL_SENDOFF_LINES, RIFT_SCENE } from '../story/riftSceneData';
@@ -703,6 +708,9 @@ export class MainScene extends Phaser.Scene {
    *  ("no ally") — activateSkill refunds the cooldown + energy so a graceful
    *  miss never wastes anything. */
   actionWhiffed = false;
+  /** EMPOWERED STRIKES (count-N consume-buff): the next `remaining` strikes deal
+   *  damage × mult, each hit spending one charge (the Iaijutsu shape, N deep). */
+  empoweredStrikes: { remaining: number; mult: number } | null = null;
   /**
    * CHANNELED-BEAM state (the channel primitive). Transient: a single active channel locks
    * one enemy, ticks damage, optionally trickles energy, and is cancelled by movement / any
@@ -2116,6 +2124,7 @@ export class MainScene extends Phaser.Scene {
     this.iaijutsu = null;
     this.pulseRing = null; // Monk state never survives a reset either
     this.actionWhiffed = false;
+    this.empoweredStrikes = null;
     this.breakPlayerStealth();
     this.clearDots();
     this.summons.clear();
@@ -2702,6 +2711,79 @@ export class MainScene extends Phaser.Scene {
         { p: 'bolt', damage: c.boltDamage, speed: c.boltSpeed, range: c.boltRange, radius: c.boltRadius, tint: 0xd8e8ff },
         c.fireDelayMs,
       );
+    } else if (action === 'monk_deflect') {
+      // Monk Iron Palm #5 — the parry window's MONK config (extension #1): melee
+      // AND projectiles turned aside, projectiles riposted at the lighter mult.
+      const c = MONK_PALM_TUNING.deflect;
+      this.openParryWindow(c.windowMs, this.skillDamage(c.riposteDamage), { deflectProjectiles: true, projectileRiposteMult: c.projectileRiposteMult });
+    } else if (action === 'monk_rising') {
+      // Monk Iron Palm #7 — the dash-through rising strike (the charge machinery).
+      const c = MONK_PALM_TUNING.rising;
+      this.startCharge({ distance: c.distance, damage: this.skillDamage(c.damage), knockdownMs: c.knockdownMs });
+    } else if (action === 'monk_empower') {
+      // Monk Iron Palm #8 — the count-N consume-buff: next N strikes hit ×mult.
+      const c = MONK_PALM_TUNING.empower;
+      this.empoweredStrikes = { remaining: c.charges, mult: c.mult };
+      this.spawnSkillRing(px, py, 50, 0xa8ffd0);
+      this.showBanner('The fists fill with chi', 1100);
+    } else if (action === 'monk_hundred') {
+      // Monk Iron Palm #10 ultimate — the combo-ultimate machinery on a 280ms beat.
+      const c = MONK_PALM_TUNING.hundred;
+      this.startComboUltimate('monk_ip_hundred', {
+        durationMs: c.durationMs, intervalMs: c.intervalMs, range: c.range, damage: c.damage,
+        jumps: c.jumps, jumpRange: c.jumpRange, falloff: c.falloff, tint: c.tint,
+        stats: { attackSpeedMult: c.attackSpeedMult },
+      });
+      this.showBanner('HUNDRED HANDS', 1400);
+    } else if (action === 'monk_tranquil') {
+      // Monk Chi #4 — one perfect stillness: a burst of Chi (energy) back.
+      const c = MONK_CHI_TUNING.tranquil;
+      this.energy.heal(c.energy);
+      this.spawnSkillRing(px, py, 60, 0xa8ffd0);
+      this.showBanner('The breath returns', 900);
+    } else if (action === 'monk_acupuncture') {
+      // Monk Chi #7 — mend + STRIP ONE harmful effect clinging to the player
+      // (a hostile DoT stack first, then the slow, then either weaken).
+      const c = MONK_CHI_TUNING.acupuncture;
+      this.playerHealth.heal(c.heal);
+      this.spawnSkillRing(px, py, 60, 0xa8ffd0);
+      this.spawnDamageNumber(px, py - 30, c.heal, '#a8ffd0');
+      const now = this.time.now;
+      if (this.casterDotStacks.length > 0) this.casterDotStacks.pop();
+      else if (now < this.casterSlowUntil) this.casterSlowUntil = 0;
+      else if (now < this.casterWeakenUntil) this.casterWeakenUntil = 0;
+      else if (now < this.poisonWeakenUntil) { this.poisonWeakenUntil = 0; this.poisonWeakenFactor = 0; }
+      else { this.showBanner('Nothing to strip', 900); return; }
+      this.showBanner('The needle finds the poison', 1100);
+    } else if (action === 'monk_infusion') {
+      // Monk Chi #8 — the HP-cost heal to a friendly (the ALLY RULE: a whiff
+      // refunds the cooldown + energy via actionWhiffed).
+      const c = MONK_CHI_TUNING.infusion;
+      if (!this.transferHealToAlly(c.range, c.cost, c.heal)) this.actionWhiffed = true;
+    } else if (action === 'monk_enigma') {
+      // Monk Spirit #2 — the confusion reuse: it no longer knows what it sees.
+      const c = MONK_SPIRIT_TUNING.enigma;
+      const turned = this.confuseNearestEnemy(px, py, c.range, c.chance, c.durationMs, c.chipDamage, c.chipMs);
+      this.showBanner(turned ? 'It turns on its own' : 'The presence slips past', 1100);
+    } else if (action === 'monk_divine') {
+      // Monk Spirit #3 — the ally-bond reuse, behind the ALLY RULE: with no live
+      // companion the bond has nowhere to land — a graceful refunded whiff.
+      const c = MONK_SPIRIT_TUNING.divine;
+      if (this.summons.list.some((sm) => sm.isAlive)) {
+        this.startAllyBond(c.sharePct, c.durationMs);
+      } else {
+        this.showBanner('No companion to bond with', 1000);
+        this.actionWhiffed = true;
+      }
+    } else if (action === 'monk_astral') {
+      // Monk Spirit #5 — the decoy reuse in the Monk's colors (magnet tank).
+      this.summonAlliedUnits(ASTRAL_DECOY_CONFIG, 1, ASTRAL_DECOY_TUNING.maxConcurrent, ASTRAL_DECOY_TUNING.durationMs);
+      this.showBanner('The spirit-self walks', 1100);
+    } else if (action === 'monk_wheel') {
+      // Monk Spirit #7 — the MOBILE pulse ring (extension #3): it turns WITH you.
+      const c = MONK_SPIRIT_TUNING.wheel;
+      this.startPulseRing(c.durationMs, c.intervalMs, c.radius, this.skillDamage(c.damage), c.tint);
+      this.showBanner('The wheel turns', 1100);
     }
   }
 
@@ -2772,6 +2854,12 @@ export class MainScene extends Phaser.Scene {
             this.stunEnemiesInRange(x, y, radius, this.iaijutsu.stunMs);
           }
           this.iaijutsu = null;
+        }
+        // EMPOWERED STRIKES (Monk): the count-N consume-buff — each striking
+        // pulse spends ONE ×mult charge; the buff clears when the last is spent.
+        if (dmg > 0 && this.empoweredStrikes) {
+          dmg *= this.empoweredStrikes.mult;
+          if (--this.empoweredStrikes.remaining <= 0) this.empoweredStrikes = null;
         }
         if (dmg > 0) this.aoeHitAll(x, y, radius, dmg);
         // RAZOR'S EDGE (Samurai keyed passive): strikes leave a bleed DoT.
@@ -4771,6 +4859,12 @@ export class MainScene extends Phaser.Scene {
    *  buff). Both bounce damage to nearby attackers; `amount` is the HP just lost. */
   private onPlayerHurt(amount: number): void {
     if (this.playerDead) return;
+    // MEDITATION (Monk): the rapid mend BREAKS the moment any blow lands.
+    if (amount > 0 && this.skillTimed.some((t) => t.id === MEDITATION_ID)) {
+      this.skillTimed = this.skillTimed.filter((t) => t.id !== MEDITATION_ID);
+      this.recomputeSkillEffects();
+      this.showBanner('Meditation broken', 1000);
+    }
     // REFLECT (Ethereal buff): bounce a fraction of the damage taken back at nearby foes.
     const reflectPct = this.combinedSkillMods().reflectPct ?? 0;
     if (reflectPct > 0 && amount > 0) {
@@ -4790,8 +4884,8 @@ export class MainScene extends Phaser.Scene {
   /** True while the player ignores crowd control (Iron Will passive or Iron Pyrite form). */
   private isPlayerCcImmune(): boolean {
     // Iron Will (passive) / Iron Pyrite (form) / Chant of the Ancestors (Bard timed buff).
-    // IMMOVABLE MIND (Samurai) joins the permanent-immunity half of the rule.
-    return this.skills.isUnlocked(IRON_WILL_ID) || this.skills.isUnlocked(IMMOVABLE_MIND_ID) || this.skillTimed.some((t) => t.id === IRON_PYRITE_ID || t.id === CHANT_OF_ANCESTORS_ID);
+    // IMMOVABLE MIND (Samurai) and ENLIGHTENED MIND (Monk) join the permanent half.
+    return this.skills.isUnlocked(IRON_WILL_ID) || this.skills.isUnlocked(IMMOVABLE_MIND_ID) || this.skills.isUnlocked(ENLIGHTENED_MIND_ID) || this.skillTimed.some((t) => t.id === IRON_PYRITE_ID || t.id === CHANT_OF_ANCESTORS_ID);
   }
 
   /**
@@ -5122,6 +5216,7 @@ export class MainScene extends Phaser.Scene {
     this.iaijutsu = null;
     this.pulseRing = null; // Monk state never survives a reset either
     this.actionWhiffed = false;
+    this.empoweredStrikes = null;
     this.breakPlayerStealth();
     this.clearDots();
     this.despawnRegionChampion(); // death resets a champion encounter cleanly
@@ -6607,6 +6702,7 @@ export class MainScene extends Phaser.Scene {
       this.iaijutsu = null;
       this.pulseRing = null;
       this.actionWhiffed = false;
+      this.empoweredStrikes = null;
       this.breakPlayerStealth();
       this.clearDots(); // drop any poison DoTs
       this.summons.clear(); // summons are transient — never carried across a load
@@ -9248,6 +9344,7 @@ export class MainScene extends Phaser.Scene {
     this.iaijutsu = null;
     this.pulseRing = null; // Monk state never survives a reset either
     this.actionWhiffed = false;
+    this.empoweredStrikes = null;
     this.breakPlayerStealth();
     this.clearDots();
 
@@ -10619,6 +10716,7 @@ export class MainScene extends Phaser.Scene {
     this.iaijutsu = null;
     this.pulseRing = null; // Monk state never survives a reset either
     this.actionWhiffed = false;
+    this.empoweredStrikes = null;
     this.breakPlayerStealth();
     this.clearDots();
     this.summons.clear();

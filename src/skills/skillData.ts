@@ -43,12 +43,15 @@ import { WD_SPIRIT_SKILLS, WD_SPIRIT_TREE } from './witchdoctorSpirit';
 import { SAM_BLADE_SKILLS, SAM_BLADE_TREE } from './samuraiBlade';
 import { SAM_STANCE_SKILLS, SAM_STANCE_TREE } from './samuraiStances';
 import { SAM_BOW_SKILLS, SAM_BOW_TREE } from './samuraiBow';
+import { MONK_PALM_SKILLS, MONK_PALM_TREE } from './monkIronPalm';
+import { MONK_CHI_SKILLS, MONK_CHI_TREE } from './monkChi';
+import { MONK_SPIRIT_SKILLS, MONK_SPIRIT_TREE } from './monkSpiritual';
 
 /** How many active skills the player can equip to on-screen slots. */
 export const LOADOUT_SLOTS = 6;
 
 /** The playable classes. Only the Blacksmith has trees this batch; others slot in later. */
-export type ClassId = 'blacksmith' | 'necromancer' | 'wizard' | 'druid' | 'mage' | 'bard' | 'witchdoctor' | 'samurai';
+export type ClassId = 'blacksmith' | 'necromancer' | 'wizard' | 'druid' | 'mage' | 'bard' | 'witchdoctor' | 'samurai' | 'monk';
 
 /** Stat modifiers a skill contributes — used by PASSIVE (permanent) and by timed
  *  BUFF / TRANSFORMATION effects (while active). All optional; absent = no change. */
@@ -269,7 +272,31 @@ export type ActiveActionId =
   | 'sam_flaming'
   | 'sam_rain'
   | 'sam_pinning'
-  | 'sam_heavens_arc';
+  | 'sam_heavens_arc'
+  // Monk actives (bespoke ids; composed skills share the executor).
+  | 'monk_palm'
+  | 'monk_flurry'
+  | 'monk_sweep'
+  | 'monk_deflect'
+  | 'monk_pressure'
+  | 'monk_rising'
+  | 'monk_empower'
+  | 'monk_silent'
+  | 'monk_hundred'
+  | 'monk_chi_wave'
+  | 'monk_soothe'
+  | 'monk_tranquil'
+  | 'monk_aura'
+  | 'monk_acupuncture'
+  | 'monk_infusion'
+  | 'monk_barrier'
+  | 'monk_explosion'
+  | 'monk_force_palm'
+  | 'monk_enigma'
+  | 'monk_divine'
+  | 'monk_astral'
+  | 'monk_wheel'
+  | 'monk_mantra';
 
 /**
  * The five supported EFFECT KINDS. The scene applies them generically:
@@ -598,6 +625,10 @@ const NON_DAMAGING_ACTIVE_ACTIONS: ReadonlySet<ActiveActionId> = new Set([
   'wd_decoy', 'wd_cursed_vision', 'wd_echoes', 'wd_brew', 'wd_totem', 'wd_hex_ritual', 'wd_blood_pact', 'wd_spirit_walk', 'wd_soul_bind', 'wd_effigy', 'wd_revenant',
   // Samurai utility actives (the reactive parry window + the Resolve/health breath).
   'sam_parry', 'sam_breath',
+  // Monk utility actives (the deflect window, the consume-buff arm, heals/Chi
+  // restores/cleanse/the HP-cost infusion, shield, stealth, the confusion, the
+  // ally-bond, the decoy, and the no-damage stillness field).
+  'monk_deflect', 'monk_empower', 'monk_silent', 'monk_soothe', 'monk_tranquil', 'monk_aura', 'monk_acupuncture', 'monk_infusion', 'monk_barrier', 'monk_enigma', 'monk_divine', 'monk_astral', 'monk_mantra',
 ]);
 
 /**
@@ -658,6 +689,10 @@ const NON_AIMABLE_ACTIONS: ReadonlySet<ActiveActionId> = new Set<ActiveActionId>
   // First Cut/Twin Fangs/Crescent/Dragonfly/Petal/Guard Break/Kiai and every
   // arrow stay directional (drag-to-aim).
   'sam_iaijutsu', 'sam_challenge', 'sam_thousand_cuts', 'sam_parry', 'sam_breath', 'sam_perfect_form',
+  // Monk: self-states, heals, the self-centered duals/zones, the auto-targeting
+  // spirit casts, and the decoy. Palm/Flurry/Sweep/Pressure/Rising Dragon/
+  // Chi Wave/Force Palm stay directional (drag-to-aim).
+  'monk_deflect', 'monk_empower', 'monk_silent', 'monk_hundred', 'monk_soothe', 'monk_tranquil', 'monk_aura', 'monk_acupuncture', 'monk_infusion', 'monk_barrier', 'monk_explosion', 'monk_enigma', 'monk_divine', 'monk_astral', 'monk_wheel', 'monk_mantra',
 ]);
 
 /**
@@ -878,6 +913,31 @@ const SAMURAI: ClassSkills = {
   ],
 };
 
+// ─── MONK (Asia's second native; Lhasa) ────────────────────────────────────────
+// Empty hands, full spirit — three trees of 10: IRON PALM (fast open-hand melee,
+// Deflect = the parry window's melee+projectile config, Hundred Hands combo
+// ultimate), CHI MASTERY (sustain + the DUAL casts that wound enemies and mend
+// friendlies in one motion; Life Infusion rides the ALLY RULE), and SPIRITUAL
+// HARMONY (decoy/confusion/ally-bond reuses, the mobile Prayer Wheel, the timed-
+// buff finishers). "Chi" is prose over standard energy. Tier-0s: Palm Strike,
+// Chi Wave, Force Palm.
+const MONK: ClassSkills = {
+  classId: 'monk',
+  trees: [
+    { id: MONK_PALM_TREE, name: 'Iron Palm' }, // 10 melee skills (opens on Palm Strike)
+    { id: MONK_CHI_TREE, name: 'Chi' }, // 10 sustain/dual skills (opens on Chi Wave)
+    { id: MONK_SPIRIT_TREE, name: 'Spirit' }, // 10 spirit/control skills (opens on Force Palm)
+  ],
+  skills: [
+    // --- IRON PALM (10 skills, linear; melee). Data in monkIronPalm.ts. ---
+    ...MONK_PALM_SKILLS,
+    // --- CHI MASTERY (10 skills, linear; sustain/duals). Data in monkChi.ts. ---
+    ...MONK_CHI_SKILLS,
+    // --- SPIRITUAL HARMONY (10 skills, linear; spirit/control). Data in monkSpiritual.ts. ---
+    ...MONK_SPIRIT_SKILLS,
+  ],
+};
+
 export const CLASS_SKILLS: Record<ClassId, ClassSkills> = {
   blacksmith: BLACKSMITH,
   wizard: WIZARD,
@@ -887,6 +947,7 @@ export const CLASS_SKILLS: Record<ClassId, ClassSkills> = {
   bard: BARD,
   witchdoctor: WITCHDOCTOR,
   samurai: SAMURAI,
+  monk: MONK,
 };
 
 /** Look up a class's full skill set (trees + skills). */

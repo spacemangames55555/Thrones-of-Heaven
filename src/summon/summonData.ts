@@ -633,6 +633,35 @@ export const SPIRIT_DECOY_CONFIG: AlliedSummonConfig = {
   aggroPriority: AGGRO_TIER.MAGNET, // the Polar Bear's magnet tier — enemies prefer it
 };
 
+// ASTRAL PROJECTION (Monk): the spirit-decoy machinery in the Monk's colors —
+// a spirit-self that walks apart, soaks (MAGNET tier), and never attacks. It is
+// also the friendly the ALLY RULE points at (Life Infusion can mend it).
+export const ASTRAL_DECOY_TUNING = {
+  maxHP: 160,
+  durationMs: 10000,
+  aggroRadius: 260,
+  followRange: 180,
+  moveTilesPerSec: 5.5,
+  bodyRadius: 16,
+  maxConcurrent: 1,
+  tint: 0xa8ffd0, // the Monk's chi-green
+} as const;
+
+export const ASTRAL_DECOY_CONFIG: AlliedSummonConfig = {
+  key: 'monk_astral',
+  name: 'Astral Self',
+  behavior: 'tank', // follows + soaks; never attacks
+  maxHP: ASTRAL_DECOY_TUNING.maxHP,
+  durationMs: ASTRAL_DECOY_TUNING.durationMs,
+  aggroRadius: ASTRAL_DECOY_TUNING.aggroRadius,
+  followRange: ASTRAL_DECOY_TUNING.followRange,
+  moveTilesPerSec: ASTRAL_DECOY_TUNING.moveTilesPerSec,
+  bodyRadius: ASTRAL_DECOY_TUNING.bodyRadius,
+  tint: ASTRAL_DECOY_TUNING.tint,
+  drawsAggro: true,
+  aggroPriority: AGGRO_TIER.MAGNET, // enemies prefer the spirit-self
+};
+
 // MINI-DECOY (Spectral Echoes): tiny short-lived illusions on the decoy seam —
 // they pull light aggro (MINION tier, below any true tank) and simply stand there.
 export const MINI_DECOY_TUNING = {

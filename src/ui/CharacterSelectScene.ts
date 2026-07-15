@@ -22,6 +22,7 @@ const CLASS_OPTIONS: ClassOption[] = [
   { id: 'bard', name: 'Bard', blurb: 'Memory-keeper and war-drum. Where the Bard plays, the battlefield dances.', fill: 0x3a2430, stroke: 0xffb8d0 },
   { id: 'witchdoctor', name: 'Witch Doctor', blurb: 'The drum speaks and the spirits answer. Somewhere far away, his enemy feels every blow.', fill: 0x24342c, stroke: 0x8fe8d0 },
   { id: 'samurai', name: 'Samurai', blurb: 'One breath. One cut.', fill: 0x3a2020, stroke: 0xffd8b0 },
+  { id: 'monk', name: 'Monk', blurb: 'Empty hands. Full spirit.', fill: 0x1c3430, stroke: 0xa8ffd0 },
 ];
 
 /**
