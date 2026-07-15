@@ -633,6 +633,98 @@ export const SPIRIT_DECOY_CONFIG: AlliedSummonConfig = {
   aggroPriority: AGGRO_TIER.MAGNET, // the Polar Bear's magnet tier — enemies prefer it
 };
 
+// MINI-DECOY (Spectral Echoes): tiny short-lived illusions on the decoy seam —
+// they pull light aggro (MINION tier, below any true tank) and simply stand there.
+export const MINI_DECOY_TUNING = {
+  maxHP: 30,
+  durationMs: 4000,
+  aggroRadius: 140,
+  followRange: 150,
+  moveTilesPerSec: 5,
+  bodyRadius: 11,
+  count: 3,
+  tint: 0x8fe8d0,
+} as const;
+
+export const MINI_DECOY_CONFIG: AlliedSummonConfig = {
+  key: 'wd_mini_decoy',
+  name: 'Spirit Echo',
+  behavior: 'tank',
+  maxHP: MINI_DECOY_TUNING.maxHP,
+  durationMs: MINI_DECOY_TUNING.durationMs,
+  aggroRadius: MINI_DECOY_TUNING.aggroRadius,
+  followRange: MINI_DECOY_TUNING.followRange,
+  moveTilesPerSec: MINI_DECOY_TUNING.moveTilesPerSec,
+  bodyRadius: MINI_DECOY_TUNING.bodyRadius,
+  tint: MINI_DECOY_TUNING.tint,
+  drawsAggro: true,
+  aggroPriority: AGGRO_TIER.MINION,
+};
+
+// CURSED EFFIGY (Witch Doctor): a PLANTED magnet — the decoy machinery rooted in
+// place (moveTilesPerSec 0): it never walks, it just soaks what was meant for others.
+export const EFFIGY_TUNING = {
+  maxHP: 200,
+  durationMs: 12000,
+  aggroRadius: 240,
+  bodyRadius: 16,
+  maxConcurrent: 1,
+  tint: 0xb08a5a,
+} as const;
+
+export const EFFIGY_CONFIG: AlliedSummonConfig = {
+  key: 'wd_effigy',
+  name: 'Cursed Effigy',
+  behavior: 'tank',
+  maxHP: EFFIGY_TUNING.maxHP,
+  durationMs: EFFIGY_TUNING.durationMs,
+  aggroRadius: EFFIGY_TUNING.aggroRadius,
+  followRange: 1e9, // never re-approaches: planted where cast
+  moveTilesPerSec: 0, // rooted — the "planted" half of the decoy seam
+  bodyRadius: EFFIGY_TUNING.bodyRadius,
+  tint: EFFIGY_TUNING.tint,
+  drawsAggro: true,
+  aggroPriority: AGGRO_TIER.MAGNET,
+};
+
+// SOUL REVENANT (Witch Doctor ultimate): a mighty attacking guard — calibrated
+// between the Polar Bear (450 HP / 18 dmg) and the Dark Matter Monster (600 / 26).
+export const REVENANT_TUNING = {
+  maxHP: 520,
+  attackDamage: 22,
+  attackCooldownMs: 1100,
+  attackRange: 60,
+  seekRange: 430,
+  leashRange: 660,
+  durationMs: 25000,
+  aggroRadius: 290, // the guard: a Monster-class magnet pull
+  followRange: 180,
+  moveTilesPerSec: 5,
+  bodyRadius: 25,
+  maxConcurrent: 1,
+  tint: 0x6ad0b8,
+} as const;
+
+export const REVENANT_CONFIG: AlliedSummonConfig = {
+  key: 'wd_revenant',
+  name: 'Soul Revenant',
+  behavior: 'attacker',
+  maxHP: REVENANT_TUNING.maxHP,
+  durationMs: REVENANT_TUNING.durationMs,
+  aggroRadius: REVENANT_TUNING.aggroRadius,
+  followRange: REVENANT_TUNING.followRange,
+  moveTilesPerSec: REVENANT_TUNING.moveTilesPerSec,
+  bodyRadius: REVENANT_TUNING.bodyRadius,
+  tint: REVENANT_TUNING.tint,
+  drawsAggro: true,
+  aggroPriority: AGGRO_TIER.MAGNET, // it guards: enemies prefer the revenant
+  attackDamage: REVENANT_TUNING.attackDamage,
+  attackCooldownMs: REVENANT_TUNING.attackCooldownMs,
+  attackRange: REVENANT_TUNING.attackRange,
+  seekRange: REVENANT_TUNING.seekRange,
+  leashRange: REVENANT_TUNING.leashRange,
+};
+
 // ─── PET-TARGETED BUFFS (new buff target = your summons) ───────────────────────
 //
 // A buff that boosts the player's SUMMONS rather than the player. The manager keeps a list

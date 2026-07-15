@@ -1591,6 +1591,9 @@ try {
     ms.comboUltimate = null;
     ms.harmonicCharges = 0;
     ms.setEcho(0);
+    ms.voodoo = null;
+    ms.allyBond = null;
+    ms.spiritSplit = null;
     ms.clearDots();
     ms.playerHealth.full();
     ms.energy.full();
@@ -1599,7 +1602,7 @@ try {
   });
   ok(
     'skill framework: every skill in every tree executes; composed actions match their declared primitives',
-    skillSweep.errors.length === 0 && skillSweep.mismatches.length === 0 && skillSweep.composed === 83 && skillSweep.total >= 180,
+    skillSweep.errors.length === 0 && skillSweep.mismatches.length === 0 && skillSweep.composed === 94 && skillSweep.total >= 210,
     `total=${skillSweep.total} composed=${skillSweep.composed} bespokeActive=${skillSweep.bespokeActive} timed/other=${skillSweep.other} passive=${skillSweep.passive}` +
       (skillSweep.errors.length ? ` ERRORS=${JSON.stringify(skillSweep.errors.slice(0, 3))}` : '') +
       (skillSweep.mismatches.length ? ` MISMATCH=${JSON.stringify(skillSweep.mismatches.slice(0, 3))}` : ''),

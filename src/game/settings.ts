@@ -187,6 +187,9 @@ export const CLASS_BASE_STATS: Record<string, ClassBaseStats> = {
   // Bard — London's memory-keeper and war-drum: ×0.85 HP / ×0.95 damage / ×1.00
   // speed of the Blacksmith baseline (rounded: 85/17 HP, 24 base damage). (Tune here.)
   bard: { baseMaxHP: 85, hpPerLevel: 17, baseDamage: 24, dmgPerLevel: 5, moveSpeedMult: 1 },
+  // Witch Doctor — Kinshasa's spirit-speaker: ×0.85 HP / ×0.95 damage / ×1.00
+  // speed of the Blacksmith baseline (rounded: 85/17 HP, 24 base damage). (Tune here.)
+  witchdoctor: { baseMaxHP: 85, hpPerLevel: 17, baseDamage: 24, dmgPerLevel: 5, moveSpeedMult: 1 },
 };
 
 /** The base-stat profile for a class id (defaults to the Blacksmith baseline). */

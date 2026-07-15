@@ -7,6 +7,7 @@ const NECRO_TEXTURE_KEY = 'necro-figure'; // Necromancer (Slavic death-sorcerer)
 const DRUID_TEXTURE_KEY = 'druid-figure'; // Druid (Seattle wild-warden) avatar
 const MAGE_TEXTURE_KEY = 'mage-figure'; // Mage (Moscow reality-surgeon) avatar — NOT the Wizard (canon)
 const BARD_TEXTURE_KEY = 'bard-figure'; // Bard (London memory-keeper) avatar
+const WITCHDOCTOR_TEXTURE_KEY = 'witchdoctor-figure'; // Witch Doctor (Kinshasa spirit-speaker) avatar
 const WIDTH = 32; // ~1 tile wide
 const HEIGHT = 48; // ~1.5 tiles tall — fixes the "character = one giant block" look
 
@@ -17,6 +18,7 @@ function textureForClass(classId: string): string {
   if (classId === 'druid') return DRUID_TEXTURE_KEY;
   if (classId === 'mage') return MAGE_TEXTURE_KEY;
   if (classId === 'bard') return BARD_TEXTURE_KEY;
+  if (classId === 'witchdoctor') return WITCHDOCTOR_TEXTURE_KEY;
   return TEXTURE_KEY;
 }
 
@@ -41,6 +43,7 @@ export class Player {
     Player.ensureDruidTexture(scene);
     Player.ensureMageTexture(scene);
     Player.ensureBardTexture(scene);
+    Player.ensureWitchDoctorTexture(scene);
 
     this.sprite = scene.physics.add.sprite(x, y, textureForClass(classId));
     this.sprite.setCollideWorldBounds(true);
@@ -318,6 +321,55 @@ export class Player {
     g.fillStyle(0x140a10, 1); // sound hole
     g.fillCircle(w - 8, h - 18, 1.8);
     g.generateTexture(BARD_TEXTURE_KEY, w, h);
+    g.destroy();
+  }
+
+  /** The Witch Doctor avatar — Kinshasa's spirit-speaker: an earth-green wrap
+   *  with bone-bead strings, a carved spirit mask with pale eyes, a feathered
+   *  headdress, and a small stitched doll at the left hip. CODE-DRAWN PLACEHOLDER
+   *  (a real sprite PNG drops in later via the sprite override under this same
+   *  key). Same footprint as the other figures. */
+  private static ensureWitchDoctorTexture(scene: Phaser.Scene): void {
+    if (scene.textures.exists(WITCHDOCTOR_TEXTURE_KEY)) return;
+    const w = WIDTH;
+    const h = HEIGHT;
+    const g = scene.make.graphics({ x: 0, y: 0 }, false);
+    // Dark outline + earth-green wrap (the speaker's robe).
+    g.fillStyle(0x0e140e, 1);
+    g.fillRoundedRect(4, 8, w - 8, h - 10, 9);
+    g.fillStyle(0x2e4a34, 1); // earth-green wrap
+    g.fillRoundedRect(6, 10, w - 12, h - 14, 7);
+    // Bone-bead strings across the chest.
+    g.fillStyle(0xe8e0c8, 1);
+    for (let i = 0; i < 5; i++) g.fillCircle(9 + i * ((w - 18) / 4), 24, 1.8);
+    g.fillStyle(0xd0c8a8, 1);
+    for (let i = 0; i < 4; i++) g.fillCircle(11 + i * ((w - 22) / 3), 29, 1.5);
+    // The carved spirit mask: pale wood, dark eye-slits, painted stripes.
+    g.fillStyle(0xc9a05a, 1); // mask
+    g.fillRoundedRect(w / 2 - 6, 7, 12, 13, 4);
+    g.fillStyle(0x0e140e, 1); // eye-slits
+    g.fillRect(w / 2 - 4, 12, 3, 2);
+    g.fillRect(w / 2 + 1, 12, 3, 2);
+    g.fillStyle(0x8fe8d0, 1); // pale spirit eyes inside the slits
+    g.fillRect(w / 2 - 3, 12.5, 1.4, 1);
+    g.fillRect(w / 2 + 2, 12.5, 1.4, 1);
+    g.fillStyle(0xd85a5a, 1); // painted stripe
+    g.fillRect(w / 2 - 6, 17, 12, 1.6);
+    // Feathered headdress.
+    g.fillStyle(0xd85a5a, 1);
+    g.fillTriangle(w / 2 - 5, 7, w / 2 - 1, 7, w / 2 - 4, 0);
+    g.fillStyle(0x8fe8d0, 1);
+    g.fillTriangle(w / 2 - 1, 7, w / 2 + 3, 7, w / 2 + 1, -1);
+    g.fillStyle(0xe8c05a, 1);
+    g.fillTriangle(w / 2 + 3, 7, w / 2 + 7, 7, w / 2 + 6, 1);
+    // The stitched doll at the left hip: burlap body + thread cross.
+    g.fillStyle(0xc9a05a, 1);
+    g.fillRoundedRect(4, h - 26, 8, 12, 3);
+    g.fillCircle(8, h - 27, 3.2);
+    g.fillStyle(0x5a2438, 1); // the thread cross over its heart
+    g.fillRect(6.6, h - 23, 3, 1);
+    g.fillRect(7.6, h - 24, 1, 3);
+    g.generateTexture(WITCHDOCTOR_TEXTURE_KEY, w, h);
     g.destroy();
   }
 }

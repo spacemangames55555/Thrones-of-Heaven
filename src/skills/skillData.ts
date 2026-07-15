@@ -37,12 +37,15 @@ import { MAGE_CRYSTAL_SKILLS, MAGE_CRYSTAL_TREE } from './mageCrystalblade';
 import { BARD_SONGS_SKILLS, BARD_SONGS_TREE } from './bardSongs';
 import { BARD_BATTLE_SKILLS, BARD_BATTLE_TREE } from './bardBattle';
 import { BARD_SONIC_SKILLS, BARD_SONIC_TREE } from './bardSonic';
+import { WD_VOODOO_SKILLS, WD_VOODOO_TREE } from './witchdoctorVoodoo';
+import { WD_DECAY_SKILLS, WD_DECAY_TREE } from './witchdoctorDecay';
+import { WD_SPIRIT_SKILLS, WD_SPIRIT_TREE } from './witchdoctorSpirit';
 
 /** How many active skills the player can equip to on-screen slots. */
 export const LOADOUT_SLOTS = 6;
 
 /** The playable classes. Only the Blacksmith has trees this batch; others slot in later. */
-export type ClassId = 'blacksmith' | 'necromancer' | 'wizard' | 'druid' | 'mage' | 'bard';
+export type ClassId = 'blacksmith' | 'necromancer' | 'wizard' | 'druid' | 'mage' | 'bard' | 'witchdoctor';
 
 /** Stat modifiers a skill contributes — used by PASSIVE (permanent) and by timed
  *  BUFF / TRANSFORMATION effects (while active). All optional; absent = no change. */
@@ -217,7 +220,30 @@ export type ActiveActionId =
   | 'bard_distortion'
   | 'bard_wall'
   | 'bard_pentatonic'
-  | 'bard_riff';
+  | 'bard_riff'
+  // Witch Doctor actives (bespoke ids; composed skills share the executor).
+  | 'wd_doll'
+  | 'wd_decoy'
+  | 'wd_cursed_vision'
+  | 'wd_shackles'
+  | 'wd_echoes'
+  | 'wd_spirit_split'
+  | 'wd_dart'
+  | 'wd_cloud'
+  | 'wd_life_drain'
+  | 'wd_brew'
+  | 'wd_flask'
+  | 'wd_eruption'
+  | 'wd_nova'
+  | 'wd_swarm'
+  | 'wd_totem'
+  | 'wd_hex_ritual'
+  | 'wd_ritual'
+  | 'wd_blood_pact'
+  | 'wd_spirit_walk'
+  | 'wd_soul_bind'
+  | 'wd_effigy'
+  | 'wd_revenant';
 
 /**
  * The five supported EFFECT KINDS. The scene applies them generically:
@@ -507,6 +533,10 @@ export interface SkillDef {
    *  era ("allies" = self + any future party). SOLO values are the live numbers in
    *  the effect/TUNING; nothing reads these until parties exist. */
   readonly ensemble?: Readonly<Record<string, number>>;
+  /** DECAY DOMAIN (Witch Doctor Alchemy tree; Casey's ruling — COSMETIC ONLY):
+   *  tints the skill's FX with the shipped domain colors (red/blue/violet;
+   *  'all' = tri-tint) and flavors its prose. NO combat-triangle mechanics. */
+  readonly decayDomain?: 'physical' | 'mental' | 'spiritual' | 'all';
 }
 
 /** EQUIPPABLE = goes into a loadout slot + gets an on-screen button (everything that
@@ -526,6 +556,9 @@ const NON_DAMAGING_ACTIVE_ACTIONS: ReadonlySet<ActiveActionId> = new Set([
   'mage_time_dilation', 'mage_quantum_shield', 'mage_mana_surge', 'mage_entangle',
   // Bard utility actives (heal aura/burst, the no-damage control zone, shield, splash charges, confusion).
   'bard_hum', 'bard_rally', 'bard_harmonics', 'bard_freq_shield', 'bard_amplify', 'bard_distortion',
+  // Witch Doctor utility actives (decoys/effigy/revenant, confusions, totem, the
+  // no-damage hex zone, blood pact, stealth, the ally-bond).
+  'wd_decoy', 'wd_cursed_vision', 'wd_echoes', 'wd_brew', 'wd_totem', 'wd_hex_ritual', 'wd_blood_pact', 'wd_spirit_walk', 'wd_soul_bind', 'wd_effigy', 'wd_revenant',
 ]);
 
 /**
@@ -541,7 +574,7 @@ export function isDamagingActive(def: SkillDef): boolean {
 
 /** Active summon abilities that produce an ATTACKING summon — these are how a no-direct-
  *  damage build still kills things, so they count as a valid STARTER offense (below). */
-const ATTACKING_SUMMON_ACTIONS: ReadonlySet<ActiveActionId> = new Set<ActiveActionId>(['summon_skeleton', 'necro_army', 'dru_viper', 'dru_wolverine', 'dru_chimp_pair', 'dru_polar_bear']);
+const ATTACKING_SUMMON_ACTIONS: ReadonlySet<ActiveActionId> = new Set<ActiveActionId>(['summon_skeleton', 'necro_army', 'dru_viper', 'dru_wolverine', 'dru_chimp_pair', 'dru_polar_bear', 'wd_revenant']);
 
 /**
  * STARTER skill = a valid "first ability" under the no-kit model and what the anti-soft-lock
@@ -577,6 +610,11 @@ const NON_AIMABLE_ACTIONS: ReadonlySet<ActiveActionId> = new Set<ActiveActionId>
   // (placed), Mosh/Whistle/Heavy/Dive/Blast/Surge/Chord/Pentatonic are directional.
   'bard_hum', 'bard_rally', 'bard_freq_shield', 'bard_amplify', 'bard_coda', 'bard_war_song',
   'bard_pulse', 'bard_distortion', 'bard_cascade', 'bard_riff',
+  // Witch Doctor: auto-targeting binds/confusions/drains, self-zones, summons and
+  // self-states. Dart/Cloud/Flask/Eruption/Swarm/Hexing Ritual stay directional.
+  'wd_doll', 'wd_decoy', 'wd_cursed_vision', 'wd_shackles', 'wd_echoes', 'wd_spirit_split',
+  'wd_life_drain', 'wd_brew', 'wd_nova', 'wd_totem', 'wd_blood_pact', 'wd_spirit_walk',
+  'wd_soul_bind', 'wd_effigy', 'wd_ritual', 'wd_revenant',
 ]);
 
 /**
@@ -750,6 +788,29 @@ const BARD: ClassSkills = {
 };
 
 /** Per-class trees + skills. The scene reads the ACTIVE class's entry. */
+// ─── WITCH DOCTOR (Kinshasa's spirit-speaker: the voodoo doll kit) ────────────
+//
+// Three trees on the same no-kit rules: VOODOO MASTERY (the doll bind + decoys),
+// ALCHEMY OF DECAY (poisons carrying the cosmetic decayDomain tints), and SPIRIT
+// WHISPERER (totems, ally support, the revenant). Tier-0s: Voodoo Doll (the
+// bind's initial hit), Blow Dart, Spirit Swarm.
+const WITCHDOCTOR: ClassSkills = {
+  classId: 'witchdoctor',
+  trees: [
+    { id: WD_VOODOO_TREE, name: 'Voodoo' }, // 10 doll/illusion skills (opens on Voodoo Doll)
+    { id: WD_DECAY_TREE, name: 'Decay' }, // 10 poison skills, domain-tinted (opens on Blow Dart)
+    { id: WD_SPIRIT_TREE, name: 'Spirits' }, // 10 support/summon skills (opens on Spirit Swarm)
+  ],
+  skills: [
+    // --- VOODOO MASTERY (10 skills, linear; the doll system). Data in witchdoctorVoodoo.ts. ---
+    ...WD_VOODOO_SKILLS,
+    // --- ALCHEMY OF DECAY (10 skills, linear; decayDomain tints). Data in witchdoctorDecay.ts. ---
+    ...WD_DECAY_SKILLS,
+    // --- SPIRIT WHISPERER (10 skills, linear; support/summons). Data in witchdoctorSpirit.ts. ---
+    ...WD_SPIRIT_SKILLS,
+  ],
+};
+
 export const CLASS_SKILLS: Record<ClassId, ClassSkills> = {
   blacksmith: BLACKSMITH,
   wizard: WIZARD,
@@ -757,6 +818,7 @@ export const CLASS_SKILLS: Record<ClassId, ClassSkills> = {
   druid: DRUID,
   mage: MAGE,
   bard: BARD,
+  witchdoctor: WITCHDOCTOR,
 };
 
 /** Look up a class's full skill set (trees + skills). */

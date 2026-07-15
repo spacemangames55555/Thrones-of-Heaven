@@ -109,8 +109,14 @@ import {
   POLAR_BEAR_CONFIG,
   POLAR_BEAR_TUNING,
   VOODOO_DOLL_CONFIG,
+  VOODOO_DOLL_TUNING,
   SPIRIT_DECOY_CONFIG,
   SPIRIT_DECOY_TUNING,
+  MINI_DECOY_CONFIG,
+  EFFIGY_CONFIG,
+  EFFIGY_TUNING,
+  REVENANT_CONFIG,
+  REVENANT_TUNING,
 } from '../summon/summonData';
 import { TAPESTRY_TUNING, BEAR_MIGHT_ID, ELEPHANT_RAGE_ID } from '../skills/druidTapestry';
 import { RESTORATION_TUNING, CLAY_ID, OIL_IMMUNITY_ID, OIL_VITALITY_ID } from '../skills/druidRestoration';
@@ -120,6 +126,9 @@ import { CRYSTALBLADE_TUNING } from '../skills/mageCrystalblade';
 import { BARD_SONGS_TUNING, ECHO_OF_PASSION_ID, SONG_OF_LORE_ID, CHANT_OF_ANCESTORS_ID } from '../skills/bardSongs';
 import { BARD_BATTLE_TUNING } from '../skills/bardBattle';
 import { BARD_SONIC_TUNING, SONIC_ECHOES_ID } from '../skills/bardSonic';
+import { WD_VOODOO_TUNING, SOULBOUND_HEX_ID, SHADOW_STITCH_ID, SPIRIT_ASSAULT_ID, SOUL_HARVEST_ID } from '../skills/witchdoctorVoodoo';
+import { WD_DECAY_TUNING } from '../skills/witchdoctorDecay';
+import { WD_SPIRIT_TUNING } from '../skills/witchdoctorSpirit';
 import { PlayerPower } from '../player/PlayerPower';
 import { URIEL_SCENE } from '../story/urielData';
 import { URIEL_SENDOFF_LINES, RIFT_SCENE } from '../story/riftSceneData';
@@ -1833,6 +1842,12 @@ export class MainScene extends Phaser.Scene {
   private gainXP(amount: number): void {
     // SONG OF LORE (Bard keyed buff): boosted XP gain while the song runs.
     if (this.skillTimed.some((t) => t.id === SONG_OF_LORE_ID)) amount *= BARD_SONGS_TUNING.songOfLore.xpMult;
+    // SOUL HARVEST (Witch Doctor keyed passive): fallen enemies' essence restores
+    // HP + energy on every credited kill's XP award.
+    if (amount > 0 && this.skills.isUnlocked(SOUL_HARVEST_ID)) {
+      this.playerHealth.heal(WD_VOODOO_TUNING.harvest.healPerKill);
+      this.energy.heal(WD_VOODOO_TUNING.harvest.energyPerKill);
+    }
     const levelsGained = this.progression.addXP(amount);
     if (levelsGained > 0) {
       this.skills.awardPoints(levelsGained); // 1 skill point per level gained
@@ -2142,6 +2157,12 @@ export class MainScene extends Phaser.Scene {
     if (this.playerHealth) this.playerHealth.incomingMultiplier = this.baseIncomingMult;
     // SONIC ECHOES (Bard keyed passive): the ECHO extension is armed while unlocked.
     this.setEcho(this.skills.isUnlocked(SONIC_ECHOES_ID) ? BARD_SONIC_TUNING.echoes.pct : 0, BARD_SONIC_TUNING.echoes.delayMs);
+    // WITCH DOCTOR doll upgrades (keyed passives): each hook is armed only while owned.
+    this.voodooReflectDamage = this.skills.isUnlocked(SOULBOUND_HEX_ID) ? VOODOO_DOLL_TUNING.reflectDamage : 0;
+    this.voodooStitch = this.skills.isUnlocked(SHADOW_STITCH_ID) ? { radius: VOODOO_DOLL_TUNING.stitchRadius, pct: VOODOO_DOLL_TUNING.stitchPct } : null;
+    this.voodooAssault = this.skills.isUnlocked(SPIRIT_ASSAULT_ID)
+      ? { damage: VOODOO_DOLL_TUNING.assault.damage, tickMs: VOODOO_DOLL_TUNING.assault.tickMs, nextAt: this.voodooAssault?.nextAt ?? 0 }
+      : null;
     // Block chance + strength (Double Block / Dual Shield) — rolled per hit in Health.
     if (this.playerHealth) {
       this.playerHealth.blockChance = Phaser.Math.Clamp(m.blockChance ?? 0, 0, 0.9);
@@ -2479,6 +2500,66 @@ export class MainScene extends Phaser.Scene {
       for (const side of [-1, 0, 1]) {
         this.spawnSpellHazard(cxx - dy * side * c.cellSpacing, cyy + dx * side * c.cellSpacing, c.cellRadius, this.skillDamage(c.tickDamage), c.durationMs, c.tickMs, { slowFactor: c.slowFactor, fill: 0x4a5a9f, stroke: 0xb8d8ff });
       }
+    } else if (action === 'wd_doll') {
+      // Witch Doctor Voodoo #1 — the bind + doll (the framework centerpiece).
+      const c = VOODOO_DOLL_TUNING;
+      this.castVoodooDoll(c.castRange, this.skillDamage(c.castDamage), c.bindDurationMs, c.mirrorPct);
+    } else if (action === 'wd_decoy') {
+      // Witch Doctor Voodoo #2 — the spectral duplicate (magnet decoy).
+      this.spawnSpiritDecoy();
+    } else if (action === 'wd_cursed_vision') {
+      // Witch Doctor Voodoo #3 — the confusion reuse: distorted visions.
+      const c = WD_VOODOO_TUNING.vision;
+      const turned = this.confuseNearestEnemy(px, py, c.range, c.chance, c.durationMs, c.chipDamage, c.chipMs);
+      this.showBanner(turned ? 'The visions take hold' : 'The vision slips away', 1100);
+    } else if (action === 'wd_echoes') {
+      // Witch Doctor Voodoo #7 — brief mini-decoy illusions.
+      const c = WD_VOODOO_TUNING.echoes;
+      this.summonAlliedUnits(MINI_DECOY_CONFIG, c.count, c.count, c.durationMs);
+      this.showBanner('Echoes scatter', 1100);
+    } else if (action === 'wd_spirit_split') {
+      // Witch Doctor Voodoo #10 ultimate — decoy walks + the doll auto-mirrors.
+      const c = WD_VOODOO_TUNING.split;
+      this.startSpiritSplit(c.durationMs, c.intervalMs, this.skillDamage(c.pulseDamage));
+    } else if (action === 'wd_brew') {
+      // Witch Doctor Decay #6 — the confusion reuse: the mind decays first.
+      const c = WD_DECAY_TUNING.brew;
+      const turned = this.confuseNearestEnemy(px, py, c.range, c.chance, c.durationMs, c.chipDamage, c.chipMs);
+      this.showBanner(turned ? 'The brew takes hold' : 'It shakes off the fumes', 1100);
+    } else if (action === 'wd_nova') {
+      // Witch Doctor Decay #10 ultimate — contagious total decay, TRI-TINTED
+      // (decayDomain 'all': the three shipped domain colors, red/blue/violet).
+      const c = WD_DECAY_TUNING.nova;
+      WD_DECAY_TUNING.novaTints.forEach((tint, i) => this.spawnSkillRing(px, py, c.applyRadius - i * 34, tint));
+      this.applyPlagueInRange(px, py, c.applyRadius, this.skillDamage(c.dotDamage), c.dotTickMs, c.dotDurationMs, c.spreadRadius, c.maxSpread);
+    } else if (action === 'wd_blood_pact') {
+      // Witch Doctor Spirits #5 — pay HP; summons mend + strike harder.
+      const c = WD_SPIRIT_TUNING.bloodPact;
+      if (this.playerHealth.current <= c.selfCost) {
+        this.showBanner('Not enough blood to give', 1000);
+        return;
+      }
+      this.playerHealth.current -= c.selfCost; // the sacrifice bypasses shields — it is willing
+      this.spawnDamageNumber(px, py - 26, c.selfCost, '#ff7a7a');
+      for (const s of this.summons.list) if (s.isAlive) s.health.heal(c.healAllies);
+      this.summons.addBuff({ id: 'wd_blood_pact', damageBonus: c.damageBonus, durationMs: c.buffDurationMs }, this.time.now);
+      this.spawnSkillRing(px, py, 90, 0xd85a5a);
+      this.showBanner('The pact is sealed', 1200);
+    } else if (action === 'wd_soul_bind') {
+      // Witch Doctor Spirits #7 — the ALLY-BOND extension.
+      const c = WD_SPIRIT_TUNING.soulBind;
+      this.startAllyBond(c.sharePct, c.durationMs);
+    } else if (action === 'wd_effigy') {
+      // Witch Doctor Spirits #8 — a PLANTED magnet (the rooted decoy config).
+      const { dx, dy } = this.facingUnit();
+      const e = this.summons.summon(EFFIGY_CONFIG, px + dx * 60, py + dy * 60, EFFIGY_TUNING.maxConcurrent);
+      this.spawnSkillRing(e.x, e.y, EFFIGY_TUNING.bodyRadius + 14, EFFIGY_CONFIG.tint);
+      this.showBanner('The effigy stands', 1100);
+      this.lastCombatTime = this.time.now;
+    } else if (action === 'wd_revenant') {
+      // Witch Doctor Spirits #10 ultimate — the mighty attacking guard.
+      this.summonAlliedUnits(REVENANT_CONFIG, 1, REVENANT_TUNING.maxConcurrent);
+      this.showBanner('THE REVENANT RISES', 1400);
     }
   }
 
