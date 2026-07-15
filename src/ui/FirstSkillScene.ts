@@ -1,9 +1,12 @@
 import Phaser from 'phaser';
-import { classSkills, isStarterSkill, type SkillDef } from '../skills/skillData';
+import { bindOverlayRelayout } from './uiLayout';
+import { classSkills, isStarterSkill, type ClassId, type SkillDef } from '../skills/skillData';
 import type { SkillState } from '../skills/SkillState';
 
 /** The bits of MainScene the forced first-skill picker needs (kept narrow + decoupled). */
 export interface FirstSkillHost {
+  /** The LIVE character's class — the picker's ONLY class source. */
+  readonly classId: ClassId;
   getSkillState(): SkillState;
   /** Unlock the chosen first skill + auto-equip it to slot 1, then unfreeze the game. */
   completeFirstSkill(id: string): boolean;
@@ -21,6 +24,9 @@ export interface FirstSkillHost {
  * then resumes play.
  */
 export class FirstSkillScene extends Phaser.Scene {
+  /** The class whose openers are currently shown (runtime-gate observability). */
+  shownClass: ClassId | null = null;
+
   constructor() {
     super('FirstSkillScene');
   }
@@ -30,6 +36,27 @@ export class FirstSkillScene extends Phaser.Scene {
   }
 
   create(): void {
+    // ── THE PICKER'S CONTRACT (regression guard) ────────────────────────────────
+    // This modal exists for exactly one situation: a LIVE MainScene character with
+    // ZERO unlocked damaging actives (a genuinely fresh character / a full respec).
+    // Anything else that manages to (re)start this scene — a stale resize handler,
+    // a stray restart — closes itself immediately and never touches game state.
+    const mainAlive = this.scene.isActive('MainScene') || this.scene.isPaused('MainScene');
+    const host = this.host();
+    const st = host.getSkillState();
+    // The class comes from the LIVE character (MainScene.classId) — never from the
+    // long-lived SkillState.activeClass field, which a zombie restart could read
+    // stale (the wizard-picker-on-a-witchdoctor bug). Heal the field while here.
+    const liveClass = mainAlive ? host.classId : null;
+    if (liveClass && st.activeClass !== liveClass) st.activeClass = liveClass;
+    if (!mainAlive || !liveClass || !st.needsFirstSkill(liveClass)) {
+      this.shownClass = null;
+      if (this.scene.isPaused('MainScene')) this.scene.resume('MainScene');
+      this.scene.stop();
+      return;
+    }
+    this.shownClass = liveClass;
+
     const w = this.scale.width;
     const h = this.scale.height;
     const cx = w / 2;
@@ -64,13 +91,13 @@ export class FirstSkillScene extends Phaser.Scene {
       y += cardH + gap;
     }
 
-    this.scale.on(Phaser.Scale.Events.RESIZE, () => this.scene.restart());
+    bindOverlayRelayout(this, () => this.scene.restart()); // active-only + auto-teardown + jitter-filtered
   }
 
   /** Each tree's entry node (lowest tier) that is a STARTER skill — a damaging active OR an
    *  attacking summon (e.g. the Summons tree opens on Summon Skeleton). The legal first picks. */
   private treeOpeners(): SkillDef[] {
-    const cls = classSkills(this.host().getSkillState().activeClass);
+    const cls = classSkills(this.shownClass ?? this.host().classId); // the LIVE class, always
     const out: SkillDef[] = [];
     for (const tree of cls.trees) {
       const first = cls.skills
@@ -84,7 +111,7 @@ export class FirstSkillScene extends Phaser.Scene {
 
   /** One tappable skill card: tree name + skill name + description. */
   private makeCard(cx: number, y: number, w: number, h: number, def: SkillDef): void {
-    const treeName = classSkills(this.host().getSkillState().activeClass).trees.find((t) => t.id === def.tree)?.name ?? '';
+    const treeName = classSkills(this.shownClass ?? this.host().classId).trees.find((t) => t.id === def.tree)?.name ?? '';
     const bg = this.add
       .rectangle(cx, y, w, h, 0x14233c, 0.98)
       .setOrigin(0.5, 0)

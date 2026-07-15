@@ -47,7 +47,9 @@ let lastW = 0;
 let lastH = 0;
 function applySize(force = false): void {
   const { w, h } = viewportSize();
-  if (!force && w === lastW && h === lastH) return;
+  // Ignore sub-2px jitter outright (scroll-driven visualViewport noise); overlay
+  // scenes additionally ignore anything under 24px that isn't an orientation flip.
+  if (!force && Math.abs(w - lastW) < 2 && Math.abs(h - lastH) < 2) return;
   lastW = w;
   lastH = h;
   game.registry.set('safeInsets', readSafeInsets());

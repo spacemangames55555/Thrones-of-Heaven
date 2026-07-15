@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { SaveSystem } from '../save/SaveSystem';
-import { getInsets } from './uiLayout';
+import { getInsets, bindOverlayRelayout } from './uiLayout';
 
 /**
  * The minimal START / TITLE screen — the game's entry point and the gateway to
@@ -67,7 +67,7 @@ export class TitleScene extends Phaser.Scene {
         .setDepth(2);
     }
 
-    this.scale.on(Phaser.Scale.Events.RESIZE, () => this.scene.restart());
+    bindOverlayRelayout(this, () => this.scene.restart()); // active-only + auto-teardown + jitter-filtered
   }
 
   private onNewGame(hasSave: boolean): void {

@@ -3117,6 +3117,7 @@ try {
       });
       return { bars: bars.length, off: off.length };
     });
+    await page.evaluate(() => window.__game.scene.getScene('SkillTreeScene').close()); // leave no menu open behind
     return { select, tree };
   })();
   ok(
@@ -3189,6 +3190,165 @@ try {
     saveCode.hasCode && saveCode.bytes > 100 && saveCode.imported && saveCode.identical && saveCode.junkRejected && saveCode.slotIntact,
     JSON.stringify(saveCode),
   );
+
+  // 3af. RESIZE ISOLATION + PICKER CLASS INTEGRITY (permanent — the regression
+  // gate). Root cause being guarded: overlay scenes used to leave restart-on-
+  // resize listeners on the GLOBAL ScaleManager after closing, so iOS URL-bar
+  // viewport resizes (which fire constantly WITHOUT rotation) re-opened closed
+  // overlays — including the forced first-skill picker — and accumulated
+  // listeners on every restart (the progressive slowdown).
+
+  // (a) THE STORM: 20 consecutive MEANINGFUL resize events with no menu open →
+  // zero overlay restarts, zero listener growth, stable frame time.
+  const storm = await page.evaluate(async () => {
+    const g = window.__game;
+    const wait = (t) => new Promise((r) => setTimeout(r, t));
+    const overlays = ['FirstSkillScene', 'SkillTreeScene', 'PauseScene', 'CharacterSelectScene', 'TitleScene'];
+    // PRECONDITION: no menu open — stop any overlay a prior check left behind.
+    for (const k of overlays) if (g.scene.isActive(k) || g.scene.isPaused(k)) g.scene.getScene(k).scene.stop();
+    if (g.scene.isPaused('MainScene')) g.scene.getScene('MainScene').scene.resume();
+    window.__ready();
+    await wait(300);
+    const listeners0 = g.scale.listenerCount('resize');
+    await wait(600);
+    const fps0 = g.loop.actualFps;
+    let overlayActivations = 0;
+    const seen = new Set();
+    for (let i = 0; i < 20; i++) {
+      g.scale.resize(428, i % 2 ? 880 : 926); // the URL-bar collapse shape (±46px, no rotation)
+      await wait(70);
+      const act = overlays.filter((k) => g.scene.isActive(k));
+      if (act.length > 0) overlayActivations++;
+      for (const k of act) seen.add(k);
+    }
+    g.scale.resize(428, 926);
+    await wait(600);
+    const fps1 = g.loop.actualFps;
+    const listeners1 = g.scale.listenerCount('resize');
+    return { listeners0, listeners1, overlayActivations, seen: [...seen], fps0: +fps0.toFixed(1), fps1: +fps1.toFixed(1) };
+  });
+  ok(
+    'resize isolation: a 20-event resize storm re-opens nothing, grows no listeners, keeps frame time stable',
+    storm.overlayActivations === 0 && storm.listeners1 === storm.listeners0 && storm.fps1 > storm.fps0 * 0.6,
+    JSON.stringify(storm),
+  );
+
+  // (b) THE PICKER'S CONTRACT: a zombie restart on a character WITH spent points
+  // self-closes without touching state — even with the long-lived
+  // SkillState.activeClass field poisoned to another class (the stale read that
+  // produced the wizard picker on a witch doctor); the poison is HEALED.
+  const pickerGate = await page.evaluate(async () => {
+    const ms = window.__ready();
+    const wait = (t) => new Promise((r) => setTimeout(r, t));
+    const spent = ms.skills.unlockedIds(ms.classId).length;
+    ms.skills.activeClass = 'wizard'; // the poisoned stale field (the reported bug)
+    window.__game.scene.getScene('FirstSkillScene').scene.restart(); // the zombie path
+    await wait(400);
+    return {
+      spent,
+      pickerOpen: window.__game.scene.isActive('FirstSkillScene'),
+      mainRunning: window.__game.scene.isActive('MainScene'),
+      healedClass: ms.skills.activeClass,
+      liveClass: ms.classId,
+      shownClass: window.__game.scene.getScene('FirstSkillScene').shownClass,
+    };
+  });
+  ok(
+    'picker contract: never appears for a character with spent points; a poisoned stale class is healed to the live one',
+    pickerGate.spent > 0 && !pickerGate.pickerOpen && pickerGate.mainRunning && pickerGate.healedClass === pickerGate.liveClass && pickerGate.shownClass === null,
+    JSON.stringify(pickerGate),
+  );
+
+  // (c) SAVE INTEGRITY: a contaminated save (foreign skills recorded under the
+  // wrong class — what a mis-shown picker left behind) is HEALED on load: the
+  // foreign ids are stripped and their points refunded; legal unlocks untouched.
+  const heal = await page.evaluate(() => {
+    const ms = window.__ready();
+    const before = ms.skills.toJSON();
+    const contaminated = JSON.parse(JSON.stringify(before));
+    contaminated.unlockedByClass['witchdoctor'] = ['wiz_fireball', 'wd_vd_doll']; // one foreign, one legal
+    (contaminated.unlockedByClass[ms.classId] ??= []).push('sam_bl_first'); // foreign in the live class too
+    const points0 = contaminated.unspentPoints;
+    ms.skills.load(contaminated);
+    const out = {
+      stripped: ms.skills.lastSanitize.stripped,
+      refunded: ms.skills.lastSanitize.refunded,
+      points: ms.skills.unspentPoints,
+      points0,
+      wdLegalKept: ms.skills.isUnlocked('wd_vd_doll', 'witchdoctor'),
+      wdForeignGone: !ms.skills.isUnlocked('wiz_fireball', 'witchdoctor'),
+      liveForeignGone: !ms.skills.unlockedIds(ms.classId).includes('sam_bl_first'),
+    };
+    ms.skills.load(before); // restore the session's real state
+    return out;
+  });
+  ok(
+    'save integrity: foreign skills are stripped on load with their points refunded; legal unlocks untouched',
+    heal.stripped.length === 2 && heal.refunded === 2 && heal.points === heal.points0 + 2 && heal.wdLegalKept && heal.wdForeignGone && heal.liveForeignGone,
+    JSON.stringify(heal),
+  );
+
+  // (d) SAVES ROUND-TRIP BYTE-IDENTICALLY THROUGH ROTATIONS: rotating writes
+  // nothing to the slot and changes nothing that serializes.
+  const rotSave = await (async () => {
+    const s0 = await page.evaluate(() => {
+      const ms = window.__ready();
+      ms.requestSave();
+      return localStorage.getItem('toh_save');
+    });
+    await page.setViewportSize({ width: 926, height: 428 });
+    await page.waitForTimeout(600);
+    const midRotation = await page.evaluate(() => localStorage.getItem('toh_save'));
+    await page.setViewportSize({ width: 428, height: 926 });
+    await page.waitForTimeout(600);
+    const after = await page.evaluate(() => {
+      const ms = window.__game.scene.getScene('MainScene');
+      const slotUntouched = localStorage.getItem('toh_save');
+      ms.requestSave(); // a fresh save AFTER the rotations
+      const rewritten = JSON.parse(localStorage.getItem('toh_save'));
+      return { slotUntouched, skills: JSON.stringify(rewritten.skills ?? rewritten.skillState ?? null) };
+    });
+    const base = JSON.parse(s0);
+    return {
+      slotStableThroughRotation: midRotation === s0 && after.slotUntouched === s0,
+      skillsIdentical: after.skills === JSON.stringify(base.skills ?? base.skillState ?? null),
+    };
+  })();
+  ok(
+    'rotation save integrity: rotating touches nothing in the slot; a post-rotation save carries identical skill state',
+    rotSave.slotStableThroughRotation && rotSave.skillsIdentical,
+    JSON.stringify(rotSave),
+  );
+
+  // (e) WHEN SHOWN, THE PICKER'S CLASS IS THE LIVE CHARACTER'S: a genuinely
+  // fresh character opens the picker for exactly its own class.
+  await page.goto(`http://localhost:${PORT}/`, { waitUntil: 'load' });
+  await page.waitForFunction(() => !!window.__game && window.__game.scene.isActive('TitleScene'), { timeout: 25000 });
+  await page.evaluate(() => {
+    localStorage.clear();
+    window.__game.scene.getScene('TitleScene').scene.start('MainScene', { mode: 'new', classId: 'witchdoctor' });
+  });
+  await page.waitForFunction(() => window.__game.scene.isActive('FirstSkillScene'), { timeout: 25000 });
+  await page.waitForTimeout(400);
+  const freshPicker = await page.evaluate(() => {
+    const ms = window.__game.scene.getScene('MainScene');
+    const fs = window.__game.scene.getScene('FirstSkillScene');
+    return { liveClass: ms.classId, shownClass: fs.shownClass, needs: ms.skills.needsFirstSkill(ms.classId) };
+  });
+  ok(
+    'picker class: a fresh character sees exactly its own class in the forced picker',
+    freshPicker.needs && freshPicker.liveClass === 'witchdoctor' && freshPicker.shownClass === 'witchdoctor',
+    JSON.stringify(freshPicker),
+  );
+  // Complete the pick through the real card so the session ends playable.
+  const card = await page.evaluate(() => {
+    const fs = window.__game.scene.getScene('FirstSkillScene');
+    const c = fs.children.list.filter((o) => o.type === 'Rectangle' && o.input && o.input.enabled && o.width < 400).sort((a, b) => a.y - b.y)[0];
+    const b = c.getBounds();
+    return { x: b.centerX, y: b.centerY };
+  });
+  await page.mouse.click(card.x, card.y);
+  await page.waitForTimeout(600);
 
   // 4) THE GATE: zero page errors across everything above.
   ok('zero page errors during boot + travel', pageErrors.length === 0, pageErrors.slice(0, 3).join(' | '));

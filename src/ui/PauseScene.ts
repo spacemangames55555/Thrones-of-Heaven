@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { bindOverlayRelayout } from './uiLayout';
 
 /** Minimal structural view of MainScene that the pause menu needs. */
 interface SaveableScene {
@@ -65,7 +66,7 @@ export class PauseScene extends Phaser.Scene {
       .setOrigin(0.5)
       .setVisible(false);
 
-    this.scale.on(Phaser.Scale.Events.RESIZE, () => this.scene.restart());
+    bindOverlayRelayout(this, () => this.scene.restart()); // active-only + auto-teardown + jitter-filtered
   }
 
   private main(): SaveableScene {

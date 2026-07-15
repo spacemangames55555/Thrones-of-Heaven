@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { bindOverlayRelayout } from './uiLayout';
 import { classSkills, isEquippableSkill, LOADOUT_SLOTS, type SkillDef } from '../skills/skillData';
 import type { SkillState } from '../skills/SkillState';
 
@@ -85,7 +86,7 @@ export class SkillTreeScene extends Phaser.Scene {
     this.refreshPoints();
 
     this.input.keyboard?.on('keydown-ESC', () => (this.popup ? this.closePopup() : this.readPopup ? this.closeReadPopup() : this.close()));
-    this.scale.on(Phaser.Scale.Events.RESIZE, () => this.scene.restart());
+    bindOverlayRelayout(this, () => this.scene.restart()); // active-only + auto-teardown + jitter-filtered
   }
 
   private pointsText!: Phaser.GameObjects.Text;

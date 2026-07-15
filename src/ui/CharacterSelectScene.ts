@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { bindOverlayRelayout } from './uiLayout';
 import type { ClassId } from '../skills/skillData';
 import { homeStartLabelForClass } from '../world/class-canon';
 
@@ -69,7 +70,7 @@ export class CharacterSelectScene extends Phaser.Scene {
       this.makeCard(colCx, y0 + row * (cardH + gap), cardW, cardH, opt);
     });
 
-    this.scale.on(Phaser.Scale.Events.RESIZE, () => this.scene.restart());
+    bindOverlayRelayout(this, () => this.scene.restart()); // active-only + auto-teardown + jitter-filtered
   }
 
   private makeCard(cx: number, y: number, w: number, h: number, opt: ClassOption): void {

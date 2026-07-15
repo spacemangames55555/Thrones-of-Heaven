@@ -56,6 +56,35 @@ export function getInsets(scene: Phaser.Scene): Insets {
 }
 
 /**
+ * OVERLAY RESIZE BINDING — the ONLY sanctioned way an overlay scene reacts to a
+ * viewport resize. Fixes the restart-leak regression:
+ *   • fires ONLY while the scene is genuinely active — a resize can NEVER
+ *     re-open (restart) a closed overlay (the "picker re-appears" bug);
+ *   • auto-removes itself on SHUTDOWN — restarts never accumulate listeners on
+ *     the global ScaleManager (the progressive-slowdown bug);
+ *   • ignores resizes that change neither orientation nor meaningful size
+ *     (< 24px — the iOS Safari URL-bar collapse fires viewport resizes
+ *     constantly WITHOUT rotation; those must relayout nothing).
+ */
+export function bindOverlayRelayout(scene: Phaser.Scene, relayout: () => void): void {
+  let lastW = scene.scale.width;
+  let lastH = scene.scale.height;
+  const handler = (): void => {
+    const w = scene.scale.width;
+    const h = scene.scale.height;
+    const flipped = w > h !== lastW > lastH;
+    const meaningful = Math.abs(w - lastW) >= 24 || Math.abs(h - lastH) >= 24;
+    if (!flipped && !meaningful) return; // URL-bar jitter: no relayout
+    lastW = w;
+    lastH = h;
+    if (!scene.scene.isActive()) return; // NEVER touch a closed scene
+    relayout();
+  };
+  scene.scale.on(Phaser.Scale.Events.RESIZE, handler);
+  scene.events.once(Phaser.Scenes.Events.SHUTDOWN, () => scene.scale.off(Phaser.Scale.Events.RESIZE, handler));
+}
+
+/**
  * The actual visible viewport size. `visualViewport` is the reliable source on
  * mobile Safari (it reflects what is really on screen, unlike a fixed element's
  * measured bounds, which is what made the UI lay out too wide).
