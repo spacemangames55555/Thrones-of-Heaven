@@ -8,6 +8,7 @@ const DRUID_TEXTURE_KEY = 'druid-figure'; // Druid (Seattle wild-warden) avatar
 const MAGE_TEXTURE_KEY = 'mage-figure'; // Mage (Moscow reality-surgeon) avatar — NOT the Wizard (canon)
 const BARD_TEXTURE_KEY = 'bard-figure'; // Bard (London memory-keeper) avatar
 const WITCHDOCTOR_TEXTURE_KEY = 'witchdoctor-figure'; // Witch Doctor (Kinshasa spirit-speaker) avatar
+const SAMURAI_TEXTURE_KEY = 'samurai-figure'; // Samurai (Kyoto blade) avatar
 const WIDTH = 32; // ~1 tile wide
 const HEIGHT = 48; // ~1.5 tiles tall — fixes the "character = one giant block" look
 
@@ -19,6 +20,7 @@ function textureForClass(classId: string): string {
   if (classId === 'mage') return MAGE_TEXTURE_KEY;
   if (classId === 'bard') return BARD_TEXTURE_KEY;
   if (classId === 'witchdoctor') return WITCHDOCTOR_TEXTURE_KEY;
+  if (classId === 'samurai') return SAMURAI_TEXTURE_KEY;
   return TEXTURE_KEY;
 }
 
@@ -44,6 +46,7 @@ export class Player {
     Player.ensureMageTexture(scene);
     Player.ensureBardTexture(scene);
     Player.ensureWitchDoctorTexture(scene);
+    Player.ensureSamuraiTexture(scene);
 
     this.sprite = scene.physics.add.sprite(x, y, textureForClass(classId));
     this.sprite.setCollideWorldBounds(true);
@@ -370,6 +373,50 @@ export class Player {
     g.fillRect(6.6, h - 23, 3, 1);
     g.fillRect(7.6, h - 24, 1, 3);
     g.generateTexture(WITCHDOCTOR_TEXTURE_KEY, w, h);
+    g.destroy();
+  }
+
+  /** The Samurai avatar — Kyoto's blade: lacquer-dark armor with a crimson sash,
+   *  a wide jingasa-line helm, and the katana's saya at the left hip. CODE-DRAWN
+   *  PLACEHOLDER (a real sprite PNG drops in later via the sprite override under
+   *  this same key). Same footprint as the other figures. */
+  private static ensureSamuraiTexture(scene: Phaser.Scene): void {
+    if (scene.textures.exists(SAMURAI_TEXTURE_KEY)) return;
+    const w = WIDTH;
+    const h = HEIGHT;
+    const g = scene.make.graphics({ x: 0, y: 0 }, false);
+    // Dark outline + lacquered armor body.
+    g.fillStyle(0x120c0c, 1);
+    g.fillRoundedRect(4, 8, w - 8, h - 10, 9);
+    g.fillStyle(0x33201e, 1); // lacquer-dark plates
+    g.fillRoundedRect(6, 10, w - 12, h - 14, 7);
+    // Plate lines (the laced rows of the do).
+    g.fillStyle(0x1c1210, 1);
+    g.fillRect(8, 26, w - 16, 1.6);
+    g.fillRect(8, 32, w - 16, 1.6);
+    g.fillRect(8, 38, w - 16, 1.6);
+    // Crimson sash across the waist.
+    g.fillStyle(0xd8503a, 1);
+    g.fillRect(8, 30, w - 16, 3);
+    // Head + the wide helm line.
+    g.fillStyle(0xe0c8a8, 1); // face
+    g.fillCircle(w / 2, 14, 5.5);
+    g.fillStyle(0x120c0c, 1); // eyes
+    g.fillCircle(w / 2 - 2, 14.5, 1.1);
+    g.fillCircle(w / 2 + 2, 14.5, 1.1);
+    g.fillStyle(0x2a1a18, 1); // the helm: a wide brim + crown
+    g.fillRoundedRect(w / 2 - 10, 8, 20, 4, 2);
+    g.fillRoundedRect(w / 2 - 6, 4, 12, 5, 2);
+    g.fillStyle(0xe8c05a, 1); // the maedate crest dot
+    g.fillCircle(w / 2, 6, 1.8);
+    // The katana's saya at the left hip (dark sheath, gold fittings).
+    g.fillStyle(0x1c1210, 1);
+    const sx = 7;
+    g.fillRect(sx - 1, h - 34, 3, 20);
+    g.fillStyle(0xe8c05a, 1);
+    g.fillRect(sx - 1, h - 32, 3, 2); // koiguchi
+    g.fillRect(sx - 1, h - 18, 3, 2); // kojiri
+    g.generateTexture(SAMURAI_TEXTURE_KEY, w, h);
     g.destroy();
   }
 }

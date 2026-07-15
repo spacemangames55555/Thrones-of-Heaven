@@ -1720,6 +1720,10 @@ try {
     ms.voodoo = null;
     ms.allyBond = null;
     ms.spiritSplit = null;
+    ms.parry = null;
+    ms.perfectFormUntil = 0;
+    ms.iaijutsu = null;
+    ms.darkVulnUntil = 0;
     ms.clearDots();
     ms.playerHealth.full();
     ms.energy.full();
@@ -1728,7 +1732,7 @@ try {
   });
   ok(
     'skill framework: every skill in every tree executes; composed actions match their declared primitives',
-    skillSweep.errors.length === 0 && skillSweep.mismatches.length === 0 && skillSweep.composed === 94 && skillSweep.total >= 210,
+    skillSweep.errors.length === 0 && skillSweep.mismatches.length === 0 && skillSweep.composed === 107 && skillSweep.total >= 240,
     `total=${skillSweep.total} composed=${skillSweep.composed} bespokeActive=${skillSweep.bespokeActive} timed/other=${skillSweep.other} passive=${skillSweep.passive}` +
       (skillSweep.errors.length ? ` ERRORS=${JSON.stringify(skillSweep.errors.slice(0, 3))}` : '') +
       (skillSweep.mismatches.length ? ` MISMATCH=${JSON.stringify(skillSweep.mismatches.slice(0, 3))}` : ''),
@@ -2957,7 +2961,9 @@ try {
         const b = r.getBounds();
         return b.x < -1 || b.y < -1 || b.x + b.width > g.scale.width + 1 || b.y + b.height > g.scale.height + 1;
       });
-      return { w: g.scale.width, cards: cards.length, off: off.length };
+      // One card per REGISTERED class — the count tracks the roster automatically.
+      const registered = Object.keys(g.scene.getScene('MainScene').classSkillsAll).length;
+      return { w: g.scale.width, cards: cards.length, registered, off: off.length };
     });
     // Into a run (top-left card = blacksmith) → open the skill tree in landscape.
     await page.evaluate(() => window.__game.scene.getScene('CharacterSelectScene').scene.start('MainScene', { mode: 'new', classId: 'blacksmith' }));
@@ -2999,7 +3005,7 @@ try {
   })();
   ok(
     'orientation: the select screen + skill tree lay out fully on screen in landscape (column flow)',
-    landscapeMenus.select.w === 926 && landscapeMenus.select.cards === 7 && landscapeMenus.select.off === 0 && landscapeMenus.tree.bars >= 16 && landscapeMenus.tree.off === 0,
+    landscapeMenus.select.w === 926 && landscapeMenus.select.cards === landscapeMenus.select.registered && landscapeMenus.select.off === 0 && landscapeMenus.tree.bars >= 16 && landscapeMenus.tree.off === 0,
     JSON.stringify(landscapeMenus),
   );
   await page.setViewportSize({ width: 428, height: 926 }); // restore portrait for anything after

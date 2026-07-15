@@ -190,6 +190,10 @@ export const CLASS_BASE_STATS: Record<string, ClassBaseStats> = {
   // Witch Doctor — Kinshasa's spirit-speaker: ×0.85 HP / ×0.95 damage / ×1.00
   // speed of the Blacksmith baseline (rounded: 85/17 HP, 24 base damage). (Tune here.)
   witchdoctor: { baseMaxHP: 85, hpPerLevel: 17, baseDamage: 24, dmgPerLevel: 5, moveSpeedMult: 1 },
+  // Samurai — Kyoto's blade (Casey's ruling: pure DPS, defense through timing):
+  // x0.80 HP / x1.10 damage / x1.05 speed of the Blacksmith baseline (rounded:
+  // 80/16 HP, 28/6 damage). (Tune here.)
+  samurai: { baseMaxHP: 80, hpPerLevel: 16, baseDamage: 28, dmgPerLevel: 6, moveSpeedMult: 1.05 },
 };
 
 /** The base-stat profile for a class id (defaults to the Blacksmith baseline). */
