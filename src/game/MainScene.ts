@@ -33,7 +33,8 @@ import { DRAGON_DEF, BEAST_DEF, SATAN_DEF } from '../boss/trinityData';
 import { TrinitySequence } from '../boss/TrinitySequence';
 import { EarthPortal } from '../entities/EarthPortal';
 import { SaveSystem } from '../save/SaveSystem';
-import { SAVE_VERSION, type SaveData } from '../save/SaveData';
+import { SAVE_VERSION, SAVE_KEY, type SaveData } from '../save/SaveData';
+import { encodeSaveCode, decodeSaveCode } from './saveCode';
 import { PortalDefense } from '../encounter/PortalDefense';
 import { buildHeavenMapData, HEAVEN_WIDTH, HEAVEN_HEIGHT, HEAVEN_CHERUB_SPAWNS, THRONE_POSITION } from '../map/heavenWorld';
 import { buildHellMapData, HELL_WIDTH, HELL_HEIGHT, HELL_DEMON_SPAWNS, SATAN_LAIR } from '../map/hellWorld';
@@ -6371,6 +6372,28 @@ export class MainScene extends Phaser.Scene {
   requestSave(): boolean {
     if (!this.gameReady) return false;
     return SaveSystem.write(this.serialize());
+  }
+
+  /** SAVE PORTABILITY (pause menu "Export Save"): write the current save, then
+   *  return the slot's EXACT JSON as a portable code — and try the clipboard
+   *  (fire-and-forget; the pause menu falls back to showing the code). */
+  exportSaveCode(): string | null {
+    if (!this.requestSave()) return null;
+    const raw = localStorage.getItem(SAVE_KEY);
+    if (!raw) return null;
+    const code = encodeSaveCode(raw);
+    void navigator.clipboard?.writeText(code).catch(() => undefined);
+    return code;
+  }
+
+  /** SAVE PORTABILITY (pause menu "Import Save"): validate a save code and write
+   *  the EXACT original JSON into the slot (byte-identical to what was exported).
+   *  Returns true when the slot was written; the caller reloads to play it. */
+  importSaveCode(code: string): boolean {
+    const raw = decodeSaveCode(code);
+    if (raw === null) return false;
+    localStorage.setItem(SAVE_KEY, raw);
+    return true;
   }
 
   /** Open the in-game pause menu: launch the overlay scene + freeze this scene. */

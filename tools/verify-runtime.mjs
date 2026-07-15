@@ -2821,6 +2821,69 @@ try {
   await page.setViewportSize({ width: 428, height: 926 }); // restore portrait for anything after
   await page.waitForTimeout(500);
 
+  // 3ad. PWA STANDALONE (permanent): the manifest + icons are SERVED and VALID —
+  // standalone display, any orientation, dark theme, real PNGs at their declared
+  // sizes — the page carries the iOS standalone meta + viewport-fit=cover, and a
+  // save exported as a portable code imports back BYTE-IDENTICALLY (with junk
+  // codes rejected without touching the slot).
+  const pwa = await page.evaluate(async () => {
+    const out = { pngs: [] };
+    const mf = await fetch('/manifest.webmanifest');
+    out.manifestOk = mf.ok;
+    const m = await mf.json();
+    out.name = m.name;
+    out.display = m.display;
+    out.orientation = m.orientation;
+    out.start = m.start_url;
+    out.theme = m.theme_color;
+    for (const icon of m.icons ?? []) {
+      const r = await fetch(icon.src);
+      const buf = new Uint8Array(await r.arrayBuffer());
+      const sig = buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47;
+      const w = (buf[16] << 24) | (buf[17] << 16) | (buf[18] << 8) | buf[19]; // IHDR width
+      out.pngs.push({ ok: r.ok, sig, w, declared: icon.sizes });
+    }
+    const html = await (await fetch('/')).text();
+    out.meta = ['apple-mobile-web-app-capable', 'apple-mobile-web-app-status-bar-style', 'apple-touch-icon', 'viewport-fit=cover', 'rel="manifest"'].every((k) => html.includes(k));
+    return out;
+  });
+  ok(
+    'pwa: manifest + icons served and valid (standalone, any orientation, real PNGs at declared sizes); iOS meta present',
+    pwa.manifestOk &&
+      pwa.name === 'Thrones of Heaven' &&
+      pwa.display === 'standalone' &&
+      pwa.orientation === 'any' &&
+      pwa.start === '/' &&
+      pwa.theme === '#0b1a2b' &&
+      pwa.pngs.length === 3 &&
+      pwa.pngs.every((p) => p.ok && p.sig && p.declared.startsWith(`${p.w}x`)) &&
+      pwa.meta,
+    JSON.stringify(pwa),
+  );
+
+  const saveCode = await page.evaluate(() => {
+    const ms = window.__ready();
+    const code = ms.exportSaveCode(); // writes the save, encodes the slot, tries the clipboard
+    const raw = localStorage.getItem('toh_save');
+    localStorage.setItem('toh_save', '{"saveVersion":0,"clobbered":true}'); // wreck the slot
+    const imported = ms.importSaveCode(code ?? '');
+    const back = localStorage.getItem('toh_save');
+    const junk = ms.importSaveCode('TOH1.!!!not-base64!!!') || ms.importSaveCode('hello world');
+    return {
+      hasCode: !!code && code.startsWith('TOH1.'),
+      bytes: raw?.length ?? 0,
+      imported,
+      identical: back !== null && back === raw,
+      junkRejected: !junk,
+      slotIntact: localStorage.getItem('toh_save') === raw,
+    };
+  });
+  ok(
+    'pwa: export→import round-trips the save byte-identically; junk codes rejected without touching the slot',
+    saveCode.hasCode && saveCode.bytes > 100 && saveCode.imported && saveCode.identical && saveCode.junkRejected && saveCode.slotIntact,
+    JSON.stringify(saveCode),
+  );
+
   // 4) THE GATE: zero page errors across everything above.
   ok('zero page errors during boot + travel', pageErrors.length === 0, pageErrors.slice(0, 3).join(' | '));
 } finally {
