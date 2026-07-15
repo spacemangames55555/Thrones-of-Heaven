@@ -4935,15 +4935,52 @@ export class MainScene extends Phaser.Scene {
     this.time.delayedCall(1500, () => this.respawnPlayer());
   }
 
+  /**
+   * DEATH RESPAWN — the NEAREST SAFE POINT in the CURRENT world (the old rule
+   * blindly used Earth's town-spawn coordinates, stranding deaths in other
+   * worlds mid-void):
+   *   • SPARSE worlds (the globe): the nearest zone settlement arrival —
+   *     manifest-derived, so every future zone inherits it automatically;
+   *   • DENSE hand-built worlds: the nearest existing spawn/entry point
+   *     (Earth: the town spawn or the world entry, whichever is closer);
+   *   • fallback: the world's entry.
+   */
+  private deathRespawnPoint(): { x: number; y: number } {
+    const px = this.player.x;
+    const py = this.player.y;
+    const candidates: { x: number; y: number }[] = [];
+    if (this.groundLayers.has(this.activeWorld)) {
+      // Sparse world: every settlement arrival is a safe point.
+      for (const id of Object.keys(this.regionZoneArrivals)) candidates.push(this.regionZoneArrivals[id]);
+    } else {
+      const w = this.worlds[this.activeWorld];
+      if (w?.defaultArrival) candidates.push(w.defaultArrival);
+      if (this.activeWorld === 'earth') candidates.push(this.town.spawn);
+    }
+    if (candidates.length === 0) return this.worlds[this.activeWorld]?.defaultArrival ?? this.town.spawn;
+    let best = candidates[0];
+    let bestD = Number.POSITIVE_INFINITY;
+    for (const c of candidates) {
+      const d = Phaser.Math.Distance.Between(px, py, c.x, c.y);
+      if (d < bestD) {
+        bestD = d;
+        best = c;
+      }
+    }
+    return best;
+  }
+
   private respawnPlayer(): void {
     this.playerHealth.full();
     // During a portal-defense encounter, respawn at the portal so the player can
-    // keep defending (the encounter CONTINUES on death); otherwise the town spawn.
+    // keep defending (the encounter CONTINUES on death); otherwise the NEAREST
+    // SAFE POINT in the current world (everything else about death unchanged).
     if (this.portalDefense.isActive) {
       this.player.sprite.setPosition(this.portal.x, this.portal.y + 90);
     } else {
-      this.player.sprite.setPosition(this.town.spawn.x, this.town.spawn.y);
-      this.sasquatch.reset(); // clean, repeatable fight
+      const p = this.deathRespawnPoint();
+      this.player.sprite.setPosition(p.x, p.y);
+      this.sasquatch.reset(); // clean, repeatable fight (unchanged from the old rule)
     }
     this.player.setDirection(0, 0);
     this.projectiles.clear(); // drop any bolts still in flight
