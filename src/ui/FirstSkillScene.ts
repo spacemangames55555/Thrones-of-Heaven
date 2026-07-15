@@ -52,10 +52,13 @@ export class FirstSkillScene extends Phaser.Scene {
 
     const openers = this.treeOpeners();
     const cardW = Math.min(380, w - 28);
-    const cardH = 96;
+    // ORIENTATION-AWARE height: shrink the cards in landscape so all three picks
+    // stay fully on screen (portrait keeps the classic 96px cards).
     const gap = 16;
+    const top = h * 0.32;
+    const cardH = Math.max(72, Math.min(96, Math.floor((h - top - 12 - (openers.length - 1) * gap) / Math.max(1, openers.length))));
     const totalH = openers.length * cardH + (openers.length - 1) * gap;
-    let y = Math.max(h * 0.32, h / 2 - totalH / 2);
+    let y = Math.max(top, h / 2 - totalH / 2);
     for (const def of openers) {
       this.makeCard(cx, y, cardW, cardH, def);
       y += cardH + gap;

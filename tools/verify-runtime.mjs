@@ -2693,6 +2693,134 @@ try {
     JSON.stringify({ pickerState, added }),
   );
 
+  // 3ac. LANDSCAPE / ORIENTATION (permanent): the game boots + the HUD lays out
+  // sanely at BOTH 428×926 and 926×428 — every VISIBLE INTERACTIVE HUD element
+  // fully on screen, no two overlapping, the UI camera matched to the canvas —
+  // and a mid-session orientation flip preserves game state (and the camera's
+  // zoom: landscape simply sees wider). Runs in the live session left by the
+  // checks above; the viewport is restored to portrait at the end.
+  const hudSanity = () =>
+    page.evaluate(() => {
+      const g = window.__game;
+      const w = g.scale.width;
+      const h = g.scale.height;
+      const ms = g.scene.getScene('MainScene');
+      const rects = [];
+      for (const o of ms.children.list) {
+        if (!o.input || !o.input.enabled || !o.visible) continue;
+        if (o.scrollFactorX !== 0) continue; // HUD only — world-space buttons scroll
+        const b = o.getBounds();
+        rects.push({ x: Math.round(b.x), y: Math.round(b.y), w: Math.round(b.width), h: Math.round(b.height) });
+      }
+      const off = rects.filter((r) => r.x < -1 || r.y < -1 || r.x + r.w > w + 1 || r.y + r.h > h + 1);
+      const overlaps = [];
+      for (let i = 0; i < rects.length; i++) {
+        for (let j = i + 1; j < rects.length; j++) {
+          const a = rects[i];
+          const b = rects[j];
+          const ox = Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x);
+          const oy = Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y);
+          if (ox > 2 && oy > 2) overlaps.push(`${JSON.stringify(a)}~${JSON.stringify(b)}`);
+        }
+      }
+      return { w, h, buttons: rects.length, off: off.length, overlaps: overlaps.slice(0, 3), overlapCount: overlaps.length, uiCamW: ms.uiCamera.width, uiCamH: ms.uiCamera.height, zoom: ms.cameras.main.zoom };
+    });
+
+  const before = await page.evaluate(() => {
+    const ms = window.__ready();
+    return { classId: ms.classId, world: ms.activeWorld, x: ms.player.x, y: ms.player.y, hp: ms.playerHealth.current, points: ms.skills.unspentPoints, zoom: ms.cameras.main.zoom };
+  });
+  const portraitHud = await hudSanity();
+  await page.setViewportSize({ width: 926, height: 428 }); // ROTATE mid-session
+  await page.waitForTimeout(700); // main.ts applySize → scale.resize → every layout handler
+  const landscapeHud = await hudSanity();
+  const after = await page.evaluate(() => {
+    const ms = window.__game.scene.getScene('MainScene');
+    return { active: window.__game.scene.isActive('MainScene') || window.__game.scene.isPaused('MainScene'), classId: ms.classId, world: ms.activeWorld, x: ms.player.x, y: ms.player.y, hp: ms.playerHealth.current, points: ms.skills.unspentPoints, zoom: ms.cameras.main.zoom };
+  });
+  ok(
+    'orientation: portrait HUD sane (all buttons on-screen, none overlapping, UI camera matched)',
+    portraitHud.w === 428 && portraitHud.buttons > 0 && portraitHud.off === 0 && portraitHud.overlapCount === 0 && portraitHud.uiCamW === 428 && portraitHud.uiCamH === 926,
+    JSON.stringify(portraitHud),
+  );
+  ok(
+    'orientation: landscape HUD sane at 926×428 — same buttons, on-screen, no overlaps, canvas + UI camera resized',
+    landscapeHud.w === 926 && landscapeHud.h === 428 && landscapeHud.buttons === portraitHud.buttons && landscapeHud.off === 0 && landscapeHud.overlapCount === 0 && landscapeHud.uiCamW === 926 && landscapeHud.uiCamH === 428,
+    JSON.stringify(landscapeHud),
+  );
+  ok(
+    'orientation: a mid-session flip preserves game state (class/world/position/HP/points) and the camera zoom',
+    after.active && after.classId === before.classId && after.world === before.world && after.x === before.x && after.y === before.y && after.hp === before.hp && after.points === before.points && after.zoom === before.zoom,
+    JSON.stringify({ before, after }),
+  );
+
+  // The overlay screens must lay out sanely in landscape too: the select screen
+  // flows into columns (every card fully on screen), and the skill tree flows its
+  // ten rows into two columns (every node bar fully on screen).
+  const landscapeMenus = await (async () => {
+    await page.goto(`http://localhost:${PORT}/`, { waitUntil: 'load' });
+    await page.waitForFunction(() => !!window.__game && window.__game.scene.isActive('TitleScene'), { timeout: 25000 });
+    await page.evaluate(() => {
+      localStorage.clear();
+      window.__game.scene.getScene('TitleScene').scene.start('CharacterSelectScene');
+    });
+    await page.waitForTimeout(600);
+    const select = await page.evaluate(() => {
+      const g = window.__game;
+      const sc = g.scene.getScene('CharacterSelectScene');
+      const cards = sc.children.list.filter((o) => o.type === 'Rectangle' && o.input && o.input.enabled);
+      const off = cards.filter((r) => {
+        const b = r.getBounds();
+        return b.x < -1 || b.y < -1 || b.x + b.width > g.scale.width + 1 || b.y + b.height > g.scale.height + 1;
+      });
+      return { w: g.scale.width, cards: cards.length, off: off.length };
+    });
+    // Into a run (top-left card = blacksmith) → open the skill tree in landscape.
+    await page.evaluate(() => window.__game.scene.getScene('CharacterSelectScene').scene.start('MainScene', { mode: 'new', classId: 'blacksmith' }));
+    await page.waitForFunction(() => window.__game.scene.isActive('MainScene'), { timeout: 25000 });
+    await page.waitForTimeout(1500);
+    if (await page.evaluate(() => window.__game.scene.isActive('FirstSkillScene'))) {
+      // The picker's cards are landscape-laid too; click the FIRST card's live position.
+      const first = await page.evaluate(() => {
+        const sc = window.__game.scene.getScene('FirstSkillScene');
+        const card = sc.children.list.filter((o) => o.type === 'Rectangle' && o.input && o.input.enabled).sort((a, b) => a.y - b.y)[0];
+        const b = card.getBounds();
+        return { x: b.centerX, y: b.centerY };
+      });
+      await page.mouse.click(first.x, first.y);
+      await page.waitForTimeout(600);
+    }
+    await page.evaluate(() => window.__game.scene.getScene('MainScene').openSkillTree());
+    await page.waitForTimeout(500);
+    const tree = await page.evaluate(() => {
+      const g = window.__game;
+      const sts = g.scene.getScene('SkillTreeScene');
+      // The node list + tabs live inside Containers — walk them for every bar.
+      const all = [];
+      const walk = (list) => {
+        for (const o of list) {
+          if (o.type === 'Container') walk(o.list);
+          else all.push(o);
+        }
+      };
+      walk(sts.children.list);
+      const bars = all.filter((o) => o.type === 'Rectangle' && o.input && o.input.enabled);
+      const off = bars.filter((r) => {
+        const b = r.getBounds();
+        return b.x < -1 || b.y < -1 || b.x + b.width > g.scale.width + 1 || b.y + b.height > g.scale.height + 1;
+      });
+      return { bars: bars.length, off: off.length };
+    });
+    return { select, tree };
+  })();
+  ok(
+    'orientation: the select screen + skill tree lay out fully on screen in landscape (column flow)',
+    landscapeMenus.select.w === 926 && landscapeMenus.select.cards === 7 && landscapeMenus.select.off === 0 && landscapeMenus.tree.bars >= 16 && landscapeMenus.tree.off === 0,
+    JSON.stringify(landscapeMenus),
+  );
+  await page.setViewportSize({ width: 428, height: 926 }); // restore portrait for anything after
+  await page.waitForTimeout(500);
+
   // 4) THE GATE: zero page errors across everything above.
   ok('zero page errors during boot + travel', pageErrors.length === 0, pageErrors.slice(0, 3).join(' | '));
 } finally {

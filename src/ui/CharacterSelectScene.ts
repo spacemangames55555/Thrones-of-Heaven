@@ -47,18 +47,26 @@ export class CharacterSelectScene extends Phaser.Scene {
       .setOrigin(0.5, 0)
       .setDepth(2);
 
-    const cardW = Math.min(384, w - 28);
-    // ADAPTIVE height: six+ classes must all fit above the fold on 926px — shrink
-    // the cards (never below 96) instead of letting the last one slip off-screen.
+    // ORIENTATION-AWARE GRID: every card must sit fully on screen in BOTH
+    // orientations. Portrait = the classic single column (adaptive height, never
+    // below 96); landscape flows into as many columns as the height demands.
     const gap = 12;
     const topY = h * 0.18;
-    const cardH = Math.max(96, Math.min(116, Math.floor((h - topY - 16 - (CLASS_OPTIONS.length - 1) * gap) / CLASS_OPTIONS.length)));
-    const totalH = CLASS_OPTIONS.length * cardH + (CLASS_OPTIONS.length - 1) * gap;
-    let y = Math.max(topY, h / 2 - totalH / 2);
-    for (const opt of CLASS_OPTIONS) {
-      this.makeCard(cx, y, cardW, cardH, opt);
-      y += cardH + gap;
-    }
+    const availH = h - topY - 16;
+    const rowsFit = Math.max(1, Math.floor((availH + gap) / (96 + gap)));
+    const cols = Math.ceil(CLASS_OPTIONS.length / rowsFit);
+    const rows = Math.ceil(CLASS_OPTIONS.length / cols);
+    const cardW = Math.min(384, (w - 28 - (cols - 1) * gap) / cols);
+    const cardH = Math.max(96, Math.min(116, Math.floor((availH - (rows - 1) * gap) / rows)));
+    const totalW = cols * cardW + (cols - 1) * gap;
+    const totalH = rows * cardH + (rows - 1) * gap;
+    const y0 = Math.max(topY, h / 2 - totalH / 2);
+    CLASS_OPTIONS.forEach((opt, i) => {
+      const col = Math.floor(i / rows);
+      const row = i % rows;
+      const colCx = cx - totalW / 2 + cardW / 2 + col * (cardW + gap);
+      this.makeCard(colCx, y0 + row * (cardH + gap), cardW, cardH, opt);
+    });
 
     this.scale.on(Phaser.Scale.Events.RESIZE, () => this.scene.restart());
   }

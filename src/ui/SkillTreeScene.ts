@@ -129,7 +129,9 @@ export class SkillTreeScene extends Phaser.Scene {
     });
   }
 
-  /** Draw the active tree's tabs (active highlight updates) + node list. */
+  /** Draw the active tree's tabs (active highlight updates) + node list.
+   *  ORIENTATION-AWARE: when the rows don't fit the screen height (landscape),
+   *  the list flows into a SECOND column so every node stays on screen. */
   private redraw(): void {
     this.drawTabs();
     this.dynamic?.destroy();
@@ -137,30 +139,43 @@ export class SkillTreeScene extends Phaser.Scene {
     this.dynamic = c;
 
     const w = this.scale.width;
+    const h = this.scale.height;
     const cx = w / 2;
     const cls = classSkills(this.skills().activeClass);
     const treeId = cls.trees[this.activeTree]?.id;
     const nodes = cls.skills.filter((s) => s.tree === treeId).sort((a, b) => a.tier - b.tier);
 
-    let y = this.listTop() + 8;
     if (nodes.length === 0) {
-      c.add(this.add.text(cx, y + 20, '(no skills yet — coming soon)', { fontFamily: 'system-ui, sans-serif', fontSize: '13px', color: '#7a8aa0' }).setOrigin(0.5, 0));
+      c.add(this.add.text(cx, this.listTop() + 28, '(no skills yet — coming soon)', { fontFamily: 'system-ui, sans-serif', fontSize: '13px', color: '#7a8aa0' }).setOrigin(0.5, 0));
+      return;
     }
-    const stride = 50;
+    // Collapse branch groups first so ROWS (what actually renders) drive the flow.
+    const rows: (SkillDef | SkillDef[])[] = [];
     const drawnBranch = new Set<string>();
     for (const def of nodes) {
-      // EITHER/OR BRANCH: render all options of a group as ONE split node (skip the rest).
       if (def.branch) {
+        // EITHER/OR BRANCH: all options of a group render as ONE split row.
         if (drawnBranch.has(def.branch.group)) continue;
         drawnBranch.add(def.branch.group);
-        const options = nodes.filter((s) => s.branch?.group === def.branch!.group);
-        c.add(this.makeSplitNode(cx, y, options));
-        y += stride;
-        continue;
+        rows.push(nodes.filter((s) => s.branch?.group === def.branch!.group));
+      } else {
+        rows.push(def);
       }
-      c.add(this.makeNode(cx, y, def));
-      y += stride;
     }
+    const stride = 50;
+    const top = this.listTop() + 8;
+    const rowsPerCol = Math.max(1, Math.floor((h - top - 8) / stride));
+    const cols = Math.min(2, Math.ceil(rows.length / rowsPerCol));
+    const colGap = 14;
+    const nodeW = Math.min(380, (w - 24 - (cols - 1) * colGap) / cols);
+    const totalW = cols * nodeW + (cols - 1) * colGap;
+    const perCol = Math.ceil(rows.length / cols);
+    rows.forEach((row, i) => {
+      const col = Math.floor(i / perCol);
+      const colCx = cx - totalW / 2 + nodeW / 2 + col * (nodeW + colGap);
+      const y = top + (i % perCol) * stride;
+      c.add(Array.isArray(row) ? this.makeSplitNode(colCx, y, row, nodeW) : this.makeNode(colCx, y, row, nodeW));
+    });
   }
 
   /** PRESS MODEL for every name bar: pointer-down arms the HOLD_MS read timer; a
@@ -219,9 +234,7 @@ export class SkillTreeScene extends Phaser.Scene {
   /** A node split into N halves (the either/or branch): each half is one mutually-exclusive
    *  option showing its name + state (chosen ★ / locked-out / available). Tap = instant
    *  spend; hold = read; a chosen castable option's tag becomes its "Add" button. */
-  private makeSplitNode(cx: number, y: number, options: SkillDef[]): Phaser.GameObjects.GameObject[] {
-    const w = this.scale.width;
-    const nodeW = Math.min(380, w - 24);
+  private makeSplitNode(cx: number, y: number, options: SkillDef[], nodeW: number): Phaser.GameObjects.GameObject[] {
     const st = this.skills();
     const out: Phaser.GameObjects.GameObject[] = [];
     const gap = 6;
@@ -264,9 +277,7 @@ export class SkillTreeScene extends Phaser.Scene {
 
   /** One node row: color-coded by state. Tap = instant spend; hold = read; castable
    *  owned skills carry an "Add" (to hotkeys) button on the right of the name bar. */
-  private makeNode(cx: number, y: number, def: SkillDef): Phaser.GameObjects.GameObject[] {
-    const w = this.scale.width;
-    const nodeW = Math.min(380, w - 24);
+  private makeNode(cx: number, y: number, def: SkillDef, nodeW: number): Phaser.GameObjects.GameObject[] {
     const st = this.skills();
     const unlocked = st.isUnlocked(def.id);
     const can = st.canUnlock(def);
