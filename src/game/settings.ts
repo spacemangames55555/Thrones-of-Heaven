@@ -179,6 +179,10 @@ export const CLASS_BASE_STATS: Record<string, ClassBaseStats> = {
   // Druid — Seattle's walking ecosystem: ×0.90 HP / ×0.95 damage / ×1.00 speed of
   // the Blacksmith baseline (rounded: 90/18 HP, 24 base damage). (Tune here.)
   druid: { baseMaxHP: 90, hpPerLevel: 18, baseDamage: 24, dmgPerLevel: 5, moveSpeedMult: 1 },
+  // Mage — Moscow's surgeon of reality (CANON: distinct from Egypt's Wizard):
+  // the blueprint glass cannon — ×0.75 HP / ×1.10 damage / ×1.05 speed of the
+  // Blacksmith baseline (rounded: 75/15 HP, 28/6 damage). (Tune here.)
+  mage: { baseMaxHP: 75, hpPerLevel: 15, baseDamage: 28, dmgPerLevel: 6, moveSpeedMult: 1.05 },
 };
 
 /** The base-stat profile for a class id (defaults to the Blacksmith baseline). */

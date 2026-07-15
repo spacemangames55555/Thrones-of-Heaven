@@ -111,6 +111,9 @@ import {
 } from '../summon/summonData';
 import { TAPESTRY_TUNING, BEAR_MIGHT_ID, ELEPHANT_RAGE_ID } from '../skills/druidTapestry';
 import { RESTORATION_TUNING, CLAY_ID, OIL_IMMUNITY_ID, OIL_VITALITY_ID } from '../skills/druidRestoration';
+import { SPACETIME_TUNING } from '../skills/mageSpacetime';
+import { ARCANE_TUNING, MAGE_ABSORPTION_ID } from '../skills/mageArcane';
+import { CRYSTALBLADE_TUNING } from '../skills/mageCrystalblade';
 import { PlayerPower } from '../player/PlayerPower';
 import { URIEL_SCENE } from '../story/urielData';
 import { URIEL_SENDOFF_LINES, RIFT_SCENE } from '../story/riftSceneData';
@@ -2291,6 +2294,66 @@ export class MainScene extends Phaser.Scene {
     } else if (action === 'dru_polar_bear') {
       this.summonAlliedUnits(POLAR_BEAR_CONFIG, 1, POLAR_BEAR_TUNING.maxConcurrent); // Wild Kin #9 — the taunt tank
       this.showBanner('Polar Bear summoned', 1200);
+    } else if (action === 'mage_contraction') {
+      // Mage Spacetime #2 — condense space: drag enemies inward, then crush them.
+      const c = SPACETIME_TUNING.contraction;
+      this.spawnSkillRing(px, py, c.radius, 0x9ad0ff);
+      this.pullEnemiesInRange(px, py, c.radius, c.pull);
+      this.aoeHitAll(px, py, c.radius, this.skillDamage(c.damage));
+    } else if (action === 'mage_graviton') {
+      // Mage Spacetime #6 — a gravity well ahead: pull + STUN + minor damage.
+      const c = SPACETIME_TUNING.gravitonSurge;
+      const { dx, dy } = this.facingUnit();
+      const gx = px + dx * c.placeAhead;
+      const gy = py + dy * c.placeAhead;
+      this.spawnSkillRing(gx, gy, c.radius, 0x8a5cff);
+      this.pullEnemiesInRange(gx, gy, c.radius, c.pull);
+      this.stunEnemiesInRange(gx, gy, c.radius, c.stunMs);
+      this.aoeHitAll(gx, gy, c.radius, this.skillDamage(c.damage));
+    } else if (action === 'mage_singularity') {
+      this.castSingularity(SPACETIME_TUNING.singularityCollapse); // Spacetime #10 ultimate — the shared machinery
+    } else if (action === 'mage_arcane_blast') {
+      // Mage Arcane #2 — a fanned burst of arcane bolts (the Flicker pattern, own numbers).
+      const c = ARCANE_TUNING.arcaneBlast;
+      const { dx, dy } = this.facingUnit();
+      const baseAng = Math.atan2(dy, dx);
+      const spread = (c.spreadDeg * Math.PI) / 180;
+      const dmg = this.skillDamage(c.damageEach);
+      for (let i = 0; i < c.boltCount; i++) {
+        const t = c.boltCount > 1 ? i / (c.boltCount - 1) - 0.5 : 0;
+        const ang = baseAng + t * spread;
+        this.projectiles.spawn({ x: px + Math.cos(ang) * 18, y: py + Math.sin(ang) * 18, dirX: Math.cos(ang), dirY: Math.sin(ang), speed: c.speed, damage: dmg, maxRange: c.range, faction: 'player', color: 0xc09aff, radius: c.radius });
+      }
+      this.notifyBossesPlayerAction('ranged');
+    } else if (action === 'mage_leech') {
+      // Mage Arcane #6 — siphon essence from nearby foes, release ONE empowered bolt.
+      const c = ARCANE_TUNING.leechShot;
+      const drained = Math.min(c.maxEnemies, this.combatEnemiesInRange(px, py, c.radius).length);
+      if (drained > 0) {
+        this.energy.heal(drained * c.energyPerEnemy);
+        this.spawnSkillRing(px, py, c.radius, 0xc09aff);
+        this.spawnDamageNumber(px, py - 30, drained * c.energyPerEnemy, '#9ad8ff');
+      }
+      const { dx, dy } = this.facingUnit();
+      this.projectiles.spawn({ x: px + dx * 18, y: py + dy * 18, dirX: dx, dirY: dy, speed: c.speed, damage: this.skillDamage(c.boltDamage + drained * c.bonusPerEnemy), maxRange: c.range, faction: 'player', color: 0xd0b0ff, radius: c.boltRadius });
+      this.notifyBossesPlayerAction('ranged');
+    } else if (action === 'mage_mana_surge') {
+      // Mage Arcane #8 — burst-restore essence.
+      this.energy.heal(ARCANE_TUNING.manaSurge.restore);
+      this.spawnSkillRing(px, py, 70, 0x9ad8ff);
+      this.showBanner('Mana Surge', 1000);
+    } else if (action === 'mage_black_hole') {
+      this.castSingularity(ARCANE_TUNING.blackHole); // Arcane #9 — the shared pull machinery, smaller scale
+    } else if (action === 'mage_entangle') {
+      // Mage Arcane #10 ultimate — the entangled-chains extension.
+      const c = ARCANE_TUNING.entangledChains;
+      const bound = this.entangleNearby(px, py, c.radius, c.count, c.sharePct, c.durationMs);
+      this.showBanner(bound >= 2 ? `Entangled ${bound} foes` : 'No group to entangle', 1200);
+    } else if (action === 'mage_shatter') {
+      // Mage Crystalblade #8 — detonate ALL banked crystallize stacks nearby.
+      const c = CRYSTALBLADE_TUNING.crystalShatter;
+      const res = this.shatterCrystallize(px, py, c.radius, this.skillDamage(c.damagePerStack));
+      if (res.stacks === 0) this.showBanner('No crystal to shatter', 900);
     }
   }
 
@@ -3681,8 +3744,7 @@ export class MainScene extends Phaser.Scene {
   /** SINGULARITY (Dark Matter #10 capstone): a black-hole at a spot ahead that, over its
    *  life, PULLS nearby enemies toward its center AND deals heavy AoE damage each pulse.
    *  Reuses the placed-AoE pattern + a PULL (reverse of knockbackEnemiesInRange). */
-  private castSingularity(): void {
-    const c = DM_TUNING.singularity;
+  private castSingularity(c: { placeAhead: number; radius: number; durationMs: number; pulses: number; pullStrength: number; damagePerTick: number; banner?: string; tint?: number } = DM_TUNING.singularity): void {
     const { dx, dy } = this.facingUnit();
     const cx = this.player.x + dx * c.placeAhead;
     const cy = this.player.y + dy * c.placeAhead;
@@ -3690,12 +3752,12 @@ export class MainScene extends Phaser.Scene {
     for (let i = 0; i < c.pulses; i++) {
       this.time.delayedCall(i * step, () => {
         if (this.playerDead) return;
-        this.spawnSkillRing(cx, cy, c.radius * (1 - (i / c.pulses) * 0.35), 0x6a3fb0); // collapsing rings
+        this.spawnSkillRing(cx, cy, c.radius * (1 - (i / c.pulses) * 0.35), c.tint ?? 0x6a3fb0); // collapsing rings
         this.pullEnemiesInRange(cx, cy, c.radius, c.pullStrength);
         this.aoeHitAll(cx, cy, c.radius, this.skillDamage(c.damagePerTick));
       });
     }
-    this.showBanner('SINGULARITY', 1400);
+    this.showBanner(c.banner ?? 'SINGULARITY', 1400);
     this.lastCombatTime = this.time.now;
   }
 
@@ -4199,7 +4261,9 @@ export class MainScene extends Phaser.Scene {
 
     // Energy regenerates continuously, pausing briefly after each spend.
     if (this.time.now - this.lastEnergySpendTime > ENERGY_REGEN_DELAY_MS && this.energy.current < this.energy.max) {
-      this.energy.heal((ENERGY_REGEN_PER_SEC * delta) / 1000);
+      // ARCANE ABSORPTION (Mage keyed passive): extra essence regen while unlocked.
+      const absorb = this.skills.isUnlocked(MAGE_ABSORPTION_ID) ? ARCANE_TUNING.absorption.regenPerSec : 0;
+      this.energy.heal(((ENERGY_REGEN_PER_SEC + absorb) * delta) / 1000);
     }
   }
 

@@ -31,12 +31,15 @@ import { DARK_MATTER_TREE_SKILLS, DARK_MATTER_TREE } from './necromancerDarkMatt
 import { DRUID_TAPESTRY_SKILLS, DRUID_TAPESTRY_TREE } from './druidTapestry';
 import { DRUID_RESTORATION_SKILLS, DRUID_RESTORATION_TREE } from './druidRestoration';
 import { DRUID_WILDKIN_SKILLS, DRUID_WILDKIN_TREE } from './druidWildKin';
+import { MAGE_SPACETIME_SKILLS, MAGE_SPACETIME_TREE } from './mageSpacetime';
+import { MAGE_ARCANE_SKILLS, MAGE_ARCANE_TREE } from './mageArcane';
+import { MAGE_CRYSTAL_SKILLS, MAGE_CRYSTAL_TREE } from './mageCrystalblade';
 
 /** How many active skills the player can equip to on-screen slots. */
 export const LOADOUT_SLOTS = 6;
 
 /** The playable classes. Only the Blacksmith has trees this batch; others slot in later. */
-export type ClassId = 'blacksmith' | 'necromancer' | 'wizard' | 'druid';
+export type ClassId = 'blacksmith' | 'necromancer' | 'wizard' | 'druid' | 'mage';
 
 /** Stat modifiers a skill contributes — used by PASSIVE (permanent) and by timed
  *  BUFF / TRANSFORMATION effects (while active). All optional; absent = no change. */
@@ -162,7 +165,32 @@ export type ActiveActionId =
   | 'dru_lava_pocket'
   | 'dru_scavengers'
   | 'dru_polar_bear'
-  | 'dru_hail';
+  | 'dru_hail'
+  // Mage — Spacetime Manipulations. (CANON: Mage ≠ Wizard — no shared ids.)
+  | 'mage_quantum_blast'
+  | 'mage_contraction'
+  | 'mage_time_dilation'
+  | 'mage_graviton'
+  | 'mage_antimatter'
+  | 'mage_wormhole'
+  | 'mage_singularity'
+  // Mage — Arcane Specialization.
+  | 'mage_arcane_orb'
+  | 'mage_arcane_blast'
+  | 'mage_quantum_shield'
+  | 'mage_missiles'
+  | 'mage_leech'
+  | 'mage_mana_surge'
+  | 'mage_black_hole'
+  | 'mage_entangle'
+  // Mage — Crystalblade Mastery.
+  | 'mage_crystal_shard'
+  | 'mage_crystal_strike'
+  | 'mage_crystal_flurry'
+  | 'mage_facet_cleave'
+  | 'mage_crystal_pulse'
+  | 'mage_shatter'
+  | 'mage_crystal_nova';
 
 /**
  * The five supported EFFECT KINDS. The scene applies them generically:
@@ -453,6 +481,8 @@ const NON_DAMAGING_ACTIVE_ACTIONS: ReadonlySet<ActiveActionId> = new Set([
   // Druid utility/heal/summon actives (Lye DOES damage — it stays a damaging active).
   'dru_stealth', 'dru_mushroom', 'dru_aloe', 'dru_clay', 'dru_sage_burn', 'dru_spores', 'dru_oil_immunity', 'dru_oil_vitality',
   'dru_viper', 'dru_wolverine', 'dru_chimp_pair', 'dru_scavengers', 'dru_polar_bear',
+  // Mage utility actives (the slow field, shield, essence restore, and the pure-control binding).
+  'mage_time_dilation', 'mage_quantum_shield', 'mage_mana_surge', 'mage_entangle',
 ]);
 
 /**
@@ -496,6 +526,10 @@ const NON_AIMABLE_ACTIONS: ReadonlySet<ActiveActionId> = new Set<ActiveActionId>
   'dru_bear_might', 'dru_stealth', 'dru_bee_swarm', 'dru_elk', 'dru_elephant',
   'dru_lye', 'dru_mushroom', 'dru_aloe', 'dru_clay', 'dru_sage_burn', 'dru_spores', 'dru_oil_immunity', 'dru_oil_vitality',
   'dru_lightning', 'dru_viper', 'dru_wolverine', 'dru_chimp_pair', 'dru_scavengers', 'dru_polar_bear',
+  // Mage: self-AoE / self-buffs / auto-targeting casts. Quantum Blast / Arcane Orb /
+  // Arcane Blast / Antimatter / Graviton / Wormhole / Black Hole / Singularity are directional.
+  'mage_contraction', 'mage_time_dilation', 'mage_quantum_shield', 'mage_missiles', 'mage_leech', 'mage_mana_surge', 'mage_entangle',
+  'mage_crystal_shard', 'mage_crystal_pulse', 'mage_shatter', 'mage_crystal_nova',
 ]);
 
 /**
@@ -618,12 +652,37 @@ const DRUID: ClassSkills = {
   ],
 };
 
+// ─── MAGE (Moscow's surgeon of reality; the blueprint glass cannon) ────────────
+//
+// CANON, permanent: the MAGE (Moscow) and the WIZARD (Egypt) are DIFFERENT
+// classes — never aliased, shared, or renamed between them. Kit-free like the
+// others; the forced first pick is PER-CLASS and every Mage tree's tier-0 is a
+// damaging active: Quantum Blast (bolt), Arcane Orb (bolt), Crystal Shard
+// (ranged slow spikes).
+const MAGE: ClassSkills = {
+  classId: 'mage',
+  trees: [
+    { id: MAGE_SPACETIME_TREE, name: 'Spacetime' }, // 10 space/time skills (opens on Quantum Blast)
+    { id: MAGE_ARCANE_TREE, name: 'Arcane' }, // 10 arcana/essence skills (opens on Arcane Orb)
+    { id: MAGE_CRYSTAL_TREE, name: 'Crystalblade' }, // 10 blade skills (opens on Crystal Shard)
+  ],
+  skills: [
+    // --- SPACETIME MANIPULATIONS (10 skills, linear). Data in mageSpacetime.ts. ---
+    ...MAGE_SPACETIME_SKILLS,
+    // --- ARCANE SPECIALIZATION (10 skills, linear). Data in mageArcane.ts. ---
+    ...MAGE_ARCANE_SKILLS,
+    // --- CRYSTALBLADE MASTERY (10 skills, linear; crystallize/shatter). Data in mageCrystalblade.ts. ---
+    ...MAGE_CRYSTAL_SKILLS,
+  ],
+};
+
 /** Per-class trees + skills. The scene reads the ACTIVE class's entry. */
 export const CLASS_SKILLS: Record<ClassId, ClassSkills> = {
   blacksmith: BLACKSMITH,
   wizard: WIZARD,
   necromancer: NECROMANCER,
   druid: DRUID,
+  mage: MAGE,
 };
 
 /** Look up a class's full skill set (trees + skills). */
