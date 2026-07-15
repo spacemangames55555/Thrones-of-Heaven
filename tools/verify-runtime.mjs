@@ -1488,6 +1488,41 @@ try {
     `ground=${groundRun.fpsContinentGround} baseline=${groundRun.fpsContinentBase} (tolerance ≥ 80%)`,
   );
 
+  // 3n1b. ORIENTATION FPS PARITY (permanent): the SAME spot (Rome arrival,
+  // ground zoom) must render within 15% frame time in BOTH orientations.
+  // Render cost is symmetric by design — swapped dimensions are the same pixel
+  // count, the ground window and chunk activation are view-derived (profiled
+  // 2026-07: 25.6 portrait vs 26.1 landscape fps, 8 ground cells + 45 live
+  // enemies in both) — this gate keeps it that way.
+  const orientFps = () =>
+    page.evaluate(async () => {
+      const ms = window.__ready();
+      const gl = ms.groundLayers.get('globe');
+      await new Promise((r) => setTimeout(r, 900)); // settle after the resize
+      const fps = await new Promise((resolve) => {
+        let frames = 0;
+        const t0 = performance.now();
+        const tick = () => {
+          frames++;
+          const dt = performance.now() - t0;
+          if (dt >= 2500) resolve(+((frames * 1000) / dt).toFixed(1));
+          else requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+      });
+      return { fps, cells: gl.cellsDrawn, enemies: ms.combatEnemies().length };
+    });
+  const orientPortrait = await orientFps();
+  await page.setViewportSize({ width: 926, height: 428 });
+  const orientLandscape = await orientFps();
+  await page.setViewportSize({ width: 428, height: 926 });
+  await page.waitForTimeout(600);
+  ok(
+    'ground: landscape frame time within 15% of portrait at the same spot (Rome, ground zoom)',
+    orientLandscape.fps >= orientPortrait.fps * 0.85,
+    `portrait=${JSON.stringify(orientPortrait)} landscape=${JSON.stringify(orientLandscape)} (tolerance ≥ 85%)`,
+  );
+
   // 3n2. TRUE POSITIONS (the consolidation's core claim): Rome AND Luxor sit at
   // their real manifest lat/lng through the ONE globe calibration, with real
   // land rendered beneath, and a Levant/Anatolia land bridge of walkable void
@@ -2790,13 +2825,18 @@ try {
     ms.player.facingX = 1;
     ms.player.facingY = 0;
     ms.startPerfectForm(2000, 2); // small riposte: the 15 HP wolf must survive all three
+    // Per-hit SYNCHRONOUS deltas: each parried hit must remove exactly 0 HP (a
+    // stray ranged enemy wandering in mid-wait can't pollute the measurement).
+    let taken = 0;
     for (let i = 0; i < 3; i++) {
       wolf.sprite.body.reset(ms.player.x + 60, ms.player.y);
+      const before = ms.playerHealth.current;
       ms.onTownsfolkHitPlayer(wolf); // real melee hits, auto-parried
+      taken += before - ms.playerHealth.current;
       if (i < 2) ms.runComposedSteps([{ p: 'strike', at: 'front', range: 70, damageRaw: 2, tint: 0xffe9a8 }]); // acting freely
       await wait(120);
     }
-    const untouched = ms.playerHealth.current === hp0;
+    const untouched = taken === 0;
     const parries = ms.parryCount - count0;
     const wolfDrop = wolfHp0 - wolf.health.current; // 3 ripostes ×2 + 2 free strikes ×2
     await wait(1800); // past the window
