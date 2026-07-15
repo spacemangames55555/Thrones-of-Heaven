@@ -187,9 +187,10 @@ try {
     bard: { world: 'globe', zone: 'london-grey-chorus', opener: 'lon-01-mentor', kind: 'region' },
     witchdoctor: { world: 'globe', zone: 'kinshasa-river-drum', opener: 'kin-01-mentor', kind: 'region' },
     samurai: { world: 'globe', zone: 'kyoto-thousand-gates', opener: 'kyo-01-mentor', kind: 'region' },
+    monk: { world: 'globe', zone: 'lhasa-prayer-citadel', opener: 'lha-01-mentor', kind: 'region' },
     druid: { world: 'earth', zone: null, opener: 'honest-days-work', kind: 'earth' },
   };
-  for (const cls of ['blacksmith', 'wizard', 'necromancer', 'mage', 'bard', 'witchdoctor', 'samurai', 'druid']) {
+  for (const cls of ['blacksmith', 'wizard', 'necromancer', 'mage', 'bard', 'witchdoctor', 'samurai', 'monk', 'druid']) {
     await newGame(cls);
     const home = HOMES[cls];
     const s = await page.evaluate(
@@ -800,6 +801,152 @@ try {
           samKit.form.untouched &&
           samKit.form.parries === 3,
         JSON.stringify(samKit),
+      );
+    }
+
+    // 2t. EVERY MONK EXTENSION THROUGH A REAL MONK SKILL, in the live Monk
+    // session: Deflect (the real skill turns aside a live caster's bolt AND a
+    // live wolf's bite), Astral Projection (the real decoy), Chi Explosion
+    // (measured BOTH ways — the foe wounded, the caster + decoy mended in one
+    // cast), Prayer Wheel (ticking, then FOLLOWING the moving caster), and
+    // Life Infusion through the REAL unlock chain + activation path — including
+    // the ALLY-RULE whiff refund (no ally → cooldown + Chi returned).
+    if (cls === 'monk') {
+      const monkKit = await page.evaluate(async () => {
+        const ms = window.__ready();
+        const wait = (t) => new Promise((r) => setTimeout(r, t));
+        if (!window.__quietSpot()) return { setup: 'no quiet spot' };
+        ms.summons.clear();
+        const spawnAt = (dx, dy) => {
+          const w = ms.activeMap().nearestWalkableWorld(ms.player.x + dx, ms.player.y + dy);
+          return ms.spawnAngel('darkcaster', w.x, w.y);
+        };
+        // DEFLECT through the real skill vs a live caster's bolt: negated + a
+        // half-scaled riposte on the nearest foe + the window consumed.
+        const a = spawnAt(80, 0);
+        await wait(200);
+        ms.stunEnemiesInRange(a.x, a.y, 40, 9000); // pin the caster (no stray bolts)
+        ms.playerHealth.shield = 0;
+        ms.playerHealth.full();
+        const hp0 = ms.playerHealth.current;
+        const aHp0 = a.health.current;
+        ms.runActiveSkill('monk_deflect');
+        const windowOpen = ms.parry !== null && ms.parry.deflectProjectiles === true;
+        ms.onProjectileHitPlayer(10); // the REAL ranged damage path
+        const boltDeflect = { windowOpen, negated: ms.playerHealth.current === hp0, riposte: aHp0 - a.health.current, consumed: ms.parry === null };
+        // The SAME real skill vs a live wolf's bite (the melee half).
+        const wolf = ms.spawnTownsfolk(ms.player.x + 60, ms.player.y, null, 'wolf');
+        await wait(200);
+        const wHp0 = wolf.health.current;
+        const hp1 = ms.playerHealth.current;
+        ms.runActiveSkill('monk_deflect');
+        ms.onTownsfolkHitPlayer(wolf); // the wolf's REAL melee hit path
+        const biteDeflect = { negated: ms.playerHealth.current === hp1, riposte: wHp0 - wolf.health.current };
+        if (wolf.isAlive) wolf.takeHit(1e9);
+        // ASTRAL PROJECTION through the real skill: the spirit-self stands.
+        ms.runActiveSkill('monk_astral');
+        await wait(150);
+        const decoy = ms.summons.list.find((u) => u.isAlive) ?? null;
+        // CHI EXPLOSION measured BOTH ways in ONE cast: the pinned foe drops,
+        // the wounded caster AND the wounded decoy both mend.
+        const c = spawnAt(90, 40);
+        await wait(200);
+        ms.stunEnemiesInRange(c.x, c.y, 40, 9000);
+        c.sprite.body.reset(ms.player.x + 80, ms.player.y + 40); // inside the nova
+        let explosion = { foe: 0, self: 0, decoy: 0 };
+        if (decoy) {
+          decoy.sprite.body.reset(ms.player.x - 70, ms.player.y); // inside the heal
+          decoy.health.current -= 20;
+          ms.playerHealth.current -= 30;
+          const cHp0 = c.health.current;
+          const pHp0 = ms.playerHealth.current;
+          const dHp0 = decoy.health.current;
+          ms.runActiveSkill('monk_explosion');
+          await wait(120);
+          explosion = { foe: cHp0 - c.health.current, self: ms.playerHealth.current - pHp0, decoy: decoy.health.current - dHp0 };
+        }
+        // PRAYER WHEEL through the real skill: ticks beside the first foe, then
+        // FOLLOWS the caster to a second foe far away.
+        ms.playerHealth.full();
+        const b = spawnAt(460, 0);
+        await wait(150);
+        ms.stunEnemiesInRange(b.x, b.y, 40, 9000);
+        const aHp1 = a.health.current;
+        ms.runActiveSkill('monk_wheel');
+        await wait(900);
+        const nearTicks = aHp1 - a.health.current;
+        ms.player.sprite.body.reset(b.x - 60, b.y); // walk away — the wheel comes along
+        const bHp0 = b.health.current;
+        await wait(900);
+        const followTicks = bHp0 - b.health.current;
+        ms.pulseRing = null;
+        // LIFE INFUSION through the REAL unlock chain + activation path: unlock
+        // the Chi tree down to it, cast it at the wounded decoy, then verify the
+        // ALLY-RULE refund when no ally stands.
+        const defs = ms.classSkillsAll['monk'].skills;
+        ms.skills.awardPoints(10);
+        for (const id of ['monk_ch_wave', 'monk_ch_focus', 'monk_ch_soothe', 'monk_ch_tranquil', 'monk_ch_touch', 'monk_ch_aura', 'monk_ch_acupuncture', 'monk_ch_infusion']) {
+          if (!ms.skills.isUnlocked(id)) ms.skills.unlock(defs.find((d) => d.id === id));
+        }
+        let infusion = { healed: 0, paid: 0, spentChi: 0, onCooldown: false };
+        if (decoy) {
+          ms.playerHealth.full();
+          ms.energy.full();
+          decoy.health.current = Math.max(1, decoy.health.max - 40);
+          const dHp1 = decoy.health.current;
+          const pHp1 = ms.playerHealth.current;
+          const e0 = ms.energy.current;
+          ms.activateSkill('monk_ch_infusion'); // the REAL activation path
+          infusion = {
+            healed: decoy.health.current - dHp1,
+            paid: pHp1 - ms.playerHealth.current,
+            spentChi: e0 - ms.energy.current,
+            onCooldown: (ms.skillCooldownUntil['monk_ch_infusion'] ?? 0) > ms.time.now,
+          };
+        }
+        // The WHIFF REFUND: no ally → the cast costs neither cooldown nor Chi.
+        ms.summons.clear();
+        ms.skillCooldownUntil['monk_ch_infusion'] = 0;
+        ms.playerHealth.full();
+        ms.energy.full();
+        const e1 = ms.energy.current;
+        const pHp2 = ms.playerHealth.current;
+        ms.activateSkill('monk_ch_infusion');
+        const whiff = {
+          cooldownRefunded: (ms.skillCooldownUntil['monk_ch_infusion'] ?? 0) === 0,
+          chiRefunded: ms.energy.current === e1,
+          hpUntouched: ms.playerHealth.current === pHp2,
+        };
+        a.destroy();
+        b.destroy();
+        c.destroy();
+        ms.playerHealth.full();
+        ms.playerHealth.shield = 1e9;
+        return { setup: 'ok', boltDeflect, biteDeflect, decoyAlive: decoy !== null, explosion, nearTicks, followTicks, infusion, whiff };
+      });
+      ok(
+        'monk: deflect vs a live bolt + bite, chi explosion both ways, prayer wheel on the move, life infusion + whiff refund — each through the real skill',
+        monkKit.setup === 'ok' &&
+          monkKit.boltDeflect.windowOpen &&
+          monkKit.boltDeflect.negated &&
+          monkKit.boltDeflect.riposte > 0 &&
+          monkKit.boltDeflect.consumed &&
+          monkKit.biteDeflect.negated &&
+          monkKit.biteDeflect.riposte > 0 &&
+          monkKit.decoyAlive &&
+          monkKit.explosion.foe > 0 &&
+          monkKit.explosion.self > 0 &&
+          monkKit.explosion.decoy > 0 &&
+          monkKit.nearTicks > 0 &&
+          monkKit.followTicks > 0 &&
+          monkKit.infusion.healed > 0 &&
+          monkKit.infusion.paid > 0 &&
+          monkKit.infusion.spentChi > 0 &&
+          monkKit.infusion.onCooldown &&
+          monkKit.whiff.cooldownRefunded &&
+          monkKit.whiff.chiRefunded &&
+          monkKit.whiff.hpUntouched,
+        JSON.stringify(monkKit),
       );
     }
   }
