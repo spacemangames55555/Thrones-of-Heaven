@@ -49,12 +49,15 @@ import { MONK_SPIRIT_SKILLS, MONK_SPIRIT_TREE } from './monkSpiritual';
 import { ASN_TRAP_SKILLS, ASN_TRAP_TREE } from './assassinTraps';
 import { ASN_SHADOW_SKILLS, ASN_SHADOW_TREE } from './assassinShadow';
 import { ASN_MARKS_SKILLS, ASN_MARKS_TREE } from './assassinMarksman';
+import { PRS_LIGHT_SKILLS, PRS_LIGHT_TREE } from './priestLight';
+import { PRS_REBUKE_SKILLS, PRS_REBUKE_TREE } from './priestRebuke';
+import { PRS_GRACE_SKILLS, PRS_GRACE_TREE } from './priestGrace';
 
 /** How many active skills the player can equip to on-screen slots. */
 export const LOADOUT_SLOTS = 6;
 
 /** The playable classes. Only the Blacksmith has trees this batch; others slot in later. */
-export type ClassId = 'blacksmith' | 'necromancer' | 'wizard' | 'druid' | 'mage' | 'bard' | 'witchdoctor' | 'samurai' | 'monk' | 'assassin';
+export type ClassId = 'blacksmith' | 'necromancer' | 'wizard' | 'druid' | 'mage' | 'bard' | 'witchdoctor' | 'samurai' | 'monk' | 'assassin' | 'priest';
 
 /** Stat modifiers a skill contributes — used by PASSIVE (permanent) and by timed
  *  BUFF / TRANSFORMATION effects (while active). All optional; absent = no change. */
@@ -326,7 +329,31 @@ export type ActiveActionId =
   | 'asn_trick'
   | 'asn_fan'
   | 'asn_cripple'
-  | 'asn_rain_steel';
+  | 'asn_rain_steel'
+  // Priest actives (bespoke ids; composed skills share the executor; Judgment
+  // Ray is a channel-kind skill and needs no action id).
+  | 'prs_ray'
+  | 'prs_shield_faith'
+  | 'prs_embrace'
+  | 'prs_radiant'
+  | 'prs_barrier'
+  | 'prs_blessing'
+  | 'prs_intervene'
+  | 'prs_aegis'
+  | 'prs_smite'
+  | 'prs_rebuke'
+  | 'prs_word'
+  | 'prs_ground'
+  | 'prs_zeal'
+  | 'prs_vanquish'
+  | 'prs_judgment'
+  | 'prs_burst'
+  | 'prs_forgive'
+  | 'prs_beacon'
+  | 'prs_renewal'
+  | 'prs_hymn'
+  | 'prs_ascend'
+  | 'prs_grace_field';
 
 /**
  * The five supported EFFECT KINDS. The scene applies them generically:
@@ -666,6 +693,10 @@ const NON_DAMAGING_ACTIVE_ACTIONS: ReadonlySet<ActiveActionId> = new Set([
   // Assassin utility actives (pure-control devices, the stealth entries, the
   // confusion bomb, and the no-damage Shadow Dance state).
   'asn_snare_trap', 'asn_flash_trap', 'asn_frost_trap', 'asn_cloak', 'asn_smoke_bomb', 'asn_vanish', 'asn_shadow_dance',
+  // Priest utility actives (shields/wards/heals/cleanses, the pure-control
+  // word, the dormant revive, and the mending zones — Beacon/Burst/Ground/
+  // Grace Incarnate DO damage and stay damaging actives).
+  'prs_shield_faith', 'prs_embrace', 'prs_radiant', 'prs_barrier', 'prs_blessing', 'prs_intervene', 'prs_aegis', 'prs_word', 'prs_forgive', 'prs_renewal', 'prs_hymn', 'prs_ascend',
 ]);
 
 /**
@@ -734,6 +765,10 @@ const NON_AIMABLE_ACTIONS: ReadonlySet<ActiveActionId> = new Set<ActiveActionId>
   // step/ricochet. Every placed device, Caltrops/Minefield/Rain (placed ahead),
   // the strikes, and every star stay directional (drag-to-aim).
   'asn_remote_det', 'asn_cloak', 'asn_shadow_step', 'asn_smoke_bomb', 'asn_vanish', 'asn_shadow_dance', 'asn_trick',
+  // Priest: self-states, auto-targeting casts (shield/renewal/drain/judgment
+  // find their own target), self zones/fields, and the dormant revive. Ray of
+  // Light / Smite / Rebuke / the Beacon's beam stay directional (drag-to-aim).
+  'prs_shield_faith', 'prs_embrace', 'prs_radiant', 'prs_barrier', 'prs_blessing', 'prs_intervene', 'prs_aegis', 'prs_word', 'prs_ground', 'prs_vanquish', 'prs_judgment', 'prs_burst', 'prs_forgive', 'prs_renewal', 'prs_hymn', 'prs_ascend', 'prs_grace_field',
 ]);
 
 /**
@@ -954,6 +989,31 @@ const SAMURAI: ClassSkills = {
   ],
 };
 
+// ─── PRIEST (Europe's fourth native; Rome) ─────────────────────────────────────
+// Heaven lied, the Light didn't — three trees of 10: LIGHT (the targeted
+// ally-shield + its AoE/ultimate forms, the HP-cost mend, Divine Intervention
+// on the party-dormant revive hook), REBUKE (weakening holy force, the
+// channel-beam, the consecrated dual zone, the drain, the verdict), and WORDS
+// OF GRACE (the dual-ring opener, HoT/cleanse/blessings, the DUAL-CHANNEL
+// Beacon of Light, Ascendance, the wide dual field). "Faith" is prose over
+// standard energy. Tier-0s: Ray of Light, Smite, Sanctified Burst.
+const PRIEST: ClassSkills = {
+  classId: 'priest',
+  trees: [
+    { id: PRS_LIGHT_TREE, name: 'Light' }, // 10 protection skills (opens on Ray of Light)
+    { id: PRS_REBUKE_TREE, name: 'Rebuke' }, // 10 judgment skills (opens on Smite)
+    { id: PRS_GRACE_TREE, name: 'Grace' }, // 10 mending skills (opens on Sanctified Burst)
+  ],
+  skills: [
+    // --- LIGHT (10 skills, linear; protection). Data in priestLight.ts. ---
+    ...PRS_LIGHT_SKILLS,
+    // --- REBUKE (10 skills, linear; judgment). Data in priestRebuke.ts. ---
+    ...PRS_REBUKE_SKILLS,
+    // --- WORDS OF GRACE (10 skills, linear; mending). Data in priestGrace.ts. ---
+    ...PRS_GRACE_SKILLS,
+  ],
+};
+
 // ─── ASSASSIN (the Near East's native; Dubai) ──────────────────────────────────
 // Hidden blades, empty shadows — three trees of 10: TRAPPER'S ARSENAL (the trap
 // system: place → arm → spring → payload, with Mastery/Remote Detonation/
@@ -1014,6 +1074,7 @@ export const CLASS_SKILLS: Record<ClassId, ClassSkills> = {
   samurai: SAMURAI,
   monk: MONK,
   assassin: ASSASSIN,
+  priest: PRIEST,
 };
 
 /** Look up a class's full skill set (trees + skills). */

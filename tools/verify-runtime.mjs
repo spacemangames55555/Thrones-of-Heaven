@@ -189,9 +189,10 @@ try {
     samurai: { world: 'globe', zone: 'kyoto-thousand-gates', opener: 'kyo-01-mentor', kind: 'region' },
     monk: { world: 'globe', zone: 'lhasa-prayer-citadel', opener: 'lha-01-mentor', kind: 'region' },
     assassin: { world: 'globe', zone: 'dubai-glass-souk', opener: 'dub-01-mentor', kind: 'region' },
+    priest: { world: 'globe', zone: 'rome-eternal-seat', opener: 'rom-01-mentor', kind: 'region' },
     druid: { world: 'earth', zone: null, opener: 'honest-days-work', kind: 'earth' },
   };
-  for (const cls of ['blacksmith', 'wizard', 'necromancer', 'mage', 'bard', 'witchdoctor', 'samurai', 'monk', 'assassin', 'druid']) {
+  for (const cls of ['blacksmith', 'wizard', 'necromancer', 'mage', 'bard', 'witchdoctor', 'samurai', 'monk', 'assassin', 'priest', 'druid']) {
     await newGame(cls);
     const home = HOMES[cls];
     const s = await page.evaluate(
@@ -1124,6 +1125,88 @@ try {
           asnKit.trick.hitAll &&
           asnKit.trick.falloff,
         JSON.stringify(asnKit),
+      );
+    }
+
+    // 2v. EVERY PRIEST EXTENSION THROUGH A REAL PRIEST SKILL, in the live
+    // Priest session: Shield of Faith (the real skill wraps the solo caster and
+    // a live wolf's bite is absorbed whole), Beacon of Light (ONE channel
+    // measured healing the wounded caster AND burning the pinned foe in the
+    // beam), and Divine Intervention (through the REAL unlock + activation
+    // path: party-dormant, it whiff-refunds cooldown, Faith and life).
+    if (cls === 'priest') {
+      const prsKit = await page.evaluate(async () => {
+        const ms = window.__ready();
+        const wait = (t) => new Promise((r) => setTimeout(r, t));
+        if (!window.__quietSpot()) return { setup: 'no quiet spot' };
+        ms.summons.clear();
+        ms.clearDots();
+        // SHIELD OF FAITH through the real skill: solo → the caster; the bite
+        // meets the light, not the flesh.
+        ms.playerHealth.shield = 0;
+        ms.playerHealth.full();
+        ms.runActiveSkill('prs_shield_faith');
+        const shielded = ms.playerHealth.shield;
+        const wolf = ms.spawnTownsfolk(ms.player.x + 60, ms.player.y, null, 'wolf');
+        await wait(200);
+        const hp0 = ms.playerHealth.current;
+        ms.onTownsfolkHitPlayer(wolf); // the wolf's REAL melee hit path
+        const faith = { shielded, untouched: ms.playerHealth.current === hp0, spent: ms.playerHealth.shield < shielded };
+        if (wolf.isAlive) wolf.takeHit(1e9);
+        ms.playerHealth.shield = 0;
+        // BEACON OF LIGHT through the real skill: one channel, both halves.
+        const w = ms.activeMap().nearestWalkableWorld(ms.player.x + 140, ms.player.y);
+        const foe = ms.spawnAngel('darkcaster', w.x, w.y);
+        await wait(200);
+        ms.stunEnemiesInRange(foe.x, foe.y, 60, 30000);
+        foe.sprite.body.reset(ms.player.x + 140, ms.player.y);
+        ms.player.facingX = 1;
+        ms.player.facingY = 0;
+        ms.playerHealth.full();
+        ms.playerHealth.current -= 40;
+        const pHp0 = ms.playerHealth.current;
+        const fHp0 = foe.health.current;
+        ms.runActiveSkill('prs_beacon');
+        const started = ms.dualChannel !== null;
+        await wait(1300);
+        const beacon = { started, healed: ms.playerHealth.current - pHp0, burned: fHp0 - foe.health.current };
+        foe.destroy();
+        // DIVINE INTERVENTION through the REAL unlock + activation path:
+        // party-dormant, the whiff refunds cooldown + Faith, and the life
+        // price is never taken.
+        const defs = ms.classSkillsAll['priest'].skills;
+        ms.skills.awardPoints(10);
+        for (const id of ['prs_li_ray', 'prs_li_shield', 'prs_li_retribution', 'prs_li_embrace', 'prs_li_radiant', 'prs_li_barrier', 'prs_li_fortress', 'prs_li_blessing', 'prs_li_intervention']) {
+          if (!ms.skills.isUnlocked(id)) ms.skills.unlock(defs.find((d) => d.id === id));
+        }
+        ms.energy.full();
+        ms.playerHealth.full();
+        const e0 = ms.energy.current;
+        const h0 = ms.playerHealth.current;
+        ms.activateSkill('prs_li_intervention');
+        const intervene = {
+          cooldownRefunded: (ms.skillCooldownUntil['prs_li_intervention'] ?? 0) === 0,
+          faithRefunded: ms.energy.current === e0,
+          lifeUnspent: ms.playerHealth.current === h0,
+        };
+        ms.clearPriestState();
+        ms.playerHealth.full();
+        ms.playerHealth.shield = 1e9;
+        return { setup: 'ok', faith, beacon, intervene };
+      });
+      ok(
+        'priest: shield of faith absorbs a live bite, beacon of light heals + burns in one channel, divine intervention whiff-refunds — each through the real skill',
+        prsKit.setup === 'ok' &&
+          prsKit.faith.shielded === 40 &&
+          prsKit.faith.untouched &&
+          prsKit.faith.spent &&
+          prsKit.beacon.started &&
+          prsKit.beacon.healed >= 10 &&
+          prsKit.beacon.burned >= 12 &&
+          prsKit.intervene.cooldownRefunded &&
+          prsKit.intervene.faithRefunded &&
+          prsKit.intervene.lifeUnspent,
+        JSON.stringify(prsKit),
       );
     }
   }
@@ -2300,6 +2383,7 @@ try {
     ms.pulseRing = null;
     ms.empoweredStrikes = null;
     ms.clearTraps(); // devices + shadow-dance/vanish state (assassin)
+    ms.clearPriestState(); // ally-shields + the dual channel (priest)
     ms.darkVulnUntil = 0;
     ms.clearDots();
     ms.playerHealth.full();
@@ -2309,10 +2393,33 @@ try {
   });
   ok(
     'skill framework: every skill in every tree executes; composed actions match their declared primitives',
-    skillSweep.errors.length === 0 && skillSweep.mismatches.length === 0 && skillSweep.composed === 131 && skillSweep.total >= 300,
+    skillSweep.errors.length === 0 && skillSweep.mismatches.length === 0 && skillSweep.composed === 140 && skillSweep.total >= 330,
     `total=${skillSweep.total} composed=${skillSweep.composed} bespokeActive=${skillSweep.bespokeActive} timed/other=${skillSweep.other} passive=${skillSweep.passive}` +
       (skillSweep.errors.length ? ` ERRORS=${JSON.stringify(skillSweep.errors.slice(0, 3))}` : '') +
       (skillSweep.mismatches.length ? ` MISMATCH=${JSON.stringify(skillSweep.mismatches.slice(0, 3))}` : ''),
+  );
+
+  // 3u2. NAME-COLLISION GUARD (permanent, roster-wide): no two SKILLS anywhere
+  // in the game share a display name. The Wizard's live Divine Incantations
+  // names (Healing Light / Divine Shield / Resurrection / Holy Radiance /
+  // Pillar of Judgment) are the standing risk as holy-flavored classes ship —
+  // this guards the Priest's roster today and every future class after it.
+  const nameClash = await page.evaluate(() => {
+    const ms = window.__game.scene.getScene('MainScene');
+    const seen = new Map();
+    const dupes = [];
+    for (const cls of Object.keys(ms.classSkillsAll)) {
+      for (const def of ms.classSkillsAll[cls].skills) {
+        if (seen.has(def.name)) dupes.push(`'${def.name}' (${seen.get(def.name)} vs ${cls})`);
+        else seen.set(def.name, cls);
+      }
+    }
+    return { classes: Object.keys(ms.classSkillsAll).length, names: seen.size, dupes };
+  });
+  ok(
+    'name-collision guard: no two skills anywhere in the roster share a display name',
+    nameClash.dupes.length === 0 && nameClash.names >= 330,
+    `classes=${nameClash.classes} uniqueNames=${nameClash.names}${nameClash.dupes.length ? ' DUPES=' + JSON.stringify(nameClash.dupes.slice(0, 5)) : ''}`,
   );
 
   // 3v. DRUID FRAMEWORK EXTENSIONS (permanent): the composable primitives +
@@ -3563,6 +3670,87 @@ try {
     'assassin ext — vanish: instant mid-combat re-stealth; a real bolt and a real bite pass through the breath, which then ends',
     assassinExt.setup === 'ok' && assassinExt.vanish.hidden && assassinExt.vanish.boltPassed && assassinExt.vanish.bitePassed && assassinExt.vanish.graceEnded && assassinExt.vanish.stillStealthed,
     JSON.stringify(assassinExt.vanish),
+  );
+
+  // 3aj. PRIEST FRAMEWORK EXTENSIONS (permanent): the TARGETED ALLY-SHIELD
+  // (solo → self, absorbing a REAL wolf bite + the harm-immunity breath; with a
+  // decoy out → the decoy's pool absorbs, then expires), the DUAL CHANNEL (one
+  // cast measured healing the caster AND damaging the pinned foe it crosses),
+  // and the party-dormant REVIVE hook (no fallen friendly exists today).
+  const priestExt = await page.evaluate(async () => {
+    const ms = window.__ready();
+    const wait = (t) => new Promise((r) => setTimeout(r, t));
+    if (!window.__quietSpot()) return { setup: 'no quiet spot' };
+    ms.summons.clear();
+    ms.clearDots(); // zero the caster-affliction state so the immunity assert is exact
+    // SOLO ALLY-SHIELD: self is the valid target; a real wolf bite is absorbed
+    // whole, and the immunity breath blocks the caster-bolt afflictions.
+    ms.playerHealth.shield = 0;
+    ms.playerHealth.full();
+    const who = ms.allyShield(300, 30, 5000, 2000);
+    const selfShielded = who === 'self' && ms.playerHealth.shield === 30;
+    const wolf = ms.spawnTownsfolk(ms.player.x + 60, ms.player.y, null, 'wolf');
+    await wait(200);
+    const hp0 = ms.playerHealth.current;
+    ms.onTownsfolkHitPlayer(wolf); // the wolf's REAL melee hit path
+    const absorbed = { untouched: ms.playerHealth.current === hp0, shieldSpent: ms.playerHealth.shield < 30 };
+    ms.onProjectileHitPlayer(5, 'caster-bolt'); // the REAL afflicting bolt path
+    const immune = ms.casterSlowUntil === 0 && ms.casterDotStacks.length === 0;
+    if (wolf.isAlive) wolf.takeHit(1e9);
+    ms.playerHealth.shield = 0;
+    // DECOY ALLY-SHIELD: the nearest friendly takes the pool; it absorbs and EXPIRES.
+    const decoy = ms.spawnSpiritDecoy(20000);
+    await wait(150);
+    const who2 = ms.allyShield(300, 20, 900, 0);
+    const decoyShielded = who2 === 'summon' && decoy.health.shield === 20;
+    const dHp0 = decoy.health.current;
+    decoy.health.damage(12);
+    const decoyAbsorbed = decoy.health.current === dHp0 && decoy.health.shield === 8;
+    await wait(1100);
+    const decoyExpired = decoy.health.shield === 0;
+    ms.summons.clear();
+    // DUAL CHANNEL: one cast, both halves measured — the wounded caster heals
+    // while the pinned foe standing in the beam burns.
+    const w = ms.activeMap().nearestWalkableWorld(ms.player.x + 140, ms.player.y);
+    const foe = ms.spawnAngel('darkcaster', w.x, w.y);
+    await wait(200);
+    ms.stunEnemiesInRange(foe.x, foe.y, 60, 30000);
+    foe.sprite.body.reset(ms.player.x + 140, ms.player.y);
+    ms.player.facingX = 1;
+    ms.player.facingY = 0;
+    ms.playerHealth.shield = 0;
+    ms.playerHealth.full();
+    ms.playerHealth.current -= 40;
+    const pHp0 = ms.playerHealth.current;
+    const fHp0 = foe.health.current;
+    ms.startDualChannel(1600, 300, 6, 7, 240, 56);
+    const started = ms.dualChannel !== null;
+    await wait(1100);
+    const midHeal = ms.playerHealth.current - pHp0;
+    const midBurn = fHp0 - foe.health.current;
+    await wait(900);
+    const dual = { started, healed: midHeal, burned: midBurn, ended: ms.dualChannel === null };
+    foe.destroy();
+    // THE DORMANT REVIVE HOOK: no party exists — there is never a fallen friendly.
+    const reviveWhiffs = ms.reviveFallenAlly() === false;
+    ms.playerHealth.full();
+    ms.playerHealth.shield = 1e9;
+    return { setup: 'ok', selfShielded, absorbed, immune, decoyShielded, decoyAbsorbed, decoyExpired, dual, reviveWhiffs };
+  });
+  ok(
+    'priest ext — ally-shield: solo it wraps the caster (a real bite absorbed + afflictions blocked); with a decoy out the decoy takes the pool, absorbs, expires',
+    priestExt.setup === 'ok' && priestExt.selfShielded && priestExt.absorbed.untouched && priestExt.absorbed.shieldSpent && priestExt.immune && priestExt.decoyShielded && priestExt.decoyAbsorbed && priestExt.decoyExpired,
+    JSON.stringify({ selfShielded: priestExt.selfShielded, absorbed: priestExt.absorbed, immune: priestExt.immune, decoyShielded: priestExt.decoyShielded, decoyAbsorbed: priestExt.decoyAbsorbed, decoyExpired: priestExt.decoyExpired }),
+  );
+  ok(
+    'priest ext — dual channel: one cast heals the wounded caster AND burns the foe in the beam, then ends on time',
+    priestExt.setup === 'ok' && priestExt.dual.started && priestExt.dual.healed >= 12 && priestExt.dual.burned >= 14 && priestExt.dual.ended,
+    JSON.stringify(priestExt.dual),
+  );
+  ok(
+    'priest ext — revive hook: party-dormant, it finds no fallen friendly (the skill whiff-refunds through the ally rule)',
+    priestExt.setup === 'ok' && priestExt.reviveWhiffs,
+    `reviveWhiffs=${priestExt.reviveWhiffs}`,
   );
 
   // 3aa. SKILL TREE UX (Casey's spec, permanent) — driven by REAL taps on the real

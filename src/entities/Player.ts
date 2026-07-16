@@ -12,6 +12,7 @@ const WITCHDOCTOR_TEXTURE_KEY = 'witchdoctor-figure'; // Witch Doctor (Kinshasa 
 const SAMURAI_TEXTURE_KEY = 'samurai-figure'; // Samurai (Kyoto blade) avatar
 const MONK_TEXTURE_KEY = 'monk-figure'; // Monk (Lhasa ascetic) avatar
 const ASSASSIN_TEXTURE_KEY = 'assassin-figure'; // Assassin (Dubai knife-in-the-dark) avatar
+const PRIEST_TEXTURE_KEY = 'priest-figure'; // Priest (Rome keeper of the Light) avatar
 const WIDTH = 32; // ~1 tile wide
 const HEIGHT = 48; // ~1.5 tiles tall — fixes the "character = one giant block" look
 
@@ -26,6 +27,7 @@ function textureForClass(classId: string): string {
   if (classId === 'samurai') return SAMURAI_TEXTURE_KEY;
   if (classId === 'monk') return MONK_TEXTURE_KEY;
   if (classId === 'assassin') return ASSASSIN_TEXTURE_KEY;
+  if (classId === 'priest') return PRIEST_TEXTURE_KEY;
   return TEXTURE_KEY;
 }
 
@@ -57,6 +59,7 @@ export class Player {
     Player.ensureSamuraiTexture(scene);
     Player.ensureMonkTexture(scene);
     Player.ensureAssassinTexture(scene);
+    Player.ensurePriestTexture(scene);
 
     this.baseKey = textureForClass(classId);
     this.sprite = scene.physics.add.sprite(x, y, this.baseKey);
@@ -522,6 +525,44 @@ export class Player {
     g.fillStyle(0xc8d0e0, 1);
     g.fillRect(6.8, h - 24, 1.4, 8);
     g.generateTexture(ASSASSIN_TEXTURE_KEY, w, h);
+    g.destroy();
+  }
+
+  /** Draw the Rome PRIEST avatar (cream cassock, gold stole, tonsured head, a
+   *  small raised light) as a generated texture — a CODE-DRAWN PLACEHOLDER (a
+   *  real sprite PNG drops in later via the sprite override under this same
+   *  key). Same footprint as the other figures. */
+  private static ensurePriestTexture(scene: Phaser.Scene): void {
+    if (scene.textures.exists(PRIEST_TEXTURE_KEY)) return;
+    const w = WIDTH;
+    const h = HEIGHT;
+    const g = scene.make.graphics({ x: 0, y: 0 }, false);
+    // Dark outline + the cream cassock body.
+    g.fillStyle(0x2a2418, 1);
+    g.fillRoundedRect(4, 8, w - 8, h - 10, 9);
+    g.fillStyle(0xe8e0c8, 1); // cream cassock
+    g.fillRoundedRect(6, 10, w - 12, h - 14, 7);
+    // The gold stole: two bands falling from the shoulders to the hem.
+    g.fillStyle(0xd8b03a, 1);
+    g.fillRect(w / 2 - 8, 20, 4, h - 30);
+    g.fillRect(w / 2 + 4, 20, 4, h - 30);
+    // Cassock hem line.
+    g.fillStyle(0xb8a878, 1);
+    g.fillRect(8, h - 9, w - 16, 2);
+    // Tonsured head: a pale crown fringe around a bare pate + calm eyes.
+    g.fillStyle(0xd8b090, 1); // face
+    g.fillCircle(w / 2, 13, 6);
+    g.fillStyle(0x8a7a5a, 1); // the fringe
+    g.fillRect(w / 2 - 6.5, 8.5, 13, 2.4);
+    g.fillStyle(0x2a2418, 1); // eyes
+    g.fillCircle(w / 2 - 2.2, 14.5, 1);
+    g.fillCircle(w / 2 + 2.2, 14.5, 1);
+    // A small raised light at one hand (the honest Light, held plainly).
+    g.fillStyle(0xffe9a8, 1);
+    g.fillCircle(w - 8, 26, 2.6);
+    g.fillStyle(0xfff8e0, 1);
+    g.fillCircle(w - 8, 26, 1.2);
+    g.generateTexture(PRIEST_TEXTURE_KEY, w, h);
     g.destroy();
   }
 }
