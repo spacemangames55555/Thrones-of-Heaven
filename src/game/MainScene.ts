@@ -140,6 +140,9 @@ import { MONK_CHI_TUNING } from '../skills/monkChi';
 import { MONK_SPIRIT_TUNING, ENLIGHTENED_MIND_ID, MEDITATION_ID } from '../skills/monkSpiritual';
 import { ASN_TRAP_TUNING, TRAP_MASTERY_ID } from '../skills/assassinTraps';
 import { ASN_SHADOW_TUNING, POISONED_EDGE_ID } from '../skills/assassinShadow';
+import { PRS_LIGHT_TUNING, PRS_FORTRESS_ID } from '../skills/priestLight';
+import { PRS_REBUKE_TUNING } from '../skills/priestRebuke';
+import { PRS_GRACE_TUNING, PROPHETIC_VISION_ID } from '../skills/priestGrace';
 import { PlayerPower } from '../player/PlayerPower';
 import { URIEL_SCENE } from '../story/urielData';
 import { URIEL_SENDOFF_LINES, RIFT_SCENE } from '../story/riftSceneData';
@@ -2968,7 +2971,127 @@ export class MainScene extends Phaser.Scene {
       const c = ASN_SHADOW_TUNING.dance;
       this.startShadowDance(c.durationMs);
       this.showBanner('SHADOW DANCE', 1400);
+    } else if (action === 'prs_shield_faith') {
+      // Priest Light #2 — extension #1: the targeted ally-shield (self valid).
+      const c = PRS_LIGHT_TUNING.shieldFaith;
+      const f = this.priestShieldBoost();
+      const who = this.allyShield(c.range, Math.round(c.amount * f.amount), c.durationMs * f.duration, c.immunityMs);
+      this.showBanner(who === 'self' ? 'The light wraps you' : 'The light wraps your companion', 1100);
+    } else if (action === 'prs_embrace') {
+      // Priest Light #4 — the HP-COST AoE mend (the ALLY RULE: none near or
+      // nothing to give = a refunded whiff).
+      const c = PRS_LIGHT_TUNING.embrace;
+      const near = this.summons.list.filter((sm) => sm.isAlive && Phaser.Math.Distance.Between(sm.x, sm.y, px, py) <= c.radius);
+      if (near.length === 0) {
+        this.showBanner('No companion near to mend', 1000);
+        this.actionWhiffed = true;
+      } else if (this.playerHealth.current <= c.cost) {
+        this.showBanner('Not enough life to give', 1000);
+        this.actionWhiffed = true;
+      } else {
+        this.playerHealth.current -= c.cost; // the gift is willing — it bypasses shields
+        this.spawnDamageNumber(px, py - 26, c.cost, '#ff7a7a');
+        this.spawnSkillRing(px, py, c.radius, 0xffe9a8);
+        for (const sm of near) {
+          sm.health.heal(c.heal);
+          this.spawnDamageNumber(sm.x, sm.y - 22, c.heal, '#a8ffd0');
+        }
+        this.lastCombatTime = this.time.now;
+      }
+    } else if (action === 'prs_radiant') {
+      // Priest Light #5 — the following mend + a little armor while it walks.
+      const c = PRS_LIGHT_TUNING.radiant;
+      this.runComposedSteps([{ p: 'friendzone', follow: true, radius: c.radius, healPerTick: c.healPerTick, tickMs: c.tickMs, durationMs: c.durationMs, tint: 0xffe9a8, banner: 'The radiance walks with you' }]);
+      this.startTimedSkill('prs_li_radiant', c.durationMs, { damageReduction: c.damageReduction }, 0xffe9a8);
+    } else if (action === 'prs_barrier') {
+      // Priest Light #6 — the AoE shield: every friendly inside is wrapped.
+      const c = PRS_LIGHT_TUNING.barrier;
+      const f = this.priestShieldBoost();
+      const amount = Math.round(c.amount * f.amount);
+      const dur = c.durationMs * f.duration;
+      this.playerHealth.shield = Math.max(this.playerHealth.shield, amount);
+      this.shieldUntil = this.time.now + dur;
+      for (const sm of this.summons.list) {
+        if (sm.isAlive && Phaser.Math.Distance.Between(sm.x, sm.y, px, py) <= c.radius) this.shieldSummon(sm, amount, dur);
+      }
+      this.spawnSkillRing(px, py, c.radius, 0xffe9a8);
+      this.showBanner('Celestial Barrier holds', 1200);
+    } else if (action === 'prs_blessing') {
+      // Priest Light #8 — the AoE ward: armor + an affliction-proof breath for
+      // you; toughness for your companions (the summon-buff machinery).
+      const c = PRS_LIGHT_TUNING.blessing;
+      this.startTimedSkill('prs_li_blessing', c.durationMs, { damageReduction: c.damageReduction }, c.tint);
+      this.harmImmuneUntil = this.time.now + c.immunityMs;
+      this.summons.addBuff({ id: 'prs_blessing_ward', drBonus: c.summonDrBonus, durationMs: c.durationMs }, this.time.now);
+      this.spawnSkillRing(px, py, 90, 0xffe9a8);
+      this.showBanner("Guardian's Blessing", 1200);
+    } else if (action === 'prs_intervene') {
+      // Priest Light #9 — extension #3: the revive on the PARTY-DORMANT hook.
+      // The price is only paid when someone is actually raised — today never.
+      const c = PRS_LIGHT_TUNING.intervention;
+      if (!this.reviveFallenAlly()) {
+        this.showBanner('No fallen ally to raise', 1000);
+        this.actionWhiffed = true;
+      } else {
+        this.playerHealth.current = Math.max(1, this.playerHealth.current - c.hpCost);
+        this.spawnDamageNumber(px, py - 26, c.hpCost, '#ff7a7a');
+      }
+    } else if (action === 'prs_aegis') {
+      // Priest Light #10 ultimate — shields over EVERYONE + reflecting light.
+      const c = PRS_LIGHT_TUNING.aegis;
+      const f = this.priestShieldBoost();
+      const amount = Math.round(c.amount * f.amount);
+      const dur = c.durationMs * f.duration;
+      this.playerHealth.shield = Math.max(this.playerHealth.shield, amount);
+      this.shieldUntil = this.time.now + dur;
+      for (const sm of this.summons.list) if (sm.isAlive) this.shieldSummon(sm, amount, dur);
+      this.startTimedSkill('prs_li_aegis', c.durationMs, { reflectPct: c.reflectPct }, c.tint);
+      this.spawnSkillRing(px, py, 110, 0xffe9a8);
+      this.showBanner('AEGIS OF DAWN', 1400);
+    } else if (action === 'prs_word') {
+      // Priest Rebuke #4 — one spoken sentence: AoE slow + weaken, no wound.
+      const c = PRS_REBUKE_TUNING.word;
+      this.spawnSkillRing(px, py, c.radius, 0xffd07a);
+      this.slowEnemiesInRange(px, py, c.radius, c.slowMs, c.slowFactor);
+      if (this.combatEnemiesInRange(px, py, c.radius).length > 0) this.setPoisonWeaken(c.weaken, c.weakenMs);
+      this.showBanner('The Word is spoken', 1100);
+      this.lastCombatTime = this.time.now;
+    } else if (action === 'prs_zeal') {
+      // Priest Rebuke #7 — the conditional finisher: full wrath for the faltering.
+      const c = PRS_REBUKE_TUNING.zeal;
+      const { dx, dy } = this.facingUnit();
+      this.finisherHitAll(px + dx * c.reach, py + dy * c.reach, c.radius, this.skillDamage(c.damage), c.bonusMult, 0xffe9a8);
+    } else if (action === 'prs_forgive') {
+      // Priest Grace #3 — the cleanse-ALL: every affliction absolved at once.
+      this.casterDotStacks = [];
+      this.casterSlowUntil = 0;
+      this.casterWeakenUntil = 0;
+      this.player.slowFactor = 1;
+      this.spawnSkillRing(px, py, 60, 0xffe9a8);
+      this.showBanner('Absolved', 1000);
+    } else if (action === 'prs_beacon') {
+      // Priest Grace #5 — extension #2: the DUAL CHANNEL (mend + burn beam).
+      const c = PRS_GRACE_TUNING.beacon;
+      this.startDualChannel(c.durationMs, c.tickMs, c.healPerTick, this.skillDamage(c.dmgPerTick), c.length, c.width);
+      this.showBanner('Beacon of Light', 1100);
+    } else if (action === 'prs_renewal') {
+      // Priest Grace #6 — the great HP-cost heal (the ALLY RULE refund on a whiff).
+      const c = PRS_GRACE_TUNING.renewal;
+      if (!this.transferHealToAlly(c.range, c.cost, c.heal)) this.actionWhiffed = true;
+    } else if (action === 'prs_ascend') {
+      // Priest Grace #9 — step beyond flesh: the untargetable breath + fast mending.
+      const c = PRS_GRACE_TUNING.ascendance;
+      this.vanish(c.durationMs, c.durationMs);
+      this.startTimedSkill('prs_gr_ascend', c.durationMs, { regenPerSec: c.regenPerSec }, c.tint);
+      this.showBanner('Ascendance', 1100);
     }
+  }
+
+  /** DIVINE FORTRESS (Priest keyed passive): every Priest-granted shield holds
+   *  ×strength and lasts ×duration while owned. */
+  private priestShieldBoost(): { amount: number; duration: number } {
+    const owned = this.skills.isUnlocked(PRS_FORTRESS_ID);
+    return owned ? { amount: PRS_LIGHT_TUNING.fortress.strengthMult, duration: PRS_LIGHT_TUNING.fortress.durationMult } : { amount: 1, duration: 1 };
   }
 
   /** Place one Assassin device AHEAD of the player, folding TRAP MASTERY in
@@ -4410,9 +4533,7 @@ export class MainScene extends Phaser.Scene {
       }
     }
     if (best) {
-      best.health.shield = Math.max(best.health.shield, amount);
-      this.allyShields.push({ health: best.health, until: now + durationMs });
-      this.spawnSkillRing(best.x, best.y, 46, 0xffe9a8);
+      this.shieldSummon(best, amount, durationMs);
       return 'summon';
     }
     this.playerHealth.shield = Math.max(this.playerHealth.shield, amount);
@@ -4420,6 +4541,13 @@ export class MainScene extends Phaser.Scene {
     if (immunityMs > 0) this.harmImmuneUntil = now + immunityMs;
     this.spawnSkillRing(this.player.x, this.player.y, 56, 0xffe9a8);
     return 'self';
+  }
+
+  /** Grant ONE allied summon an expiring absorb pool (the AoE shields loop this). */
+  shieldSummon(sm: AlliedSummon, amount: number, durationMs: number): void {
+    sm.health.shield = Math.max(sm.health.shield, amount);
+    this.allyShields.push({ health: sm.health, until: this.time.now + durationMs });
+    this.spawnSkillRing(sm.x, sm.y, 46, 0xffe9a8);
   }
 
   /** Expire summon ally-shield pools (the player's rides shieldUntil already). */
@@ -5323,8 +5451,9 @@ export class MainScene extends Phaser.Scene {
   /** True while the player ignores crowd control (Iron Will passive or Iron Pyrite form). */
   private isPlayerCcImmune(): boolean {
     // Iron Will (passive) / Iron Pyrite (form) / Chant of the Ancestors (Bard timed buff).
-    // IMMOVABLE MIND (Samurai) and ENLIGHTENED MIND (Monk) join the permanent half.
-    return this.skills.isUnlocked(IRON_WILL_ID) || this.skills.isUnlocked(IMMOVABLE_MIND_ID) || this.skills.isUnlocked(ENLIGHTENED_MIND_ID) || this.skillTimed.some((t) => t.id === IRON_PYRITE_ID || t.id === CHANT_OF_ANCESTORS_ID);
+    // IMMOVABLE MIND (Samurai), ENLIGHTENED MIND (Monk) and PROPHETIC VISION
+    // (Priest) join the permanent half.
+    return this.skills.isUnlocked(IRON_WILL_ID) || this.skills.isUnlocked(IMMOVABLE_MIND_ID) || this.skills.isUnlocked(ENLIGHTENED_MIND_ID) || this.skills.isUnlocked(PROPHETIC_VISION_ID) || this.skillTimed.some((t) => t.id === IRON_PYRITE_ID || t.id === CHANT_OF_ANCESTORS_ID);
   }
 
   /**

@@ -2310,10 +2310,33 @@ try {
   });
   ok(
     'skill framework: every skill in every tree executes; composed actions match their declared primitives',
-    skillSweep.errors.length === 0 && skillSweep.mismatches.length === 0 && skillSweep.composed === 131 && skillSweep.total >= 300,
+    skillSweep.errors.length === 0 && skillSweep.mismatches.length === 0 && skillSweep.composed === 140 && skillSweep.total >= 330,
     `total=${skillSweep.total} composed=${skillSweep.composed} bespokeActive=${skillSweep.bespokeActive} timed/other=${skillSweep.other} passive=${skillSweep.passive}` +
       (skillSweep.errors.length ? ` ERRORS=${JSON.stringify(skillSweep.errors.slice(0, 3))}` : '') +
       (skillSweep.mismatches.length ? ` MISMATCH=${JSON.stringify(skillSweep.mismatches.slice(0, 3))}` : ''),
+  );
+
+  // 3u2. NAME-COLLISION GUARD (permanent, roster-wide): no two SKILLS anywhere
+  // in the game share a display name. The Wizard's live Divine Incantations
+  // names (Healing Light / Divine Shield / Resurrection / Holy Radiance /
+  // Pillar of Judgment) are the standing risk as holy-flavored classes ship —
+  // this guards the Priest's roster today and every future class after it.
+  const nameClash = await page.evaluate(() => {
+    const ms = window.__game.scene.getScene('MainScene');
+    const seen = new Map();
+    const dupes = [];
+    for (const cls of Object.keys(ms.classSkillsAll)) {
+      for (const def of ms.classSkillsAll[cls].skills) {
+        if (seen.has(def.name)) dupes.push(`'${def.name}' (${seen.get(def.name)} vs ${cls})`);
+        else seen.set(def.name, cls);
+      }
+    }
+    return { classes: Object.keys(ms.classSkillsAll).length, names: seen.size, dupes };
+  });
+  ok(
+    'name-collision guard: no two skills anywhere in the roster share a display name',
+    nameClash.dupes.length === 0 && nameClash.names >= 330,
+    `classes=${nameClash.classes} uniqueNames=${nameClash.names}${nameClash.dupes.length ? ' DUPES=' + JSON.stringify(nameClash.dupes.slice(0, 5)) : ''}`,
   );
 
   // 3v. DRUID FRAMEWORK EXTENSIONS (permanent): the composable primitives +

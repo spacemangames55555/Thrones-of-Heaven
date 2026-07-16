@@ -200,6 +200,9 @@ export const CLASS_BASE_STATS: Record<string, ClassBaseStats> = {
   // Assassin — Dubai's knife in the dark: x0.75 HP / x1.10 damage / x1.10 speed
   // of the Blacksmith baseline (rounded: 75/15 HP, 28/6 damage). (Tune here.)
   assassin: { baseMaxHP: 75, hpPerLevel: 15, baseDamage: 28, dmgPerLevel: 6, moveSpeedMult: 1.1 },
+  // Priest — Rome's keeper of the honest Light: x0.80 HP / x0.90 damage / x1.00
+  // speed of the Blacksmith baseline (rounded: 80/16 HP, 23/5 damage). (Tune here.)
+  priest: { baseMaxHP: 80, hpPerLevel: 16, baseDamage: 23, dmgPerLevel: 5, moveSpeedMult: 1 },
 };
 
 /** The base-stat profile for a class id (defaults to the Blacksmith baseline). */
