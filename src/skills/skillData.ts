@@ -574,7 +574,19 @@ export type ComposedStep =
 
 export type SkillEffect =
   | { kind: 'passive'; stats: SkillStatMods }
-  | { kind: 'active'; cooldownMs: number; action: ActiveActionId; energyCost?: number; compose?: ComposedStep[] }
+  | {
+      kind: 'active';
+      cooldownMs: number;
+      action: ActiveActionId;
+      energyCost?: number;
+      compose?: ComposedStep[];
+      /** THE CASCADE (Savage framework): flags this strike as sequence step
+       *  1/2/3. Cast IN ORDER, each within the cascade window, completing the
+       *  trio builds RANK — every rank cuts the flagged casts' cooldowns and
+       *  raises their damage; a wrong order or an expired window resets rank
+       *  to zero. Only Savage skills carry the flag — inert everywhere else. */
+      cascadeStep?: 1 | 2 | 3;
+    }
   | { kind: 'buff'; cooldownMs: number; durationMs: number; stats: SkillStatMods; energyCost?: number; tint?: number }
   | { kind: 'debuff'; cooldownMs: number; durationMs: number; radius: number; energyCost?: number }
   | {

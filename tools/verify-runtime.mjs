@@ -1393,6 +1393,115 @@ try {
           savKit.momentum.stacks >= 3,
         JSON.stringify(savKit),
       );
+
+      // 2w2. THE CASCADE through the REAL activation path (Casey's concept):
+      // three loops of Slash → Jagged Wound → Brutal Cleave — the measured
+      // A-strike RISES and its cooldown SHRINKS per completed trio, the HUD pip
+      // shows the rank, a wrong-order cast drops everything (measured back at
+      // base), a non-cascade skill is untouched at rank, and the flags exist
+      // ONLY on Savage skills roster-wide.
+      const cascade = await page.evaluate(async () => {
+        const ms = window.__ready();
+        const wait = (t) => new Promise((r) => setTimeout(r, t));
+        if (!window.__quietSpot()) return { setup: 'no quiet spot' };
+        const defs = ms.classSkillsAll['savage'].skills;
+        ms.skills.awardPoints(6);
+        for (const id of ['sav_ob_slash', 'sav_ob_jagged', 'sav_ob_momentum', 'sav_ob_leap', 'sav_ob_cleave', 'sav_br_spike']) {
+          if (!ms.skills.isUnlocked(id)) ms.skills.unlock(defs.find((d) => d.id === id));
+        }
+        // Isolate the cascade's own ramp: end any timed form (attack speed
+        // bends cooldowns) and disarm the frenzy (its ramp bends damage).
+        for (const t of ms.skillTimed) t.endsAt = 0;
+        await wait(150); // the expiry sweep prunes + recomputes
+        ms.disarmFrenzy();
+        ms.cascadeRank = 0;
+        ms.cascadeNextStep = 1;
+        ms.cascadeWindowUntil = 0;
+        const cast = (id) => {
+          if (ms.frenzy) { ms.frenzy.stacks = 0; ms.frenzy.until = 0; } // kills mid-check level up → recompute re-arms momentum; zeroed so the ramp is the CASCADE'S alone
+          ms.skillCooldownUntil[id] = 0;
+          ms.energy.full();
+          ms.activateSkill(id);
+        };
+        const aDrops = [];
+        const aCds = [];
+        const ranks = [];
+        for (let loop = 0; loop < 3; loop++) {
+          const w = ms.activeMap().nearestWalkableWorld(ms.player.x + 80, ms.player.y);
+          const foe = ms.spawnAngel('darkcaster', w.x, w.y);
+          await wait(200);
+          ms.stunEnemiesInRange(foe.x, foe.y, 60, 30000);
+          foe.sprite.body.reset(ms.player.x + 60, ms.player.y);
+          ms.player.facingX = 1;
+          ms.player.facingY = 0;
+          ranks.push(ms.cascadeRank);
+          const before = foe.health.current;
+          cast('sav_ob_slash');
+          aDrops.push(before - foe.health.current);
+          aCds.push(ms.skillCooldownDur['sav_ob_slash']);
+          await wait(120);
+          cast('sav_ob_jagged');
+          await wait(120);
+          cast('sav_ob_cleave');
+          await wait(120);
+          foe.destroy();
+        }
+        const rankAfter = ms.cascadeRank;
+        const pip = { visible: ms.skillBar.cascadeLabel.visible, text: ms.skillBar.cascadeLabel.text };
+        // NON-CASCADE at rank: Blood Spike's cooldown stays its base.
+        cast('sav_br_spike');
+        const spikeCd = ms.skillCooldownDur['sav_br_spike'];
+        // BREAK: A then C out of order — every rank drops; the next A is base.
+        cast('sav_ob_slash');
+        await wait(80);
+        cast('sav_ob_cleave'); // expected step 2 — the pattern breaks
+        const rankAfterBreak = ms.cascadeRank;
+        const pipHidden = ms.skillBar.cascadeLabel.visible === false;
+        const w2 = ms.activeMap().nearestWalkableWorld(ms.player.x + 80, ms.player.y);
+        const f2 = ms.spawnAngel('darkcaster', w2.x, w2.y);
+        await wait(200);
+        ms.stunEnemiesInRange(f2.x, f2.y, 60, 30000);
+        f2.sprite.body.reset(ms.player.x + 60, ms.player.y);
+        ms.player.facingX = 1;
+        ms.player.facingY = 0;
+        const before2 = f2.health.current;
+        cast('sav_ob_slash');
+        const resetDrop = before2 - f2.health.current;
+        const resetCd = ms.skillCooldownDur['sav_ob_slash'];
+        f2.destroy();
+        // FLAG SCAN: cascadeStep lives ONLY on Savage skills, roster-wide.
+        let foreign = 0;
+        for (const cls2 of Object.keys(ms.classSkillsAll)) {
+          if (cls2 === 'savage') continue;
+          for (const d of ms.classSkillsAll[cls2].skills) if (d.effect.cascadeStep !== undefined) foreign++;
+        }
+        ms.playerHealth.full();
+        ms.playerHealth.shield = 1e9;
+        return { setup: 'ok', ranks, aDrops, aCds, rankAfter, pip, spikeCd, rankAfterBreak, pipHidden, resetDrop, resetCd, foreign };
+      });
+      ok(
+        'savage cascade: slash→jagged→cleave ×3 ramps damage + shrinks cooldowns rank by rank; the pip shows; a broken pattern resets to base; non-cascade + every other class untouched',
+        cascade.setup === 'ok' &&
+          cascade.ranks[0] === 0 &&
+          cascade.ranks[1] === 1 &&
+          cascade.ranks[2] === 2 &&
+          cascade.aDrops[0] === 19 &&
+          cascade.aDrops[0] < cascade.aDrops[1] &&
+          cascade.aDrops[1] < cascade.aDrops[2] &&
+          cascade.aCds[0] === 2000 &&
+          cascade.aCds[1] === 1840 &&
+          cascade.aCds[2] === 1680 &&
+          cascade.rankAfter === 3 &&
+          cascade.pip.visible &&
+          cascade.pip.text.includes('CASCADE') &&
+          cascade.spikeCd === 2200 &&
+          cascade.rankAfterBreak === 0 &&
+          cascade.pipHidden &&
+          cascade.resetDrop === 19 &&
+          cascade.resetCd === 2000 &&
+          cascade.foreign === 0,
+        JSON.stringify(cascade),
+      );
     }
   }
 

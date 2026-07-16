@@ -143,7 +143,7 @@ import { ASN_SHADOW_TUNING, POISONED_EDGE_ID } from '../skills/assassinShadow';
 import { PRS_LIGHT_TUNING, PRS_FORTRESS_ID } from '../skills/priestLight';
 import { PRS_REBUKE_TUNING } from '../skills/priestRebuke';
 import { PRS_GRACE_TUNING, PROPHETIC_VISION_ID } from '../skills/priestGrace';
-import { SAV_EDGE_TUNING, WARRIORS_MOMENTUM_ID } from '../skills/savageObsidian';
+import { SAV_EDGE_TUNING, WARRIORS_MOMENTUM_ID, SAV_CASCADE_TUNING } from '../skills/savageObsidian';
 import { SAV_BLOOD_TUNING } from '../skills/savageBlood';
 import { SAV_JAGUAR_TUNING, JAGUAR_FORM_ID, BLOOD_SCENT_ID } from '../skills/savageJaguar';
 import { PlayerPower } from '../player/PlayerPower';
@@ -796,6 +796,16 @@ export class MainScene extends Phaser.Scene {
   /** BLOOD SCENT (Savage keyed passive): while > 0, BLEEDING targets take
    *  ×(1+this) from the player's AoE funnel. 0 for every other class. */
   bloodScentBonus = 0;
+  /** THE CASCADE (Savage — Casey's concept: repeat the pattern cleanly and it
+   *  accelerates). Three flagged Obsidian strikes cast IN ORDER, each within
+   *  the window, build RANK; rank cuts the flagged casts' cooldowns and raises
+   *  their damage; a wrong order or a lapsed window drops it all. Only Savage
+   *  skills carry cascadeStep — inert for every other class. Public for the gate. */
+  cascadeRank = 0;
+  cascadeNextStep = 1;
+  cascadeWindowUntil = 0;
+  /** The flagged cast's transient damage multiplier (1 outside a flagged cast). */
+  private cascadeCastMult = 1;
   /**
    * CHANNELED-BEAM state (the channel primitive). Transient: a single active channel locks
    * one enemy, ticks damage, optionally trickles energy, and is cancelled by movement / any
@@ -1855,6 +1865,7 @@ export class MainScene extends Phaser.Scene {
     this.updateTraps(); // Assassin: device arming/trigger/expiry
     this.updateAllyShields(); // Priest: summon absorb-pool expiry
     this.updateDualChannel(); // Priest: the heal-and-harm beam
+    this.updateCascade(); // Savage: a lapsed window drops the cascade
     this.updateComboUltimate(); // Bard War Song: the auto-chain cadence
     this.updateDots(); // poison DoTs + Plague contagion spread + stacking DoTs
     this.updateChannel(delta); // channeled beam: tick damage + energy trickle + redraw
@@ -2406,9 +2417,18 @@ export class MainScene extends Phaser.Scene {
       this.energy.damage(energyCost);
       this.lastEnergySpendTime = this.time.now;
     }
+    // THE CASCADE (Savage): a flagged strike reads the CURRENT rank (cooldown
+    // cut + damage rise for THIS cast), then advances or breaks the sequence.
+    const cascadeStep = e.kind === 'active' ? e.cascadeStep : undefined;
+    let cascadeCdMult = 1;
+    if (cascadeStep !== undefined) {
+      cascadeCdMult = Math.max(0.2, 1 - this.cascadeRank * SAV_CASCADE_TUNING.cooldownCutPerRank);
+      this.cascadeCastMult = 1 + this.cascadeRank * SAV_CASCADE_TUNING.damagePerRank;
+      this.advanceCascade(cascadeStep);
+    }
     // Attack-speed (Crazed / Prism) shortens cooldowns: effCd = baseCd / (1 + atkSpeed).
     const atkSpeed = this.combinedSkillMods().attackSpeedMult ?? 0;
-    const effCd = e.cooldownMs / (1 + Math.max(0, atkSpeed));
+    const effCd = (e.cooldownMs / (1 + Math.max(0, atkSpeed))) * cascadeCdMult;
     this.skillCooldownUntil[id] = this.time.now + effCd;
     this.skillCooldownDur[id] = effCd;
 
@@ -2450,6 +2470,7 @@ export class MainScene extends Phaser.Scene {
         this.showBanner('No target in range', 800);
       }
     }
+    this.cascadeCastMult = 1; // the flagged cast's damage rise never outlives it
   }
 
   /** ACTIVE handler — dispatched by action id. New actives add a case (data picks the id). */
@@ -4727,6 +4748,11 @@ export class MainScene extends Phaser.Scene {
       this.frenzy.stacks = 0;
       this.frenzy.until = 0;
     }
+    this.cascadeRank = 0;
+    this.cascadeNextStep = 1;
+    this.cascadeWindowUntil = 0;
+    this.cascadeCastMult = 1;
+    this.updateCascadeIndicator();
   }
 
   // --- Savage framework: frenzy + leap-slam + blood price + the execute --------
@@ -4775,6 +4801,43 @@ export class MainScene extends Phaser.Scene {
     this.aoeHitAll(w.x, w.y, radius, damage);
     this.stunEnemiesInRange(w.x, w.y, radius, stunMs);
     this.lastCombatTime = this.time.now;
+  }
+
+  /** Advance/break THE CASCADE on a flagged cast: the right step inside the
+   *  window moves the sequence on (completing step 3 banks a rank); a wrong
+   *  order or a lapsed window drops every rank — though a step-1 cast always
+   *  BEGINS a fresh sequence (the natural way back in). */
+  private advanceCascade(step: 1 | 2 | 3): void {
+    const t = SAV_CASCADE_TUNING;
+    const now = this.time.now;
+    if (step === this.cascadeNextStep && (step === 1 || now < this.cascadeWindowUntil)) {
+      if (step === 3) {
+        this.cascadeRank = Math.min(t.maxRank, this.cascadeRank + 1);
+        this.cascadeNextStep = 1;
+      } else {
+        this.cascadeNextStep = step + 1;
+      }
+    } else {
+      this.cascadeRank = 0;
+      this.cascadeNextStep = step === 1 ? 2 : 1;
+    }
+    this.cascadeWindowUntil = now + t.windowMs;
+    this.updateCascadeIndicator();
+  }
+
+  /** Per-frame: a lapsed window quietly drops the whole cascade. */
+  private updateCascade(): void {
+    if (this.cascadeRank === 0 && this.cascadeNextStep === 1) return;
+    if (this.time.now >= this.cascadeWindowUntil) {
+      this.cascadeRank = 0;
+      this.cascadeNextStep = 1;
+      this.updateCascadeIndicator();
+    }
+  }
+
+  /** Refresh the small rank pip beside the hotkeys (hidden at rank 0). */
+  private updateCascadeIndicator(): void {
+    if (this.skillBar) this.skillBar.setCascadeRank(this.cascadeRank);
   }
 
   /** Pay a cast's BLOOD PRICE: health, not Faith/energy — the willing cut
@@ -5104,9 +5167,10 @@ export class MainScene extends Phaser.Scene {
 
   /** A skill's base damage scaled by the player's damage multiplier (Berserker's Edge,
    *  Crazed, Prism Quartz) so active abilities scale with offensive passives + buffs —
-   *  × the Savage frenzy momentum while armed. */
+   *  × the Savage frenzy momentum while armed, × the cascade rank during a
+   *  flagged Savage cast (1 everywhere else). */
   private skillDamage(base: number): number {
-    return Math.round(base * this.skillDamageMult * this.osteoDamageMult * this.frenzyMult());
+    return Math.round(base * this.skillDamageMult * this.osteoDamageMult * this.frenzyMult() * this.cascadeCastMult);
   }
 
   /** A quick expanding ring FX for a skill activation (world FX, main camera). */
