@@ -1756,6 +1756,10 @@ export const EUROPE_SPAWN_ACTIVATE_MARGIN = 700;
 export const EUROPE_SPAWN_DEACTIVATE_MARGIN = 1400;
 /** Hard cap on simultaneously LIVE Europe enemies (a pack is skipped, never split). */
 export const EUROPE_ENEMY_CAP = 48;
+/** HEARTH RADIUS (home-city pacing): no hostile MATERIALIZES within this many
+ *  px of a home city's mentor/arrival point — the mentor's feet are safe
+ *  ground, always. Home cities only; corridors stay dangerous. */
+export const HOME_HEARTH_RADIUS_PX = 260;
 /** Kills of the beat's family (in its zone) needed to finish a 'clear' beat. */
 export const EUROPE_CLEAR_KILLS = 5;
 /** Guardian/lesser-angel kills needed for the eu-10 harvest (mirrors the NA

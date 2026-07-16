@@ -72,6 +72,11 @@ export interface Zone {
   levelRange: [number, number];
   biome: string; // drives which PLACEHOLDER tileset the loop uses (not final art)
   enemyFamilies: string[]; // enemy families that spawn here
+  /** HOME-CITY PACING (staged spawns): family → the quest beat id that family
+   *  appears AFTER, for the CURRENT character. Families not listed spawn from
+   *  minute one; a character past the beat (or a visitor past its OWN home
+   *  discovery) sees full spawns. Evaluated live at chunk activation. */
+  spawnStaging?: Readonly<Record<string, string>>;
   connectsTo: string[]; // zone ids this connects to (defines the map graph)
   seaGates?: string[]; // subset of connectsTo rendered as boat-door/dock transitions (sea crossings)
   onHeavenApproach: boolean; // is this zone part of the march to a Heaven portal?
@@ -340,6 +345,9 @@ export const WORLD: Zone[] = [
     anchor: { lat: 41.9, lng: 12.5 }, region: 'Italy', continent: 'Europe',
     pantheon: 'Roman', homeClass: 'Priest', tier: 1, act: 'ACT_I', levelRange: [1, 12],
     biome: 'urban-temperate', enemyFamilies: ['corrupted-wildlife', 'lesser-evil-scouts'],
+    // STAGED SPAWNS (home-city pacing): wildlife from minute one; the evil
+    // arrives only once THIS character's discovery beat has landed.
+    spawnStaging: { 'lesser-evil-scouts': 'rom-03-reliquary-rot' },
     connectsTo: ['campania-shadow'],
     onHeavenApproach: false, heavenApproachOrder: null, portalSite: false, handAuthored: true,
     questChain: [
@@ -468,6 +476,9 @@ export const WORLD: Zone[] = [
     pantheon: 'Slavic / Norse fringe', homeClass: 'Necromancer', tier: 1, act: 'ACT_I',
     levelRange: [1, 12], biome: 'frozen-coast',
     enemyFamilies: ['corrupted-wildlife', 'lesser-evil-scouts'],
+    // STAGED SPAWNS (home-city pacing): wildlife from minute one; the evil
+    // arrives only once THIS character's discovery beat has landed.
+    spawnStaging: { 'lesser-evil-scouts': 'mur-03-permafrost-stirring' },
     connectsTo: ['karelia-lakes'],
     onHeavenApproach: false, heavenApproachOrder: null, portalSite: false, handAuthored: true,
     questChain: [
@@ -516,6 +527,9 @@ export const WORLD: Zone[] = [
     anchor: { lat: 55.76, lng: 37.62 }, region: 'Western Russia', continent: 'Europe',
     pantheon: 'Slavic', homeClass: 'Mage', tier: 1, act: 'ACT_I', levelRange: [1, 12],
     biome: 'urban-temperate', enemyFamilies: ['corrupted-wildlife', 'lesser-evil-scouts'],
+    // STAGED SPAWNS (home-city pacing): wildlife from minute one; the evil
+    // arrives only once THIS character's discovery beat has landed.
+    spawnStaging: { 'lesser-evil-scouts': 'mos-03-lattice-fracture' },
     connectsTo: ['bryansk-woodland', 'smolensk-gate'],
     onHeavenApproach: false, heavenApproachOrder: null, portalSite: false, handAuthored: true,
     questChain: [
@@ -579,6 +593,9 @@ export const WORLD: Zone[] = [
     anchor: { lat: 48.14, lng: 11.58 }, region: 'Bavaria', continent: 'Europe',
     pantheon: 'Germanic', homeClass: 'Blacksmith', tier: 1, act: 'ACT_I', levelRange: [1, 12],
     biome: 'urban-temperate', enemyFamilies: ['corrupted-wildlife', 'lesser-evil-scouts'],
+    // STAGED SPAWNS (home-city pacing): wildlife from minute one; the evil
+    // arrives only once THIS character's discovery beat has landed.
+    spawnStaging: { 'lesser-evil-scouts': 'mun-03-black-veins' },
     connectsTo: ['tyrol-forge-road'],
     onHeavenApproach: false, heavenApproachOrder: null, portalSite: false, handAuthored: true,
     questChain: [
@@ -675,6 +692,9 @@ export const WORLD: Zone[] = [
     anchor: { lat: 51.51, lng: -0.13 }, region: 'Britain', continent: 'Europe',
     pantheon: 'Celtic / Arthurian', homeClass: 'Bard', tier: 1, act: 'ACT_I', levelRange: [1, 12],
     biome: 'urban-temperate', enemyFamilies: ['corrupted-wildlife', 'lesser-evil-scouts'],
+    // STAGED SPAWNS (home-city pacing): wildlife from minute one; the evil
+    // arrives only once THIS character's discovery beat has landed.
+    spawnStaging: { 'lesser-evil-scouts': 'lon-03-wrong-note' },
     connectsTo: ['kent-passage'],
     onHeavenApproach: false, heavenApproachOrder: null, portalSite: false, handAuthored: true,
     questChain: [
@@ -754,6 +774,9 @@ export const WORLD: Zone[] = [
     anchor: { lat: 30.04, lng: 31.24 }, region: 'Lower Egypt', continent: 'Africa',
     pantheon: 'Egyptian', homeClass: 'Wizard', tier: 1, act: 'ACT_I', levelRange: [1, 12],
     biome: 'nile-delta', enemyFamilies: ['corrupted-wildlife', 'lesser-evil-scouts'],
+    // STAGED SPAWNS (home-city pacing): wildlife from minute one; the evil
+    // arrives only once THIS character's discovery beat has landed.
+    spawnStaging: { 'lesser-evil-scouts': 'cai-03-discovery' },
     connectsTo: ['luxor-valley-of-kings'],
     onHeavenApproach: false, heavenApproachOrder: null, portalSite: false, handAuthored: true,
     // PRE-EXISTING: maps to the hand-built Egypt world + Faiyum. Never stamped.
@@ -924,6 +947,9 @@ export const WORLD: Zone[] = [
     anchor: { lat: -4.32, lng: 15.31 }, region: 'Congo Basin', continent: 'Africa',
     pantheon: 'Congo', homeClass: 'Witch Doctor', tier: 1, act: 'ACT_I', levelRange: [1, 12],
     biome: 'rainforest-river', enemyFamilies: ['corrupted-wildlife', 'lesser-evil-scouts'],
+    // STAGED SPAWNS (home-city pacing): wildlife from minute one; the evil
+    // arrives only once THIS character's discovery beat has landed.
+    spawnStaging: { 'lesser-evil-scouts': 'kin-03-discovery' },
     connectsTo: ['ituri-green-cathedral'],
     onHeavenApproach: false, heavenApproachOrder: null, portalSite: false, handAuthored: true,
     questChain: [
@@ -978,6 +1004,9 @@ export const WORLD: Zone[] = [
     anchor: { lat: 29.65, lng: 91.14 }, region: 'Tibet', continent: 'Asia',
     pantheon: 'Tibetan', homeClass: 'Monk', tier: 1, act: 'ACT_I', levelRange: [1, 12],
     biome: 'himalayan-plateau', enemyFamilies: ['corrupted-wildlife', 'lesser-evil-scouts'],
+    // STAGED SPAWNS (home-city pacing): wildlife from minute one; the evil
+    // arrives only once THIS character's discovery beat has landed.
+    spawnStaging: { 'lesser-evil-scouts': 'lha-03-discovery' },
     connectsTo: ['changtang-empty-crossing'],
     onHeavenApproach: false, heavenApproachOrder: null, portalSite: false, handAuthored: true,
     questChain: [
@@ -1089,6 +1118,9 @@ export const WORLD: Zone[] = [
     anchor: { lat: 35.01, lng: 135.77 }, region: 'Japan', continent: 'Asia',
     pantheon: 'Shinto', homeClass: 'Samurai', tier: 1, act: 'ACT_I', levelRange: [1, 12],
     biome: 'urban-temperate', enemyFamilies: ['corrupted-wildlife', 'lesser-evil-scouts'],
+    // STAGED SPAWNS (home-city pacing): wildlife from minute one; the evil
+    // arrives only once THIS character's discovery beat has landed.
+    spawnStaging: { 'lesser-evil-scouts': 'kyo-03-discovery' },
     connectsTo: ['setouchi-inland-sea'],
     onHeavenApproach: false, heavenApproachOrder: null, portalSite: false, handAuthored: true,
     questChain: [
@@ -1169,6 +1201,9 @@ export const WORLD: Zone[] = [
     anchor: { lat: -8.65, lng: 115.22 }, region: 'Sunda Islands', continent: 'Asia',
     pantheon: 'Balinese', homeClass: 'Sundian', tier: 1, act: 'ACT_I', levelRange: [1, 12],
     biome: 'island-tropics', enemyFamilies: ['corrupted-wildlife', 'lesser-evil-scouts'],
+    // STAGED SPAWNS (home-city pacing): wildlife from minute one; the evil
+    // arrives only once THIS character's discovery beat has landed.
+    spawnStaging: { 'lesser-evil-scouts': 'bal-03-discovery' },
     connectsTo: ['java-temple-shore'], seaGates: ['java-temple-shore'],
     onHeavenApproach: false, heavenApproachOrder: null, portalSite: false, handAuthored: true,
     questChain: [
@@ -1264,6 +1299,9 @@ export const WORLD: Zone[] = [
     anchor: { lat: 25.20, lng: 55.27 }, region: 'Gulf', continent: 'Near East',
     pantheon: 'Arabian', homeClass: 'Assassin', tier: 1, act: 'ACT_I', levelRange: [1, 12],
     biome: 'desert-coast', enemyFamilies: ['corrupted-wildlife', 'lesser-evil-scouts'],
+    // STAGED SPAWNS (home-city pacing): wildlife from minute one; the evil
+    // arrives only once THIS character's discovery beat has landed.
+    spawnStaging: { 'lesser-evil-scouts': 'dub-03-discovery' },
     connectsTo: ['pearl-coast'],
     onHeavenApproach: false, heavenApproachOrder: null, portalSite: false, handAuthored: true,
     questChain: [
@@ -1381,6 +1419,9 @@ export const WORLD: Zone[] = [
     pantheon: 'Aboriginal Dreaming', homeClass: 'Hunter', tier: 1, act: 'ACT_I',
     levelRange: [1, 12], biome: 'temperate-coast',
     enemyFamilies: ['corrupted-wildlife', 'lesser-evil-scouts'],
+    // STAGED SPAWNS (home-city pacing): wildlife from minute one; the evil
+    // arrives only once THIS character's discovery beat has landed.
+    spawnStaging: { 'lesser-evil-scouts': 'syd-03-discovery' },
     connectsTo: ['blue-mountains-veil'],
     onHeavenApproach: false, heavenApproachOrder: null, portalSite: false, handAuthored: true,
     questChain: [
@@ -1507,6 +1548,9 @@ export const WORLD: Zone[] = [
     anchor: { lat: 19.43, lng: -99.13 }, region: 'Valley of Mexico', continent: 'Mesoamerica',
     pantheon: 'Aztec', homeClass: 'Savage', tier: 1, act: 'ACT_I', levelRange: [1, 12],
     biome: 'lake-valley', enemyFamilies: ['corrupted-wildlife', 'lesser-evil-scouts'],
+    // STAGED SPAWNS (home-city pacing): wildlife from minute one; the evil
+    // arrives only once THIS character's discovery beat has landed.
+    spawnStaging: { 'lesser-evil-scouts': 'mex-03-discovery' },
     connectsTo: ['oaxaca-cloud-valley'],
     onHeavenApproach: false, heavenApproachOrder: null, portalSite: false, handAuthored: true,
     questChain: [

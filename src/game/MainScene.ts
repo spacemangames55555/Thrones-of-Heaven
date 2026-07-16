@@ -343,6 +343,7 @@ import {
   EUROPE_SPAWN_ACTIVATE_MARGIN,
   EUROPE_SPAWN_DEACTIVATE_MARGIN,
   EUROPE_ENEMY_CAP,
+  HOME_HEARTH_RADIUS_PX,
   EUROPE_CLEAR_KILLS,
   EUROPE_HARVEST_KILLS,
   CASTER_SLOW_MS,
@@ -1092,6 +1093,11 @@ export class MainScene extends Phaser.Scene {
     radiusPx: number; // half the chunk size (activation margins add to this)
     points: { family: string; x: number; y: number }[];
     active: boolean;
+    /** STAGED SPAWNS (home-city pacing): points held back at activation because
+     *  their family's `spawnStaging` beat isn't behind the CURRENT character
+     *  yet. Flushed live the moment the gate clears (the evil VISIBLY arrives);
+     *  cleared with the chunk on deactivation. */
+    pendingStaged: { family: string; x: number; y: number; gate: string }[];
   }[] = [];
   private regionLive: {
     zoneId: string;
@@ -9120,6 +9126,7 @@ export class MainScene extends Phaser.Scene {
       radiusPx: chunk.data.width * 16, // half the chunk (tiles * 32 / 2)
       points: zoneSpawnPoints,
       active: false,
+      pendingStaged: [],
     });
   }
 
@@ -9638,6 +9645,15 @@ export class MainScene extends Phaser.Scene {
       const d = Phaser.Math.Distance.Between(this.player.x, this.player.y, z.center.x, z.center.y);
       if (!z.active && d < z.radiusPx + EUROPE_SPAWN_ACTIVATE_MARGIN) this.activateRegionZone(z);
       else if (z.active && d > z.radiusPx + EUROPE_SPAWN_DEACTIVATE_MARGIN) this.deactivateRegionZone(z.zoneId);
+      // STAGED SPAWNS: the moment a held family's beat clears (the discovery
+      // just landed), its packs materialize — the evil VISIBLY arrives.
+      if (z.active && z.pendingStaged.length > 0) {
+        const ready = z.pendingStaged.filter((p) => this.spawnStageCleared(p.gate));
+        if (ready.length > 0) {
+          z.pendingStaged = z.pendingStaged.filter((p) => !ready.includes(p));
+          for (const p of ready) this.spawnRegionPack(z.zoneId, p);
+        }
+      }
     }
     this.updateRegionAmbushers(); // the veil-ambusher hidden/burst/re-hide machine
     this.updateRegionChampion(); // the active boss beat's region champion
@@ -9669,28 +9685,60 @@ export class MainScene extends Phaser.Scene {
   }
 
   /** Spawn every mapped-family pack for one zone (cap-guarded: a pack that would
-   *  break EUROPE_ENEMY_CAP is skipped whole, never split). */
+   *  break EUROPE_ENEMY_CAP is skipped whole, never split). HOME-CITY PACING:
+   *  a home zone's HEARTH (the mentor's ground) never materializes a hostile,
+   *  and STAGED families are held in pendingStaged until their beat clears. */
   private activateRegionZone(z: (typeof this.regionSpawnZones)[number]): void {
     z.active = true;
+    z.pendingStaged = [];
+    const zone = getZone(z.zoneId);
+    // HEARTH RADIUS: home cities only — the mentor's feet are safe ground.
+    const hearth = zone?.homeClass ? (this.regionMentors.find((m) => m.zoneId === z.zoneId)?.pos ?? this.regionZoneArrivals[z.zoneId] ?? null) : null;
     for (const p of z.points) {
-      // HOLLOWED-BRUTES: a hard 1–2-per-pack ceiling, enforced here in spawn
-      // logic (not just in the pack-size data).
-      const pack = Math.min(EXISTING_FAMILY_PACK[p.family] ?? 3, p.family === 'hollowed-brutes' ? BRUTE_PACK_CAP : Infinity);
-      if (this.regionLiveCount() + pack > EUROPE_ENEMY_CAP) continue; // cap holds
-      const tint = DOMAIN_TINT[EXISTING_FAMILY_DOMAIN[p.family]];
-      for (let i = 0; i < pack; i++) {
-        const ang = (Math.PI * 2 * i) / pack;
-        const r = 60 + (i % 2) * 40;
-        const spot = this.activeMap().nearestWalkableWorld(p.x + Math.cos(ang) * r, p.y + Math.sin(ang) * r);
-        this.spawnRegionEnemy(z.zoneId, p.family, spot.x, spot.y, tint);
+      if (hearth && Phaser.Math.Distance.Between(p.x, p.y, hearth.x, hearth.y) < HOME_HEARTH_RADIUS_PX) continue;
+      // STAGED SPAWNS: a staged family waits until its beat is behind the
+      // CURRENT character (wildlife spawns from minute one, untouched).
+      const gate = zone?.spawnStaging?.[p.family];
+      if (gate && !this.spawnStageCleared(gate)) {
+        z.pendingStaged.push({ family: p.family, x: p.x, y: p.y, gate });
+        continue;
       }
+      this.spawnRegionPack(z.zoneId, p);
     }
+  }
+
+  /** One mapped-family PACK at a spawn point (the cap-guarded pack loop). */
+  private spawnRegionPack(zoneId: string, p: { family: string; x: number; y: number }): void {
+    // HOLLOWED-BRUTES: a hard 1–2-per-pack ceiling, enforced here in spawn
+    // logic (not just in the pack-size data).
+    const pack = Math.min(EXISTING_FAMILY_PACK[p.family] ?? 3, p.family === 'hollowed-brutes' ? BRUTE_PACK_CAP : Infinity);
+    if (this.regionLiveCount() + pack > EUROPE_ENEMY_CAP) return; // cap holds
+    const tint = DOMAIN_TINT[EXISTING_FAMILY_DOMAIN[p.family]];
+    for (let i = 0; i < pack; i++) {
+      const ang = (Math.PI * 2 * i) / pack;
+      const r = 60 + (i % 2) * 40;
+      const spot = this.activeMap().nearestWalkableWorld(p.x + Math.cos(ang) * r, p.y + Math.sin(ang) * r);
+      this.spawnRegionEnemy(zoneId, p.family, spot.x, spot.y, tint);
+    }
+  }
+
+  /** STAGED-SPAWN gate: true when the beat is COMPLETE for this character, or
+   *  when the character has completed ITS OWN home discovery beat (a leveled
+   *  visitor — the world never resets to wildlife for someone past the reveal). */
+  private spawnStageCleared(beatId: string): boolean {
+    if (this.chain.status(beatId) === 'complete') return true;
+    const own = homeZoneForClass(this.classId)?.spawnStaging;
+    if (!own) return false;
+    return Object.values(own).some((b) => b !== beatId && this.chain.status(b) === 'complete');
   }
 
   /** Despawn (pool away) every live entity a zone spawned. */
   private deactivateRegionZone(zoneId: string): void {
     const z = this.regionSpawnZones.find((s) => s.zoneId === zoneId);
-    if (z) z.active = false;
+    if (z) {
+      z.active = false;
+      z.pendingStaged = []; // held points die with the chunk (rebuilt on activation)
+    }
     for (const rec of this.regionLive) {
       if (rec.zoneId !== zoneId) continue;
       if (rec.entity.isAlive) {

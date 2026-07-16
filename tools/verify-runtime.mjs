@@ -257,6 +257,86 @@ try {
       JSON.stringify(s),
     );
 
+    // 2p. HOME-CITY PACING (staged spawns + hearth radius), proven in the live
+    // Assassin session at Dubai: a FRESH character sees wildlife but ZERO
+    // evil-family units before its discovery beat; nothing hostile MATERIALIZES
+    // inside the hearth (proven against an injected in-hearth marker); a
+    // corridor stays dangerous pre-discovery (the road SHOULD be); after real
+    // chain progression past the discovery, the evil arrives — and a leveled
+    // character re-entering sees full spawns. Seattle is not in this pipeline.
+    if (cls === 'assassin') {
+      const pacing = await page.evaluate(async () => {
+        const ms = window.__ready();
+        const wait = (t) => new Promise((r) => setTimeout(r, t));
+        const Z = 'dubai-glass-souk';
+        const CORRIDOR = 'mesopotamian-marshes'; // built Near East corridor — no staging
+        const evil = () => ms.regionLive.filter((r) => r.zoneId === Z && r.family === 'lesser-evil-scouts' && r.entity.isAlive).length;
+        const wildlife = () => ms.regionLive.filter((r) => r.zoneId === Z && r.family === 'corrupted-wildlife' && r.entity.isAlive).length;
+        const rz = ms.regionSpawnZones.find((z) => z.zoneId === Z);
+        const mpos = ms.regionMentors.find((m) => m.zoneId === Z)?.pos;
+        if (!rz || !mpos) return { setup: 'no dubai zone/mentor' };
+        await wait(400); // boot activation settles
+        const boot = { active: rz.active, wildlife: wildlife(), evil: evil(), held: rz.pendingStaged.length };
+        const seattleAbsent = !ms.regionSpawnZones.some((z) => z.zoneId === 'seattle-emerald-reach');
+        // HEARTH: inject a marker AT the mentor's feet, force a clean
+        // re-activation, and read positions IMMEDIATELY — the in-hearth marker
+        // must materialize nothing (real markers outside stay untouched).
+        rz.points.push({ family: 'corrupted-wildlife', x: mpos.x + 40, y: mpos.y });
+        ms.deactivateRegionZone(Z);
+        await wait(300); // proximity re-activates (the player stands in the chunk)
+        const hearth = { reactivated: rz.active, insideHearth: ms.combatEnemiesInRange(mpos.x, mpos.y, 200).length, wildlifeBack: wildlife() > 0, evilStillHeld: evil() === 0 && rz.pendingStaged.length > 0 };
+        rz.points.pop(); // remove the injected test marker
+        // CORRIDOR unchanged: teleport onto the Reed Sea road — its hostiles
+        // are up for a character with NO discovery behind them.
+        const road = ms.regionZoneArrivals[CORRIDOR];
+        ms.player.sprite.body.reset(road.x, road.y);
+        await wait(600);
+        const corridorHostiles = ms.regionLive.filter((r) => r.zoneId === CORRIDOR && r.entity.isAlive).length;
+        // Back home: the re-activated home is STILL wildlife-only (the corridor
+        // trip proved nothing leaks into the gate).
+        const homeSpot = ms.regionZoneArrivals[Z];
+        ms.player.sprite.body.reset(homeSpot.x, homeSpot.y);
+        await wait(600);
+        const backHome = { evil: evil(), wildlife: wildlife() };
+        // REAL PROGRESSION past the discovery: the chain state-warp to the
+        // dub-04 boss beat marks dub-03 complete — the evil VISIBLY arrives.
+        ms.devJumpToQuest('dub-04-first-evil');
+        ms.playerHealth.shield = 1e9; // re-arm past the jump's heal path
+        await wait(1200);
+        const discoveryDone = ms.chain.status('dub-03-discovery') === 'complete';
+        const afterDiscovery = { evil: evil(), discoveryDone };
+        // LEVELED REVISIT: leave (the chunk despawns) and return — full spawns.
+        ms.player.sprite.body.reset(road.x, road.y);
+        await wait(600);
+        ms.player.sprite.body.reset(homeSpot.x, homeSpot.y);
+        await wait(600);
+        const revisit = { evil: evil(), wildlife: wildlife() };
+        ms.playerHealth.full();
+        ms.playerHealth.shield = 1e9;
+        return { setup: 'ok', boot, seattleAbsent, hearth, corridorHostiles, backHome, afterDiscovery, revisit };
+      });
+      ok(
+        'home pacing: a fresh Assassin at Dubai sees wildlife but ZERO evil-scouts before the discovery (the packs held staged); Seattle is not in this pipeline',
+        pacing.setup === 'ok' && pacing.boot.active && pacing.boot.wildlife > 0 && pacing.boot.evil === 0 && pacing.boot.held > 0 && pacing.seattleAbsent,
+        JSON.stringify({ boot: pacing.boot, seattleAbsent: pacing.seattleAbsent }),
+      );
+      ok(
+        'home pacing: nothing hostile MATERIALIZES inside the hearth radius — an injected marker at the mentor\'s feet spawns nothing while the real packs return',
+        pacing.setup === 'ok' && pacing.hearth.reactivated && pacing.hearth.insideHearth === 0 && pacing.hearth.wildlifeBack && pacing.hearth.evilStillHeld,
+        JSON.stringify(pacing.hearth),
+      );
+      ok(
+        'home pacing: the corridor stays dangerous pre-discovery (Reed Sea hostiles up with no beat behind the character) and the home stays wildlife-only on return',
+        pacing.setup === 'ok' && pacing.corridorHostiles > 0 && pacing.backHome.evil === 0 && pacing.backHome.wildlife > 0,
+        JSON.stringify({ corridorHostiles: pacing.corridorHostiles, backHome: pacing.backHome }),
+      );
+      ok(
+        'home pacing: past the discovery (real chain progression) the evil VISIBLY arrives, and a leveled character re-entering sees full spawns',
+        pacing.setup === 'ok' && pacing.afterDiscovery.discoveryDone && pacing.afterDiscovery.evil > 0 && pacing.revisit.evil > 0 && pacing.revisit.wildlife > 0,
+        JSON.stringify({ afterDiscovery: pacing.afterDiscovery, revisit: pacing.revisit }),
+      );
+    }
+
     // 2n. REAL NECROMANCER ART (the first shipped 8-way sprite drop-in): all
     // eight rotation frames + the canonical key minted at the canonical 32×48,
     // and the avatar TURNS with its real movement facing (east / north / a
