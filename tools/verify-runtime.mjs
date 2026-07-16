@@ -2300,6 +2300,7 @@ try {
     ms.pulseRing = null;
     ms.empoweredStrikes = null;
     ms.clearTraps(); // devices + shadow-dance/vanish state (assassin)
+    ms.clearPriestState(); // ally-shields + the dual channel (priest)
     ms.darkVulnUntil = 0;
     ms.clearDots();
     ms.playerHealth.full();
@@ -3563,6 +3564,87 @@ try {
     'assassin ext — vanish: instant mid-combat re-stealth; a real bolt and a real bite pass through the breath, which then ends',
     assassinExt.setup === 'ok' && assassinExt.vanish.hidden && assassinExt.vanish.boltPassed && assassinExt.vanish.bitePassed && assassinExt.vanish.graceEnded && assassinExt.vanish.stillStealthed,
     JSON.stringify(assassinExt.vanish),
+  );
+
+  // 3aj. PRIEST FRAMEWORK EXTENSIONS (permanent): the TARGETED ALLY-SHIELD
+  // (solo → self, absorbing a REAL wolf bite + the harm-immunity breath; with a
+  // decoy out → the decoy's pool absorbs, then expires), the DUAL CHANNEL (one
+  // cast measured healing the caster AND damaging the pinned foe it crosses),
+  // and the party-dormant REVIVE hook (no fallen friendly exists today).
+  const priestExt = await page.evaluate(async () => {
+    const ms = window.__ready();
+    const wait = (t) => new Promise((r) => setTimeout(r, t));
+    if (!window.__quietSpot()) return { setup: 'no quiet spot' };
+    ms.summons.clear();
+    ms.clearDots(); // zero the caster-affliction state so the immunity assert is exact
+    // SOLO ALLY-SHIELD: self is the valid target; a real wolf bite is absorbed
+    // whole, and the immunity breath blocks the caster-bolt afflictions.
+    ms.playerHealth.shield = 0;
+    ms.playerHealth.full();
+    const who = ms.allyShield(300, 30, 5000, 2000);
+    const selfShielded = who === 'self' && ms.playerHealth.shield === 30;
+    const wolf = ms.spawnTownsfolk(ms.player.x + 60, ms.player.y, null, 'wolf');
+    await wait(200);
+    const hp0 = ms.playerHealth.current;
+    ms.onTownsfolkHitPlayer(wolf); // the wolf's REAL melee hit path
+    const absorbed = { untouched: ms.playerHealth.current === hp0, shieldSpent: ms.playerHealth.shield < 30 };
+    ms.onProjectileHitPlayer(5, 'caster-bolt'); // the REAL afflicting bolt path
+    const immune = ms.casterSlowUntil === 0 && ms.casterDotStacks.length === 0;
+    if (wolf.isAlive) wolf.takeHit(1e9);
+    ms.playerHealth.shield = 0;
+    // DECOY ALLY-SHIELD: the nearest friendly takes the pool; it absorbs and EXPIRES.
+    const decoy = ms.spawnSpiritDecoy(20000);
+    await wait(150);
+    const who2 = ms.allyShield(300, 20, 900, 0);
+    const decoyShielded = who2 === 'summon' && decoy.health.shield === 20;
+    const dHp0 = decoy.health.current;
+    decoy.health.damage(12);
+    const decoyAbsorbed = decoy.health.current === dHp0 && decoy.health.shield === 8;
+    await wait(1100);
+    const decoyExpired = decoy.health.shield === 0;
+    ms.summons.clear();
+    // DUAL CHANNEL: one cast, both halves measured — the wounded caster heals
+    // while the pinned foe standing in the beam burns.
+    const w = ms.activeMap().nearestWalkableWorld(ms.player.x + 140, ms.player.y);
+    const foe = ms.spawnAngel('darkcaster', w.x, w.y);
+    await wait(200);
+    ms.stunEnemiesInRange(foe.x, foe.y, 60, 30000);
+    foe.sprite.body.reset(ms.player.x + 140, ms.player.y);
+    ms.player.facingX = 1;
+    ms.player.facingY = 0;
+    ms.playerHealth.shield = 0;
+    ms.playerHealth.full();
+    ms.playerHealth.current -= 40;
+    const pHp0 = ms.playerHealth.current;
+    const fHp0 = foe.health.current;
+    ms.startDualChannel(1600, 300, 6, 7, 240, 56);
+    const started = ms.dualChannel !== null;
+    await wait(1100);
+    const midHeal = ms.playerHealth.current - pHp0;
+    const midBurn = fHp0 - foe.health.current;
+    await wait(900);
+    const dual = { started, healed: midHeal, burned: midBurn, ended: ms.dualChannel === null };
+    foe.destroy();
+    // THE DORMANT REVIVE HOOK: no party exists — there is never a fallen friendly.
+    const reviveWhiffs = ms.reviveFallenAlly() === false;
+    ms.playerHealth.full();
+    ms.playerHealth.shield = 1e9;
+    return { setup: 'ok', selfShielded, absorbed, immune, decoyShielded, decoyAbsorbed, decoyExpired, dual, reviveWhiffs };
+  });
+  ok(
+    'priest ext — ally-shield: solo it wraps the caster (a real bite absorbed + afflictions blocked); with a decoy out the decoy takes the pool, absorbs, expires',
+    priestExt.setup === 'ok' && priestExt.selfShielded && priestExt.absorbed.untouched && priestExt.absorbed.shieldSpent && priestExt.immune && priestExt.decoyShielded && priestExt.decoyAbsorbed && priestExt.decoyExpired,
+    JSON.stringify({ selfShielded: priestExt.selfShielded, absorbed: priestExt.absorbed, immune: priestExt.immune, decoyShielded: priestExt.decoyShielded, decoyAbsorbed: priestExt.decoyAbsorbed, decoyExpired: priestExt.decoyExpired }),
+  );
+  ok(
+    'priest ext — dual channel: one cast heals the wounded caster AND burns the foe in the beam, then ends on time',
+    priestExt.setup === 'ok' && priestExt.dual.started && priestExt.dual.healed >= 12 && priestExt.dual.burned >= 14 && priestExt.dual.ended,
+    JSON.stringify(priestExt.dual),
+  );
+  ok(
+    'priest ext — revive hook: party-dormant, it finds no fallen friendly (the skill whiff-refunds through the ally rule)',
+    priestExt.setup === 'ok' && priestExt.reviveWhiffs,
+    `reviveWhiffs=${priestExt.reviveWhiffs}`,
   );
 
   // 3aa. SKILL TREE UX (Casey's spec, permanent) — driven by REAL taps on the real

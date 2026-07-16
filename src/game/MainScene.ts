@@ -769,6 +769,18 @@ export class MainScene extends Phaser.Scene {
   /** VANISH: a breath of UNTARGETABILITY after the instant re-stealth — melee
    *  (parryGate) and bolts (onProjectileHitPlayer) pass through until this. */
   vanishGraceUntil = 0;
+  // --- Priest framework primitives (composable/bespoke; class-agnostic) ---
+  /** TARGETED ALLY-SHIELDS: absorb pools granted to allied SUMMONS with an
+   *  expiry (the player's own pool rides playerHealth.shield/shieldUntil — the
+   *  Mana Shield machinery). Expired pools are zeroed, never banked. */
+  private allyShields: { health: Health; until: number }[] = [];
+  /** HARM IMMUNITY (ally-shield rider): while now < this, hostile on-hit
+   *  afflictions (the dark-caster slow/weaken/DoT stacks) never land. */
+  harmImmuneUntil = 0;
+  /** DUAL CHANNEL (Beacon of Light): a beam from the caster along the facing
+   *  that HEALS friendlies inside it (caster included) and DAMAGES enemies it
+   *  crosses, both ticking until it ends. Public-readable for the gate. */
+  dualChannel: { until: number; nextAt: number; tickMs: number; healPerTick: number; dmgPerTick: number; length: number; width: number; fx: Phaser.GameObjects.Graphics } | null = null;
   /**
    * CHANNELED-BEAM state (the channel primitive). Transient: a single active channel locks
    * one enemy, ticks damage, optionally trickles energy, and is cancelled by movement / any
@@ -1826,6 +1838,8 @@ export class MainScene extends Phaser.Scene {
     this.updateVoodoo(); // Witch Doctor: bind expiry + spirit assault + spirit split pulses
     this.updatePulseRing(); // Monk: the following damage pulse ring
     this.updateTraps(); // Assassin: device arming/trigger/expiry
+    this.updateAllyShields(); // Priest: summon absorb-pool expiry
+    this.updateDualChannel(); // Priest: the heal-and-harm beam
     this.updateComboUltimate(); // Bard War Song: the auto-chain cadence
     this.updateDots(); // poison DoTs + Plague contagion spread + stacking DoTs
     this.updateChannel(delta); // channeled beam: tick damage + energy trickle + redraw
@@ -2186,6 +2200,7 @@ export class MainScene extends Phaser.Scene {
     this.actionWhiffed = false;
     this.empoweredStrikes = null;
     this.clearTraps(); // Assassin state never survives a reset either
+    this.clearPriestState(); // nor the Priest's
     this.breakPlayerStealth();
     this.clearDots();
     this.summons.clear();
@@ -4375,6 +4390,118 @@ export class MainScene extends Phaser.Scene {
     this.spawnSkillRing(this.player.x, this.player.y, 44, 0x9a9ab8);
   }
 
+  // --- Priest framework: ally-shield + dual channel + the dormant revive --------
+
+  /** TARGETED ALLY-SHIELD: wrap the nearest allied summon within `range` in an
+   *  absorb pool; with none the CASTER takes it (self is always valid — a solo
+   *  cast never whiffs). Player pools ride the Mana Shield machinery + grant
+   *  brief HARM IMMUNITY; summon pools use the same Health.shield absorb math
+   *  and are zeroed on expiry. Returns who received it (gate-observable). */
+  allyShield(range: number, amount: number, durationMs: number, immunityMs = 0): 'self' | 'summon' {
+    const now = this.time.now;
+    let best: AlliedSummon | null = null;
+    let bestD = range;
+    for (const sm of this.summons.list) {
+      if (!sm.isAlive) continue;
+      const d = Phaser.Math.Distance.Between(sm.x, sm.y, this.player.x, this.player.y);
+      if (d <= bestD) {
+        bestD = d;
+        best = sm;
+      }
+    }
+    if (best) {
+      best.health.shield = Math.max(best.health.shield, amount);
+      this.allyShields.push({ health: best.health, until: now + durationMs });
+      this.spawnSkillRing(best.x, best.y, 46, 0xffe9a8);
+      return 'summon';
+    }
+    this.playerHealth.shield = Math.max(this.playerHealth.shield, amount);
+    this.shieldUntil = now + durationMs;
+    if (immunityMs > 0) this.harmImmuneUntil = now + immunityMs;
+    this.spawnSkillRing(this.player.x, this.player.y, 56, 0xffe9a8);
+    return 'self';
+  }
+
+  /** Expire summon ally-shield pools (the player's rides shieldUntil already). */
+  private updateAllyShields(): void {
+    if (this.allyShields.length === 0) return;
+    const now = this.time.now;
+    for (const s of this.allyShields) if (now >= s.until) s.health.shield = 0;
+    this.allyShields = this.allyShields.filter((s) => now < s.until);
+  }
+
+  /** DUAL CHANNEL: start the heal-and-harm beam (extension #2). One at a time;
+   *  a re-cast restarts it. Numbers arrive pre-scaled by the caller. */
+  startDualChannel(durationMs: number, tickMs: number, healPerTick: number, dmgPerTick: number, length: number, width: number): void {
+    this.cancelDualChannel();
+    const fx = this.add.graphics().setDepth(7);
+    this.worldFx.add(fx);
+    this.dualChannel = { until: this.time.now + durationMs, nextAt: this.time.now, tickMs, healPerTick, dmgPerTick, length, width, fx };
+  }
+
+  /** End the dual channel now (expiry / reset / death). */
+  private cancelDualChannel(): void {
+    if (!this.dualChannel) return;
+    this.dualChannel.fx.destroy();
+    this.dualChannel = null;
+  }
+
+  /** Per-frame: the beam tracks the caster's position + facing; each tick it
+   *  HEALS the caster and every allied summon inside the corridor and DAMAGES
+   *  every enemy it crosses. */
+  private updateDualChannel(): void {
+    const dc = this.dualChannel;
+    if (!dc) return;
+    if (this.time.now >= dc.until || this.playerDead) {
+      this.cancelDualChannel();
+      return;
+    }
+    const px = this.player.x;
+    const py = this.player.y;
+    const { dx, dy } = this.facingUnit();
+    dc.fx.clear();
+    dc.fx.lineStyle(dc.width, 0xffe9a8, 0.3);
+    dc.fx.lineBetween(px, py, px + dx * dc.length, py + dy * dc.length);
+    if (this.time.now < dc.nextAt) return;
+    dc.nextAt = this.time.now + dc.tickMs;
+    // Corridor test: projected along the beam axis + perpendicular distance.
+    const inBeam = (x: number, y: number, pad: number): boolean => {
+      const rx = x - px;
+      const ry = y - py;
+      const t = rx * dx + ry * dy;
+      if (t < 0 || t > dc.length) return false;
+      return Math.abs(rx * dy - ry * dx) <= dc.width / 2 + pad;
+    };
+    this.playerHealth.heal(dc.healPerTick); // the caster stands at the beam's root
+    for (const sm of this.summons.list) {
+      if (sm.isAlive && inBeam(sm.x, sm.y, 10)) {
+        sm.health.heal(dc.healPerTick);
+        this.spawnDamageNumber(sm.x, sm.y - 22, dc.healPerTick, '#a8ffd0');
+      }
+    }
+    for (const e of this.combatEnemiesInRange(px + dx * (dc.length / 2), py + dy * (dc.length / 2), dc.length / 2 + 60)) {
+      if (inBeam(e.x, e.y, 12)) this.damageOneEnemy(e, dc.dmgPerTick);
+    }
+    this.lastCombatTime = this.time.now;
+  }
+
+  /** THE REVIVE PRIMITIVE (Divine Intervention) — PARTY-DORMANT: parties don't
+   *  exist yet, and fallen summons dissolve rather than leave a body, so there
+   *  is never a fallen friendly to raise TODAY. This hook is the seam a future
+   *  party system fills in; until then every cast is a graceful, fully refunded
+   *  whiff (the ally rule). Returns true only once it actually raises someone. */
+  reviveFallenAlly(): boolean {
+    return false; // no party roster yet — nothing fallen can be found
+  }
+
+  /** Clear every Priest transient (reset/load/death/world swap). */
+  private clearPriestState(): void {
+    this.cancelDualChannel();
+    for (const s of this.allyShields) s.health.shield = 0;
+    this.allyShields = [];
+    this.harmImmuneUntil = 0;
+  }
+
   // --- DoT (damage-over-time) + contagion primitive (Toxic Bolt / Plague) -------
 
   /** Apply a poison DoT to every live enemy within (x,y,radius) — used by Toxic Bolt's
@@ -5530,6 +5657,7 @@ export class MainScene extends Phaser.Scene {
     this.actionWhiffed = false;
     this.empoweredStrikes = null;
     this.clearTraps(); // Assassin state never survives a reset either
+    this.clearPriestState(); // nor the Priest's
     this.breakPlayerStealth();
     this.clearDots();
     this.despawnRegionChampion(); // death resets a champion encounter cleanly
@@ -5938,6 +6066,8 @@ export class MainScene extends Phaser.Scene {
    *  (capped) — all resolved per-frame by updateControlEffects. */
   private applyCasterDebuffs(): void {
     const now = this.time.now;
+    if (now < this.harmImmuneUntil) return; // Priest HARM IMMUNITY: afflictions never land
+
     this.casterSlowUntil = now + CASTER_SLOW_MS;
     this.casterWeakenUntil = now + CASTER_WEAKEN_MS;
     this.casterDotStacks = this.casterDotStacks.filter((until) => now < until);
@@ -7018,6 +7148,7 @@ export class MainScene extends Phaser.Scene {
       this.actionWhiffed = false;
       this.empoweredStrikes = null;
       this.clearTraps(); // Assassin state never survives a load either
+      this.clearPriestState(); // nor the Priest's
       this.breakPlayerStealth();
       this.clearDots(); // drop any poison DoTs
       this.summons.clear(); // summons are transient — never carried across a load
@@ -9661,6 +9792,7 @@ export class MainScene extends Phaser.Scene {
     this.actionWhiffed = false;
     this.empoweredStrikes = null;
     this.clearTraps(); // Assassin state never survives a reset either
+    this.clearPriestState(); // nor the Priest's
     this.breakPlayerStealth();
     this.clearDots();
 
@@ -11034,6 +11166,7 @@ export class MainScene extends Phaser.Scene {
     this.actionWhiffed = false;
     this.empoweredStrikes = null;
     this.clearTraps(); // Assassin state never survives a reset either
+    this.clearPriestState(); // nor the Priest's
     this.breakPlayerStealth();
     this.clearDots();
     this.summons.clear();
