@@ -3,16 +3,24 @@ import type { SkillDef } from './skillData';
 /**
  * SAVAGE — JAGUAR SPIRIT TREE (10 skills, linear; THE HUNT).
  *
- * The spirit half: the pouncing dash opener, the JAGUAR COMPANION (an attacker
- * summon whose swipes bleed — the Viper/Wolverine lineage), the confusion
- * snarl, the PACK BOND (the ally-bond behind the ally-rule refund), the
- * standing SUN TOTEM, and the apex transformation ultimate. Conventions as
- * always: EVERY tunable in {@link SAV_JAGUAR_TUNING} with calibration anchors;
- * placeholder prose. Tree id 'sav_jaguar'. Tier-0 is a DAMAGING ACTIVE
- * (no-kit rule).
+ * The spirit half (Casey's revision): the pouncing dash opener, the JAGUAR
+ * SPIRIT fury FORM (a timed transformation — speed rises and every strike
+ * rakes the jaguar's bleed; the old Companion summon is gone), the confusion
+ * snarl, BLOOD SCENT (bonus damage to BLEEDING targets — it feeds the kit's
+ * four bleeds and the form), the standing SUN TOTEM, and the apex ultimate.
+ * Conventions as always: EVERY tunable in {@link SAV_JAGUAR_TUNING} with
+ * calibration anchors; placeholder prose. Tree id 'sav_jaguar'. Tier-0 is a
+ * DAMAGING ACTIVE (no-kit rule).
  */
 
 export const SAV_JAGUAR_TREE = 'sav_jaguar';
+
+// Ids the scene keys behavior off (imported there — keep in sync): the FORM's
+// bleed-on-strike reads the live timed state; BLOOD SCENT arms the
+// bleeding-target damage bonus at recompute. Both keep their ORIGINAL skill
+// ids (sav_jg_jaguar / sav_jg_pack) so saves with points spent stay valid.
+export const JAGUAR_FORM_ID = 'sav_jg_jaguar';
+export const BLOOD_SCENT_ID = 'sav_jg_pack';
 
 // ─── TUNING (all starting values; tune freely in playtest) ────────────────────
 export const SAV_JAGUAR_TUNING = {
@@ -22,18 +30,20 @@ export const SAV_JAGUAR_TUNING = {
   /** 2) PREDATOR'S SNARL — the confusion reuse: prey flees into its own kind
    *  (vs Sonic Distortion's 0.8/4000). */
   snarl: { range: 300, chance: 0.8, durationMs: 3500, chipDamage: 8, chipMs: 600, cooldownMs: 12000, energyCost: 18 },
-  /** 3) JAGUAR COMPANION — the attacker summon whose swipes BLEED (config in
-   *  summonData JAGUAR_CONFIG; vs the Wolverine's 12-a-swipe bleeder). */
-  jaguar: { cooldownMs: 10000, energyCost: 20 },
+  /** 3) JAGUAR SPIRIT — the fury FORM (Casey's swap): a timed transformation —
+   *  tempo + speed while it holds, and EVERY strike rakes the jaguar's bleed
+   *  (speeds vs Spirit of the Hunt's 0.15/0.2 halves; the bleed is the old
+   *  companion's 5/500/2500 rake; duration vs Iron Pyrite-class timed forms). */
+  jaguar: { attackSpeedMult: 0.25, moveSpeedMult: 0.15, bleed: { dmgPerTick: 5, tickMs: 500, durationMs: 2500 }, durationMs: 10000, cooldownMs: 30000, energyCost: 30, tint: 0xe8a03a },
   /** 4) THICK HIDE — flat toughness (vs Elephant-lineage damage reduction). */
   hide: { damageReduction: 0.12 },
   /** 5) SPIRIT OF THE HUNT — the chase-state: speed + tempo (vs Frenzied
    *  Rhythm-class tempo buffs). */
   hunt: { moveSpeedMult: 0.15, attackSpeedMult: 0.2, durationMs: 8000, cooldownMs: 18000, energyCost: 20, tint: 0xe8a03a },
-  /** 6) PACK BOND — the ally-bond reuse: the pack carries part of what strikes
-   *  you (vs Soul Bind's 0.35/8s; the ALLY RULE: no companion = a refunded
-   *  whiff). */
-  pack: { sharePct: 0.3, durationMs: 10000, cooldownMs: 20000, energyCost: 20 },
+  /** 6) BLOOD SCENT — Casey's re-spec (the pack lost its pack): BLEEDING
+   *  targets take ×(1+bonus) from you — conditional and bigger than Red
+   *  Harvest's flat 12%; it feeds the kit's four bleeds and the form. */
+  scent: { bonusVsBleeding: 0.2 },
   /** 7) LICK THE WOUNDS — the animal's mend (vs Mend's 35, cruder + cheaper). */
   lick: { heal: 28, cooldownMs: 10000, energyCost: 16 },
   /** 8) SUN TOTEM — a STANDING sun planted ahead: it sears what lingers under
@@ -71,14 +81,21 @@ export const SAV_JAGUAR_SKILLS: SkillDef[] = [
     effect: { kind: 'active', action: 'sav_snarl', cooldownMs: T.snarl.cooldownMs, energyCost: T.snarl.energyCost },
   },
   {
-    id: 'sav_jg_jaguar',
+    id: JAGUAR_FORM_ID,
     tree: SAV_JAGUAR_TREE,
-    name: 'Jaguar Companion',
-    description: 'Activate: the spotted shadow answers — a jaguar fights beside you, and its claws leave wounds that keep bleeding.',
+    name: 'Jaguar Spirit',
+    description: `Activate: the spotted shadow does not walk BESIDE you — for ${(T.jaguar.durationMs / 1000).toFixed(0)}s it IS you. +${Math.round(T.jaguar.attackSpeedMult * 100)}% attack speed, +${Math.round(T.jaguar.moveSpeedMult * 100)}% speed, and every strike rakes a bleeding wound.`,
     cost: 1,
     prereq: 'sav_jg_snarl',
     tier: 2,
-    effect: { kind: 'active', action: 'sav_jaguar', cooldownMs: T.jaguar.cooldownMs, energyCost: T.jaguar.energyCost },
+    effect: {
+      kind: 'transformation',
+      cooldownMs: T.jaguar.cooldownMs,
+      durationMs: T.jaguar.durationMs,
+      energyCost: T.jaguar.energyCost,
+      tint: T.jaguar.tint,
+      stats: { attackSpeedMult: T.jaguar.attackSpeedMult, moveSpeedMult: T.jaguar.moveSpeedMult },
+    },
   },
   {
     id: 'sav_jg_hide',
@@ -101,14 +118,14 @@ export const SAV_JAGUAR_SKILLS: SkillDef[] = [
     effect: { kind: 'buff', cooldownMs: T.hunt.cooldownMs, durationMs: T.hunt.durationMs, energyCost: T.hunt.energyCost, tint: T.hunt.tint, stats: { moveSpeedMult: T.hunt.moveSpeedMult, attackSpeedMult: T.hunt.attackSpeedMult } },
   },
   {
-    id: 'sav_jg_pack',
+    id: BLOOD_SCENT_ID,
     tree: SAV_JAGUAR_TREE,
-    name: 'Pack Bond',
-    description: `Activate: the pack shares the wound — for ${(T.pack.durationMs / 1000).toFixed(0)}s your companions carry ${Math.round(T.pack.sharePct * 100)}% of what strikes you. Alone, the bond finds nothing.`,
+    name: 'Blood Scent',
+    description: `Passive: you smell what's already open — BLEEDING enemies take ${Math.round(T.scent.bonusVsBleeding * 100)}% more from you.`,
     cost: 1,
     prereq: 'sav_jg_hunt',
     tier: 5,
-    effect: { kind: 'active', action: 'sav_pack', cooldownMs: T.pack.cooldownMs, energyCost: T.pack.energyCost },
+    effect: { kind: 'passive', stats: {} },
   },
   {
     id: 'sav_jg_lick',

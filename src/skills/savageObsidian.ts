@@ -16,6 +16,20 @@ export const SAV_EDGE_TREE = 'sav_edge';
 // Id the scene keys the FRENZY hook off (armed at recompute while owned).
 export const WARRIORS_MOMENTUM_ID = 'sav_ob_momentum';
 
+/** THE CASCADE (Casey's original concept: repeat the pattern cleanly and it
+ *  accelerates). Obsidian Slash (1) → Jagged Wound (2) → Brutal Cleave (3) —
+ *  the rotation-natural loop: open, tear, sweep. Landing them IN ORDER, each
+ *  cast within windowMs of the last, builds one RANK per completed trio (cap
+ *  maxRank); every rank cuts the three casts' cooldowns by cooldownCutPerRank
+ *  and raises their damage by damagePerRank. Wrong order or a lapsed window
+ *  drops every rank at once. */
+export const SAV_CASCADE_TUNING = {
+  windowMs: 4000,
+  maxRank: 5,
+  damagePerRank: 0.08,
+  cooldownCutPerRank: 0.08,
+} as const;
+
 // ─── TUNING (all starting values; tune freely in playtest) ────────────────────
 export const SAV_EDGE_TUNING = {
   /** 1) OBSIDIAN SLASH — ENTRY glass-edged swing (vs First Cut's 20/2s; the
@@ -57,7 +71,7 @@ export const SAV_EDGE_SKILLS: SkillDef[] = [
     id: 'sav_ob_slash',
     tree: SAV_EDGE_TREE,
     name: 'Obsidian Slash',
-    description: 'Activate: one swing of volcanic glass — ragged, fast, final. Your reliable opener.',
+    description: 'Activate: one swing of volcanic glass — ragged, fast, final. Your reliable opener, and the CASCADE begins here.',
     cost: 1,
     tier: 0,
     effect: {
@@ -65,6 +79,7 @@ export const SAV_EDGE_SKILLS: SkillDef[] = [
       action: 'sav_slash',
       cooldownMs: T.slash.cooldownMs,
       energyCost: T.slash.energyCost,
+      cascadeStep: 1,
       compose: [{ p: 'strike', at: 'front', range: T.slash.range, damage: T.slash.damage, tint: 0xff8a5a }],
     },
   },
@@ -72,11 +87,11 @@ export const SAV_EDGE_SKILLS: SkillDef[] = [
     id: 'sav_ob_jagged',
     tree: SAV_EDGE_TREE,
     name: 'Jagged Wound',
-    description: 'Activate: a tearing cut that will not close — the wound BLEEDS long after the blade has passed.',
+    description: 'Activate: a tearing cut that will not close — the wound BLEEDS long after the blade has passed. The CASCADE runs through it, second.',
     cost: 1,
     prereq: 'sav_ob_slash',
     tier: 1,
-    effect: { kind: 'active', action: 'sav_jagged', cooldownMs: T.jagged.cooldownMs, energyCost: T.jagged.energyCost },
+    effect: { kind: 'active', action: 'sav_jagged', cooldownMs: T.jagged.cooldownMs, energyCost: T.jagged.energyCost, cascadeStep: 2 },
   },
   {
     id: WARRIORS_MOMENTUM_ID,
@@ -102,7 +117,7 @@ export const SAV_EDGE_SKILLS: SkillDef[] = [
     id: 'sav_ob_cleave',
     tree: SAV_EDGE_TREE,
     name: 'Brutal Cleave',
-    description: 'Activate: a wide obsidian arc — everything in front of you learns what glass can do.',
+    description: 'Activate: a wide obsidian arc — everything in front of you learns what glass can do. The CASCADE completes here: slash, tear, sweep, again, FASTER.',
     cost: 1,
     prereq: 'sav_ob_leap',
     tier: 4,
@@ -111,6 +126,7 @@ export const SAV_EDGE_SKILLS: SkillDef[] = [
       action: 'sav_cleave',
       cooldownMs: T.cleave.cooldownMs,
       energyCost: T.cleave.energyCost,
+      cascadeStep: 3,
       compose: [{ p: 'cone', range: T.cleave.range, halfAngleDeg: T.cleave.coneHalfAngleDeg, damage: T.cleave.damage, tint: 0xff8a5a }],
     },
   },

@@ -1288,6 +1288,56 @@ try {
         const execute = { lowKilled: !b.isAlive, healthyDrop: cHp0 - c.health.current, healthySurvived: c.isAlive };
         b.destroy();
         c.destroy();
+        // BLOOD SCENT through the real keyed passive (Casey's re-spec): one
+        // swing over TWO foes — the BLEEDING one takes ×1.2, the clean one the
+        // base — measured synchronously off the same cast.
+        unlock(['sav_jg_lunge', 'sav_jg_snarl', 'sav_jg_jaguar', 'sav_jg_hide', 'sav_jg_hunt', 'sav_jg_pack']);
+        ms.recomputeSkillEffects();
+        const scentArmed = ms.bloodScentBonus > 0;
+        const s1 = spawnAt(70, 30);
+        const s2 = spawnAt(70, -30);
+        await wait(200);
+        for (const f of [s1, s2]) ms.stunEnemiesInRange(f.x, f.y, 60, 30000);
+        s1.sprite.body.reset(ms.player.x + 60, ms.player.y + 26);
+        s2.sprite.body.reset(ms.player.x + 60, ms.player.y - 26);
+        ms.addDot(s1, 1, 800, 5000, 0xd04a3a); // a token bleed marks the wounded one
+        ms.player.facingX = 1;
+        ms.player.facingY = 0;
+        const s1Hp0 = s1.health.current;
+        const s2Hp0 = s2.health.current;
+        ms.runActiveSkill('sav_slash');
+        const scent = { armed: scentArmed, bleedDrop: s1Hp0 - s1.health.current, cleanDrop: s2Hp0 - s2.health.current };
+        s1.destroy();
+        s2.destroy();
+        // JAGUAR SPIRIT through the REAL activation path (Casey's swap): the
+        // FORM's stats go live, a real strike rakes the jaguar's bleed, and NO
+        // summon machinery remains reachable from the Savage.
+        ms.energy.full();
+        ms.activateSkill('sav_jg_jaguar');
+        const formOn = ms.skillTimed.some((t) => t.id === 'sav_jg_jaguar');
+        const mods = ms.combinedSkillMods();
+        const f1 = spawnAt(70, 0);
+        await wait(200);
+        ms.stunEnemiesInRange(f1.x, f1.y, 60, 30000);
+        f1.sprite.body.reset(ms.player.x + 60, ms.player.y);
+        ms.player.facingX = 1;
+        ms.player.facingY = 0;
+        const f1Hp0 = f1.health.current;
+        ms.runActiveSkill('sav_slash');
+        const jaguarDefs = {
+          formKind: defs.find((d) => d.id === 'sav_jg_jaguar').effect.kind,
+          scentKind: defs.find((d) => d.id === 'sav_jg_pack').effect.kind,
+        };
+        const form = {
+          on: formOn,
+          statsLive: (mods.attackSpeedMult ?? 0) >= 0.25 && (mods.moveSpeedMult ?? 0) >= 0.15,
+          struck: f1Hp0 - f1.health.current > 0,
+          bleedRaked: ms.dots.some((d) => d.target === f1),
+          noSummons: ms.summons.list.length === 0,
+          formKind: jaguarDefs.formKind,
+          scentKind: jaguarDefs.scentKind,
+        };
+        f1.destroy();
         // WARRIOR'S MOMENTUM through the real keyed passive: four real slashes,
         // each on a FRESH live foe (no overkill caps), each drop harder than
         // the last as the stacks build.
@@ -1309,25 +1359,12 @@ try {
           foe.destroy();
         }
         const momentum = { armed, drops, stacks: ms.frenzy ? ms.frenzy.stacks : 0, growing: drops[0] < drops[1] && drops[1] < drops[2] && drops[2] < drops[3], ratio: drops[3] / drops[0] };
-        // JAGUAR + PACK BOND through the real skills: the companion stands, the
-        // bond takes; recast the bond with the pack gone and it whiff-refunds.
-        ms.runActiveSkill('sav_jaguar');
-        await wait(200);
-        const jaguarUp = ms.summons.list.some((sm) => sm.isAlive);
-        ms.runActiveSkill('sav_pack');
-        const bonded = ms.allyBond !== null;
-        ms.allyBond = null;
-        ms.summons.clear();
-        ms.actionWhiffed = false;
-        ms.runActiveSkill('sav_pack');
-        const packWhiff = ms.actionWhiffed === true;
-        ms.actionWhiffed = false;
         ms.playerHealth.full();
         ms.playerHealth.shield = 1e9;
-        return { setup: 'ok', leap, paidCast, refusal, execute, momentum, jaguarUp, bonded, packWhiff };
+        return { setup: 'ok', leap, paidCast, refusal, execute, scent, form, momentum };
       });
       ok(
-        'savage: leap-slam, blood-priced nova (paid + refused), the headtaker execute, momentum growth, jaguar + pack bond — each through the real skill',
+        'savage: leap-slam, blood-priced nova (paid + refused), the headtaker execute, blood scent vs a bleeder, the jaguar form (stats + raked bleed, no summons), momentum growth — each through the real skill',
         savKit.setup === 'ok' &&
           savKit.leap.moved > 140 &&
           savKit.leap.hit &&
@@ -1340,14 +1377,130 @@ try {
           savKit.execute.lowKilled &&
           savKit.execute.healthyDrop === 20 &&
           savKit.execute.healthySurvived &&
+          savKit.scent.armed &&
+          savKit.scent.cleanDrop > 0 &&
+          Math.abs(savKit.scent.bleedDrop / savKit.scent.cleanDrop - 1.2) < 0.05 &&
+          savKit.form.on &&
+          savKit.form.statsLive &&
+          savKit.form.struck &&
+          savKit.form.bleedRaked &&
+          savKit.form.noSummons &&
+          savKit.form.formKind === 'transformation' &&
+          savKit.form.scentKind === 'passive' &&
           savKit.momentum.armed &&
           savKit.momentum.growing &&
           savKit.momentum.ratio >= 1.15 &&
-          savKit.momentum.stacks >= 3 &&
-          savKit.jaguarUp &&
-          savKit.bonded &&
-          savKit.packWhiff,
+          savKit.momentum.stacks >= 3,
         JSON.stringify(savKit),
+      );
+
+      // 2w2. THE CASCADE through the REAL activation path (Casey's concept):
+      // three loops of Slash → Jagged Wound → Brutal Cleave — the measured
+      // A-strike RISES and its cooldown SHRINKS per completed trio, the HUD pip
+      // shows the rank, a wrong-order cast drops everything (measured back at
+      // base), a non-cascade skill is untouched at rank, and the flags exist
+      // ONLY on Savage skills roster-wide.
+      const cascade = await page.evaluate(async () => {
+        const ms = window.__ready();
+        const wait = (t) => new Promise((r) => setTimeout(r, t));
+        if (!window.__quietSpot()) return { setup: 'no quiet spot' };
+        const defs = ms.classSkillsAll['savage'].skills;
+        ms.skills.awardPoints(6);
+        for (const id of ['sav_ob_slash', 'sav_ob_jagged', 'sav_ob_momentum', 'sav_ob_leap', 'sav_ob_cleave', 'sav_br_spike']) {
+          if (!ms.skills.isUnlocked(id)) ms.skills.unlock(defs.find((d) => d.id === id));
+        }
+        // Isolate the cascade's own ramp: end any timed form (attack speed
+        // bends cooldowns) and disarm the frenzy (its ramp bends damage).
+        for (const t of ms.skillTimed) t.endsAt = 0;
+        await wait(150); // the expiry sweep prunes + recomputes
+        ms.disarmFrenzy();
+        ms.cascadeRank = 0;
+        ms.cascadeNextStep = 1;
+        ms.cascadeWindowUntil = 0;
+        const cast = (id) => {
+          if (ms.frenzy) { ms.frenzy.stacks = 0; ms.frenzy.until = 0; } // kills mid-check level up → recompute re-arms momentum; zeroed so the ramp is the CASCADE'S alone
+          ms.skillCooldownUntil[id] = 0;
+          ms.energy.full();
+          ms.activateSkill(id);
+        };
+        const aDrops = [];
+        const aCds = [];
+        const ranks = [];
+        for (let loop = 0; loop < 3; loop++) {
+          const w = ms.activeMap().nearestWalkableWorld(ms.player.x + 80, ms.player.y);
+          const foe = ms.spawnAngel('darkcaster', w.x, w.y);
+          await wait(200);
+          ms.stunEnemiesInRange(foe.x, foe.y, 60, 30000);
+          foe.sprite.body.reset(ms.player.x + 60, ms.player.y);
+          ms.player.facingX = 1;
+          ms.player.facingY = 0;
+          ranks.push(ms.cascadeRank);
+          const before = foe.health.current;
+          cast('sav_ob_slash');
+          aDrops.push(before - foe.health.current);
+          aCds.push(ms.skillCooldownDur['sav_ob_slash']);
+          await wait(120);
+          cast('sav_ob_jagged');
+          await wait(120);
+          cast('sav_ob_cleave');
+          await wait(120);
+          foe.destroy();
+        }
+        const rankAfter = ms.cascadeRank;
+        const pip = { visible: ms.skillBar.cascadeLabel.visible, text: ms.skillBar.cascadeLabel.text };
+        // NON-CASCADE at rank: Blood Spike's cooldown stays its base.
+        cast('sav_br_spike');
+        const spikeCd = ms.skillCooldownDur['sav_br_spike'];
+        // BREAK: A then C out of order — every rank drops; the next A is base.
+        cast('sav_ob_slash');
+        await wait(80);
+        cast('sav_ob_cleave'); // expected step 2 — the pattern breaks
+        const rankAfterBreak = ms.cascadeRank;
+        const pipHidden = ms.skillBar.cascadeLabel.visible === false;
+        const w2 = ms.activeMap().nearestWalkableWorld(ms.player.x + 80, ms.player.y);
+        const f2 = ms.spawnAngel('darkcaster', w2.x, w2.y);
+        await wait(200);
+        ms.stunEnemiesInRange(f2.x, f2.y, 60, 30000);
+        f2.sprite.body.reset(ms.player.x + 60, ms.player.y);
+        ms.player.facingX = 1;
+        ms.player.facingY = 0;
+        const before2 = f2.health.current;
+        cast('sav_ob_slash');
+        const resetDrop = before2 - f2.health.current;
+        const resetCd = ms.skillCooldownDur['sav_ob_slash'];
+        f2.destroy();
+        // FLAG SCAN: cascadeStep lives ONLY on Savage skills, roster-wide.
+        let foreign = 0;
+        for (const cls2 of Object.keys(ms.classSkillsAll)) {
+          if (cls2 === 'savage') continue;
+          for (const d of ms.classSkillsAll[cls2].skills) if (d.effect.cascadeStep !== undefined) foreign++;
+        }
+        ms.playerHealth.full();
+        ms.playerHealth.shield = 1e9;
+        return { setup: 'ok', ranks, aDrops, aCds, rankAfter, pip, spikeCd, rankAfterBreak, pipHidden, resetDrop, resetCd, foreign };
+      });
+      ok(
+        'savage cascade: slash→jagged→cleave ×3 ramps damage + shrinks cooldowns rank by rank; the pip shows; a broken pattern resets to base; non-cascade + every other class untouched',
+        cascade.setup === 'ok' &&
+          cascade.ranks[0] === 0 &&
+          cascade.ranks[1] === 1 &&
+          cascade.ranks[2] === 2 &&
+          cascade.aDrops[0] === 19 &&
+          cascade.aDrops[0] < cascade.aDrops[1] &&
+          cascade.aDrops[1] < cascade.aDrops[2] &&
+          cascade.aCds[0] === 2000 &&
+          cascade.aCds[1] === 1840 &&
+          cascade.aCds[2] === 1680 &&
+          cascade.rankAfter === 3 &&
+          cascade.pip.visible &&
+          cascade.pip.text.includes('CASCADE') &&
+          cascade.spikeCd === 2200 &&
+          cascade.rankAfterBreak === 0 &&
+          cascade.pipHidden &&
+          cascade.resetDrop === 19 &&
+          cascade.resetCd === 2000 &&
+          cascade.foreign === 0,
+        JSON.stringify(cascade),
       );
     }
   }

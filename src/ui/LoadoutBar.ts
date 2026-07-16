@@ -37,6 +37,10 @@ export class LoadoutBar {
   private readonly slots: { bg: Phaser.GameObjects.Rectangle; label: Phaser.GameObjects.Text; cd: Phaser.GameObjects.Rectangle }[] = [];
   private readonly openBg: Phaser.GameObjects.Rectangle;
   private readonly openLabel: Phaser.GameObjects.Text;
+  /** THE CASCADE pip (Savage): a small rank readout above the grid — hidden at
+   *  rank 0, which is every other class always (created up front like all bar
+   *  UI so the camera partition stays intact). */
+  private readonly cascadeLabel: Phaser.GameObjects.Text;
   private equipped: (string | null)[] = new Array(6).fill(null);
   private readonly handlers: LoadoutHandlers;
   /** The in-progress press on a slot button (tap vs drag is resolved on release). */
@@ -90,6 +94,13 @@ export class LoadoutBar {
       .setScrollFactor(0)
       .setDepth(DEPTH + 1);
     this.openBg.on(Phaser.Input.Events.GAMEOBJECT_POINTER_DOWN, handlers.onOpen);
+
+    this.cascadeLabel = scene.add
+      .text(0, 0, '', { fontFamily: 'ui-monospace, monospace', fontSize: '11px', color: '#ff8a5a', fontStyle: 'bold', align: 'right' })
+      .setOrigin(1, 1)
+      .setScrollFactor(0)
+      .setDepth(DEPTH + 2)
+      .setVisible(false);
 
     scene.scale.on(Phaser.Scale.Events.RESIZE, this.layout, this);
     scene.events.once(Phaser.Scenes.Events.SHUTDOWN, () => scene.scale.off(Phaser.Scale.Events.RESIZE, this.layout, this));
@@ -174,12 +185,20 @@ export class LoadoutBar {
     s.bg.setFillStyle(disabled ? 0x33282a : 0x1d2b40, 0.92);
   }
 
+  /** THE CASCADE pip: show/refresh the rank readout (rank 0 hides it). */
+  setCascadeRank(rank: number): void {
+    this.cascadeLabel.setVisible(rank > 0);
+    if (rank > 0) this.cascadeLabel.setText(`CASCADE ${'◆'.repeat(rank)}`);
+  }
+
   private layout(): void {
     const w = this.scene.scale.width;
     const h = this.scene.scale.height;
     const insets = getInsets(this.scene);
     const rightX = w - insets.right - UI_MARGIN - SIZE / 2;
     const bottomY = h - insets.bottom - UI_MARGIN - SIZE / 2;
+    // The cascade pip sits just above the 3×2 grid, right-aligned with it.
+    this.cascadeLabel.setPosition(rightX + SIZE / 2, bottomY - (SIZE + GAP) - SIZE / 2 - 4);
 
     for (let i = 0; i < 6; i++) {
       const col = i % COLS; // 0 = rightmost column
