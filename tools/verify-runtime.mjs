@@ -188,9 +188,10 @@ try {
     witchdoctor: { world: 'globe', zone: 'kinshasa-river-drum', opener: 'kin-01-mentor', kind: 'region' },
     samurai: { world: 'globe', zone: 'kyoto-thousand-gates', opener: 'kyo-01-mentor', kind: 'region' },
     monk: { world: 'globe', zone: 'lhasa-prayer-citadel', opener: 'lha-01-mentor', kind: 'region' },
+    assassin: { world: 'globe', zone: 'dubai-glass-souk', opener: 'dub-01-mentor', kind: 'region' },
     druid: { world: 'earth', zone: null, opener: 'honest-days-work', kind: 'earth' },
   };
-  for (const cls of ['blacksmith', 'wizard', 'necromancer', 'mage', 'bard', 'witchdoctor', 'samurai', 'monk', 'druid']) {
+  for (const cls of ['blacksmith', 'wizard', 'necromancer', 'mage', 'bard', 'witchdoctor', 'samurai', 'monk', 'assassin', 'druid']) {
     await newGame(cls);
     const home = HOMES[cls];
     const s = await page.evaluate(
@@ -1001,6 +1002,128 @@ try {
           monkKit.whiff.chiRefunded &&
           monkKit.whiff.hpUntouched,
         JSON.stringify(monkKit),
+      );
+    }
+
+    // 2u. EVERY ASSASSIN EXTENSION THROUGH A REAL ASSASSIN SKILL, in the live
+    // Assassin session: Blade Trap (the real skill's device kills a live wolf
+    // while the player stands far apart), the stealth bonus (Silent Blade
+    // measured stealthed vs unstealthed), Ambush (whiff-refunded unhidden
+    // through the REAL unlock + activation path; devastating from stealth),
+    // Shadow Dance (three real strikes, stealth intact), and Trick Shot
+    // (ricocheting through a real pack with falloff).
+    if (cls === 'assassin') {
+      const asnKit = await page.evaluate(async () => {
+        const ms = window.__ready();
+        const wait = (t) => new Promise((r) => setTimeout(r, t));
+        if (!window.__quietSpot()) return { setup: 'no quiet spot' };
+        const spawnAt = (dx, dy) => {
+          const w = ms.activeMap().nearestWalkableWorld(ms.player.x + dx, ms.player.y + dy);
+          return ms.spawnAngel('darkcaster', w.x, w.y);
+        };
+        // BLADE TRAP through the real skill: place it, walk AWAY, and let a live
+        // wolf spring it — the snap kills while the player stands apart.
+        ms.player.facingX = 1;
+        ms.player.facingY = 0;
+        ms.runActiveSkill('asn_blade_trap');
+        const trap = ms.traps[0] ?? null;
+        const tx = trap ? trap.x : 0;
+        const ty = trap ? trap.y : 0;
+        const w0 = ms.activeMap().nearestWalkableWorld(ms.player.x - 320, ms.player.y);
+        ms.player.sprite.body.reset(w0.x, w0.y); // stand apart
+        await wait(900); // the device arms
+        const wolf = ms.spawnTownsfolk(tx, ty, null, 'wolf'); // it steps in
+        await wait(600);
+        const bladeTrap = {
+          placed: trap !== null,
+          apart: Math.hypot(ms.player.x - tx, ms.player.y - ty) > 250,
+          wolfDead: !wolf.isAlive,
+          consumed: ms.traps.length === 0,
+        };
+        if (wolf.isAlive) wolf.takeHit(1e9);
+        // STEALTH BONUS through the real skill: Silent Blade unstealthed, then
+        // the SAME skill from stealth on a FRESH foe — the ratio is the bonus.
+        const hitWith = async (action) => {
+          const f = spawnAt(80, 0);
+          await wait(200);
+          ms.stunEnemiesInRange(f.x, f.y, 60, 30000);
+          f.sprite.body.reset(ms.player.x + 60, ms.player.y);
+          ms.player.facingX = 1;
+          ms.player.facingY = 0;
+          const hp0 = f.health.current;
+          ms.runActiveSkill(action);
+          await wait(120);
+          const drop = hp0 - f.health.current;
+          f.destroy();
+          return drop;
+        };
+        const baseDrop = await hitWith('asn_silent_blade');
+        ms.startPlayerStealth(6000);
+        const stealthDrop = await hitWith('asn_silent_blade');
+        const rider = { baseDrop, stealthDrop, ratio: stealthDrop / baseDrop, broke: !ms.playerStealthActive };
+        // AMBUSH through the REAL unlock + activation path: unhidden it whiffs
+        // and refunds (cooldown + energy); from stealth it lands the payoff.
+        const defs = ms.classSkillsAll['assassin'].skills;
+        ms.skills.awardPoints(4);
+        for (const id of ['asn_sh_silent', 'asn_sh_cloak', 'asn_sh_ambush']) {
+          if (!ms.skills.isUnlocked(id)) ms.skills.unlock(defs.find((d) => d.id === id));
+        }
+        ms.breakPlayerStealth();
+        ms.energy.full();
+        const e0 = ms.energy.current;
+        ms.activateSkill('asn_sh_ambush'); // unhidden → the moment passes unspent
+        const whiff = { cooldownRefunded: (ms.skillCooldownUntil['asn_sh_ambush'] ?? 0) === 0, energyRefunded: ms.energy.current === e0 };
+        ms.startPlayerStealth(6000);
+        const ambushDrop = await hitWith('asn_ambush');
+        const ambush = { ...whiff, drop: ambushDrop, consumedStealth: !ms.playerStealthActive };
+        // SHADOW DANCE through the real skill: three Silent Blades on fresh
+        // foes — every one carries the bonus and stealth holds throughout.
+        ms.runActiveSkill('asn_shadow_dance');
+        const danceOn = ms.playerStealthActive;
+        const danceDrops = [];
+        for (let i = 0; i < 3; i++) danceDrops.push(await hitWith('asn_silent_blade'));
+        const dance = { danceOn, drops: danceDrops, stillHidden: ms.playerStealthActive };
+        ms.shadowDanceUntil = 0;
+        ms.breakPlayerStealth();
+        // TRICK SHOT through a real pack: three pinned foes in a line — the
+        // ricochet reaches all three, losing edge per bounce.
+        const p1 = spawnAt(90, 0);
+        const p2 = spawnAt(190, 40);
+        const p3 = spawnAt(290, -30);
+        await wait(250);
+        for (const f of [p1, p2, p3]) ms.stunEnemiesInRange(f.x, f.y, 60, 30000);
+        const hps = [p1, p2, p3].map((f) => f.health.current);
+        ms.runActiveSkill('asn_trick');
+        await wait(200);
+        const drops = [p1, p2, p3].map((f, i) => hps[i] - f.health.current).sort((a, b) => b - a);
+        const trick = { hitAll: drops.every((d) => d > 0), falloff: drops[0] > drops[1] && drops[1] > drops[2] };
+        p1.destroy();
+        p2.destroy();
+        p3.destroy();
+        ms.playerHealth.full();
+        ms.playerHealth.shield = 1e9;
+        return { setup: 'ok', bladeTrap, rider, ambush, dance, trick };
+      });
+      ok(
+        'assassin: blade trap kills a live wolf from apart, ambush whiff-refunds unhidden + lands from stealth, shadow dance holds, trick shot ricochets a real pack',
+        asnKit.setup === 'ok' &&
+          asnKit.bladeTrap.placed &&
+          asnKit.bladeTrap.apart &&
+          asnKit.bladeTrap.wolfDead &&
+          asnKit.bladeTrap.consumed &&
+          asnKit.rider.baseDrop > 0 &&
+          Math.abs(asnKit.rider.ratio - 1.8) < 0.05 &&
+          asnKit.rider.broke &&
+          asnKit.ambush.cooldownRefunded &&
+          asnKit.ambush.energyRefunded &&
+          asnKit.ambush.drop > asnKit.rider.baseDrop * 2 &&
+          asnKit.ambush.consumedStealth &&
+          asnKit.dance.danceOn &&
+          asnKit.dance.drops.every((d) => asnKit.rider.baseDrop > 0 && Math.abs(d / asnKit.rider.baseDrop - 1.8) < 0.05) &&
+          asnKit.dance.stillHidden &&
+          asnKit.trick.hitAll &&
+          asnKit.trick.falloff,
+        JSON.stringify(asnKit),
       );
     }
   }
