@@ -780,6 +780,45 @@ export const BEAST_HORDE_CONFIG: AlliedSummonConfig = {
   leashRange: BEAST_HORDE_TUNING.leashRange,
 };
 
+/** CALL OF THE WILD (Wild Frenzy T7): a TEMPORARY answering pack — deliberately
+ *  NOT a bond expression (different key, so its deaths never touch the bond's
+ *  mend cooldown and mode swaps never cull it). Timed like the skeleton swarm. */
+export const WILD_PACK_TUNING = {
+  count: 2,
+  maxHP: 40,
+  durationMs: 10000,
+  attackDamage: 7,
+  attackCooldownMs: 750,
+  attackRange: 44,
+  seekRange: 340,
+  leashRange: 520,
+  aggroRadius: 110,
+  followRange: 150,
+  moveTilesPerSec: 7.5,
+  bodyRadius: 10,
+  tint: 0x8fae5a,
+} as const;
+
+export const WILD_PACK_CONFIG: AlliedSummonConfig = {
+  key: 'hunter_wildpack',
+  name: 'Wild Beast',
+  behavior: 'attacker',
+  maxHP: WILD_PACK_TUNING.maxHP,
+  durationMs: WILD_PACK_TUNING.durationMs,
+  aggroRadius: WILD_PACK_TUNING.aggroRadius,
+  followRange: WILD_PACK_TUNING.followRange,
+  moveTilesPerSec: WILD_PACK_TUNING.moveTilesPerSec,
+  bodyRadius: WILD_PACK_TUNING.bodyRadius,
+  tint: WILD_PACK_TUNING.tint,
+  drawsAggro: true,
+  aggroPriority: AGGRO_TIER.MINION,
+  attackDamage: WILD_PACK_TUNING.attackDamage,
+  attackCooldownMs: WILD_PACK_TUNING.attackCooldownMs,
+  attackRange: WILD_PACK_TUNING.attackRange,
+  seekRange: WILD_PACK_TUNING.seekRange,
+  leashRange: WILD_PACK_TUNING.leashRange,
+};
+
 // MINI-DECOY (Spectral Echoes): tiny short-lived illusions on the decoy seam —
 // they pull light aggro (MINION tier, below any true tank) and simply stand there.
 export const MINI_DECOY_TUNING = {
@@ -888,6 +927,9 @@ export interface SummonBuff {
   readonly damageBonus?: number;
   readonly hpBonus?: number;
   readonly drBonus?: number;
+  /** +fraction of ATTACK SPEED (0.3 = swings 30% more often — the attack
+   *  cooldown divides by 1+this). Hunter's Bestial Rage / Trueshot Aura. */
+  readonly attackSpeedBonus?: number;
   readonly durationMs: number;
 }
 

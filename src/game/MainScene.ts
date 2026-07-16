@@ -125,6 +125,8 @@ import {
   GREAT_BEAST_CONFIG,
   BEAST_HORDE_CONFIG,
   BEAST_HORDE_TUNING,
+  WILD_PACK_CONFIG,
+  WILD_PACK_TUNING,
 } from '../summon/summonData';
 import { TAPESTRY_TUNING, BEAR_MIGHT_ID, ELEPHANT_RAGE_ID } from '../skills/druidTapestry';
 import { RESTORATION_TUNING, CLAY_ID, OIL_IMMUNITY_ID, OIL_VITALITY_ID } from '../skills/druidRestoration';
@@ -151,6 +153,9 @@ import { PRS_GRACE_TUNING, PROPHETIC_VISION_ID } from '../skills/priestGrace';
 import { SAV_EDGE_TUNING, WARRIORS_MOMENTUM_ID, SAV_CASCADE_TUNING } from '../skills/savageObsidian';
 import { SAV_BLOOD_TUNING } from '../skills/savageBlood';
 import { SAV_JAGUAR_TUNING, JAGUAR_FORM_ID, BLOOD_SCENT_ID } from '../skills/savageJaguar';
+import { HUN_BEAST_TUNING, PACK_TACTICS_ID, BEAST_TRAINING_ID } from '../skills/hunterBeast';
+import { HUN_MARKS_TUNING, TRUESHOT_AURA_ID } from '../skills/hunterMarksman';
+import { HUN_WILD_TUNING, VENOM_BLADES_ID, PACK_LEADER_ID, ALPHAS_FURY_ID } from '../skills/hunterFrenzy';
 import { PlayerPower } from '../player/PlayerPower';
 import { URIEL_SCENE } from '../story/urielData';
 import { URIEL_SENDOFF_LINES, RIFT_SCENE } from '../story/riftSceneData';
@@ -828,6 +833,16 @@ export class MainScene extends Phaser.Scene {
    *  targets in reach instead of all piling on the nearest. */
   hunterScatterUntil = 0;
   private hunterScatterCursor = 0;
+  /** The frame the scatter cursor was last reset on — resetting per frame keeps
+   *  each pet's round-robin pick STABLE across frames (3 pets over 2 foes would
+   *  otherwise shift every pet's target every frame and commit to none). */
+  private hunterScatterFrameTime = -1;
+  /** PACK TACTICS (Hunter keyed passive): while > 0 and ANY beast lives, the
+   *  player's damage funnels take ×(1+this). 0 for every other class. */
+  packTacticsBonus = 0;
+  /** PACK LEADER (Hunter keyed passive): while set and a beast stands within
+   *  radius, the player's damage funnels take ×(1+bonus). Null elsewhere. */
+  packLeader: { bonus: number; radius: number } | null = null;
   /**
    * CHANNELED-BEAM state (the channel primitive). Transient: a single active channel locks
    * one enemy, ticks damage, optionally trickles energy, and is cancelled by movement / any
@@ -2316,9 +2331,9 @@ export class MainScene extends Phaser.Scene {
   }
 
   /** The live melee damage (level-derived × skill multiplier from passives + buffs/forms
-   *  × the Savage frenzy momentum while armed). */
+   *  × the Savage frenzy momentum while armed × the Hunter pack bonuses while armed). */
   private playerDamage(): number {
-    return Math.round(this.progression.effectiveDamage * this.skillDamageMult * this.osteoDamageMult * this.frenzyMult());
+    return Math.round(this.progression.effectiveDamage * this.skillDamageMult * this.osteoDamageMult * this.frenzyMult() * this.hunterPackMult());
   }
 
   /** Level-derived max HP adjusted by skill passive/timed maxHP mods. */
@@ -2367,11 +2382,15 @@ export class MainScene extends Phaser.Scene {
     // SAMURAI keyed passives: the strike bleed + the parry upgrade, armed while owned.
     // POISONED EDGE (Assassin) rides the same strike-DoT hook (one class per save —
     // whichever venom/bleed is owned arms it; neither owned = null).
+    // VENOM BLADES (Hunter) rides the same strike-DoT hook as the Samurai bleed
+    // and the Assassin poison (one class per save — whichever is owned arms it).
     this.strikeBleed = this.skills.isUnlocked(RAZORS_EDGE_ID)
       ? { ...SAM_BLADE_TUNING.razor }
       : this.skills.isUnlocked(POISONED_EDGE_ID)
         ? { ...ASN_SHADOW_TUNING.poisoned }
-        : null;
+        : this.skills.isUnlocked(VENOM_BLADES_ID)
+          ? { ...HUN_WILD_TUNING.venom }
+          : null;
     this.parryRiposteBonus = this.skills.isUnlocked(COUNTERSTRIKE_ID) ? SAM_STANCE_TUNING.counter.riposteBonus : 0;
     this.parryRefundEnergy = this.skills.isUnlocked(COUNTERSTRIKE_ID) ? SAM_STANCE_TUNING.counter.energyRefund : 0;
     // ASSASSIN keyed passive: Trap Mastery's +1 armed-device cap (its faster
@@ -2386,6 +2405,10 @@ export class MainScene extends Phaser.Scene {
     }
     // SAVAGE keyed passive: Blood Scent — bleeding targets take ×(1+bonus).
     this.bloodScentBonus = this.skills.isUnlocked(BLOOD_SCENT_ID) ? SAV_JAGUAR_TUNING.scent.bonusVsBleeding : 0;
+    // HUNTER keyed passives: Pack Tactics (+you while a beast lives) and Pack
+    // Leader (+you while one stands CLOSE) — both live checks in hunterPackMult.
+    this.packTacticsBonus = this.skills.isUnlocked(PACK_TACTICS_ID) ? HUN_BEAST_TUNING.pack.playerDamageBonus : 0;
+    this.packLeader = this.skills.isUnlocked(PACK_LEADER_ID) ? { bonus: HUN_WILD_TUNING.leader.bonus, radius: HUN_WILD_TUNING.leader.radius } : null;
     // Block chance + strength (Double Block / Dual Shield) — rolled per hit in Health.
     if (this.playerHealth) {
       this.playerHealth.blockChance = Phaser.Math.Clamp(m.blockChance ?? 0, 0, 0.9);
@@ -2497,6 +2520,14 @@ export class MainScene extends Phaser.Scene {
       // TOGGLE forms run WITHOUT a timer (Infinity never expires; the exit cast above ends them).
       const duration = e.kind === 'transformation' && e.toggle ? Number.POSITIVE_INFINITY : e.durationMs;
       this.startTimedSkill(id, duration, e.stats, e.tint, aura);
+      // HUNTER keyed timed skills: Trueshot Aura and Alpha's Fury also empower
+      // the BEASTS for the same window (the pet-buff machinery; other classes
+      // never carry these ids, so this is inert everywhere else).
+      if (id === TRUESHOT_AURA_ID) {
+        this.summons.addBuff({ id, attackSpeedBonus: HUN_MARKS_TUNING.trueshot.petAttackSpeedBonus, durationMs: e.durationMs }, this.time.now);
+      } else if (id === ALPHAS_FURY_ID) {
+        this.summons.addBuff({ id, damageBonus: HUN_WILD_TUNING.alpha.petDamageBonus, attackSpeedBonus: HUN_WILD_TUNING.alpha.petAttackSpeedBonus, durationMs: e.durationMs }, this.time.now);
+      }
       this.showBanner(`${this.skillButtonLabel(def)} active!`, 1400);
     } else if (e.kind === 'debuff') {
       this.runDebuffSkill(e.radius);
@@ -3232,6 +3263,120 @@ export class MainScene extends Phaser.Scene {
       const c = SAV_JAGUAR_TUNING.snarl;
       const turned = this.confuseNearestEnemy(px, py, c.range, c.chance, c.durationMs, c.chipDamage, c.chipMs);
       this.showBanner(turned ? 'It flees into its own' : 'The snarl goes unheard', 1100);
+    } else if (action === 'hun_tame') {
+      // Hunter Beasts #1 — framework #1: the whittle-and-capture (refusals and
+      // empty casts whiff-refund inside; the whittle damage is skill-scaled).
+      const c = HUN_BEAST_TUNING.tame;
+      this.hunterTame({ range: c.range, whittleDamage: this.skillDamage(c.whittleDamage), thresholdPct: c.thresholdPct });
+    } else if (action === 'hun_focus') {
+      // Hunter Beasts #3 — framework #2: every beast hunts YOUR mark.
+      const c = HUN_BEAST_TUNING.focus;
+      this.hunterFocusCommand(c.range, c.durationMs);
+    } else if (action === 'hun_scatter') {
+      // Hunter Beasts #4 — framework #2: the beasts spread across the pack.
+      const c = HUN_BEAST_TUNING.scatter;
+      this.hunterScatterCommand(c.durationMs);
+    } else if (action === 'hun_great') {
+      // Hunter Beasts #5 — framework #3: the GREAT BEAST mode (cast again to
+      // return the base companion; one expression of the bond at a time).
+      this.setHunterPetMode(this.hunterPetMode === 'great' ? 'companion' : 'great');
+    } else if (action === 'hun_horde') {
+      // Hunter Beasts #6 — framework #3: the BEAST HORDE mode (same toggle rule).
+      this.setHunterPetMode(this.hunterPetMode === 'horde' ? 'companion' : 'horde');
+    } else if (action === 'hun_mend') {
+      // Hunter Beasts #8 — mend down the bond: heal the most wounded beast
+      // (whiff-refunds with no beast out — the ally rule).
+      const c = HUN_BEAST_TUNING.mend;
+      const beasts = this.hunterBeasts().filter((b) => b.health.current < b.health.max);
+      const target = beasts.sort((a, b) => a.health.ratio - b.health.ratio)[0] ?? this.hunterBeasts()[0];
+      if (!target) {
+        this.actionWhiffed = true;
+        this.showBanner('No beast to mend', 1000);
+      } else {
+        target.heal(c.heal);
+        this.spawnSkillRing(target.x, target.y, 46, 0xa0e8a0);
+        this.showBanner('The bond mends', 1000);
+      }
+    } else if (action === 'hun_rage') {
+      // Hunter Beasts #9 — the beasts frenzy (whiff-refunds with none out).
+      const c = HUN_BEAST_TUNING.rage;
+      if (this.hunterBeasts().length === 0) {
+        this.actionWhiffed = true;
+        this.showBanner('No beast to enrage', 1000);
+      } else {
+        this.summons.addBuff({ id: 'hun_rage', attackSpeedBonus: c.petAttackSpeedBonus, damageBonus: c.petDamageBonus, durationMs: c.durationMs }, this.time.now);
+        this.showBanner('BESTIAL RAGE', 1200);
+      }
+    } else if (action === 'hun_mastery') {
+      // Hunter Beasts #10 ultimate — the joint kill: mark the prey, every beast
+      // lunges it empowered while your shot lands with them.
+      const c = HUN_BEAST_TUNING.mastery;
+      const target = this.nearestEnemy(px, py, c.range);
+      if (!target) {
+        this.actionWhiffed = true;
+        this.showBanner('No prey to mark', 1000);
+      } else {
+        this.hunterScatterUntil = 0;
+        this.hunterFocus = { target, until: this.time.now + c.focusMs };
+        this.summons.addBuff({ id: 'hun_mastery', damageBonus: c.petDamageBonus, durationMs: c.focusMs }, this.time.now);
+        const a = Math.atan2(target.y - py, target.x - px);
+        this.projectiles.spawn({ x: px + Math.cos(a) * 18, y: py + Math.sin(a) * 18, dirX: Math.cos(a), dirY: Math.sin(a), speed: c.shotSpeed, damage: this.skillDamage(c.shotDamage), maxRange: c.range + 80, faction: 'player', color: 0xffe9a8, radius: c.shotRadius });
+        this.floatingText.show(target.x, target.y - 34, '◎', '#ffd24a', { fontSize: 18, riseBy: 10, durationMs: 900, depth: 14 });
+        this.showBanner('BEAST MASTERY — as one', 1400);
+        this.notifyBossesPlayerAction('ranged');
+      }
+    } else if (action === 'hun_multi') {
+      // Hunter Marksman #3 — three arrows on one breath (the flicker fan shape).
+      const c = HUN_MARKS_TUNING.multi;
+      const { dx, dy } = this.facingUnit();
+      const baseAng = Math.atan2(dy, dx);
+      const spread = (c.spreadDeg * Math.PI) / 180;
+      const dmg = this.skillDamage(c.damageEach);
+      for (let i = 0; i < c.boltCount; i++) {
+        const t = c.boltCount > 1 ? i / (c.boltCount - 1) - 0.5 : 0;
+        const a = baseAng + t * spread;
+        this.projectiles.spawn({ x: px + Math.cos(a) * 18, y: py + Math.sin(a) * 18, dirX: Math.cos(a), dirY: Math.sin(a), speed: c.speed, damage: dmg, maxRange: c.range, faction: 'player', color: 0xa0c86a, radius: c.radius });
+      }
+      this.notifyBossesPlayerAction('ranged');
+    } else if (action === 'hun_call') {
+      // Hunter Frenzy #7 — a TEMPORARY pack answers (never the bond: its own
+      // key, so its deaths touch nothing and mode swaps never cull it).
+      const c = WILD_PACK_TUNING;
+      const { dx, dy } = this.facingUnit();
+      for (let i = 0; i < c.count; i++) {
+        const a = (i / c.count) * Math.PI * 2;
+        this.summons.summon(WILD_PACK_CONFIG, px - dx * 40 + Math.cos(a) * 28, py - dy * 40 + Math.sin(a) * 28, c.count);
+      }
+      this.showBanner('The wild answers', 1200);
+    } else if (action === 'hun_hunt') {
+      // Hunter Frenzy #8 — the dash composite: leap the prey as every beast
+      // lunges WITH you (alone, the leap still lands — the standalone rule).
+      const c = HUN_WILD_TUNING.hunt;
+      const target = this.nearestEnemy(px, py, c.range);
+      if (!target) {
+        this.actionWhiffed = true;
+        this.showBanner('No prey in reach', 1000);
+      } else {
+        const dist = Phaser.Math.Distance.Between(px, py, target.x, target.y);
+        const a = Math.atan2(target.y - py, target.x - px);
+        this.player.facingX = Math.cos(a);
+        this.player.facingY = Math.sin(a);
+        this.leapSlam(dist, c.radius, this.skillDamage(c.damage), 0);
+        if (this.hunterBeasts().length > 0) {
+          this.hunterScatterUntil = 0;
+          this.hunterFocus = { target, until: this.time.now + c.focusMs };
+        }
+        this.showBanner('HUNT AS ONE', 1200);
+      }
+    } else if (action === 'hun_bloodlet') {
+      // Hunter Frenzy #9 — one heavy deliberate cut + the deep bleed (the
+      // Jagged Wound shape, slower and deeper).
+      const c = HUN_WILD_TUNING.bloodlet;
+      const { dx, dy } = this.facingUnit();
+      this.runComposedSteps([{ p: 'strike', at: 'front', range: c.range, damage: c.damage, windUpMs: c.windUpMs, tint: 0xd04a3a }]);
+      this.time.delayedCall(c.windUpMs + 30, () => {
+        this.applyDotInRange(this.player.x + dx * c.range * 0.6, this.player.y + dy * c.range * 0.6, c.range, c.dot.dmgPerTick, c.dot.tickMs, c.dot.durationMs, 0xd04a3a);
+      });
     }
   }
 
@@ -3416,6 +3561,7 @@ export class MainScene extends Phaser.Scene {
           ...(s.dot ? { dotOnImpact: { dmgPerTick: this.skillDamage(s.dot.dmgPerTick), tickMs: s.dot.tickMs, durationMs: s.dot.durationMs, radius: s.dot.radius, color: s.dot.color } } : {}),
           ...(s.seek ? { seek: true, ...(s.seekTurnRate !== undefined ? { seekTurnRate: s.seekTurnRate } : {}) } : {}),
           ...(s.onHit ? { impactRider: s.onHit } : {}),
+          ...(s.returning ? { returning: true } : {}), // the boomerang (Hunter framework)
         });
       }
       if (s.vuln) {
@@ -5209,7 +5355,7 @@ export class MainScene extends Phaser.Scene {
    *  × the Savage frenzy momentum while armed, × the cascade rank during a
    *  flagged Savage cast (1 everywhere else). */
   private skillDamage(base: number): number {
-    return Math.round(base * this.skillDamageMult * this.osteoDamageMult * this.frenzyMult() * this.cascadeCastMult);
+    return Math.round(base * this.skillDamageMult * this.osteoDamageMult * this.frenzyMult() * this.cascadeCastMult * this.hunterPackMult());
   }
 
   /** A quick expanding ring FX for a skill activation (world FX, main camera). */
@@ -5316,6 +5462,25 @@ export class MainScene extends Phaser.Scene {
     return this.summons.list.filter((s) => s.isAlive && this.isHunterPetKey(s.config.key));
   }
 
+  /** Every live Hunter beast — the bond's pets AND the temporary wild pack
+   *  (the pack passives count all of them; the bond logic counts only pets). */
+  hunterBeasts(): AlliedSummon[] {
+    return this.summons.list.filter((s) => s.isAlive && (this.isHunterPetKey(s.config.key) || s.config.key === WILD_PACK_CONFIG.key));
+  }
+
+  /** The Hunter pack damage multiplier (1 for every other class, always):
+   *  PACK TACTICS pays while ANY beast lives; PACK LEADER pays while one
+   *  stands within its radius. Folded into both damage funnels. */
+  private hunterPackMult(): number {
+    if (this.packTacticsBonus === 0 && !this.packLeader) return 1;
+    const beasts = this.hunterBeasts();
+    if (beasts.length === 0) return 1;
+    let mult = 1 + this.packTacticsBonus;
+    const pl = this.packLeader;
+    if (pl && beasts.some((b) => b.distanceTo(this.player.x, this.player.y) <= pl.radius)) mult *= 1 + pl.bonus;
+    return mult;
+  }
+
   /**
    * TAME — capture-and-cleanse (Hunter framework #1). Cast at the nearest enemy in
    * range: CORRUPTED-WILDLIFE above the health threshold takes the whittle damage;
@@ -5346,7 +5511,9 @@ export class MainScene extends Phaser.Scene {
       return 'refused';
     }
     if (beast.health.ratio > c.thresholdPct) {
-      const dealt = beast.takeHit(c.whittleDamage); // the whittle — soften it toward the line
+      // The whittle — soften it toward the line. Clamped so a scaled-up hit can
+      // NEVER kill what it's taming (the hand stays, deliberately, this side of it).
+      const dealt = beast.takeHit(Math.min(c.whittleDamage, Math.max(1, Math.ceil(beast.health.current - 1))));
       this.spawnDamageNumber(beast.x, beast.y - 24, dealt, '#ffcaa0');
       return 'whittle';
     }
@@ -5465,6 +5632,10 @@ export class MainScene extends Phaser.Scene {
       else return null; // marked but out of reach → normal seek until it closes
     }
     if (now < this.hunterScatterUntil) {
+      if (this.hunterScatterFrameTime !== now) {
+        this.hunterScatterFrameTime = now;
+        this.hunterScatterCursor = 0; // fresh count each frame → stable per-pet picks
+      }
       const list = this.combatEnemiesInRange(x, y, maxRange);
       if (list.length > 0) return list[this.hunterScatterCursor++ % list.length];
     }
@@ -5651,6 +5822,23 @@ export class MainScene extends Phaser.Scene {
     let drBonus = 0;
     let aggroRadiusMult = 1;
     let attackRangeMult = 1;
+    // HUNTER beast passives on the same per-summon aura seam: Pack Tactics
+    // (+beast damage always), Beast Training (+damage +HP), and Pack Leader's
+    // beast half (+damage while fighting AT the Hunter's side).
+    if (this.classId === 'hunter') {
+      const has = (id: string) => this.skills.isUnlocked(id);
+      if (this.isHunterPetKey(s.config.key) || s.config.key === WILD_PACK_CONFIG.key) {
+        if (has(PACK_TACTICS_ID)) damageBonus += HUN_BEAST_TUNING.pack.petDamageBonus;
+        if (has(BEAST_TRAINING_ID)) {
+          damageBonus += HUN_BEAST_TUNING.training.petDamageBonus;
+          hpBonus += HUN_BEAST_TUNING.training.petHpBonus;
+        }
+        if (has(PACK_LEADER_ID) && s.distanceTo(this.player.x, this.player.y) <= HUN_WILD_TUNING.leader.radius) {
+          damageBonus += HUN_WILD_TUNING.leader.bonus;
+        }
+      }
+      return { damageBonus, hpBonus, drBonus, aggroRadiusMult, attackRangeMult };
+    }
     if (this.classId !== 'necromancer') return { damageBonus, hpBonus, drBonus, aggroRadiusMult, attackRangeMult };
     const has = (id: string) => this.skills.isUnlocked(id);
     const key = s.config.key;

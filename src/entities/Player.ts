@@ -14,6 +14,7 @@ const MONK_TEXTURE_KEY = 'monk-figure'; // Monk (Lhasa ascetic) avatar
 const ASSASSIN_TEXTURE_KEY = 'assassin-figure'; // Assassin (Dubai knife-in-the-dark) avatar
 const PRIEST_TEXTURE_KEY = 'priest-figure'; // Priest (Rome keeper of the Light) avatar
 const SAVAGE_TEXTURE_KEY = 'savage-figure'; // Savage (Mexico City blood-and-sun bruiser) avatar
+const HUNTER_TEXTURE_KEY = 'hunter-figure'; // Hunter (Sydney beast-bonded tracker) avatar
 const WIDTH = 32; // ~1 tile wide
 const HEIGHT = 48; // ~1.5 tiles tall — fixes the "character = one giant block" look
 
@@ -30,6 +31,7 @@ function textureForClass(classId: string): string {
   if (classId === 'assassin') return ASSASSIN_TEXTURE_KEY;
   if (classId === 'priest') return PRIEST_TEXTURE_KEY;
   if (classId === 'savage') return SAVAGE_TEXTURE_KEY;
+  if (classId === 'hunter') return HUNTER_TEXTURE_KEY;
   return TEXTURE_KEY;
 }
 
@@ -63,6 +65,7 @@ export class Player {
     Player.ensureAssassinTexture(scene);
     Player.ensurePriestTexture(scene);
     Player.ensureSavageTexture(scene);
+    Player.ensureHunterTexture(scene);
 
     this.baseKey = textureForClass(classId);
     this.sprite = scene.physics.add.sprite(x, y, this.baseKey);
@@ -612,6 +615,54 @@ export class Player {
     g.fillRect(4.2, h - 25, 1.6, 3);
     g.fillRect(4.2, h - 20, 1.6, 3);
     g.generateTexture(SAVAGE_TEXTURE_KEY, w, h);
+    g.destroy();
+  }
+
+  /** Draw the Sydney HUNTER avatar (weathered bush coat, slouch hat, the bow
+   *  across the back, cleansed-green trim) as a generated texture — a CODE-DRAWN
+   *  PLACEHOLDER (a real sprite PNG drops in later via the sprite override
+   *  under this same key). Same footprint as the other figures. */
+  private static ensureHunterTexture(scene: Phaser.Scene): void {
+    if (scene.textures.exists(HUNTER_TEXTURE_KEY)) return;
+    const w = WIDTH;
+    const h = HEIGHT;
+    const g = scene.make.graphics({ x: 0, y: 0 }, false);
+    // Dark outline + the long weathered bush coat.
+    g.fillStyle(0x14200c, 1);
+    g.fillRoundedRect(4, 8, w - 8, h - 10, 8);
+    g.fillStyle(0x4a5a34, 1); // olive-drab coat
+    g.fillRoundedRect(6, 10, w - 12, h - 14, 6);
+    g.fillStyle(0x38482a, 1); // coat shadow panel
+    g.fillRect(w / 2 - 2, 16, 4, h - 28);
+    // The bow across the back: a pale arc past the left shoulder + string.
+    g.lineStyle(2.4, 0xd8c88a, 1);
+    g.beginPath();
+    g.arc(w / 2 - 9, h / 2 - 2, 15, Math.PI * 0.75, Math.PI * 1.6);
+    g.strokePath();
+    g.lineStyle(1, 0xe8e2c8, 0.9);
+    g.lineBetween(w / 2 - 20, h / 2 + 9, w / 2 - 7, h / 2 - 17);
+    // A leather quiver strap across the chest + green trim.
+    g.fillStyle(0x6a4a24, 1);
+    g.fillRect(8, 18, w - 16, 4);
+    g.fillStyle(0xa0c86a, 1); // the cleansed-green trim (bond colors)
+    g.fillRect(8, 22, w - 16, 2);
+    // Head under the slouch hat: tanned face, the wide brim, a dented crown.
+    g.fillStyle(0xc89a6a, 1); // face
+    g.fillCircle(w / 2, 14, 5.5);
+    g.fillStyle(0x14200c, 1); // eyes
+    g.fillCircle(w / 2 - 2.2, 14.5, 1);
+    g.fillCircle(w / 2 + 2.2, 14.5, 1);
+    g.fillStyle(0x3a2c14, 1); // hat brim (wide)
+    g.fillRoundedRect(w / 2 - 10, 9, 20, 4, 2);
+    g.fillStyle(0x4a3820, 1); // crown
+    g.fillRoundedRect(w / 2 - 6, 3, 12, 7, 3);
+    g.fillStyle(0xa0c86a, 1); // hat band
+    g.fillRect(w / 2 - 6, 8, 12, 2);
+    // Boots under the coat hem.
+    g.fillStyle(0x2a1e10, 1);
+    g.fillRoundedRect(9, h - 8, 6, 5, 2);
+    g.fillRoundedRect(w - 15, h - 8, 6, 5, 2);
+    g.generateTexture(HUNTER_TEXTURE_KEY, w, h);
     g.destroy();
   }
 }
