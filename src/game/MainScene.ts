@@ -843,6 +843,19 @@ export class MainScene extends Phaser.Scene {
   /** PACK LEADER (Hunter keyed passive): while set and a beast stands within
    *  radius, the player's damage funnels take ×(1+bonus). Null elsewhere. */
   packLeader: { bonus: number; radius: number } | null = null;
+  // --- Sundian framework primitives (composable/bespoke; class-agnostic) ---
+  /** THE TIDE (two-phase pulse): set while a tide is live at its point — phase 1
+   *  is the pull, phase 2 the reversal blast. Public-readable for the gate;
+   *  nulled by resets so a pending phase 2 dies with its world. */
+  tide: { x: number; y: number; phase: 1 | 2 } | null = null;
+  /** DRENCH stacks: enemy → stacks, in its OWN keyed store on the crystallize/
+   *  Shatter SHAPE — the Mage's crystallize ledger and the Savage cascade are
+   *  untouched by construction. Each stack applies a small slow; Depth Crush
+   *  consumes them. Public-readable for the gate. Pruned on crush/death/reset. */
+  drench = new Map<CombatEnemy, number>();
+  /** JEWELER'S ATTUNEMENT (Sundian keyed passive): every worn-regalia stat is
+   *  ×this when donned. 1 for every other class, always. */
+  regaliaAttunementMult = 1;
   /**
    * CHANNELED-BEAM state (the channel primitive). Transient: a single active channel locks
    * one enemy, ticks damage, optionally trickles energy, and is cancelled by movement / any
@@ -2267,6 +2280,7 @@ export class MainScene extends Phaser.Scene {
     this.clearFriendlyZones();
     this.clearEntangle();
     this.crystallize.clear();
+    this.clearSundianState(); // the tide settles, drench dries (regalia handled per-path)
     this.confused.clear();
     this.comboUltimate = null;
     this.voodoo = null; // WD bind state never survives a reset (summons are cleared too)
@@ -5654,6 +5668,146 @@ export class MainScene extends Phaser.Scene {
     }
   }
 
+  // --- Sundian framework: THE TIDE, drench + Depth Crush, the regalia ----------
+
+  /**
+   * THE TIDE (Sundian framework #1): a two-phase pulse at (x,y). Phase ONE drags
+   * every enemy within pullRadius toward the point (up to pullDistance each,
+   * never inside minGap) and wounds them — the tide's grip holds them between
+   * phases. After phaseGapMs, phase TWO REVERSES: everything within blastRadius
+   * is wounded again and thrown outward. Both damages are the caller's
+   * (pre-scaled). Riptide casts this directly; Tsunami composes shipped pieces.
+   */
+  tidePulse(
+    x: number,
+    y: number,
+    c: { pullRadius: number; pullDistance: number; minGap: number; pullDamage: number; phaseGapMs: number; blastRadius: number; blastDamage: number; blastKnockback: number; tint?: number },
+  ): void {
+    const tint = c.tint ?? 0x4ab8e8;
+    this.tide = { x, y, phase: 1 };
+    this.spawnSkillRing(x, y, c.pullRadius, tint);
+    const b = this.physics.world.bounds;
+    for (const e of this.combatEnemiesInRange(x, y, c.pullRadius)) {
+      const dx = x - e.x;
+      const dy = y - e.y;
+      const len = Math.hypot(dx, dy) || 1;
+      const step = Math.min(c.pullDistance, Math.max(0, len - c.minGap));
+      const nx = Phaser.Math.Clamp(e.x + (dx / len) * step, b.x + 8, b.x + b.width - 8);
+      const ny = Phaser.Math.Clamp(e.y + (dy / len) * step, b.y + 8, b.y + b.height - 8);
+      e.sprite.setPosition(nx, ny);
+      // The tide's grip: held until just past the reversal so the blast throws
+      // them from where the pull gathered them (the knockback freeze pattern).
+      this.stunnedEnemies.set(e, this.time.now + c.phaseGapMs + 120);
+      this.freezeEnemyBody(e, true);
+    }
+    this.aoeHitAll(x, y, c.pullRadius, c.pullDamage);
+    this.time.delayedCall(c.phaseGapMs, () => {
+      if (!this.tide) return; // a reset/world swap drained the tide mid-turn
+      this.tide.phase = 2;
+      this.spawnSkillRing(x, y, c.blastRadius, tint);
+      this.aoeHitAll(x, y, c.blastRadius, c.blastDamage);
+      this.knockbackEnemiesInRange(x, y, c.blastRadius, c.blastKnockback, 220);
+      this.tide = null;
+    });
+    this.lastCombatTime = this.time.now;
+  }
+
+  /** DRENCH (Sundian framework #2): add `stacks` to an enemy (capped at
+   *  `maxStacks`) in the drench ledger, applying a small slow PER STACK
+   *  (multiplicative floor-clamped, through the shipped slow registry). */
+  addDrench(e: CombatEnemy, stacks: number, maxStacks: number, slowPerStack: number, slowMs: number, slowFloor = 0.4): void {
+    if (!e.isAlive || stacks <= 0) return;
+    const next = Math.min(maxStacks, (this.drench.get(e) ?? 0) + stacks);
+    this.drench.set(e, next);
+    const factor = Math.max(slowFloor, 1 - slowPerStack * next);
+    const until = this.time.now + slowMs;
+    const cur = this.slowedEnemies.get(e);
+    this.slowedEnemies.set(e, { until: Math.max(cur?.until ?? 0, until), factor: Math.min(cur?.factor ?? 1, factor) });
+    this.floatingText.show(e.x, e.y - 34, `≋${next}`, '#7ad0f0', { fontSize: 14, riseBy: 12, durationMs: 700, depth: 14 });
+  }
+
+  /** DEPTH CRUSH: consume ALL drench stacks on enemies within `radius` of (x,y) —
+   *  `damagePerStack` (already scaled by the caller) × that enemy's stacks,
+   *  consuming EXACTLY those stacks (out-of-radius drench stays; the crystallize
+   *  ledger is a different book and is never opened). Returns what it consumed. */
+  crushDrench(x: number, y: number, radius: number, damagePerStack: number, tint = 0x4ab8e8): { hit: number; stacks: number } {
+    let hit = 0;
+    let stacks = 0;
+    this.spawnSkillRing(x, y, radius, tint);
+    for (const [e, n] of [...this.drench]) {
+      if (!e.isAlive) {
+        this.drench.delete(e); // prune the dead
+        continue;
+      }
+      if (Phaser.Math.Distance.Between(x, y, e.x, e.y) > radius) continue;
+      this.drench.delete(e); // consume exactly the crushed stacks
+      const dealt = e.takeHit(damagePerStack * n);
+      if (dealt > 0) {
+        this.dmgDealtAccum += dealt;
+        this.spawnDamageNumber(e.x, e.y - 24, dealt, '#7ad0f0');
+      }
+      this.spawnSkillRing(e.x, e.y, 26, tint);
+      hit++;
+      stacks += n;
+    }
+    this.lastCombatTime = this.time.now;
+    return { hit, stacks };
+  }
+
+  /** The regalia currently WORN (derived from the live timed entry — no shadow
+   *  state to desync). The Drowned Crown is its own sovereign entry, not a mode. */
+  get regaliaWorn(): 'pearl' | 'coral' | 'abyssal' | null {
+    const t = this.skillTimed.find((s) => s.id.startsWith('regalia_') && s.id !== 'regalia_crown');
+    return t ? (t.id.slice('regalia_'.length) as 'pearl' | 'coral' | 'abyssal') : null;
+  }
+
+  /** Is the Drowned Crown currently worn? (gate-observable) */
+  get drownedCrownOn(): boolean {
+    return this.skillTimed.some((s) => s.id === 'regalia_crown');
+  }
+
+  /** Every regalia stat × the Jeweler's Attunement multiplier (1 elsewhere). */
+  private attuneRegalia(stats: SkillStatMods): SkillStatMods {
+    const m = this.regaliaAttunementMult;
+    if (m === 1) return stats;
+    const out: Record<string, number> = {};
+    for (const [k, v] of Object.entries(stats)) if (typeof v === 'number') out[k] = v * m;
+    return out as SkillStatMods;
+  }
+
+  /**
+   * REGALIA (Sundian framework #3): don ONE worn aura — donning any regalia
+   * removes every other regalia entry (crown included), so the modes are
+   * mutually exclusive BY CONSTRUCTION (one jewel worn at a time). `null`
+   * takes the worn one off. Stats ride the shipped timed-skill machinery
+   * (regen/reflect/damage all flow through combinedSkillMods), × attunement.
+   */
+  wearRegalia(mode: 'pearl' | 'coral' | 'abyssal' | null, stats?: SkillStatMods, tint?: number): void {
+    this.skillTimed = this.skillTimed.filter((t) => !t.id.startsWith('regalia_'));
+    if (mode && stats) this.startTimedSkill(`regalia_${mode}`, Number.POSITIVE_INFINITY, this.attuneRegalia(stats), tint);
+    else this.recomputeSkillEffects(); // taken off — drop the aura's stats now
+  }
+
+  /** THE DROWNED CROWN: the timed sovereign state — every regalia at once,
+   *  empowered (the caller passes the three auras' COMBINED stats; each value
+   *  is ×empowerMult ×attunement). The single worn jewel yields to the crown;
+   *  when the reign ends nothing is worn (re-don by choice). */
+  wearDrownedCrown(durationMs: number, combinedStats: SkillStatMods, empowerMult: number, tint = 0x35e0c8): void {
+    this.skillTimed = this.skillTimed.filter((t) => !t.id.startsWith('regalia_'));
+    const empowered: Record<string, number> = {};
+    for (const [k, v] of Object.entries(combinedStats)) if (typeof v === 'number') empowered[k] = v * empowerMult;
+    this.startTimedSkill('regalia_crown', durationMs, this.attuneRegalia(empowered as SkillStatMods), tint);
+    this.showBanner('THE DROWNED CROWN', 1500);
+  }
+
+  /** Clear transient Sundian state (reset/load/death/world swap): the tide
+   *  settles (a pending phase 2 dies with it) and drench dries. The worn
+   *  regalia lives in skillTimed and follows THAT machinery's reset rules. */
+  clearSundianState(): void {
+    this.tide = null;
+    this.drench.clear();
+  }
+
   /** Sasquatch defeat: the banner + quest beat + XP, from ANY kill path (melee, AoE,
    *  projectile, dash) so the opening quest always advances no matter the class/skill. */
   private onSasquatchDefeated(): void {
@@ -6441,6 +6595,7 @@ export class MainScene extends Phaser.Scene {
     this.clearFriendlyZones();
     this.clearEntangle();
     this.crystallize.clear();
+    this.clearSundianState(); // the tide settles, drench dries (regalia handled per-path)
     this.confused.clear();
     this.comboUltimate = null;
     this.voodoo = null; // WD bind state never survives a reset (summons are cleared too)
@@ -7934,6 +8089,7 @@ export class MainScene extends Phaser.Scene {
       this.clearFriendlyZones(); // heal zones are runtime-only too
       this.clearEntangle();
       this.crystallize.clear();
+      this.clearSundianState(); // the tide settles, drench dries (regalia handled per-path)
       this.confused.clear();
       this.comboUltimate = null;
       this.voodoo = null;
@@ -10583,6 +10739,7 @@ export class MainScene extends Phaser.Scene {
     this.clearFriendlyZones();
     this.clearEntangle();
     this.crystallize.clear();
+    this.clearSundianState(); // the tide settles, drench dries (regalia handled per-path)
     this.confused.clear();
     this.comboUltimate = null;
     this.voodoo = null; // WD bind state never survives a reset (summons are cleared too)
@@ -11961,6 +12118,7 @@ export class MainScene extends Phaser.Scene {
     this.clearFriendlyZones();
     this.clearEntangle();
     this.crystallize.clear();
+    this.clearSundianState(); // the tide settles, drench dries (regalia handled per-path)
     this.confused.clear();
     this.comboUltimate = null;
     this.voodoo = null; // WD bind state never survives a reset (summons are cleared too)
