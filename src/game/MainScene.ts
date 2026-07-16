@@ -11247,6 +11247,13 @@ export class MainScene extends Phaser.Scene {
     const base = mentor ?? this.regionZoneArrivals[zone.id] ?? this.worlds[worldId].defaultArrival;
     const dest = this.worlds[worldId].map.nearestWalkableWorld(base.x, base.y + 70); // beside the mentor, not on top
     this.applyWorldSwap(worldId, dest);
+    // GUIDANCE (the class-start acceptance the factory anticipated): a NEW
+    // character's home opener goes ACTIVE from minute one, so the tracker and
+    // the arrow have something to show — the mentor talk still completes it
+    // (regionMentorTalk handles 'active' the same as 'available'). Earth homes
+    // returned above: the shipped WA opening stays NPC-given, tracker empty.
+    const opener = zone.questChain[0];
+    if (opener && this.chain.status(opener.id) === 'available') this.chain.accept(opener.id);
   }
 
   /** Disable every currently-live Earth enemy body; remember them for resume. */
@@ -12791,9 +12798,9 @@ export class MainScene extends Phaser.Scene {
         active: st === 'active',
       };
     });
-    // FACTORY-REGISTERED chains (built Europe zones): appended after the
+    // FACTORY-REGISTERED chains (EVERY built region): appended after the
     // hand-authored chain, grouped by zone, coded by beat position.
-    for (const zoneId of EUROPE_BUILT_ZONES) {
+    for (const zoneId of [...EUROPE_BUILT_ZONES, ...AFRICA_BUILT_ZONES, ...ASIA_BUILT_ZONES, ...FINAL_REGIONS_BUILT_ZONES]) {
       const zone = getZone(zoneId);
       if (!zone) continue;
       zone.questChain.forEach((beat, i) => {
@@ -13019,7 +13026,12 @@ export class MainScene extends Phaser.Scene {
     const q = this.chain.activeQuest;
     if (q) {
       const obj = this.chain.activeObjectiveDef;
-      this.tracker.show(q.title, (obj ? obj.text : '') + this.arcProgressSuffix());
+      // GENERATED BEATS: the tracker shows the beat's manifest SUMMARY — the
+      // objective text of a hand-authored beat is a HAND_AUTHORED_TODO
+      // placeholder, which is a designer marker, not player-facing copy.
+      const hit = this.regionBeatForQuest(q.id);
+      const text = hit ? hit.beat.summary : obj ? obj.text : '';
+      this.tracker.show(q.title, text + this.arcProgressSuffix());
     } else {
       this.tracker.hide();
     }
@@ -13149,7 +13161,10 @@ export class MainScene extends Phaser.Scene {
     const active = this.chain.activeQuest;
     if (active) {
       const obj = this.chain.activeObjectiveDef;
-      if (!obj || !obj.target) return null;
+      if (!obj) return null;
+      // GENERATED BEATS carry no TargetKind (target: null) — their arrow is
+      // derived from live runtime state by archetype instead.
+      if (!obj.target) return this.regionBeatArrowTarget(active.id);
       if (TARGET_WORLD[obj.target] !== this.activeWorld) {
         // HIERARCHICAL WAYPOINT CHAINING: a target inside a nested city routes
         // via the city gates (entrance from the parent map; the exit gate from
@@ -13179,7 +13194,105 @@ export class MainScene extends Phaser.Scene {
         return { x: p.x, y: p.y, label: offer.preAcceptHint };
       }
     }
+    // HOME OPENER pre-accept pointer (generated chains): a home character with
+    // no active quest but an AVAILABLE opener (a grandfathered save, a reset)
+    // sees the arrow at their mentor — the region twin of the giver loop above.
+    for (const m of this.regionMentors) {
+      if (this.chain.status(m.beatId) !== 'available') continue;
+      const hit = this.regionBeatForQuest(m.beatId);
+      const w = hit ? (PREBUILT_ZONE_WORLD[hit.zone.id] ?? CONTINENT_WORLD[hit.zone.continent]) : undefined;
+      if (w === this.activeWorld) return { x: m.pos.x, y: m.pos.y, label: hit?.beat.title ?? '' };
+    }
+    const cairoZone = getZone('cairo-nile-crown');
+    const cairoOpener = cairoZone?.questChain[0];
+    if (this.activeWorld === WORLD_EGYPT && cairoOpener && this.chain.status(cairoOpener.id) === 'available') {
+      return { x: this.cairoMentorPos.x, y: this.cairoMentorPos.y, label: cairoOpener.title };
+    }
     return null;
+  }
+
+  /**
+   * GUIDANCE (generated chains): the arrow/beacon target for an ACTIVE
+   * generated beat, derived from live runtime state by ARCHETYPE — generated
+   * quests mint no TargetKind entries (objective target: null), so the marker
+   * system resolves them here instead of resolveTarget. Same-world only, like
+   * every other arrow (the beat's zone world must be the active world). When
+   * a beat has several live objectives (fetch pickups), the NEAREST owns the
+   * arrow; targets retarget naturally as beats complete (the active quest
+   * changes → this resolves the next beat's state).
+   */
+  private regionBeatArrowTarget(questId: string): { x: number; y: number; label: string } | null {
+    const hit = this.regionBeatForQuest(questId);
+    if (!hit) return null;
+    const zoneWorld = PREBUILT_ZONE_WORLD[hit.zone.id] ?? CONTINENT_WORLD[hit.zone.continent];
+    if (!zoneWorld || zoneWorld !== this.activeWorld) return null; // no cross-world arrows
+    const { beat } = hit;
+    const label = beat.title;
+    const isCairo = hit.zone.id === 'cairo-nile-crown';
+    const rz = this.regionSpawnZones.find((z) => z.zoneId === hit.zone.id);
+    // Cairo's chain plays against its synthetic gate-road shape (the same
+    // center/radius updateCairoBinding feeds the fetch drive).
+    const shape = isCairo ? { center: this.cairoMentorPos, radiusPx: 520 } : rz ? { center: rz.center, radiusPx: rz.radiusPx } : undefined;
+    switch (beat.archetype) {
+      case 'story': {
+        // Opener → the mentor; Cairo discovery → the rot site; other story
+        // beats → the live walk-in marker (or its deterministic site pre-spawn).
+        const mentor = this.regionMentors.find((m) => m.beatId === beat.id);
+        if (mentor) return { x: mentor.pos.x, y: mentor.pos.y, label };
+        if (isCairo) {
+          const p = beat.id === 'cai-03-discovery' ? this.cairoDiscoveryPos : this.cairoMentorPos;
+          return { x: p.x, y: p.y, label };
+        }
+        if (this.beatMarker?.beatId === beat.id) return { x: this.beatMarker.pos.x, y: this.beatMarker.pos.y, label };
+        if (!shape) return null;
+        const site = this.activeMap().nearestWalkableWorld(shape.center.x - shape.radiusPx * 0.55, shape.center.y + shape.radiusPx * 0.25);
+        return { x: site.x, y: site.y, label };
+      }
+      case 'deliver': {
+        const d = this.beatDelivery;
+        if (d && d.beatId === beat.id) {
+          return d.carrying ? { x: d.to.x, y: d.to.y, label: `Deliver to ${d.toName}` } : { x: d.from.x, y: d.from.y, label: 'Pick up the delivery' };
+        }
+        const from = isCairo ? this.cairoMentorPos : this.regionMentors.find((m) => m.zoneId === hit.zone.id)?.pos;
+        return from ? { x: from.x, y: from.y, label: 'Pick up the delivery' } : null;
+      }
+      case 'fetch': {
+        const p = this.beatPickups;
+        if (p && p.beatId === beat.id) {
+          let best: { x: number; y: number } | null = null;
+          let bd = Infinity;
+          for (const it of p.items) {
+            if (it.taken) continue;
+            const dd = Phaser.Math.Distance.Between(this.player.x, this.player.y, it.x, it.y);
+            if (dd < bd) {
+              bd = dd;
+              best = it;
+            }
+          }
+          if (best) return { x: best.x, y: best.y, label };
+        }
+        return shape ? { x: shape.center.x, y: shape.center.y, label } : null;
+      }
+      case 'escort': {
+        const e = this.escort;
+        if (e && e.beatId === beat.id) return { x: e.npcSprite.x, y: e.npcSprite.y, label };
+        return shape ? { x: shape.center.x, y: shape.center.y, label } : null;
+      }
+      case 'boss': {
+        if (this.championBoss && this.championBeatId === beat.id) return { x: this.championBoss.x, y: this.championBoss.y, label };
+        if (this.beatElite?.beatId === beat.id) return { x: this.beatElite.entity.sprite.x, y: this.beatElite.entity.sprite.y, label };
+        if (isCairo) {
+          const rec = this.cairoLive.find((r) => r.bossBeatId === beat.id);
+          if (rec) return { x: rec.post.x, y: rec.post.y, label };
+        }
+        const anchor = this.regionBossAnchors[hit.zone.id];
+        if (anchor) return { x: anchor.x, y: anchor.y, label };
+        return shape ? { x: shape.center.x, y: shape.center.y, label } : null;
+      }
+      // 'clear' + 'portal_approach': the zone's ground is the objective area.
+      default:
+        return shape ? { x: shape.center.x, y: shape.center.y, label } : null;
+    }
   }
 
   /** Resolve a quest objective's TargetKind to a world position for the marker. */
