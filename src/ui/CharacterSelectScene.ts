@@ -25,6 +25,7 @@ const CLASS_OPTIONS: ClassOption[] = [
   { id: 'monk', name: 'Monk', blurb: 'Empty hands. Full spirit.', fill: 0x1c3430, stroke: 0xa8ffd0 },
   { id: 'assassin', name: 'Assassin', blurb: 'Hidden blades. Empty shadows.', fill: 0x26222e, stroke: 0x9a9ab8 },
   { id: 'priest', name: 'Priest', blurb: "Heaven lied. The Light didn't.", fill: 0x3a3220, stroke: 0xffe9a8 },
+  { id: 'savage', name: 'Savage', blurb: 'Blood for the sun. Fury for the rest.', fill: 0x3a1c14, stroke: 0xff8a5a },
 ];
 
 /**

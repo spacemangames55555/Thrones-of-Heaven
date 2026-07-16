@@ -120,6 +120,8 @@ import {
   REVENANT_TUNING,
   ASTRAL_DECOY_CONFIG,
   ASTRAL_DECOY_TUNING,
+  JAGUAR_CONFIG,
+  JAGUAR_TUNING,
 } from '../summon/summonData';
 import { TAPESTRY_TUNING, BEAR_MIGHT_ID, ELEPHANT_RAGE_ID } from '../skills/druidTapestry';
 import { RESTORATION_TUNING, CLAY_ID, OIL_IMMUNITY_ID, OIL_VITALITY_ID } from '../skills/druidRestoration';
@@ -143,6 +145,9 @@ import { ASN_SHADOW_TUNING, POISONED_EDGE_ID } from '../skills/assassinShadow';
 import { PRS_LIGHT_TUNING, PRS_FORTRESS_ID } from '../skills/priestLight';
 import { PRS_REBUKE_TUNING } from '../skills/priestRebuke';
 import { PRS_GRACE_TUNING, PROPHETIC_VISION_ID } from '../skills/priestGrace';
+import { SAV_EDGE_TUNING, WARRIORS_MOMENTUM_ID } from '../skills/savageObsidian';
+import { SAV_BLOOD_TUNING } from '../skills/savageBlood';
+import { SAV_JAGUAR_TUNING } from '../skills/savageJaguar';
 import { PlayerPower } from '../player/PlayerPower';
 import { URIEL_SCENE } from '../story/urielData';
 import { URIEL_SENDOFF_LINES, RIFT_SCENE } from '../story/riftSceneData';
@@ -2321,6 +2326,13 @@ export class MainScene extends Phaser.Scene {
     // ASSASSIN keyed passive: Trap Mastery's +1 armed-device cap (its faster
     // arming + stronger payloads fold in where a device is placed).
     this.trapCap = ASN_TRAP_TUNING.baseCap + (this.skills.isUnlocked(TRAP_MASTERY_ID) ? ASN_TRAP_TUNING.mastery.capBonus : 0);
+    // SAVAGE keyed passive: Warrior's Momentum arms the frenzy stacks (already-
+    // armed frenzy keeps its live stacks through a recompute).
+    if (this.skills.isUnlocked(WARRIORS_MOMENTUM_ID)) {
+      if (!this.frenzy) this.armFrenzy(SAV_EDGE_TUNING.momentum.perStackMult, SAV_EDGE_TUNING.momentum.maxStacks, SAV_EDGE_TUNING.momentum.decayMs);
+    } else if (this.frenzy) {
+      this.disarmFrenzy();
+    }
     // Block chance + strength (Double Block / Dual Shield) — rolled per hit in Health.
     if (this.playerHealth) {
       this.playerHealth.blockChance = Phaser.Math.Clamp(m.blockChance ?? 0, 0, 0.9);
@@ -3091,6 +3103,85 @@ export class MainScene extends Phaser.Scene {
       this.vanish(c.durationMs, c.durationMs);
       this.startTimedSkill('prs_gr_ascend', c.durationMs, { regenPerSec: c.regenPerSec }, c.tint);
       this.showBanner('Ascendance', 1100);
+    } else if (action === 'sav_jagged') {
+      // Savage Obsidian #2 — the tearing strike whose wound keeps bleeding.
+      const c = SAV_EDGE_TUNING.jagged;
+      const { dx, dy } = this.facingUnit();
+      this.runComposedSteps([{ p: 'strike', at: 'front', range: c.range, damage: c.damage, tint: 0xd04a3a }]);
+      this.applyDotInRange(px + dx * c.range * 0.6, py + dy * c.range * 0.6, c.range, c.dot.dmgPerTick, c.dot.tickMs, c.dot.durationMs, 0xd04a3a);
+    } else if (action === 'sav_leap') {
+      // Savage Obsidian #4 — extension #2: the aimed jump + slam + knockdown.
+      const c = SAV_EDGE_TUNING.leap;
+      this.leapSlam(c.distance, c.radius, this.skillDamage(c.damage), c.stunMs);
+    } else if (action === 'sav_roar') {
+      // Savage Obsidian #7 — pure fear: everything near slows + strikes softer.
+      const c = SAV_EDGE_TUNING.roar;
+      this.spawnSkillRing(px, py, c.radius, 0xff8a5a);
+      this.slowEnemiesInRange(px, py, c.radius, c.slowMs, c.slowFactor);
+      if (this.combatEnemiesInRange(px, py, c.radius).length > 0) this.setPoisonWeaken(c.weaken, c.weakenMs);
+      this.showBanner('The roar carries', 1100);
+      this.lastCombatTime = this.time.now;
+    } else if (action === 'sav_headtaker') {
+      // Savage Obsidian #8 — extension #4: the low-health execute.
+      const c = SAV_EDGE_TUNING.headtaker;
+      const { dx, dy } = this.facingUnit();
+      this.breakPlayerStealth();
+      this.executeHitAll(px + dx * c.reach, py + dy * c.reach, c.radius, this.skillDamage(c.damage), c.threshold, c.mult);
+    } else if (action === 'sav_slaughter') {
+      // Savage Obsidian #10 ultimate — the combo-ultimate machinery, heavy beat.
+      const c = SAV_EDGE_TUNING.slaughter;
+      this.startComboUltimate('sav_ob_slaughter', {
+        durationMs: c.durationMs, intervalMs: c.intervalMs, range: c.range, damage: c.damage,
+        jumps: c.jumps, jumpRange: c.jumpRange, falloff: c.falloff, tint: c.tint,
+        stats: { damageMult: c.damageMult },
+      });
+      this.showBanner('ENDLESS SLAUGHTER', 1400);
+    } else if (action === 'sav_crimson') {
+      // Savage Blood #3 — extension #3: the nova paid in blood (refusal whiffs).
+      const c = SAV_BLOOD_TUNING.crimson;
+      if (!this.payBloodPrice(c.bloodCost)) this.actionWhiffed = true;
+      else this.runComposedSteps([{ p: 'strike', at: 'self', radius: c.radius, damage: c.damage, tint: 0xd04a3a }]);
+    } else if (action === 'sav_sacrifice') {
+      // Savage Blood #7 — extension #3: the great fury paid in blood.
+      const c = SAV_BLOOD_TUNING.sacrifice;
+      if (!this.payBloodPrice(c.bloodCost)) {
+        this.actionWhiffed = true;
+      } else {
+        this.startTimedSkill('sav_br_sacrifice', c.durationMs, { damageMult: c.damageMult }, c.tint);
+        this.showBanner('The altar accepts', 1200);
+      }
+    } else if (action === 'sav_hunger') {
+      // Savage Blood #10 ultimate — the devouring nova: blood out, life back per bite.
+      const c = SAV_BLOOD_TUNING.hunger;
+      if (!this.payBloodPrice(c.bloodCost)) {
+        this.actionWhiffed = true;
+      } else {
+        this.runComposedSteps([{ p: 'strike', at: 'self', radius: c.radius, damage: c.damage, tint: 0xd04a3a, healPerHit: c.healPerHit, maxHeals: c.maxHeals }]);
+        this.showBanner("BLOOD GOD'S HUNGER", 1400);
+      }
+    } else if (action === 'sav_lunge') {
+      // Savage Jaguar #1 — the pounce: damage + knockdown along the path.
+      const c = SAV_JAGUAR_TUNING.lunge;
+      this.breakPlayerStealth(); // it's an attack
+      this.startCharge({ distance: c.distance, damage: this.skillDamage(c.damage), knockdownMs: c.knockdownMs });
+    } else if (action === 'sav_snarl') {
+      // Savage Jaguar #2 — the confusion reuse: prey turns on its own kind.
+      const c = SAV_JAGUAR_TUNING.snarl;
+      const turned = this.confuseNearestEnemy(px, py, c.range, c.chance, c.durationMs, c.chipDamage, c.chipMs);
+      this.showBanner(turned ? 'It flees into its own' : 'The snarl goes unheard', 1100);
+    } else if (action === 'sav_jaguar') {
+      // Savage Jaguar #3 — the bleeding attacker companion.
+      this.summonAlliedUnits(JAGUAR_CONFIG, 1, JAGUAR_TUNING.maxConcurrent);
+      this.showBanner('The spotted shadow answers', 1200);
+    } else if (action === 'sav_pack') {
+      // Savage Jaguar #6 — the ally-bond behind the ALLY RULE (no pack = whiff).
+      const c = SAV_JAGUAR_TUNING.pack;
+      if (this.summons.list.some((sm) => sm.isAlive)) {
+        this.startAllyBond(c.sharePct, c.durationMs);
+      } else {
+        this.showBanner('No pack to share the wound', 1000);
+        this.actionWhiffed = true;
+      }
     }
   }
 
