@@ -156,6 +156,9 @@ import { SAV_JAGUAR_TUNING, JAGUAR_FORM_ID, BLOOD_SCENT_ID } from '../skills/sav
 import { HUN_BEAST_TUNING, PACK_TACTICS_ID, BEAST_TRAINING_ID } from '../skills/hunterBeast';
 import { HUN_MARKS_TUNING, TRUESHOT_AURA_ID } from '../skills/hunterMarksman';
 import { HUN_WILD_TUNING, VENOM_BLADES_ID, PACK_LEADER_ID, ALPHAS_FURY_ID } from '../skills/hunterFrenzy';
+import { SUN_TIDE_TUNING, DEEPER_DRENCH_ID, EBB_FLOW_ID } from '../skills/sundianTidecaller';
+import { SUN_BLADE_TUNING, WATERLOGGED_ID, WRATH_DEEP_ID } from '../skills/sundianBlade';
+import { SUN_REGALIA_TUNING, ATTUNEMENT_ID } from '../skills/sundianRegalia';
 import { PlayerPower } from '../player/PlayerPower';
 import { URIEL_SCENE } from '../story/urielData';
 import { URIEL_SENDOFF_LINES, RIFT_SCENE } from '../story/riftSceneData';
@@ -856,6 +859,20 @@ export class MainScene extends Phaser.Scene {
   /** JEWELER'S ATTUNEMENT (Sundian keyed passive): every worn-regalia stat is
    *  ×this when donned. 1 for every other class, always. */
   regaliaAttunementMult = 1;
+  /** DRENCH deepener (Sundian keyed passive): +stacks per application and a
+   *  harder slow per stack. 0 for every other class. */
+  drenchStacksBonus = 0;
+  drenchSlowBonus = 0;
+  /** EBB AND FLOW (Sundian keyed passive): Tide (energy) returned per drench
+   *  stack CONSUMED by Depth Crush. 0 elsewhere. */
+  drenchRefundPerStack = 0;
+  /** WATERLOGGED EDGE / WRATH OF THE DEEP (Sundian keyed): while set, every
+   *  melee STRIKE drenches what it hits (the Razor's Edge seam, water for
+   *  blood); the form deepens it and arms the per-hit splash. */
+  strikeDrench: { stacks: number; maxStacks: number; slowPerStack: number; slowMs: number } | null = null;
+  wrathSplash: { radius: number; damage: number } | null = null;
+  /** TIDAL TALISMAN: while now < until, energy costs are ×mult. Null elsewhere. */
+  energyDiscount: { until: number; mult: number } | null = null;
   /**
    * CHANNELED-BEAM state (the channel primitive). Transient: a single active channel locks
    * one enemy, ticks damage, optionally trickles energy, and is cancelled by movement / any
@@ -2423,6 +2440,20 @@ export class MainScene extends Phaser.Scene {
     // Leader (+you while one stands CLOSE) — both live checks in hunterPackMult.
     this.packTacticsBonus = this.skills.isUnlocked(PACK_TACTICS_ID) ? HUN_BEAST_TUNING.pack.playerDamageBonus : 0;
     this.packLeader = this.skills.isUnlocked(PACK_LEADER_ID) ? { bonus: HUN_WILD_TUNING.leader.bonus, radius: HUN_WILD_TUNING.leader.radius } : null;
+    // SUNDIAN keyed passives: the drench deepener + the Tide-refund + the
+    // attunement multiplier, and the strike-drench hook (Waterlogged Edge;
+    // WRATH OF THE DEEP deepens it and arms the per-hit splash while live).
+    this.drenchStacksBonus = this.skills.isUnlocked(DEEPER_DRENCH_ID) ? SUN_TIDE_TUNING.deeper.stacksBonus : 0;
+    this.drenchSlowBonus = this.skills.isUnlocked(DEEPER_DRENCH_ID) ? SUN_TIDE_TUNING.deeper.slowPerStackBonus : 0;
+    this.drenchRefundPerStack = this.skills.isUnlocked(EBB_FLOW_ID) ? SUN_TIDE_TUNING.ebb.energyPerStack : 0;
+    this.regaliaAttunementMult = this.skills.isUnlocked(ATTUNEMENT_ID) ? 1 + SUN_REGALIA_TUNING.attunement.bonus : 1;
+    const wrathLive = this.skillTimed.some((t) => t.id === WRATH_DEEP_ID && this.time.now < t.endsAt);
+    this.strikeDrench = wrathLive
+      ? { stacks: SUN_BLADE_TUNING.wrath.formDrenchStacks + this.drenchStacksBonus, maxStacks: SUN_TIDE_TUNING.drench.maxStacks, slowPerStack: SUN_TIDE_TUNING.drench.slowPerStack + this.drenchSlowBonus, slowMs: SUN_TIDE_TUNING.drench.slowMs }
+      : this.skills.isUnlocked(WATERLOGGED_ID)
+        ? { stacks: SUN_BLADE_TUNING.edge.stacks + this.drenchStacksBonus, maxStacks: SUN_TIDE_TUNING.drench.maxStacks, slowPerStack: SUN_TIDE_TUNING.drench.slowPerStack + this.drenchSlowBonus, slowMs: SUN_TIDE_TUNING.drench.slowMs }
+        : null;
+    this.wrathSplash = wrathLive ? { radius: SUN_BLADE_TUNING.wrath.splashRadius, damage: SUN_BLADE_TUNING.wrath.splashDamage } : null;
     // Block chance + strength (Double Block / Dual Shield) — rolled per hit in Health.
     if (this.playerHealth) {
       this.playerHealth.blockChance = Phaser.Math.Clamp(m.blockChance ?? 0, 0, 0.9);
@@ -2480,7 +2511,11 @@ export class MainScene extends Phaser.Scene {
       return;
     }
     if (this.time.now < (this.skillCooldownUntil[id] ?? 0)) return; // on cooldown
-    const energyCost = 'energyCost' in e ? e.energyCost ?? 0 : 0;
+    let energyCost = 'energyCost' in e ? e.energyCost ?? 0 : 0;
+    // TIDAL TALISMAN (Sundian): while live, every skill costs ×mult of its Tide.
+    if (energyCost > 0 && this.energyDiscount && this.time.now < this.energyDiscount.until) {
+      energyCost = Math.round(energyCost * this.energyDiscount.mult);
+    }
     if (energyCost > 0 && this.energy.current < energyCost) return; // not enough energy
     // CHANNEL: defer the cooldown to channel END, and only start if a target is in range
     // (so a whiffed tap costs nothing). Handles its own energy spend.
@@ -3391,6 +3426,147 @@ export class MainScene extends Phaser.Scene {
       this.time.delayedCall(c.windUpMs + 30, () => {
         this.applyDotInRange(this.player.x + dx * c.range * 0.6, this.player.y + dy * c.range * 0.6, c.range, c.dot.dmgPerTick, c.dot.tickMs, c.dot.durationMs, 0xd04a3a);
       });
+    } else if (action === 'sun_lash') {
+      // Sundian Tidecaller #1 — the whipping jet: auto-targets the nearest foe,
+      // cuts, and leaves its drench (whiff-refunds with no one in reach).
+      const c = SUN_TIDE_TUNING.lash;
+      const target = this.nearestEnemy(px, py, c.range);
+      if (!target) {
+        this.actionWhiffed = true;
+        this.showBanner('No target in range', 800);
+      } else {
+        this.spawnLineFx(px, py, target.x, target.y, 5, 0x4ab8e8);
+        this.aoeHitAll(target.x, target.y, 30, this.skillDamage(c.damage));
+        this.addDrench(target, c.drenchStacks + this.drenchStacksBonus, SUN_TIDE_TUNING.drench.maxStacks, SUN_TIDE_TUNING.drench.slowPerStack + this.drenchSlowBonus, SUN_TIDE_TUNING.drench.slowMs);
+        this.notifyBossesPlayerAction('ranged');
+      }
+    } else if (action === 'sun_undertow') {
+      // Sundian Tidecaller #2 — the dragging zone: one inward drag, then a
+      // slowing churn (the shipped hazard machinery).
+      const c = SUN_TIDE_TUNING.undertow;
+      const { dx, dy } = this.facingUnit();
+      this.pullEnemiesToward(px + dx * c.placeAhead, py + dy * c.placeAhead, c.radius + 60, c.pullDistance, c.minGap);
+      this.runComposedSteps([{ p: 'hazard', at: 'ahead', placeAhead: c.placeAhead, radius: c.radius, tickDamage: c.tickDamage, tickMs: c.tickMs, durationMs: c.durationMs, slowFactor: c.slowFactor, fill: 0x143a5a, stroke: 0x4ab8e8 }]);
+    } else if (action === 'sun_riptide') {
+      // Sundian Tidecaller #3 — framework #1 direct: the two-phase tide ahead.
+      const c = SUN_TIDE_TUNING.riptide;
+      const { dx, dy } = this.facingUnit();
+      this.tidePulse(px + dx * c.placeAhead, py + dy * c.placeAhead, {
+        pullRadius: c.pullRadius, pullDistance: c.pullDistance, minGap: c.minGap, pullDamage: this.skillDamage(c.pullDamage),
+        phaseGapMs: c.phaseGapMs, blastRadius: c.blastRadius, blastDamage: this.skillDamage(c.blastDamage), blastKnockback: c.blastKnockback,
+      });
+    } else if (action === 'sun_crush') {
+      // Sundian Tidecaller #7 — framework #2's detonation: consume every drench
+      // stack around the target (whiff-refunds with no target in reach).
+      const c = SUN_TIDE_TUNING.crush;
+      const target = this.nearestEnemy(px, py, c.range);
+      if (!target) {
+        this.actionWhiffed = true;
+        this.showBanner('No target in range', 800);
+      } else {
+        const res = this.crushDrench(target.x, target.y, c.radius, this.skillDamage(c.damagePerStack));
+        if (res.stacks === 0) this.showBanner('Nothing drenched to crush', 900);
+      }
+    } else if (action === 'sun_whirlpool') {
+      // Sundian Tidecaller #8 — the churning pit: drag in, then grind.
+      const c = SUN_TIDE_TUNING.whirlpool;
+      const { dx, dy } = this.facingUnit();
+      this.pullEnemiesToward(px + dx * c.placeAhead, py + dy * c.placeAhead, c.radius + 60, c.pullDistance, c.minGap);
+      this.runComposedSteps([{ p: 'hazard', at: 'ahead', placeAhead: c.placeAhead, radius: c.radius, tickDamage: c.tickDamage, tickMs: c.tickMs, durationMs: c.durationMs, slowFactor: c.slowFactor, fill: 0x0c2a4a, stroke: 0x35b0e8 }]);
+    } else if (action === 'sun_tsunami') {
+      // Sundian Tidecaller #10 ultimate — the great wave: a wide crushing push
+      // that DRENCHES everything it touches (cone + knockback + the ledger).
+      const c = SUN_TIDE_TUNING.tsunami;
+      const { dx, dy } = this.facingUnit();
+      const half = (c.coneHalfAngleDeg * Math.PI) / 180;
+      const soaked = this.combatEnemiesInRange(px, py, c.range).filter((e) => this.inCone(px, py, dx, dy, e.x, e.y, c.range, half));
+      this.runComposedSteps([{ p: 'cone', range: c.range, halfAngleDeg: c.coneHalfAngleDeg, damage: c.damage, knockback: c.knockback, tint: 0x4ab8e8 }]);
+      for (const e of soaked) this.addDrench(e, c.drenchStacks + this.drenchStacksBonus, SUN_TIDE_TUNING.drench.maxStacks, SUN_TIDE_TUNING.drench.slowPerStack + this.drenchSlowBonus, SUN_TIDE_TUNING.drench.slowMs);
+      this.showBanner('TSUNAMI', 1500);
+    } else if (action === 'sun_trident') {
+      // Sundian Blade #1 — the fisher-king thrust: strike + its drench.
+      const c = SUN_BLADE_TUNING.trident;
+      const { dx, dy } = this.facingUnit();
+      this.runComposedSteps([{ p: 'strike', at: 'front', range: c.range, damage: c.damage, tint: 0x4ab8e8 }]);
+      for (const e of this.combatEnemiesInRange(px + dx * c.range * 0.6, py + dy * c.range * 0.6, c.range)) {
+        this.addDrench(e, c.drenchStacks + this.drenchStacksBonus, SUN_TIDE_TUNING.drench.maxStacks, SUN_TIDE_TUNING.drench.slowPerStack + this.drenchSlowBonus, SUN_TIDE_TUNING.drench.slowMs);
+      }
+    } else if (action === 'sun_crashing') {
+      // Sundian Blade #3 — conditional: the DRENCHED take ×mult, the dry the
+      // ordinary blow (the Blood Scent two-pass position-filter pattern).
+      const c = SUN_BLADE_TUNING.crashing;
+      const { dx, dy } = this.facingUnit();
+      const fx = px + dx * c.range * 0.6;
+      const fy = py + dy * c.range * 0.6;
+      this.spawnSkillRing(fx, fy, c.range, 0x2a6a9a);
+      const dmg = this.skillDamage(c.damage);
+      const wet = (ex: number, ey: number): boolean => [...this.drench.keys()].some((e) => e.isAlive && e.x === ex && e.y === ey);
+      this.aoeHitAllRaw(fx, fy, c.range, dmg * c.drenchedMult, (ex, ey) => wet(ex, ey));
+      this.aoeHitAllRaw(fx, fy, c.range, dmg, (ex, ey) => !wet(ex, ey));
+      this.breakPlayerStealth();
+    } else if (action === 'sun_grasp') {
+      // Sundian Blade #9 — the sea takes hold: root the nearest + drain it.
+      const c = SUN_BLADE_TUNING.grasp;
+      this.rootNearestEnemy(px, py, c.range, c.rootMs);
+      this.runComposedSteps([{ p: 'drain', range: c.range, damage: c.damage, healPct: c.healPct, tint: 0x35b0e8 }]);
+    } else if (action === 'sun_pearl' || action === 'sun_coral' || action === 'sun_bands') {
+      // Sundian Regalia #2/#3/#4 — the three worn auras (framework #3): cast to
+      // DON (excluding whatever else was worn), cast again to take it off.
+      const mode = action === 'sun_pearl' ? 'pearl' : action === 'sun_coral' ? 'coral' : 'abyssal';
+      const wearing = this.regaliaWorn === mode;
+      if (wearing) {
+        this.wearRegalia(null);
+        this.showBanner('The jewel comes off', 1000);
+      } else if (mode === 'pearl') {
+        this.wearRegalia('pearl', { regenPerSec: SUN_REGALIA_TUNING.pearl.regenPerSec }, SUN_REGALIA_TUNING.pearl.tint);
+        this.showBanner('The Pearl Diadem settles', 1100);
+      } else if (mode === 'coral') {
+        this.wearRegalia('coral', { reflectPct: SUN_REGALIA_TUNING.coralSignet.reflectPct }, SUN_REGALIA_TUNING.coralSignet.tint);
+        this.showBanner('The Coral Signet bristles', 1100);
+      } else {
+        this.wearRegalia('abyssal', { damageMult: SUN_REGALIA_TUNING.bands.damageMult }, SUN_REGALIA_TUNING.bands.tint);
+        this.showBanner('The Abyssal Bands press down', 1100);
+      }
+    } else if (action === 'sun_talisman') {
+      // Sundian Regalia #6 — the tide turns for you: haste + cheaper casts.
+      const c = SUN_REGALIA_TUNING.talisman;
+      this.startTimedSkill('sun_rg_talisman', c.durationMs, { attackSpeedMult: c.attackSpeedMult }, c.tint);
+      this.energyDiscount = { until: this.time.now + c.durationMs, mult: c.energyCostMult };
+      this.showBanner('The talisman turns with the tide', 1200);
+    } else if (action === 'sun_curse') {
+      // Sundian Regalia #8 — the drowned grudge: weaken + slow around the mark.
+      const c = SUN_REGALIA_TUNING.curse;
+      const target = this.nearestEnemy(px, py, c.range);
+      if (!target) {
+        this.actionWhiffed = true;
+        this.showBanner('No one to curse', 900);
+      } else {
+        this.spawnSkillRing(target.x, target.y, c.radius, 0x6a8aa0);
+        this.slowEnemiesInRange(target.x, target.y, c.radius, c.slowMs, c.slowFactor);
+        this.setPoisonWeaken(c.weaken, c.weakenMs);
+        this.showBanner("The drowned man's grudge takes hold", 1100);
+      }
+    } else if (action === 'sun_ward') {
+      // Sundian Regalia #9 — the pale stone: cleanse all + a breath of immunity
+      // (the Absolved cleanse + the harm-immunity seam).
+      const c = SUN_REGALIA_TUNING.ward;
+      this.casterDotStacks = [];
+      this.casterSlowUntil = 0;
+      this.casterWeakenUntil = 0;
+      this.player.slowFactor = 1;
+      this.harmImmuneUntil = this.time.now + c.immuneMs;
+      this.spawnSkillRing(px, py, 60, 0xd8e8f0);
+      this.showBanner('The moonstone takes it all', 1100);
+    } else if (action === 'sun_crown') {
+      // Sundian Regalia #10 ultimate — framework #3's sovereign state: every
+      // regalia at once, empowered.
+      const c = SUN_REGALIA_TUNING.crown;
+      this.wearDrownedCrown(
+        c.durationMs,
+        { regenPerSec: SUN_REGALIA_TUNING.pearl.regenPerSec, reflectPct: SUN_REGALIA_TUNING.coralSignet.reflectPct, damageMult: SUN_REGALIA_TUNING.bands.damageMult },
+        c.empowerMult,
+        c.tint,
+      );
     }
   }
 
@@ -3504,6 +3680,16 @@ export class MainScene extends Phaser.Scene {
         if (dmg > 0 && this.skillTimed.some((t) => t.id === JAGUAR_FORM_ID && this.time.now < t.endsAt)) {
           const jb = SAV_JAGUAR_TUNING.jaguar.bleed;
           this.applyDotInRange(x, y, radius, jb.dmgPerTick, jb.tickMs, jb.durationMs, 0xe8a03a);
+        }
+        // WATERLOGGED EDGE / WRATH OF THE DEEP (Sundian keyed): every melee
+        // strike DRENCHES what it hits; the form also SPLASHES spray around
+        // each struck enemy (aoeHitAllRaw never re-enters this strike block).
+        if (dmg > 0 && this.strikeDrench) {
+          const sd = this.strikeDrench;
+          for (const e of this.combatEnemiesInRange(x, y, radius)) {
+            this.addDrench(e, sd.stacks, sd.maxStacks, sd.slowPerStack, sd.slowMs);
+            if (this.wrathSplash) this.aoeHitAllRaw(e.x, e.y, this.wrathSplash.radius, this.skillDamage(this.wrathSplash.damage));
+          }
         }
         // VOODOO DOLL (Witch Doctor): a melee strike landing on the doll mirrors
         // a fraction of its damage to the bound target at any range.
@@ -5750,8 +5936,26 @@ export class MainScene extends Phaser.Scene {
       hit++;
       stacks += n;
     }
+    // EBB AND FLOW (Sundian keyed passive): consumed drench returns Tide.
+    if (stacks > 0 && this.drenchRefundPerStack > 0) this.energy.heal(this.drenchRefundPerStack * stacks);
     this.lastCombatTime = this.time.now;
     return { hit, stacks };
+  }
+
+  /** One inward DRAG toward (x,y): every enemy within radius steps up to
+   *  `distance` closer (never inside minGap) — the tide's pull, reused by the
+   *  Undertow and Whirlpool zones without their own phase-2. */
+  pullEnemiesToward(x: number, y: number, radius: number, distance: number, minGap: number): void {
+    const b = this.physics.world.bounds;
+    for (const e of this.combatEnemiesInRange(x, y, radius)) {
+      const dx = x - e.x;
+      const dy = y - e.y;
+      const len = Math.hypot(dx, dy) || 1;
+      const step = Math.min(distance, Math.max(0, len - minGap));
+      const nx = Phaser.Math.Clamp(e.x + (dx / len) * step, b.x + 8, b.x + b.width - 8);
+      const ny = Phaser.Math.Clamp(e.y + (dy / len) * step, b.y + 8, b.y + b.height - 8);
+      e.sprite.setPosition(nx, ny);
+    }
   }
 
   /** The regalia currently WORN (derived from the live timed entry — no shadow
@@ -5806,6 +6010,7 @@ export class MainScene extends Phaser.Scene {
   clearSundianState(): void {
     this.tide = null;
     this.drench.clear();
+    this.energyDiscount = null;
   }
 
   /** Sasquatch defeat: the banner + quest beat + XP, from ANY kill path (melee, AoE,

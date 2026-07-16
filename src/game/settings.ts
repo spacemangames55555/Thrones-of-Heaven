@@ -210,6 +210,10 @@ export const CLASS_BASE_STATS: Record<string, ClassBaseStats> = {
   // speed of the Blacksmith baseline (rounded: 90/18 HP, 24/5 damage) — the
   // bonded beast carries the difference. (Tune here.)
   hunter: { baseMaxHP: 90, hpPerLevel: 18, baseDamage: 24, dmgPerLevel: 5, moveSpeedMult: 1.05 },
+  // Sundian — Bali's drowned sovereign (classId 'atlantean', the save-safe id):
+  // x0.90 HP / x1.00 damage / x1.00 speed of the Blacksmith baseline
+  // (rounded: 90/18 HP, 25/5 damage). (Tune here.)
+  atlantean: { baseMaxHP: 90, hpPerLevel: 18, baseDamage: 25, dmgPerLevel: 5, moveSpeedMult: 1 },
 };
 
 /** The base-stat profile for a class id (defaults to the Blacksmith baseline). */
