@@ -192,9 +192,10 @@ try {
     priest: { world: 'globe', zone: 'rome-eternal-seat', opener: 'rom-01-mentor', kind: 'region' },
     savage: { world: 'globe', zone: 'mexico-lake-crown', opener: 'mex-01-mentor', kind: 'region' },
     hunter: { world: 'globe', zone: 'sydney-harbour-watch', opener: 'syd-01-mentor', kind: 'region' },
+    atlantean: { world: 'globe', zone: 'bali-drowned-crown', opener: 'bal-01-mentor', kind: 'region' }, // the SUNDIAN (canon rename; save-safe classId)
     druid: { world: 'earth', zone: null, opener: 'honest-days-work', kind: 'earth' },
   };
-  for (const cls of ['blacksmith', 'wizard', 'necromancer', 'mage', 'bard', 'witchdoctor', 'samurai', 'monk', 'assassin', 'priest', 'savage', 'hunter', 'druid']) {
+  for (const cls of ['blacksmith', 'wizard', 'necromancer', 'mage', 'bard', 'witchdoctor', 'samurai', 'monk', 'assassin', 'priest', 'savage', 'hunter', 'atlantean', 'druid']) {
     await newGame(cls);
     const home = HOMES[cls];
     const s = await page.evaluate(
@@ -1751,6 +1752,144 @@ try {
         'standalone promise (Wild Frenzy): zero Beast Control points, no beast, no shield — the charging wolf pack cut down at knife range, the Hunter standing',
         wildAlone.setup === 'ok' && wildAlone.beastPoints === 0 && wildAlone.pets === 0 && !wildAlone.bond && wildAlone.won,
         JSON.stringify(wildAlone),
+      );
+    }
+
+    // 2y. EVERY SUNDIAN EXTENSION THROUGH A REAL SUNDIAN SKILL, in the live
+    // Sundian session at Bali: RIPTIDE on a live pack (the two-phase tide
+    // through the real unlock + activation path — gathered, wounded, thrown,
+    // wounded again), a DRENCHED WOLF CRUSHED (Water Lash's real stacks fed to
+    // the real Depth Crush, the Ebb and Flow refund observed), and the CROWN
+    // WORN (the real regalia toggles excluding one another, then The Drowned
+    // Crown running all three at once).
+    if (cls === 'atlantean') {
+      const sunKit = await page.evaluate(async () => {
+        const ms = window.__ready();
+        const wait = (t) => new Promise((r) => setTimeout(r, t));
+        if (!window.__quietSpot()) return { setup: 'no quiet spot' };
+        const walk = (dx, dy) => ms.activeMap().nearestWalkableWorld(ms.player.x + dx, ms.player.y + dy);
+        const defs = ms.classSkillsAll['atlantean'].skills;
+        ms.skills.awardPoints(30);
+        const unlock = (ids) => {
+          for (const id of ids) if (!ms.skills.isUnlocked(id)) ms.skills.unlock(defs.find((d) => d.id === id));
+        };
+        const cast = (id) => {
+          ms.skillCooldownUntil[id] = 0;
+          ms.energy.full();
+          ms.activateSkill(id);
+        };
+        // Clear the ring first: Bali's resident packs wander, and a stray
+        // nearer than the staged foes would steal the auto-target picks.
+        for (const e of ms.combatEnemiesInRange(ms.player.x, ms.player.y, 600)) if (typeof e.destroy === 'function') e.destroy();
+        // RIPTIDE on a live pack through the real skill: the point sits 150
+        // ahead; two foes flank it wide; both are gathered, wounded, thrown.
+        unlock(['sun_tc_lash', 'sun_tc_undertow', 'sun_tc_riptide']);
+        ms.player.facingX = 1;
+        ms.player.facingY = 0;
+        const tpx = ms.player.x + 150;
+        const tpy = ms.player.y;
+        const r1 = ms.spawnAngel('darkcaster', walk(320, 40).x, walk(320, 40).y);
+        const r2 = ms.spawnAngel('darkcaster', walk(-20, -30).x, walk(-20, -30).y);
+        await wait(200);
+        for (const f of [r1, r2]) {
+          f.health.max = 500;
+          f.health.current = 500;
+          f.sprite.body.reset(f.x, f.y);
+        }
+        const rd0 = [r1, r2].map((f) => Math.hypot(f.x - tpx, f.y - tpy));
+        const rhp0 = [r1, r2].map((f) => f.health.current);
+        ms.player.facingX = 1;
+        ms.player.facingY = 0;
+        cast('sun_tc_riptide');
+        const rd1 = [r1, r2].map((f) => Math.hypot(f.x - tpx, f.y - tpy));
+        const rhp1 = [r1, r2].map((f) => f.health.current);
+        for (let i = 0; i < 40 && ms.tide; i++) await wait(100); // until the tide drains (headless frames can lag the timer)
+        await wait(120);
+        const rd2 = [r1, r2].map((f) => Math.hypot(f.x - tpx, f.y - tpy));
+        const rhp2 = [r1, r2].map((f) => f.health.current);
+        const riptide = {
+          pulledIn: rd1[0] < rd0[0] - 50 && rd1[1] < rd0[1] - 50,
+          pullWounds: rhp0[0] - rhp1[0] > 0 && rhp0[1] - rhp1[1] > 0,
+          blastedOut: rd2[0] > rd1[0] + 50 && rd2[1] > rd1[1] + 50,
+          blastWounds: rhp1[0] - rhp2[0] > 0 && rhp1[1] - rhp2[1] > 0,
+        };
+        r1.destroy();
+        r2.destroy();
+        // A DRENCHED WOLF CRUSHED through the real skills: two real Water
+        // Lashes (the Drench deepener doubles each soak), then Depth Crush
+        // consumes every stack — and Ebb and Flow hands Tide back.
+        unlock(['sun_tc_drench', 'sun_tc_spout', 'sun_tc_mist', 'sun_tc_crush', 'sun_tc_whirlpool', 'sun_tc_ebb']);
+        ms.recomputeSkillEffects();
+        // Clear the ring again (residents may have wandered back in), then pin
+        // OUR wolf nearest so the auto-targeting lash always finds it.
+        for (const e of ms.combatEnemiesInRange(ms.player.x, ms.player.y, 600)) if (typeof e.destroy === 'function') e.destroy();
+        const wolf = ms.spawnTownsfolk(walk(60, 0).x, walk(60, 0).y, null, 'wolf');
+        await wait(200);
+        ms.stunEnemiesInRange(wolf.x, wolf.y, 90, 30000);
+        wolf.health.max = 300;
+        wolf.health.current = 300;
+        wolf.sprite.body.reset(ms.player.x + 40, ms.player.y);
+        cast('sun_tc_lash');
+        await wait(100);
+        wolf.sprite.body.reset(ms.player.x + 40, ms.player.y);
+        cast('sun_tc_lash');
+        await wait(100);
+        const stacksBefore = ms.drench.get(wolf) ?? 0;
+        const slowed = (ms.slowedEnemies.get(wolf)?.factor ?? 1) < 1;
+        const wolfHp0 = wolf.health.current;
+        ms.skillCooldownUntil['sun_tc_crush'] = 0;
+        ms.energy.current = Math.max(0, ms.energy.max - 40); // room to see the refund
+        const tide0 = ms.energy.current;
+        ms.activateSkill('sun_tc_crush');
+        const crushed = {
+          stacksBefore,
+          slowed,
+          drop: wolfHp0 - wolf.health.current,
+          ledgerEmpty: !ms.drench.has(wolf),
+          // energy: -cost then +refund per consumed stack (Ebb and Flow) — it must
+          // have come back MORE than the crush cost alone would leave.
+          tideRefunded: ms.energy.current > tide0 - 16,
+        };
+        wolf.destroy();
+        // THE CROWN WORN through the real casts: the jewels exclude one
+        // another, then The Drowned Crown runs all three at once, empowered.
+        unlock(['sun_rg_flare', 'sun_rg_pearl', 'sun_rg_coral', 'sun_rg_bands', 'sun_rg_attune', 'sun_rg_talisman', 'sun_rg_idol', 'sun_rg_curse', 'sun_rg_ward', 'sun_rg_crown']);
+        ms.recomputeSkillEffects();
+        const base = ms.combinedSkillMods();
+        cast('sun_rg_pearl');
+        const pearlOn = ms.regaliaWorn === 'pearl' && ms.combinedSkillMods().regenPerSec > (base.regenPerSec ?? 0);
+        cast('sun_rg_bands');
+        const afterBands = ms.combinedSkillMods();
+        const bandsExclude = ms.regaliaWorn === 'abyssal' && afterBands.regenPerSec === (base.regenPerSec ?? 0) && afterBands.damageMult > (base.damageMult ?? 0);
+        cast('sun_rg_crown');
+        const cm = ms.combinedSkillMods();
+        const crownOn =
+          ms.drownedCrownOn &&
+          ms.regaliaWorn === null &&
+          cm.regenPerSec > (base.regenPerSec ?? 0) &&
+          cm.reflectPct > (base.reflectPct ?? 0) &&
+          cm.damageMult > (base.damageMult ?? 0);
+        ms.wearRegalia(null);
+        ms.skillTimed = ms.skillTimed.filter((t) => !t.id.startsWith('regalia_'));
+        ms.recomputeSkillEffects();
+        ms.playerHealth.full();
+        ms.playerHealth.shield = 1e9;
+        return { setup: 'ok', riptide, crushed, pearlOn, bandsExclude, crownOn };
+      });
+      ok(
+        'sundian: Riptide through the real skill gathers a live pack at the point, wounds, reverses, and throws them wounded again',
+        sunKit.setup === 'ok' && sunKit.riptide.pulledIn && sunKit.riptide.pullWounds && sunKit.riptide.blastedOut && sunKit.riptide.blastWounds,
+        JSON.stringify(sunKit.riptide),
+      );
+      ok(
+        'sundian: real Water Lashes drench (deepened + slowed), the real Depth Crush consumes every stack, and Ebb and Flow hands the Tide back',
+        sunKit.setup === 'ok' && sunKit.crushed.stacksBefore === 4 && sunKit.crushed.slowed && sunKit.crushed.drop > 0 && sunKit.crushed.ledgerEmpty && sunKit.crushed.tideRefunded,
+        JSON.stringify(sunKit.crushed),
+      );
+      ok(
+        'sundian: the real regalia casts exclude one another and The Drowned Crown is worn — all three auras at once',
+        sunKit.setup === 'ok' && sunKit.pearlOn && sunKit.bandsExclude && sunKit.crownOn,
+        JSON.stringify({ pearlOn: sunKit.pearlOn, bandsExclude: sunKit.bandsExclude, crownOn: sunKit.crownOn }),
       );
     }
   }
@@ -4636,7 +4775,8 @@ try {
     const phase1 = ms.tide ? ms.tide.phase : 0;
     const d1 = [t1, t2].map((f) => Math.hypot(f.x - tp.x, f.y - tp.y));
     const hp1 = [t1, t2].map((f) => f.health.current);
-    await wait(950); // through the reversal
+    for (let i = 0; i < 40 && ms.tide; i++) await wait(100); // until the tide drains (headless frames can lag the 600ms timer)
+    await wait(120);
     const d2 = [t1, t2].map((f) => Math.hypot(f.x - tp.x, f.y - tp.y));
     const hp2 = [t1, t2].map((f) => f.health.current);
     const tide = {
