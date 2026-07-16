@@ -191,9 +191,10 @@ try {
     assassin: { world: 'globe', zone: 'dubai-glass-souk', opener: 'dub-01-mentor', kind: 'region' },
     priest: { world: 'globe', zone: 'rome-eternal-seat', opener: 'rom-01-mentor', kind: 'region' },
     savage: { world: 'globe', zone: 'mexico-lake-crown', opener: 'mex-01-mentor', kind: 'region' },
+    hunter: { world: 'globe', zone: 'sydney-harbour-watch', opener: 'syd-01-mentor', kind: 'region' },
     druid: { world: 'earth', zone: null, opener: 'honest-days-work', kind: 'earth' },
   };
-  for (const cls of ['blacksmith', 'wizard', 'necromancer', 'mage', 'bard', 'witchdoctor', 'samurai', 'monk', 'assassin', 'priest', 'savage', 'druid']) {
+  for (const cls of ['blacksmith', 'wizard', 'necromancer', 'mage', 'bard', 'witchdoctor', 'samurai', 'monk', 'assassin', 'priest', 'savage', 'hunter', 'druid']) {
     await newGame(cls);
     const home = HOMES[cls];
     const s = await page.evaluate(
@@ -1256,8 +1257,11 @@ try {
         const hp0 = ms.playerHealth.current;
         const bHp0 = b.health.current;
         ms.activateSkill('sav_br_crimson');
-        await wait(120);
+        // Read SYNCHRONOUSLY: the blood price + nova both resolve inside the
+        // cast — an async window here let an in-flight dark-caster bolt land
+        // on the player and bend the measured 15 (the old rare flake).
         const paidCast = { bloodPaid: hp0 - ms.playerHealth.current === 15, novaLanded: bHp0 - b.health.current > 0 };
+        await wait(120);
         ms.skillCooldownUntil['sav_br_crimson'] = 0;
         ms.energy.full();
         ms.playerHealth.current = 10; // too thin for the 15-blood rite
@@ -1501,6 +1505,252 @@ try {
           cascade.resetCd === 2000 &&
           cascade.foreign === 0,
         JSON.stringify(cascade),
+      );
+    }
+
+    // 2x. EVERY HUNTER EXTENSION THROUGH A REAL HUNTER SKILL, in the live
+    // Hunter session at Sydney: TAME through the real unlock + activation path
+    // (whittles walk a live wolf to the line, the conversion bonds it; the
+    // dark-caster refusal refunds cooldown AND energy), the COMMANDS (Focus
+    // Prey pins the pack on the mark, Scatter the Pack spreads the horde),
+    // the MODES (Beast Horde ⇄ Great Beast through their real casts, the
+    // re-cast toggling back to the base companion), and BOOMERANG (the
+    // returning throw's second cut measured on the flight home).
+    if (cls === 'hunter') {
+      const hunKit = await page.evaluate(async () => {
+        const ms = window.__ready();
+        const wait = (t) => new Promise((r) => setTimeout(r, t));
+        if (!window.__quietSpot()) return { setup: 'no quiet spot' };
+        ms.summons.clear();
+        ms.clearHunterState(true);
+        const defs = ms.classSkillsAll['hunter'].skills;
+        ms.skills.awardPoints(30);
+        const unlock = (ids) => {
+          for (const id of ids) if (!ms.skills.isUnlocked(id)) ms.skills.unlock(defs.find((d) => d.id === id));
+        };
+        const cast = (id) => {
+          ms.skillCooldownUntil[id] = 0;
+          ms.energy.full();
+          ms.activateSkill(id);
+        };
+        // TAME through the real skill: whittle → cleanse on a live wolf.
+        unlock(['hun_bc_tame']);
+        const ws = ms.activeMap().nearestWalkableWorld(ms.player.x + 60, ms.player.y);
+        const wolf = ms.spawnTownsfolk(ws.x, ws.y, null, 'wolf');
+        await wait(200);
+        ms.stunEnemiesInRange(wolf.x, wolf.y, 90, 30000);
+        wolf.sprite.body.reset(ms.player.x + 60, ms.player.y);
+        let casts = 0;
+        let aliveAfterFirst = false;
+        for (let i = 0; i < 6 && ms.hunterPets().length === 0; i++) {
+          cast('hun_bc_tame');
+          casts++;
+          if (i === 0) aliveAfterFirst = wolf.isAlive;
+          await wait(80);
+        }
+        const tame = { casts, aliveAfterFirst, wolfGone: !wolf.isAlive, bond: !!ms.hunterBond, pets: ms.hunterPets().length };
+        // REFUSAL through the real skill: the dark-caster refunds cooldown + energy.
+        const rs = ms.activeMap().nearestWalkableWorld(ms.player.x + 60, ms.player.y);
+        const foe = ms.spawnAngel('darkcaster', rs.x, rs.y);
+        await wait(200);
+        ms.stunEnemiesInRange(foe.x, foe.y, 90, 30000);
+        foe.sprite.body.reset(ms.player.x + 60, ms.player.y);
+        ms.energy.full();
+        const e0 = ms.energy.current;
+        const fHp0 = foe.health.current;
+        ms.skillCooldownUntil['hun_bc_tame'] = 0;
+        ms.activateSkill('hun_bc_tame');
+        const refusal = {
+          unharmed: foe.health.current === fHp0,
+          cooldownRefunded: (ms.skillCooldownUntil['hun_bc_tame'] ?? 0) === 0,
+          energyRefunded: ms.energy.current === e0,
+          bondKept: !!ms.hunterBond,
+        };
+        // FOCUS PREY through the real skill: the mark eats the swings; the
+        // bystander beside it bleeds nothing.
+        unlock(['hun_bc_pack', 'hun_bc_focus', 'hun_bc_scatter', 'hun_bc_great', 'hun_bc_horde']);
+        ms.recomputeSkillEffects();
+        const f2s = ms.activeMap().nearestWalkableWorld(ms.player.x + 70, ms.player.y + 90);
+        const foe2 = ms.spawnAngel('darkcaster', f2s.x, f2s.y);
+        await wait(200);
+        for (const f of [foe, foe2]) {
+          ms.stunEnemiesInRange(f.x, f.y, 90, 30000);
+          f.health.max = 800;
+          f.health.current = 800;
+        }
+        foe.sprite.body.reset(ms.player.x + 70, ms.player.y);
+        foe2.sprite.body.reset(ms.player.x + 70, ms.player.y + 90);
+        const m0 = foe.health.current;
+        const b0 = foe2.health.current;
+        cast('hun_bc_focus');
+        const focusSet = !!ms.hunterFocus && ms.hunterFocus.target === foe;
+        await wait(1500);
+        const focus = { focusSet, markHit: m0 - foe.health.current > 0, bystanderClean: foe2.health.current === b0 };
+        // MODES through the real casts: horde (3 strikers), SCATTER spreads
+        // them (both foes bleed), great (one magnet tank), toggle-exit back.
+        cast('hun_bc_horde');
+        const horde = ms.hunterPets();
+        const modeHorde = horde.length === 3 && horde.every((p) => p.config.key === 'hunter_horde');
+        const s1 = foe.health.current;
+        const s2 = foe2.health.current;
+        cast('hun_bc_scatter');
+        const scatterSet = ms.hunterScatterUntil > ms.time.now;
+        await wait(1800);
+        const scatter = { scatterSet, spread: foe.health.current < s1 && foe2.health.current < s2 };
+        cast('hun_bc_great');
+        const great = ms.hunterPets();
+        const modeGreat = great.length === 1 && great[0].config.key === 'hunter_great' && great[0].aggroPriority === 3;
+        cast('hun_bc_great'); // the re-cast: exit the mode → the base companion
+        const base = ms.hunterPets();
+        const modeExit = base.length === 1 && base[0].config.key === 'hunter_companion';
+        foe.destroy();
+        foe2.destroy();
+        // BOOMERANG through the real skill: the out-leg cut measured first, the
+        // return-leg cut doubling it on the flight home.
+        unlock(['hun_mk_steady', 'hun_mk_aim', 'hun_mk_multi', 'hun_mk_cripple', 'hun_mk_hawk', 'hun_mk_net', 'hun_mk_trueshot', 'hun_mk_boomerang']);
+        ms.recomputeSkillEffects();
+        ms.clearHunterPets(); // bench the beast — the boomerang's cuts alone
+        const bs = ms.activeMap().nearestWalkableWorld(ms.player.x + 120, ms.player.y);
+        const tgt = ms.spawnAngel('darkcaster', bs.x, bs.y);
+        await wait(200);
+        ms.stunEnemiesInRange(tgt.x, tgt.y, 90, 30000);
+        tgt.sprite.body.reset(ms.player.x + 120, ms.player.y);
+        tgt.health.max = 800;
+        tgt.health.current = 800;
+        ms.player.facingX = 1;
+        ms.player.facingY = 0;
+        const t0 = tgt.health.current;
+        cast('hun_mk_boomerang');
+        await wait(350); // past the out-leg hit, before the apex turn returns
+        const outDrop = t0 - tgt.health.current;
+        await wait(1050); // the flight home crosses it again
+        const totalDrop = t0 - tgt.health.current;
+        const boomerang = { outDrop, totalDrop, doubled: outDrop > 0 && totalDrop === outDrop * 2 };
+        tgt.destroy();
+        ms.clearHunterState(true);
+        ms.playerHealth.full();
+        ms.playerHealth.shield = 1e9;
+        return { setup: 'ok', tame, refusal, focus, modeHorde, scatter, modeGreat, modeExit, boomerang };
+      });
+      ok(
+        'hunter: tame whittles then cleanses a live wolf through the real skill; the dark-caster refusal refunds cooldown + energy, the bond untouched',
+        hunKit.setup === 'ok' &&
+          hunKit.tame.casts >= 2 &&
+          hunKit.tame.aliveAfterFirst &&
+          hunKit.tame.wolfGone &&
+          hunKit.tame.bond &&
+          hunKit.tame.pets === 1 &&
+          hunKit.refusal.unharmed &&
+          hunKit.refusal.cooldownRefunded &&
+          hunKit.refusal.energyRefunded &&
+          hunKit.refusal.bondKept,
+        JSON.stringify({ tame: hunKit.tame, refusal: hunKit.refusal }),
+      );
+      ok(
+        'hunter: Focus Prey pins the beast on the mark (bystander clean); Scatter the Pack spreads the horde (both foes bleed) — real casts',
+        hunKit.setup === 'ok' && hunKit.focus.focusSet && hunKit.focus.markHit && hunKit.focus.bystanderClean && hunKit.scatter.scatterSet && hunKit.scatter.spread,
+        JSON.stringify({ focus: hunKit.focus, scatter: hunKit.scatter }),
+      );
+      ok(
+        'hunter: Beast Horde → Great Beast → re-cast exits to the base companion — one expression at a time, through the real casts',
+        hunKit.setup === 'ok' && hunKit.modeHorde && hunKit.modeGreat && hunKit.modeExit,
+        JSON.stringify({ modeHorde: hunKit.modeHorde, modeGreat: hunKit.modeGreat, modeExit: hunKit.modeExit }),
+      );
+      ok(
+        'hunter: Boomerang through the real skill — the return leg doubles the out-leg cut on the same foe',
+        hunKit.setup === 'ok' && hunKit.boomerang.doubled,
+        JSON.stringify(hunKit.boomerang),
+      );
+
+      // 2x2. THE STANDALONE PROMISE — a Hunter with ZERO Beast Control points
+      // wins a REAL fight (live foes, no shield, no pins) through Marksmanship
+      // alone, and another through Wild Frenzy alone. Fresh session each.
+      await newGame('hunter');
+      const marksAlone = await page.evaluate(async () => {
+        const ms = window.__ready();
+        const wait = (t) => new Promise((r) => setTimeout(r, t));
+        if (!window.__quietSpot()) return { setup: 'no quiet spot' };
+        const defs = ms.classSkillsAll['hunter'].skills;
+        ms.skills.awardPoints(6);
+        for (const id of ['hun_mk_steady', 'hun_mk_aim', 'hun_mk_multi']) {
+          if (!ms.skills.isUnlocked(id)) ms.skills.unlock(defs.find((d) => d.id === id));
+        }
+        ms.recomputeSkillEffects();
+        const beastPoints = defs.filter((d) => d.tree === 'hun_beast' && ms.skills.isUnlocked(d.id)).length;
+        const w1 = ms.activeMap().nearestWalkableWorld(ms.player.x + 130, ms.player.y);
+        const w2 = ms.activeMap().nearestWalkableWorld(ms.player.x + 150, ms.player.y + 60);
+        const f1 = ms.spawnAngel('darkcaster', w1.x, w1.y);
+        const f2 = ms.spawnAngel('darkcaster', w2.x, w2.y);
+        ms.playerHealth.full();
+        ms.playerHealth.shield = 0; // a REAL fight — no god-mode
+        const deadline = Date.now() + 14000;
+        while ((f1.isAlive || f2.isAlive) && ms.playerHealth.current > 0 && Date.now() < deadline) {
+          const foe = [f1, f2].find((f) => f.isAlive);
+          const a = Math.atan2(foe.y - ms.player.y, foe.x - ms.player.x);
+          ms.player.facingX = Math.cos(a);
+          ms.player.facingY = Math.sin(a);
+          ms.energy.full();
+          ms.skillCooldownUntil['hun_mk_steady'] = 0;
+          ms.skillCooldownUntil['hun_mk_multi'] = 0;
+          ms.activateSkill('hun_mk_steady');
+          ms.activateSkill('hun_mk_multi');
+          await wait(280);
+        }
+        const out = { setup: 'ok', beastPoints, won: !f1.isAlive && !f2.isAlive && ms.playerHealth.current > 0, hpLeft: Math.round(ms.playerHealth.current), pets: ms.hunterPets().length, bond: !!ms.hunterBond };
+        f1.destroy();
+        f2.destroy();
+        ms.playerHealth.full();
+        ms.playerHealth.shield = 1e9;
+        return out;
+      });
+      ok(
+        'standalone promise (Marksmanship): zero Beast Control points, no beast, no shield — two live dark-casters shot down, the Hunter standing',
+        marksAlone.setup === 'ok' && marksAlone.beastPoints === 0 && marksAlone.pets === 0 && !marksAlone.bond && marksAlone.won,
+        JSON.stringify(marksAlone),
+      );
+
+      await newGame('hunter');
+      const wildAlone = await page.evaluate(async () => {
+        const ms = window.__ready();
+        const wait = (t) => new Promise((r) => setTimeout(r, t));
+        if (!window.__quietSpot()) return { setup: 'no quiet spot' };
+        const defs = ms.classSkillsAll['hunter'].skills;
+        ms.skills.awardPoints(6);
+        for (const id of ['hun_wf_swipe', 'hun_wf_twin']) {
+          if (!ms.skills.isUnlocked(id)) ms.skills.unlock(defs.find((d) => d.id === id));
+        }
+        ms.recomputeSkillEffects();
+        const beastPoints = defs.filter((d) => d.tree === 'hun_beast' && ms.skills.isUnlocked(d.id)).length;
+        const pack = [];
+        for (const [dx, dy] of [[150, 0], [150, 50], [150, -50]]) {
+          const w = ms.activeMap().nearestWalkableWorld(ms.player.x + dx, ms.player.y + dy);
+          pack.push(ms.spawnTownsfolk(w.x, w.y, null, 'wolf'));
+        }
+        ms.playerHealth.full();
+        ms.playerHealth.shield = 0; // a REAL fight — the pack charges, the knives answer
+        const deadline = Date.now() + 14000;
+        while (pack.some((p) => p.isAlive) && ms.playerHealth.current > 0 && Date.now() < deadline) {
+          const foe = pack.find((p) => p.isAlive);
+          const a = Math.atan2(foe.y - ms.player.y, foe.x - ms.player.x);
+          ms.player.facingX = Math.cos(a);
+          ms.player.facingY = Math.sin(a);
+          ms.energy.full();
+          ms.skillCooldownUntil['hun_wf_swipe'] = 0;
+          ms.skillCooldownUntil['hun_wf_twin'] = 0;
+          ms.activateSkill('hun_wf_swipe');
+          ms.activateSkill('hun_wf_twin');
+          await wait(260);
+        }
+        const out = { setup: 'ok', beastPoints, won: pack.every((p) => !p.isAlive) && ms.playerHealth.current > 0, hpLeft: Math.round(ms.playerHealth.current), pets: ms.hunterPets().length, bond: !!ms.hunterBond };
+        for (const p of pack) p.destroy();
+        ms.playerHealth.full();
+        ms.playerHealth.shield = 1e9;
+        return out;
+      });
+      ok(
+        'standalone promise (Wild Frenzy): zero Beast Control points, no beast, no shield — the charging wolf pack cut down at knife range, the Hunter standing',
+        wildAlone.setup === 'ok' && wildAlone.beastPoints === 0 && wildAlone.pets === 0 && !wildAlone.bond && wildAlone.won,
+        JSON.stringify(wildAlone),
       );
     }
   }
