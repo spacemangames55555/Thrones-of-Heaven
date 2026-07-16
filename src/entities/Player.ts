@@ -15,6 +15,7 @@ const ASSASSIN_TEXTURE_KEY = 'assassin-figure'; // Assassin (Dubai knife-in-the-
 const PRIEST_TEXTURE_KEY = 'priest-figure'; // Priest (Rome keeper of the Light) avatar
 const SAVAGE_TEXTURE_KEY = 'savage-figure'; // Savage (Mexico City blood-and-sun bruiser) avatar
 const HUNTER_TEXTURE_KEY = 'hunter-figure'; // Hunter (Sydney beast-bonded tracker) avatar
+const SUNDIAN_TEXTURE_KEY = 'sundian-figure'; // Sundian (Bali drowned sovereign; classId 'atlantean') avatar
 const WIDTH = 32; // ~1 tile wide
 const HEIGHT = 48; // ~1.5 tiles tall — fixes the "character = one giant block" look
 
@@ -32,6 +33,7 @@ function textureForClass(classId: string): string {
   if (classId === 'priest') return PRIEST_TEXTURE_KEY;
   if (classId === 'savage') return SAVAGE_TEXTURE_KEY;
   if (classId === 'hunter') return HUNTER_TEXTURE_KEY;
+  if (classId === 'atlantean') return SUNDIAN_TEXTURE_KEY;
   return TEXTURE_KEY;
 }
 
@@ -66,6 +68,7 @@ export class Player {
     Player.ensurePriestTexture(scene);
     Player.ensureSavageTexture(scene);
     Player.ensureHunterTexture(scene);
+    Player.ensureSundianTexture(scene);
 
     this.baseKey = textureForClass(classId);
     this.sprite = scene.physics.add.sprite(x, y, this.baseKey);
@@ -663,6 +666,53 @@ export class Player {
     g.fillRoundedRect(9, h - 8, 6, 5, 2);
     g.fillRoundedRect(w - 15, h - 8, 6, 5, 2);
     g.generateTexture(HUNTER_TEXTURE_KEY, w, h);
+    g.destroy();
+  }
+
+  /** Draw the Bali SUNDIAN avatar (sea-green robes over bronze skin, a coral
+   *  crown, the trident, pearl trim) as a generated texture — a CODE-DRAWN
+   *  PLACEHOLDER (a real sprite PNG drops in later via the sprite override
+   *  under this same key). Same footprint as the other figures. */
+  private static ensureSundianTexture(scene: Phaser.Scene): void {
+    if (scene.textures.exists(SUNDIAN_TEXTURE_KEY)) return;
+    const w = WIDTH;
+    const h = HEIGHT;
+    const g = scene.make.graphics({ x: 0, y: 0 }, false);
+    // Dark outline + the flowing sea-green robe.
+    g.fillStyle(0x06202a, 1);
+    g.fillRoundedRect(4, 8, w - 8, h - 10, 8);
+    g.fillStyle(0x1a6a70, 1); // deep sea-green robe
+    g.fillRoundedRect(6, 10, w - 12, h - 14, 6);
+    g.fillStyle(0x35b0a8, 1); // the tide-line panel
+    g.fillRoundedRect(w / 2 - 3, 18, 6, h - 30, 3);
+    // Wave hem at the robe's foot.
+    g.fillStyle(0x7ad8d0, 0.9);
+    g.fillCircle(10, h - 6, 3);
+    g.fillCircle(16, h - 5, 3);
+    g.fillCircle(22, h - 6, 3);
+    // Pearl trim across the chest.
+    g.fillStyle(0xe8e2d8, 1);
+    g.fillCircle(10, 21, 1.6);
+    g.fillCircle(w / 2, 21, 1.6);
+    g.fillCircle(w - 10, 21, 1.6);
+    // Head: bronze face under the CORAL CROWN.
+    g.fillStyle(0xb8825a, 1); // face
+    g.fillCircle(w / 2, 14, 5.5);
+    g.fillStyle(0x06202a, 1); // eyes
+    g.fillCircle(w / 2 - 2.2, 14.5, 1);
+    g.fillCircle(w / 2 + 2.2, 14.5, 1);
+    g.fillStyle(0xe08a7a, 1); // the coral crown: band + branching points
+    g.fillRoundedRect(w / 2 - 7, 7, 14, 4, 2);
+    g.fillTriangle(w / 2 - 6, 8, w / 2 - 3, 8, w / 2 - 4.5, 2);
+    g.fillTriangle(w / 2 - 1.5, 8, w / 2 + 1.5, 8, w / 2, 1);
+    g.fillTriangle(w / 2 + 3, 8, w / 2 + 6, 8, w / 2 + 4.5, 2);
+    // The trident at the side: a pale shaft with three tines.
+    g.fillStyle(0xd8d8c8, 1);
+    g.fillRect(5, 12, 2.4, h - 22);
+    g.fillRect(2.5, 12, 1.8, 7);
+    g.fillRect(5.3, 10, 1.8, 9);
+    g.fillRect(8.1, 12, 1.8, 7);
+    g.generateTexture(SUNDIAN_TEXTURE_KEY, w, h);
     g.destroy();
   }
 }

@@ -58,12 +58,17 @@ import { SAV_JAGUAR_SKILLS, SAV_JAGUAR_TREE } from './savageJaguar';
 import { HUN_BEAST_SKILLS, HUN_BEAST_TREE } from './hunterBeast';
 import { HUN_MARKS_SKILLS, HUN_MARKS_TREE } from './hunterMarksman';
 import { HUN_WILD_SKILLS, HUN_WILD_TREE } from './hunterFrenzy';
+import { SUN_TIDE_SKILLS, SUN_TIDE_TREE } from './sundianTidecaller';
+import { SUN_BLADE_SKILLS, SUN_BLADE_TREE } from './sundianBlade';
+import { SUN_REGALIA_SKILLS, SUN_REGALIA_TREE } from './sundianRegalia';
 
 /** How many active skills the player can equip to on-screen slots. */
 export const LOADOUT_SLOTS = 6;
 
 /** The playable classes. Only the Blacksmith has trees this batch; others slot in later. */
-export type ClassId = 'blacksmith' | 'necromancer' | 'wizard' | 'druid' | 'mage' | 'bard' | 'witchdoctor' | 'samurai' | 'monk' | 'assassin' | 'priest' | 'savage' | 'hunter';
+/** NOTE: 'atlantean' is the SAVE-SAFE internal id for Bali's class — its canon
+ *  display name is 'Sundian' (Casey's rename; see world/class-canon.ts). */
+export type ClassId = 'blacksmith' | 'necromancer' | 'wizard' | 'druid' | 'mage' | 'bard' | 'witchdoctor' | 'samurai' | 'monk' | 'assassin' | 'priest' | 'savage' | 'hunter' | 'atlantean';
 
 /** Stat modifiers a skill contributes — used by PASSIVE (permanent) and by timed
  *  BUFF / TRANSFORMATION effects (while active). All optional; absent = no change. */
@@ -401,7 +406,32 @@ export type ActiveActionId =
   | 'hun_hamstring'
   | 'hun_call'
   | 'hun_hunt'
-  | 'hun_bloodlet';
+  | 'hun_bloodlet'
+  // Sundian actives (bespoke ids; composed skills share the executor).
+  | 'sun_lash'
+  | 'sun_undertow'
+  | 'sun_riptide'
+  | 'sun_spout'
+  | 'sun_crush'
+  | 'sun_whirlpool'
+  | 'sun_tsunami'
+  | 'sun_trident'
+  | 'sun_crashing'
+  | 'sun_tidestep'
+  | 'sun_coralguard'
+  | 'sun_breaker'
+  | 'sun_weight'
+  | 'sun_twin'
+  | 'sun_grasp'
+  | 'sun_flare'
+  | 'sun_pearl'
+  | 'sun_coral'
+  | 'sun_bands'
+  | 'sun_talisman'
+  | 'sun_idol'
+  | 'sun_curse'
+  | 'sun_ward'
+  | 'sun_crown';
 
 /**
  * The five supported EFFECT KINDS. The scene applies them generically:
@@ -767,6 +797,10 @@ const NON_DAMAGING_ACTIVE_ACTIONS: ReadonlySet<ActiveActionId> = new Set([
   // pet frenzy, and the temporary pack — Tame stays a DAMAGING active via its
   // whittle, Casey's ruling; its offense is the beast it wins).
   'hun_focus', 'hun_scatter', 'hun_great', 'hun_horde', 'hun_mend', 'hun_rage', 'hun_call',
+  // Sundian utility actives (the shell, the three worn regalia + the Crown,
+  // the talisman, the idol, the pure-control curse, and the cleanse-ward —
+  // Depth Crush and the zones DO damage and stay damaging actives).
+  'sun_coralguard', 'sun_pearl', 'sun_coral', 'sun_bands', 'sun_talisman', 'sun_idol', 'sun_curse', 'sun_ward', 'sun_crown',
 ]);
 
 /**
@@ -848,6 +882,11 @@ const NON_AIMABLE_ACTIONS: ReadonlySet<ActiveActionId> = new Set<ActiveActionId>
   // Steady/Multishot/Crippling/Net/Boomerang/Eagle/Swipe/Twin/Hamstring/
   // Bloodletter stay directional (drag-to-aim).
   'hun_tame', 'hun_focus', 'hun_scatter', 'hun_great', 'hun_horde', 'hun_mend', 'hun_rage', 'hun_mastery', 'hun_call', 'hun_hunt',
+  // Sundian: the auto-targeting casts (Lash/Crashing/Crush/Grasp/Curse find
+  // their own target), the shell, the regalia + Crown, the talisman, the
+  // placed idol, and the ward. Undertow/Riptide/Spout/Whirlpool/Tsunami/
+  // Tide Step/Breaker/Weight/Twin Currents/Flare stay directional.
+  'sun_lash', 'sun_crashing', 'sun_crush', 'sun_grasp', 'sun_curse', 'sun_coralguard', 'sun_pearl', 'sun_coral', 'sun_bands', 'sun_talisman', 'sun_idol', 'sun_ward', 'sun_crown',
 ]);
 
 /**
@@ -1192,6 +1231,31 @@ const HUNTER: ClassSkills = {
   ],
 };
 
+// ─── SUNDIAN (Bali; classId 'atlantean' — the save-safe internal id) ───────────
+// The sea remembers what heaven drowned — three trees of 10: TIDECALLER (the
+// drenching jets, THE TIDE's Riptide, Depth Crush, the Tsunami), DROWNED BLADE
+// (the trident melee: Waterlogged Edge's strike-drench, the conditional
+// Crashing Blow, Wrath of the Deep), and REGALIA OF THE DEEP (the three worn
+// auras — one at a time — attunement, and THE DROWNED CROWN wearing all three
+// empowered). "Tide" is prose over standard energy. Tier-0s: Water Lash,
+// Trident Strike, Signet Flare.
+const SUNDIAN: ClassSkills = {
+  classId: 'atlantean',
+  trees: [
+    { id: SUN_TIDE_TREE, name: 'Tidecaller' }, // 10 ranged water skills (opens on Water Lash)
+    { id: SUN_BLADE_TREE, name: 'Blade' }, // 10 melee skills (opens on Trident Strike)
+    { id: SUN_REGALIA_TREE, name: 'Regalia' }, // 10 worn-aura skills (opens on Signet Flare)
+  ],
+  skills: [
+    // --- TIDECALLER (10 skills, linear; ranged water). Data in sundianTidecaller.ts. ---
+    ...SUN_TIDE_SKILLS,
+    // --- DROWNED BLADE (10 skills, linear; melee). Data in sundianBlade.ts. ---
+    ...SUN_BLADE_SKILLS,
+    // --- REGALIA OF THE DEEP (10 skills, linear; worn auras). Data in sundianRegalia.ts. ---
+    ...SUN_REGALIA_SKILLS,
+  ],
+};
+
 export const CLASS_SKILLS: Record<ClassId, ClassSkills> = {
   blacksmith: BLACKSMITH,
   wizard: WIZARD,
@@ -1206,6 +1270,7 @@ export const CLASS_SKILLS: Record<ClassId, ClassSkills> = {
   priest: PRIEST,
   savage: SAVAGE,
   hunter: HUNTER,
+  atlantean: SUNDIAN,
 };
 
 /** Look up a class's full skill set (trees + skills). */

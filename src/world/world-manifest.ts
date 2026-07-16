@@ -1055,7 +1055,7 @@ export const WORLD: Zone[] = [
       { id: 'as-05-light-convoy', archetype: 'escort', title: 'The Light Convoy',
         summary: 'Move harvested light up the pillar under attack.' },
       { id: 'as-06-regional-callback', archetype: 'story', title: 'What You Left Behind',
-        summary: 'ASIA CALLBACK — three class-variant scripts (Monk / Samurai / Atlantean), dialogue layer selects by class. HAND_AUTHORED_TODO x3.',
+        summary: 'ASIA CALLBACK — three class-variant scripts (Monk / Samurai / Sundian), dialogue layer selects by class. HAND_AUTHORED_TODO x3.',
         handAuthored: true },
       { id: 'as-07-herald-truth-2', archetype: 'story', title: 'Second Doubt',
         summary: 'A second herald truth cracks the patron facade further.', handAuthored: true },
@@ -1167,7 +1167,7 @@ export const WORLD: Zone[] = [
   {
     id: 'bali-drowned-crown', displayName: 'Bali (The Drowned Crown)', kind: 'city',
     anchor: { lat: -8.65, lng: 115.22 }, region: 'Sunda Islands', continent: 'Asia',
-    pantheon: 'Balinese', homeClass: 'Atlantean', tier: 1, act: 'ACT_I', levelRange: [1, 12],
+    pantheon: 'Balinese', homeClass: 'Sundian', tier: 1, act: 'ACT_I', levelRange: [1, 12],
     biome: 'island-tropics', enemyFamilies: ['corrupted-wildlife', 'lesser-evil-scouts'],
     connectsTo: ['java-temple-shore'], seaGates: ['java-temple-shore'],
     onHeavenApproach: false, heavenApproachOrder: null, portalSite: false, handAuthored: true,

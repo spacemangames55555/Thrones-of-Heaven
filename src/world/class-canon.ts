@@ -25,7 +25,10 @@ export const MANIFEST_CLASS_FOR: Record<string, string> = {
   witchdoctor: 'Witch Doctor', // Kinshasa (Africa) — class kit not built yet
   monk: 'Monk', // Lhasa (Asia) — built as a playable class today
   samurai: 'Samurai', // Kyoto (Asia) — class kit not built yet
-  atlantean: 'Atlantean', // Bali (Asia) — class kit not built yet
+  // CANON RENAME (Casey's ruling): Bali's class is 'Sundian'. 'Atlantean' is the
+  // DEPRECATED name — display/canon only; the internal classId stays 'atlantean'
+  // (save-safe, never migrated).
+  atlantean: 'Sundian', // Bali (Asia) — built as a playable class today
   assassin: 'Assassin', // Dubai (Near East) — built as a playable class today
   hunter: 'Hunter', // Sydney (Oceania) — built as a playable class today
   savage: 'Savage', // Mexico City (Mesoamerica) — built as a playable class today
@@ -70,7 +73,7 @@ export const KNOWN_CLASS_NAMES: readonly string[] = [
   'Witch Doctor', // Kinshasa (Africa)
   'Monk', // Lhasa (Asia)
   'Samurai', // Kyoto (Asia)
-  'Atlantean', // Bali (Asia)
+  'Sundian', // Bali (Asia) — canon rename; 'Atlantean' is the deprecated name
   'Assassin', // Dubai (Near East)
   'Hunter', // Sydney (Oceania)
   'Savage', // Mexico City (Mesoamerica)

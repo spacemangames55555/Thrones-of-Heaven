@@ -7,7 +7,8 @@ import { buildZoneQuests } from './quest-factory';
  * WHICH Asia zones are BUILT (stamped into the 'globe' world + quest-
  * registered) in the live game. Appended one zone per build run, in manifest
  * order (the Kunlun march). Home-city Act I chains (Lhasa/Monk, Kyoto/Samurai,
- * Bali/Atlantean) register class-gated with manual-start openers — nothing
+ * Bali/Sundian — the canon rename; 'Atlantean' is the deprecated name)
+ * register class-gated with manual-start openers — nothing
  * auto-starts on a fresh boot.
  */
 export const ASIA_BUILT_ZONES: string[] = [

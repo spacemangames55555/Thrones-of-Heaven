@@ -192,9 +192,10 @@ try {
     priest: { world: 'globe', zone: 'rome-eternal-seat', opener: 'rom-01-mentor', kind: 'region' },
     savage: { world: 'globe', zone: 'mexico-lake-crown', opener: 'mex-01-mentor', kind: 'region' },
     hunter: { world: 'globe', zone: 'sydney-harbour-watch', opener: 'syd-01-mentor', kind: 'region' },
+    atlantean: { world: 'globe', zone: 'bali-drowned-crown', opener: 'bal-01-mentor', kind: 'region' }, // the SUNDIAN (canon rename; save-safe classId)
     druid: { world: 'earth', zone: null, opener: 'honest-days-work', kind: 'earth' },
   };
-  for (const cls of ['blacksmith', 'wizard', 'necromancer', 'mage', 'bard', 'witchdoctor', 'samurai', 'monk', 'assassin', 'priest', 'savage', 'hunter', 'druid']) {
+  for (const cls of ['blacksmith', 'wizard', 'necromancer', 'mage', 'bard', 'witchdoctor', 'samurai', 'monk', 'assassin', 'priest', 'savage', 'hunter', 'atlantean', 'druid']) {
     await newGame(cls);
     const home = HOMES[cls];
     const s = await page.evaluate(
@@ -1753,6 +1754,144 @@ try {
         JSON.stringify(wildAlone),
       );
     }
+
+    // 2y. EVERY SUNDIAN EXTENSION THROUGH A REAL SUNDIAN SKILL, in the live
+    // Sundian session at Bali: RIPTIDE on a live pack (the two-phase tide
+    // through the real unlock + activation path — gathered, wounded, thrown,
+    // wounded again), a DRENCHED WOLF CRUSHED (Water Lash's real stacks fed to
+    // the real Depth Crush, the Ebb and Flow refund observed), and the CROWN
+    // WORN (the real regalia toggles excluding one another, then The Drowned
+    // Crown running all three at once).
+    if (cls === 'atlantean') {
+      const sunKit = await page.evaluate(async () => {
+        const ms = window.__ready();
+        const wait = (t) => new Promise((r) => setTimeout(r, t));
+        if (!window.__quietSpot()) return { setup: 'no quiet spot' };
+        const walk = (dx, dy) => ms.activeMap().nearestWalkableWorld(ms.player.x + dx, ms.player.y + dy);
+        const defs = ms.classSkillsAll['atlantean'].skills;
+        ms.skills.awardPoints(30);
+        const unlock = (ids) => {
+          for (const id of ids) if (!ms.skills.isUnlocked(id)) ms.skills.unlock(defs.find((d) => d.id === id));
+        };
+        const cast = (id) => {
+          ms.skillCooldownUntil[id] = 0;
+          ms.energy.full();
+          ms.activateSkill(id);
+        };
+        // Clear the ring first: Bali's resident packs wander, and a stray
+        // nearer than the staged foes would steal the auto-target picks.
+        for (const e of ms.combatEnemiesInRange(ms.player.x, ms.player.y, 600)) if (typeof e.destroy === 'function') e.destroy();
+        // RIPTIDE on a live pack through the real skill: the point sits 150
+        // ahead; two foes flank it wide; both are gathered, wounded, thrown.
+        unlock(['sun_tc_lash', 'sun_tc_undertow', 'sun_tc_riptide']);
+        ms.player.facingX = 1;
+        ms.player.facingY = 0;
+        const tpx = ms.player.x + 150;
+        const tpy = ms.player.y;
+        const r1 = ms.spawnAngel('darkcaster', walk(320, 40).x, walk(320, 40).y);
+        const r2 = ms.spawnAngel('darkcaster', walk(-20, -30).x, walk(-20, -30).y);
+        await wait(200);
+        for (const f of [r1, r2]) {
+          f.health.max = 500;
+          f.health.current = 500;
+          f.sprite.body.reset(f.x, f.y);
+        }
+        const rd0 = [r1, r2].map((f) => Math.hypot(f.x - tpx, f.y - tpy));
+        const rhp0 = [r1, r2].map((f) => f.health.current);
+        ms.player.facingX = 1;
+        ms.player.facingY = 0;
+        cast('sun_tc_riptide');
+        const rd1 = [r1, r2].map((f) => Math.hypot(f.x - tpx, f.y - tpy));
+        const rhp1 = [r1, r2].map((f) => f.health.current);
+        for (let i = 0; i < 40 && ms.tide; i++) await wait(100); // until the tide drains (headless frames can lag the timer)
+        await wait(120);
+        const rd2 = [r1, r2].map((f) => Math.hypot(f.x - tpx, f.y - tpy));
+        const rhp2 = [r1, r2].map((f) => f.health.current);
+        const riptide = {
+          pulledIn: rd1[0] < rd0[0] - 50 && rd1[1] < rd0[1] - 50,
+          pullWounds: rhp0[0] - rhp1[0] > 0 && rhp0[1] - rhp1[1] > 0,
+          blastedOut: rd2[0] > rd1[0] + 50 && rd2[1] > rd1[1] + 50,
+          blastWounds: rhp1[0] - rhp2[0] > 0 && rhp1[1] - rhp2[1] > 0,
+        };
+        r1.destroy();
+        r2.destroy();
+        // A DRENCHED WOLF CRUSHED through the real skills: two real Water
+        // Lashes (the Drench deepener doubles each soak), then Depth Crush
+        // consumes every stack — and Ebb and Flow hands Tide back.
+        unlock(['sun_tc_drench', 'sun_tc_spout', 'sun_tc_mist', 'sun_tc_crush', 'sun_tc_whirlpool', 'sun_tc_ebb']);
+        ms.recomputeSkillEffects();
+        // Clear the ring again (residents may have wandered back in), then pin
+        // OUR wolf nearest so the auto-targeting lash always finds it.
+        for (const e of ms.combatEnemiesInRange(ms.player.x, ms.player.y, 600)) if (typeof e.destroy === 'function') e.destroy();
+        const wolf = ms.spawnTownsfolk(walk(60, 0).x, walk(60, 0).y, null, 'wolf');
+        await wait(200);
+        ms.stunEnemiesInRange(wolf.x, wolf.y, 90, 30000);
+        wolf.health.max = 300;
+        wolf.health.current = 300;
+        wolf.sprite.body.reset(ms.player.x + 40, ms.player.y);
+        cast('sun_tc_lash');
+        await wait(100);
+        wolf.sprite.body.reset(ms.player.x + 40, ms.player.y);
+        cast('sun_tc_lash');
+        await wait(100);
+        const stacksBefore = ms.drench.get(wolf) ?? 0;
+        const slowed = (ms.slowedEnemies.get(wolf)?.factor ?? 1) < 1;
+        const wolfHp0 = wolf.health.current;
+        ms.skillCooldownUntil['sun_tc_crush'] = 0;
+        ms.energy.current = Math.max(0, ms.energy.max - 40); // room to see the refund
+        const tide0 = ms.energy.current;
+        ms.activateSkill('sun_tc_crush');
+        const crushed = {
+          stacksBefore,
+          slowed,
+          drop: wolfHp0 - wolf.health.current,
+          ledgerEmpty: !ms.drench.has(wolf),
+          // energy: -cost then +refund per consumed stack (Ebb and Flow) — it must
+          // have come back MORE than the crush cost alone would leave.
+          tideRefunded: ms.energy.current > tide0 - 16,
+        };
+        wolf.destroy();
+        // THE CROWN WORN through the real casts: the jewels exclude one
+        // another, then The Drowned Crown runs all three at once, empowered.
+        unlock(['sun_rg_flare', 'sun_rg_pearl', 'sun_rg_coral', 'sun_rg_bands', 'sun_rg_attune', 'sun_rg_talisman', 'sun_rg_idol', 'sun_rg_curse', 'sun_rg_ward', 'sun_rg_crown']);
+        ms.recomputeSkillEffects();
+        const base = ms.combinedSkillMods();
+        cast('sun_rg_pearl');
+        const pearlOn = ms.regaliaWorn === 'pearl' && ms.combinedSkillMods().regenPerSec > (base.regenPerSec ?? 0);
+        cast('sun_rg_bands');
+        const afterBands = ms.combinedSkillMods();
+        const bandsExclude = ms.regaliaWorn === 'abyssal' && afterBands.regenPerSec === (base.regenPerSec ?? 0) && afterBands.damageMult > (base.damageMult ?? 0);
+        cast('sun_rg_crown');
+        const cm = ms.combinedSkillMods();
+        const crownOn =
+          ms.drownedCrownOn &&
+          ms.regaliaWorn === null &&
+          cm.regenPerSec > (base.regenPerSec ?? 0) &&
+          cm.reflectPct > (base.reflectPct ?? 0) &&
+          cm.damageMult > (base.damageMult ?? 0);
+        ms.wearRegalia(null);
+        ms.skillTimed = ms.skillTimed.filter((t) => !t.id.startsWith('regalia_'));
+        ms.recomputeSkillEffects();
+        ms.playerHealth.full();
+        ms.playerHealth.shield = 1e9;
+        return { setup: 'ok', riptide, crushed, pearlOn, bandsExclude, crownOn };
+      });
+      ok(
+        'sundian: Riptide through the real skill gathers a live pack at the point, wounds, reverses, and throws them wounded again',
+        sunKit.setup === 'ok' && sunKit.riptide.pulledIn && sunKit.riptide.pullWounds && sunKit.riptide.blastedOut && sunKit.riptide.blastWounds,
+        JSON.stringify(sunKit.riptide),
+      );
+      ok(
+        'sundian: real Water Lashes drench (deepened + slowed), the real Depth Crush consumes every stack, and Ebb and Flow hands the Tide back',
+        sunKit.setup === 'ok' && sunKit.crushed.stacksBefore === 4 && sunKit.crushed.slowed && sunKit.crushed.drop > 0 && sunKit.crushed.ledgerEmpty && sunKit.crushed.tideRefunded,
+        JSON.stringify(sunKit.crushed),
+      );
+      ok(
+        'sundian: the real regalia casts exclude one another and The Drowned Crown is worn — all three auras at once',
+        sunKit.setup === 'ok' && sunKit.pearlOn && sunKit.bandsExclude && sunKit.crownOn,
+        JSON.stringify({ pearlOn: sunKit.pearlOn, bandsExclude: sunKit.bandsExclude, crownOn: sunKit.crownOn }),
+      );
+    }
   }
 
   // HARNESS HELPERS (the precondition contract). __ready(): revive + heal +
@@ -2937,7 +3076,7 @@ try {
   });
   ok(
     'skill framework: every skill in every tree executes; composed actions match their declared primitives',
-    skillSweep.errors.length === 0 && skillSweep.mismatches.length === 0 && skillSweep.composed === 157 && skillSweep.total >= 390,
+    skillSweep.errors.length === 0 && skillSweep.mismatches.length === 0 && skillSweep.composed === 165 && skillSweep.total >= 420,
     `total=${skillSweep.total} composed=${skillSweep.composed} bespokeActive=${skillSweep.bespokeActive} timed/other=${skillSweep.other} passive=${skillSweep.passive}` +
       (skillSweep.errors.length ? ` ERRORS=${JSON.stringify(skillSweep.errors.slice(0, 3))}` : '') +
       (skillSweep.mismatches.length ? ` MISMATCH=${JSON.stringify(skillSweep.mismatches.slice(0, 3))}` : ''),
@@ -4602,6 +4741,198 @@ try {
     'hunter ext — returning bolt: the boomerang cuts the foe going OUT and again coming BACK, then lands home',
     hunterExt.setup === 'ok' && hunterExt.boomerang.hits === 2 && hunterExt.boomerang.settled,
     JSON.stringify(hunterExt.boomerang),
+  );
+
+  // 3am. SUNDIAN FRAMEWORK EXTENSIONS (permanent): THE TIDE (two phases on a
+  // real pack — pulled IN with damage, held, then blasted OUT with damage),
+  // DRENCH + DEPTH CRUSH (its own stack ledger with a per-stack slow; the
+  // crush consumes exactly the drench while the Mage's crystallize ledger on
+  // the SAME enemy is untouched), the REGALIA (one worn aura at a time,
+  // attunement scales it, the DROWNED CROWN runs all three empowered), and
+  // the CANON RENAME ('Sundian' gates Bali's chain; 'Atlantean' is deprecated
+  // and gates nothing; every other canon entry unmoved).
+  const sundianExt = await page.evaluate(async () => {
+    const ms = window.__ready();
+    const wait = (t) => new Promise((r) => setTimeout(r, t));
+    if (!window.__quietSpot()) return { setup: 'no quiet spot' };
+    const walk = (dx, dy) => ms.activeMap().nearestWalkableWorld(ms.player.x + dx, ms.player.y + dy);
+
+    // THE TIDE: a pack of two around a point 150 ahead — phase one gathers
+    // them at the point (both wounded), phase two throws them back out
+    // (both wounded again), and the tide state runs 1 → 2 → drained.
+    const tp = walk(150, 0);
+    const t1 = ms.spawnAngel('darkcaster', walk(150 + 170, 40).x, walk(150 + 170, 40).y);
+    const t2 = ms.spawnAngel('darkcaster', walk(150 - 170, -40).x, walk(150 - 170, -40).y);
+    await wait(200);
+    for (const f of [t1, t2]) {
+      f.health.max = 500;
+      f.health.current = 500;
+      f.sprite.body.reset(f.x, f.y);
+    }
+    const d0 = [t1, t2].map((f) => Math.hypot(f.x - tp.x, f.y - tp.y));
+    const hp0 = [t1, t2].map((f) => f.health.current);
+    ms.tidePulse(tp.x, tp.y, { pullRadius: 260, pullDistance: 150, minGap: 36, pullDamage: 8, phaseGapMs: 600, blastRadius: 220, blastDamage: 10, blastKnockback: 160 });
+    const phase1 = ms.tide ? ms.tide.phase : 0;
+    const d1 = [t1, t2].map((f) => Math.hypot(f.x - tp.x, f.y - tp.y));
+    const hp1 = [t1, t2].map((f) => f.health.current);
+    for (let i = 0; i < 40 && ms.tide; i++) await wait(100); // until the tide drains (headless frames can lag the 600ms timer)
+    await wait(120);
+    const d2 = [t1, t2].map((f) => Math.hypot(f.x - tp.x, f.y - tp.y));
+    const hp2 = [t1, t2].map((f) => f.health.current);
+    const tide = {
+      phase1,
+      pulledIn: d1[0] < d0[0] - 60 && d1[1] < d0[1] - 60,
+      pullWounds: hp0[0] - hp1[0] === 8 && hp0[1] - hp1[1] === 8,
+      blastedOut: d2[0] > d1[0] + 60 && d2[1] > d1[1] + 60,
+      blastWounds: hp1[0] - hp2[0] === 10 && hp1[1] - hp2[1] === 10,
+      drained: ms.tide === null,
+    };
+    t1.destroy();
+    t2.destroy();
+
+    // DRENCH + DEPTH CRUSH vs the crystallize ledger on the SAME enemy: three
+    // drench stacks slow it per stack; four crystallize stacks sit beside them;
+    // the crush consumes EXACTLY the drench (damage per stack × 3) and the
+    // crystallize ledger + an out-of-radius drench survive; Shatter still
+    // consumes its own four afterwards (byte-identical machinery).
+    const w1 = ms.spawnTownsfolk(walk(70, 0).x, walk(70, 0).y, null, 'wolf');
+    const w2 = ms.spawnTownsfolk(walk(70, 400).x, walk(70, 400).y, null, 'wolf');
+    await wait(200);
+    for (const w of [w1, w2]) {
+      ms.stunEnemiesInRange(w.x, w.y, 90, 30000);
+      w.health.max = 200;
+      w.health.current = 200;
+    }
+    w1.sprite.body.reset(ms.player.x + 70, ms.player.y);
+    ms.addDrench(w1, 2, 6, 0.1, 8000);
+    const twoStacks = ms.drench.get(w1) === 2;
+    const slowAtTwo = ms.slowedEnemies.get(w1)?.factor;
+    ms.addDrench(w1, 1, 6, 0.1, 8000);
+    const threeStacks = ms.drench.get(w1) === 3;
+    const slowAtThree = ms.slowedEnemies.get(w1)?.factor;
+    ms.addDrench(w2, 2, 6, 0.1, 8000); // out of the crush radius — must survive
+    ms.addCrystallize(w1, 4, 6); // the Mage's ledger on the SAME enemy
+    const w1hp0 = w1.health.current;
+    const crush = ms.crushDrench(w1.x, w1.y, 140, 5);
+    const crushed = {
+      res: crush,
+      drop: w1hp0 - w1.health.current,
+      drenchGone: !ms.drench.has(w1),
+      farDrenchKept: ms.drench.get(w2) === 2,
+      crystalUntouched: ms.crystallize.get(w1) === 4,
+    };
+    const w1hp1 = w1.health.current;
+    const shatter = ms.shatterCrystallize(w1.x, w1.y, 140, 5);
+    const shattered = { res: shatter, drop: w1hp1 - w1.health.current, ledgerEmpty: !ms.crystallize.has(w1) };
+    w1.destroy();
+    w2.destroy();
+    ms.drench.delete(w2);
+
+    // REGALIA: one worn aura at a time — each donning EXCLUDES the last; the
+    // attunement multiplier scales a re-donned jewel; the DROWNED CROWN runs
+    // all three at once, empowered, then the reign ends bare-headed.
+    const base = ms.combinedSkillMods();
+    ms.wearRegalia('pearl', { regenPerSec: 3 });
+    const pearl = { worn: ms.regaliaWorn, regen: ms.combinedSkillMods().regenPerSec - (base.regenPerSec ?? 0) };
+    ms.wearRegalia('coral', { reflectPct: 0.25 });
+    const afterCoral = ms.combinedSkillMods();
+    const coral = { worn: ms.regaliaWorn, reflect: afterCoral.reflectPct - (base.reflectPct ?? 0), pearlOff: (afterCoral.regenPerSec ?? 0) === (base.regenPerSec ?? 0) };
+    ms.wearRegalia('abyssal', { damageMult: 0.2 });
+    const afterAbyssal = ms.combinedSkillMods();
+    const abyssal = { worn: ms.regaliaWorn, damage: afterAbyssal.damageMult - (base.damageMult ?? 0), coralOff: (afterAbyssal.reflectPct ?? 0) === (base.reflectPct ?? 0) };
+    ms.regaliaAttunementMult = 1.5;
+    ms.wearRegalia('abyssal', { damageMult: 0.2 });
+    const attuned = Math.abs(ms.combinedSkillMods().damageMult - (base.damageMult ?? 0) - 0.3) < 1e-6;
+    ms.regaliaAttunementMult = 1;
+    ms.wearDrownedCrown(900, { regenPerSec: 3, reflectPct: 0.25, damageMult: 0.2 }, 1.5);
+    const cm = ms.combinedSkillMods();
+    const crown = {
+      on: ms.drownedCrownOn,
+      wornCleared: ms.regaliaWorn === null,
+      allThree:
+        Math.abs(cm.regenPerSec - (base.regenPerSec ?? 0) - 4.5) < 1e-6 &&
+        Math.abs(cm.reflectPct - (base.reflectPct ?? 0) - 0.375) < 1e-6 &&
+        Math.abs(cm.damageMult - (base.damageMult ?? 0) - 0.3) < 1e-6,
+    };
+    await wait(1100); // the reign ends
+    const after = ms.combinedSkillMods();
+    const reignOver = !ms.drownedCrownOn && ms.regaliaWorn === null && (after.damageMult ?? 0) === (base.damageMult ?? 0);
+
+    // THE RENAME: 'Sundian' gates Bali's home chain; the deprecated 'Atlantean'
+    // gates nothing; a neighbor entry (Hunter/Sydney) is unmoved either way.
+    const chainClass0 = ms.chain.playerClass ?? null;
+    ms.chain.setPlayerClass('Sundian');
+    const baliForSundian = ms.chain.status('bal-01-mentor');
+    const sydneyForSundian = ms.chain.status('syd-01-mentor');
+    ms.chain.setPlayerClass('Atlantean');
+    const baliForAtlantean = ms.chain.status('bal-01-mentor');
+    ms.chain.setPlayerClass('Hunter');
+    const baliForHunter = ms.chain.status('bal-01-mentor');
+    const sydneyForHunter = ms.chain.status('syd-01-mentor');
+    if (chainClass0) ms.chain.setPlayerClass(chainClass0);
+    else ms.announcePlayerClass();
+    const rename = { baliForSundian, baliForAtlantean, baliForHunter, sydneyForSundian, sydneyForHunter };
+
+    ms.playerHealth.full();
+    ms.playerHealth.shield = 1e9;
+    return { setup: 'ok', tide, twoStacks, slowAtTwo, threeStacks, slowAtThree, crushed, shattered, pearl, coral, abyssal, attuned, crown, reignOver, rename };
+  });
+  ok(
+    'sundian ext — the tide: phase one gathers the pack at the point (wounded), phase two reverses and throws them out (wounded again), then drains',
+    sundianExt.setup === 'ok' &&
+      sundianExt.tide.phase1 === 1 &&
+      sundianExt.tide.pulledIn &&
+      sundianExt.tide.pullWounds &&
+      sundianExt.tide.blastedOut &&
+      sundianExt.tide.blastWounds &&
+      sundianExt.tide.drained,
+    JSON.stringify(sundianExt.tide),
+  );
+  ok(
+    'sundian ext — drench slows per stack and Depth Crush consumes EXACTLY the drench; the crystallize ledger on the same enemy is untouched and Shatter still consumes its own',
+    sundianExt.setup === 'ok' &&
+      sundianExt.twoStacks &&
+      Math.abs(sundianExt.slowAtTwo - 0.8) < 1e-6 &&
+      sundianExt.threeStacks &&
+      Math.abs(sundianExt.slowAtThree - 0.7) < 1e-6 &&
+      sundianExt.crushed.res.hit === 1 &&
+      sundianExt.crushed.res.stacks === 3 &&
+      sundianExt.crushed.drop === 15 &&
+      sundianExt.crushed.drenchGone &&
+      sundianExt.crushed.farDrenchKept &&
+      sundianExt.crushed.crystalUntouched &&
+      sundianExt.shattered.res.stacks === 4 &&
+      sundianExt.shattered.drop === 20 &&
+      sundianExt.shattered.ledgerEmpty,
+    JSON.stringify({ crushed: sundianExt.crushed, shattered: sundianExt.shattered }),
+  );
+  ok(
+    'sundian ext — regalia: one worn aura at a time (each donning excludes the last), attunement scales the jewel, the Drowned Crown runs all three empowered then ends bare-headed',
+    sundianExt.setup === 'ok' &&
+      sundianExt.pearl.worn === 'pearl' &&
+      sundianExt.pearl.regen === 3 &&
+      sundianExt.coral.worn === 'coral' &&
+      Math.abs(sundianExt.coral.reflect - 0.25) < 1e-6 &&
+      sundianExt.coral.pearlOff &&
+      sundianExt.abyssal.worn === 'abyssal' &&
+      Math.abs(sundianExt.abyssal.damage - 0.2) < 1e-6 &&
+      sundianExt.abyssal.coralOff &&
+      sundianExt.attuned &&
+      sundianExt.crown.on &&
+      sundianExt.crown.wornCleared &&
+      sundianExt.crown.allThree &&
+      sundianExt.reignOver,
+    JSON.stringify({ pearl: sundianExt.pearl, coral: sundianExt.coral, abyssal: sundianExt.abyssal, attuned: sundianExt.attuned, crown: sundianExt.crown, reignOver: sundianExt.reignOver }),
+  );
+  ok(
+    "sundian ext — the rename: 'Sundian' gates Bali's chain, the deprecated 'Atlantean' gates nothing, and Sydney's entry is unmoved",
+    sundianExt.setup === 'ok' &&
+      sundianExt.rename.baliForSundian === 'available' &&
+      sundianExt.rename.baliForAtlantean === 'locked' &&
+      sundianExt.rename.baliForHunter === 'locked' &&
+      sundianExt.rename.sydneyForSundian === 'locked' &&
+      sundianExt.rename.sydneyForHunter === 'available',
+    JSON.stringify(sundianExt.rename),
   );
 
   // 3aa. SKILL TREE UX (Casey's spec, permanent) — driven by REAL taps on the real
