@@ -120,6 +120,11 @@ import {
   REVENANT_TUNING,
   ASTRAL_DECOY_CONFIG,
   ASTRAL_DECOY_TUNING,
+  HUNTER_BOND_TUNING,
+  HUNTER_COMPANION_CONFIG,
+  GREAT_BEAST_CONFIG,
+  BEAST_HORDE_CONFIG,
+  BEAST_HORDE_TUNING,
 } from '../summon/summonData';
 import { TAPESTRY_TUNING, BEAR_MIGHT_ID, ELEPHANT_RAGE_ID } from '../skills/druidTapestry';
 import { RESTORATION_TUNING, CLAY_ID, OIL_IMMUNITY_ID, OIL_VITALITY_ID } from '../skills/druidRestoration';
@@ -806,6 +811,23 @@ export class MainScene extends Phaser.Scene {
   cascadeWindowUntil = 0;
   /** The flagged cast's transient damage multiplier (1 outside a flagged cast). */
   private cascadeCastMult = 1;
+  // --- Hunter framework primitives (composable/bespoke; class-agnostic) ---
+  /** THE BOND (Tame): the one persistent tamed companion, saved on the character.
+   *  Null = no beast ever bonded. `deathUntil` is the mend window after the pet
+   *  FALLS (a despawn + resummon cooldown — the bond itself is never lost).
+   *  Public-readable so the runtime gate can observe it. */
+  hunterBond: { deathUntil: number } | null = null;
+  /** The bond's current EXPRESSION: the base companion, the GREAT BEAST (one big
+   *  taunting tank) or the BEAST HORDE (three small strikers). Mode swaps
+   *  re-manifest the SAME bond in a new shape (stance-exclusive toggles drive it). */
+  hunterPetMode: 'companion' | 'great' | 'horde' = 'companion';
+  /** FOCUS (pet command): while now < until and the mark lives, every hunter pet
+   *  hunts THIS one enemy. Public for the gate. */
+  hunterFocus: { target: CombatEnemy; until: number } | null = null;
+  /** SCATTER (pet command): while now < this, pets round-robin across DIFFERENT
+   *  targets in reach instead of all piling on the nearest. */
+  hunterScatterUntil = 0;
+  private hunterScatterCursor = 0;
   /**
    * CHANNELED-BEAM state (the channel primitive). Transient: a single active channel locks
    * one enemy, ticks damage, optionally trickles energy, and is cancelled by movement / any
@@ -1404,11 +1426,24 @@ export class MainScene extends Phaser.Scene {
       this.physics.add.collider(s.sprite, this.activeMap().layer);
       this.uiCamera?.ignore(s.objects());
     };
+    // HUNTER BOND: a pet that DIED (health at zero — not a mode-swap/travel/load
+    // clear, which removes LIVING pets) starts the mend cooldown. The bond is
+    // never lost; for the horde, only the LAST beast falling trips it.
+    this.summons.onExpire = (s) => {
+      if (this.hunterBond && s.health.isDead && this.isHunterPetKey(s.config.key) && this.hunterPets().length === 0) {
+        this.hunterBond.deathUntil = this.time.now + HUNTER_BOND_TUNING.respawnCooldownMs;
+        this.showBanner('Your beast falls — the bond endures', 1400);
+      }
+    };
     // ATTACKER summons (skeletons, the Dark Matter Monster) find + hit enemies through the
     // scene's shared targeting + AoE path, so their kills fire XP/quests/boss logic normally.
     this.summonCombat = {
       nearestEnemy: (x, y, maxRange) => {
-        const e = this.nearestEnemy(x, y, maxRange);
+        // HUNTER PET COMMANDS override the pick: FOCUS pins every pet on the one
+        // marked enemy; SCATTER round-robins pets across the pack. No command
+        // live (every other class, always) → the plain nearest-enemy seek.
+        const cmd = this.hunterCommandTarget(x, y, maxRange);
+        const e = cmd ?? this.nearestEnemy(x, y, maxRange);
         return e ? { x: e.x, y: e.y, dist: Phaser.Math.Distance.Between(x, y, e.x, e.y) } : null;
       },
       attack: (x, y, range, damage) => this.aoeHitAll(x, y, range, damage),
@@ -1448,6 +1483,9 @@ export class MainScene extends Phaser.Scene {
       const e = this.nearestEnemy(x, y, range);
       return e ? { x: e.x, y: e.y } : null;
     };
+    // RETURNING bolts (Hunter framework): "home" is the moving player — the
+    // boomerang's return leg re-aims at the hand that threw it.
+    this.projectiles.onReturnHome = () => ({ x: this.player.x, y: this.player.y });
     // Persistent ground hazards (Greed): zones draw into the world-FX layer; a tick
     // applies player damage through the existing contact-damage path.
     this.hazards = new HazardField(this, this.worldFx);
@@ -2227,6 +2265,7 @@ export class MainScene extends Phaser.Scene {
     this.empoweredStrikes = null;
     this.clearTraps(); // Assassin state never survives a reset either
     this.clearPriestState(); // nor the Priest's
+    this.clearHunterState(true); // a class change severs the bond outright
     this.breakPlayerStealth();
     this.clearDots();
     this.summons.clear();
@@ -5265,6 +5304,185 @@ export class MainScene extends Phaser.Scene {
     this.applyStaggerIfActive(x, y, range);
   }
 
+  // --- Hunter framework: TAME (capture-and-cleanse), the bond, pet modes + commands ---
+
+  /** Is this summon key an expression of the Hunter bond? */
+  private isHunterPetKey(key: string): boolean {
+    return key === HUNTER_COMPANION_CONFIG.key || key === GREAT_BEAST_CONFIG.key || key === BEAST_HORDE_CONFIG.key;
+  }
+
+  /** The bond's live pets (any expression; the horde returns up to three). */
+  hunterPets(): AlliedSummon[] {
+    return this.summons.list.filter((s) => s.isAlive && this.isHunterPetKey(s.config.key));
+  }
+
+  /**
+   * TAME — capture-and-cleanse (Hunter framework #1). Cast at the nearest enemy in
+   * range: CORRUPTED-WILDLIFE above the health threshold takes the whittle damage;
+   * at/below it, it CONVERTS — cleansed into the bonded companion (replacing any
+   * old bond outright; the conversion is NOT a kill, so no XP/quest credit). Any
+   * other family REFUSES with lore feedback and a full refund (the ally rule).
+   * With no target at all, a living, mended bond RESUMMONS its beast (the recall);
+   * otherwise the cast whiffs. Returns what happened (gate-observable).
+   */
+  hunterTame(c: { range: number; whittleDamage: number; thresholdPct: number }): 'whittle' | 'tamed' | 'refused' | 'resummon' | 'whiff' {
+    const target = this.nearestEnemy(this.player.x, this.player.y, c.range);
+    if (!target) {
+      if (this.hunterBond && this.hunterPets().length === 0 && this.time.now >= this.hunterBond.deathUntil) {
+        this.manifestHunterPet();
+        this.showBanner('The bond answers', 1100);
+        return 'resummon';
+      }
+      this.actionWhiffed = true; // nothing to whittle, cleanse, or recall — refund
+      this.showBanner(this.hunterBond && this.time.now < this.hunterBond.deathUntil ? 'The bond needs time to mend' : 'No target in range', 1000);
+      return 'whiff';
+    }
+    // FAMILY GATE: only corrupted-wildlife can be cleansed (the roster family =
+    // the Townsfolk 'wolf' variant). Everything else made its choice.
+    const beast = target instanceof Townsfolk && target.variant === 'wolf' ? target : null;
+    if (!beast) {
+      this.showBanner('This one chose its corruption', 1300);
+      this.actionWhiffed = true; // full refund — the Monk whiff rule
+      return 'refused';
+    }
+    if (beast.health.ratio > c.thresholdPct) {
+      const dealt = beast.takeHit(c.whittleDamage); // the whittle — soften it toward the line
+      this.spawnDamageNumber(beast.x, beast.y - 24, dealt, '#ffcaa0');
+      return 'whittle';
+    }
+    // CONVERT: the cleanse is not a kill — the beast is removed silently (no XP,
+    // no quest credit) and stands up again as the bond, replacing any old one.
+    const at = { x: beast.x, y: beast.y };
+    beast.destroy();
+    const replacing = !!this.hunterBond;
+    this.hunterBond = { deathUntil: 0 };
+    this.hunterPetMode = 'companion'; // a fresh capture manifests the base beast
+    this.clearHunterPets();
+    this.summons.summon(HUNTER_COMPANION_CONFIG, at.x, at.y, 1);
+    this.spawnSkillRing(at.x, at.y, 60, 0xa0c86a);
+    this.showBanner(replacing ? 'The old bond yields — a new beast walks with you' : 'Cleansed — the beast walks with you', 1600);
+    this.autosave(); // the bond is character state — persist the capture
+    return 'tamed';
+  }
+
+  /** Remove every expression of the bond (mode swaps / re-captures). These pets are
+   *  ALIVE when cleared, so the onExpire death-cooldown hook never trips. */
+  private clearHunterPets(): void {
+    this.summons.clearKey(HUNTER_COMPANION_CONFIG.key);
+    this.summons.clearKey(GREAT_BEAST_CONFIG.key);
+    this.summons.clearKey(BEAST_HORDE_CONFIG.key);
+  }
+
+  /** Manifest the bond's current expression beside the player. */
+  private manifestHunterPet(): void {
+    const { dx, dy } = this.facingUnit();
+    const px = this.player.x - dx * 40;
+    const py = this.player.y - dy * 40;
+    if (this.hunterPetMode === 'great') {
+      this.summons.summon(GREAT_BEAST_CONFIG, px, py, 1);
+    } else if (this.hunterPetMode === 'horde') {
+      for (let i = 0; i < BEAST_HORDE_TUNING.count; i++) {
+        const a = (i / BEAST_HORDE_TUNING.count) * Math.PI * 2;
+        this.summons.summon(BEAST_HORDE_CONFIG, px + Math.cos(a) * 30, py + Math.sin(a) * 30, BEAST_HORDE_TUNING.count);
+      }
+    } else {
+      this.summons.summon(HUNTER_COMPANION_CONFIG, px, py, 1);
+    }
+  }
+
+  /** THE BOND TRAVELS: re-manifest the pet beside the player after a world swap or
+   *  a save load (both clear all summons). No-op without a live, mended bond, or
+   *  when a pet already stands. */
+  respawnHunterCompanion(): void {
+    if (!this.hunterBond) return;
+    if (this.time.now < this.hunterBond.deathUntil) return;
+    if (this.hunterPets().length > 0) return;
+    this.manifestHunterPet();
+  }
+
+  /** PET MODE swap (Hunter framework #3): the SAME bond re-manifested as the GREAT
+   *  BEAST, the BEAST HORDE, or the base companion. Stance-exclusive toggles drive
+   *  it in the class data (one mode at a time; exiting returns the base beast).
+   *  Whiffs without a bonded, mended beast. */
+  setHunterPetMode(mode: 'companion' | 'great' | 'horde'): boolean {
+    if (!this.hunterBond || this.time.now < this.hunterBond.deathUntil) {
+      this.actionWhiffed = true;
+      this.showBanner('No beast bonded', 1000);
+      return false;
+    }
+    this.hunterPetMode = mode;
+    const hadPet = this.hunterPets().length > 0;
+    this.clearHunterPets();
+    if (hadPet) this.manifestHunterPet(); // a benched (dead) bond stays benched
+    return true;
+  }
+
+  /** FOCUS (pet command): mark the nearest enemy in range — every pet hunts IT for
+   *  the window. Whiffs (refunding) without a pet out or a target in reach. */
+  hunterFocusCommand(range: number, durationMs: number): boolean {
+    if (this.hunterPets().length === 0) {
+      this.actionWhiffed = true;
+      this.showBanner('No beast to command', 1000);
+      return false;
+    }
+    const target = this.nearestEnemy(this.player.x, this.player.y, range);
+    if (!target) {
+      this.actionWhiffed = true;
+      this.showBanner('No target in range', 800);
+      return false;
+    }
+    this.hunterScatterUntil = 0; // the commands are exclusive — the newest wins
+    this.hunterFocus = { target, until: this.time.now + durationMs };
+    this.floatingText.show(target.x, target.y - 34, '◎', '#ffd24a', { fontSize: 18, riseBy: 10, durationMs: 900, depth: 14 });
+    this.showBanner('FOCUS — bring it down', 1100);
+    return true;
+  }
+
+  /** SCATTER (pet command): pets spread across DIFFERENT targets for the window.
+   *  Whiffs (refunding) without a pet out. */
+  hunterScatterCommand(durationMs: number): boolean {
+    if (this.hunterPets().length === 0) {
+      this.actionWhiffed = true;
+      this.showBanner('No beast to command', 1000);
+      return false;
+    }
+    this.hunterFocus = null; // the commands are exclusive — the newest wins
+    this.hunterScatterUntil = this.time.now + durationMs;
+    this.showBanner('SCATTER', 1100);
+    return true;
+  }
+
+  /** The live pet-command override for a pet at (x,y): the FOCUS mark while it
+   *  lives (the command carries a little past seek range), else the SCATTER
+   *  round-robin pick (consecutive pets get different foes within a frame).
+   *  Null when no command is live — every other class, always. */
+  private hunterCommandTarget(x: number, y: number, maxRange: number): CombatEnemy | null {
+    const now = this.time.now;
+    const f = this.hunterFocus;
+    if (f) {
+      if (now >= f.until || !f.target.isAlive) this.hunterFocus = null;
+      else if (Phaser.Math.Distance.Between(x, y, f.target.x, f.target.y) <= maxRange * 1.5) return f.target;
+      else return null; // marked but out of reach → normal seek until it closes
+    }
+    if (now < this.hunterScatterUntil) {
+      const list = this.combatEnemiesInRange(x, y, maxRange);
+      if (list.length > 0) return list[this.hunterScatterCursor++ % list.length];
+    }
+    return null;
+  }
+
+  /** Clear transient Hunter state; `dropBond` also severs the bond itself (class
+   *  change / fresh start — a load or world swap keeps it). */
+  clearHunterState(dropBond: boolean): void {
+    this.hunterFocus = null;
+    this.hunterScatterUntil = 0;
+    this.hunterScatterCursor = 0;
+    if (dropBond) {
+      this.hunterBond = null;
+      this.hunterPetMode = 'companion';
+    }
+  }
+
   /** Sasquatch defeat: the banner + quest beat + XP, from ANY kill path (melee, AoE,
    *  projectile, dash) so the opening quest always advances no matter the class/skill. */
   private onSasquatchDefeated(): void {
@@ -6048,6 +6266,7 @@ export class MainScene extends Phaser.Scene {
     this.empoweredStrikes = null;
     this.clearTraps(); // Assassin state never survives a reset either
     this.clearPriestState(); // nor the Priest's
+    this.clearHunterState(false); // commands drop; the bond survives death (recall it)
     this.breakPlayerStealth();
     this.clearDots();
     this.despawnRegionChampion(); // death resets a champion encounter cleanly
@@ -7494,6 +7713,7 @@ export class MainScene extends Phaser.Scene {
         urielArrived: this.urielArrived,
         urielPending: this.urielPending,
         title: this.currentTitle,
+        hunterBonded: !!this.hunterBond,
       },
       quests: this.chain.toJSON(),
       skills: this.skills.toJSON(),
@@ -7539,6 +7759,11 @@ export class MainScene extends Phaser.Scene {
       this.empoweredStrikes = null;
       this.clearTraps(); // Assassin state never survives a load either
       this.clearPriestState(); // nor the Priest's
+      // THE HUNTER BOND is the one piece of summon state that IS saved: commands
+      // drop, the bond restores (mended — mend windows don't cross a load), and
+      // the companion re-manifests at the end of the restore, world in place.
+      this.clearHunterState(true);
+      this.hunterBond = s.player.hunterBonded ? { deathUntil: 0 } : null;
       this.breakPlayerStealth();
       this.clearDots(); // drop any poison DoTs
       this.summons.clear(); // summons are transient — never carried across a load
@@ -10183,6 +10408,7 @@ export class MainScene extends Phaser.Scene {
     this.empoweredStrikes = null;
     this.clearTraps(); // Assassin state never survives a reset either
     this.clearPriestState(); // nor the Priest's
+    this.clearHunterState(false); // commands drop; THE BOND itself travels
     this.breakPlayerStealth();
     this.clearDots();
 
@@ -10221,6 +10447,9 @@ export class MainScene extends Phaser.Scene {
 
     // Drop any in-flight Earth bolts; clear the contextual portal/talk prompts.
     this.projectiles.clear();
+    // THE HUNTER BOND travels: its pets were cleared with every other summon
+    // above — re-manifest the companion beside the player in the new world.
+    this.respawnHunterCompanion();
     this.talkButton.setVisible(false);
     this.corruptButton.setVisible(false);
     this.enterHeavenButton.setVisible(false);
@@ -11557,6 +11786,7 @@ export class MainScene extends Phaser.Scene {
     this.empoweredStrikes = null;
     this.clearTraps(); // Assassin state never survives a reset either
     this.clearPriestState(); // nor the Priest's
+    this.clearHunterState(true); // a fresh start severs the bond
     this.breakPlayerStealth();
     this.clearDots();
     this.summons.clear();

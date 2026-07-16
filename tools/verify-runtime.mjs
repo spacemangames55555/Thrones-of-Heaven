@@ -4159,6 +4159,201 @@ try {
     JSON.stringify(savageExt.execute),
   );
 
+  // 3al. HUNTER FRAMEWORK EXTENSIONS (permanent): TAME capture-and-cleanse
+  // (whittle above the health line, CONVERT at/below it, corrupted-wildlife
+  // ONLY — every other family refuses with a refund; the conversion is not a
+  // kill), THE BOND's persistence (saved on the character, re-manifests on
+  // load; death = mend cooldown + Tame recall, never loss), the PET MODES
+  // (Great Beast / Beast Horde, one expression at a time), the PET COMMANDS
+  // (FOCUS one mark / SCATTER spread), and the RETURNING BOLT (out AND back).
+  const hunterExt = await page.evaluate(async () => {
+    const ms = window.__ready();
+    const wait = (t) => new Promise((r) => setTimeout(r, t));
+    if (!window.__quietSpot()) return { setup: 'no quiet spot' };
+    const walk = (dx, dy) => ms.activeMap().nearestWalkableWorld(ms.player.x + dx, ms.player.y + dy);
+    const tame = { range: 160, whittleDamage: 4, thresholdPct: 0.5 };
+
+    // Mode swap WITHOUT a bond refuses through the ally rule (refund).
+    ms.actionWhiffed = false;
+    const noBondWhiff = ms.setHunterPetMode('great') === false && ms.actionWhiffed === true;
+    ms.actionWhiffed = false;
+
+    // FAMILY GATE: an angel (dark-caster) refuses — lore feedback, full refund, no bond.
+    const aSpot = walk(70, 0);
+    const angel = ms.spawnAngel('darkcaster', aSpot.x, aSpot.y);
+    await wait(150);
+    ms.stunEnemiesInRange(angel.x, angel.y, 90, 30000);
+    angel.sprite.body.reset(ms.player.x + 60, ms.player.y);
+    const refusedKind = ms.hunterTame(tame);
+    const refused = refusedKind === 'refused' && ms.actionWhiffed === true && !ms.hunterBond;
+    ms.actionWhiffed = false;
+    angel.destroy();
+
+    // WHITTLE → CLEANSE on a live wolf (15 HP): 4-damage whittles walk it to the
+    // 50% line (15 → 11 → 7), then the SAME cast converts. No XP — not a kill.
+    const wSpot = walk(60, 0);
+    const wolf = ms.spawnTownsfolk(wSpot.x, wSpot.y, null, 'wolf');
+    await wait(150);
+    ms.stunEnemiesInRange(wolf.x, wolf.y, 90, 30000);
+    wolf.sprite.body.reset(ms.player.x + 60, ms.player.y);
+    const xp0 = ms.progression.currentXP;
+    const kinds = [];
+    for (let i = 0; i < 6 && kinds[kinds.length - 1] !== 'tamed'; i++) {
+      kinds.push(ms.hunterTame(tame));
+      await wait(60);
+    }
+    const tamed = {
+      kinds,
+      wolfGone: !wolf.isAlive,
+      bond: !!ms.hunterBond,
+      pets: ms.hunterPets().length,
+      key: ms.hunterPets()[0]?.config.key,
+      xpDelta: ms.progression.currentXP - xp0,
+    };
+
+    // PERSISTENCE: the bond survives a save/load round trip and the companion
+    // re-manifests, world in place (world travel runs this same respawn seam).
+    const snap = ms.serialize();
+    const savedFlag = snap.player.hunterBonded === true;
+    ms.applySave(snap);
+    await wait(250);
+    const persisted = { savedFlag, bondBack: !!ms.hunterBond, petBack: ms.hunterPets().length === 1 };
+
+    // DEATH: the pet falls → despawn + mend cooldown, the bond ENDURES; the Tame
+    // recall whiffs (refunding) while mending, then brings the beast back.
+    ms.hunterPets()[0].takeHit(100000);
+    await wait(250); // the manager prunes the corpse (fires the death hook)
+    const afterDeath = {
+      pets: ms.hunterPets().length,
+      bondKept: !!ms.hunterBond,
+      mending: !!ms.hunterBond && ms.hunterBond.deathUntil > ms.time.now,
+    };
+    ms.actionWhiffed = false;
+    const mendWhiff = ms.hunterTame(tame) === 'whiff' && ms.actionWhiffed === true;
+    ms.actionWhiffed = false;
+    ms.hunterBond.deathUntil = 0; // the mend passes
+    const recalled = ms.hunterTame(tame) === 'resummon' && ms.hunterPets().length === 1;
+
+    // PET MODES: Great Beast = ONE magnet-tier tank; Beast Horde = THREE minion
+    // strikers; stance-exclusive (never both); exiting returns the base beast.
+    const okGreat = ms.setHunterPetMode('great');
+    const great = ms.hunterPets();
+    const modeGreat = okGreat && great.length === 1 && great[0].config.key === 'hunter_great' && great[0].aggroPriority === 3;
+    const okHorde = ms.setHunterPetMode('horde');
+    const horde = ms.hunterPets();
+    const modeHorde =
+      okHorde && horde.length === 3 && horde.every((p) => p.config.key === 'hunter_horde') && ms.summons.list.every((p) => p.config.key !== 'hunter_great');
+    const okBase = ms.setHunterPetMode('companion');
+    const base = ms.hunterPets();
+    const modeBack = okBase && base.length === 1 && base[0].config.key === 'hunter_companion';
+
+    // FOCUS: two pinned foes — the mark eats the swings, the bystander bleeds
+    // nothing. (Spawned beyond the pet's seek range, pinned, then placed + the
+    // command given in the SAME tick so nothing swings early.)
+    const f1 = ms.spawnAngel('darkcaster', walk(420, 0).x, walk(420, 0).y);
+    const f2 = ms.spawnAngel('darkcaster', walk(420, 90).x, walk(420, 90).y);
+    await wait(150);
+    for (const f of [f1, f2]) {
+      ms.stunEnemiesInRange(f.x, f.y, 90, 30000);
+      f.health.max = 500;
+      f.health.current = 500; // nobody dies mid-measurement
+    }
+    f1.sprite.body.reset(ms.player.x + 70, ms.player.y);
+    f2.sprite.body.reset(ms.player.x + 70, ms.player.y + 90);
+    const f1hp0 = f1.health.current;
+    const f2hp0 = f2.health.current;
+    const focusOk = ms.hunterFocusCommand(200, 4000);
+    await wait(1600);
+    const focus = { focusOk, markHit: f1hp0 - f1.health.current > 0, bystanderClean: f2.health.current === f2hp0 };
+
+    // SCATTER: the horde spreads — three beasts, two pinned foes, BOTH bleed.
+    ms.setHunterPetMode('horde');
+    const s1hp0 = f1.health.current;
+    const s2hp0 = f2.health.current;
+    const scatterOk = ms.hunterScatterCommand(4000);
+    await wait(1800);
+    const scatter = { scatterOk, spread: f1.health.current < s1hp0 && f2.health.current < s2hp0 };
+    f1.destroy();
+    f2.destroy();
+
+    // RETURNING BOLT: bench the pets (no interference), pin one tough foe at
+    // 120px, throw a 260px boomerang — it cuts the foe going OUT and BACK, then
+    // lands home (no live player bolts left).
+    ms.clearHunterPets();
+    const foe = ms.spawnAngel('darkcaster', walk(120, 0).x, walk(120, 0).y);
+    await wait(150);
+    ms.stunEnemiesInRange(foe.x, foe.y, 90, 30000);
+    foe.sprite.body.reset(ms.player.x + 120, ms.player.y);
+    foe.health.max = 500;
+    foe.health.current = 500;
+    const bHp0 = foe.health.current;
+    ms.projectiles.spawn({ x: ms.player.x, y: ms.player.y, dirX: 1, dirY: 0, speed: 520, damage: 9, maxRange: 260, faction: 'player', color: 0xa0c86a, radius: 9, returning: true });
+    await wait(1400);
+    const boomerang = {
+      hits: Math.round((bHp0 - foe.health.current) / 9),
+      settled: ms.projectiles.pool.filter((b) => b.active && b.faction === 'player').length === 0,
+    };
+    foe.destroy();
+    ms.clearHunterState(true); // leave no bond behind for later checks
+    ms.playerHealth.full();
+    ms.playerHealth.shield = 1e9;
+    return { setup: 'ok', noBondWhiff, refused, tamed, persisted, afterDeath, mendWhiff, recalled, modeGreat, modeHorde, modeBack, focus, scatter, boomerang };
+  });
+  ok(
+    'hunter ext — tame family gate: the dark-caster refuses ("chose its corruption"), the cast refunds, no bond forms',
+    hunterExt.setup === 'ok' && hunterExt.refused,
+    JSON.stringify({ refused: hunterExt.refused }),
+  );
+  ok(
+    'hunter ext — tame whittle→cleanse: whittles walk the wolf to the line, the conversion cast bonds it (no XP — not a kill), the companion stands',
+    hunterExt.setup === 'ok' &&
+      hunterExt.tamed.kinds.length >= 2 &&
+      hunterExt.tamed.kinds[hunterExt.tamed.kinds.length - 1] === 'tamed' &&
+      hunterExt.tamed.kinds.every((k) => k === 'whittle' || k === 'tamed') &&
+      hunterExt.tamed.kinds.filter((k) => k === 'tamed').length === 1 &&
+      hunterExt.tamed.wolfGone &&
+      hunterExt.tamed.bond &&
+      hunterExt.tamed.pets === 1 &&
+      hunterExt.tamed.key === 'hunter_companion' &&
+      hunterExt.tamed.xpDelta === 0,
+    JSON.stringify(hunterExt.tamed),
+  );
+  ok(
+    'hunter ext — bond persistence: the bond serializes on the character and the companion re-manifests after the load',
+    hunterExt.setup === 'ok' && hunterExt.persisted.savedFlag && hunterExt.persisted.bondBack && hunterExt.persisted.petBack,
+    JSON.stringify(hunterExt.persisted),
+  );
+  ok(
+    'hunter ext — death is never loss: the fallen pet despawns into a mend cooldown (recall whiffs + refunds), then Tame recalls the beast',
+    hunterExt.setup === 'ok' &&
+      hunterExt.afterDeath.pets === 0 &&
+      hunterExt.afterDeath.bondKept &&
+      hunterExt.afterDeath.mending &&
+      hunterExt.mendWhiff &&
+      hunterExt.recalled,
+    JSON.stringify({ afterDeath: hunterExt.afterDeath, mendWhiff: hunterExt.mendWhiff, recalled: hunterExt.recalled }),
+  );
+  ok(
+    'hunter ext — pet modes: Great Beast = one magnet tank, Beast Horde = three strikers, stance-exclusive, exit returns the base beast (no bond = whiff)',
+    hunterExt.setup === 'ok' && hunterExt.noBondWhiff && hunterExt.modeGreat && hunterExt.modeHorde && hunterExt.modeBack,
+    JSON.stringify({ noBondWhiff: hunterExt.noBondWhiff, modeGreat: hunterExt.modeGreat, modeHorde: hunterExt.modeHorde, modeBack: hunterExt.modeBack }),
+  );
+  ok(
+    'hunter ext — FOCUS: every swing lands on the one marked foe; the bystander beside it bleeds nothing',
+    hunterExt.setup === 'ok' && hunterExt.focus.focusOk && hunterExt.focus.markHit && hunterExt.focus.bystanderClean,
+    JSON.stringify(hunterExt.focus),
+  );
+  ok(
+    'hunter ext — SCATTER: the horde spreads across DIFFERENT targets — both pinned foes bleed',
+    hunterExt.setup === 'ok' && hunterExt.scatter.scatterOk && hunterExt.scatter.spread,
+    JSON.stringify(hunterExt.scatter),
+  );
+  ok(
+    'hunter ext — returning bolt: the boomerang cuts the foe going OUT and again coming BACK, then lands home',
+    hunterExt.setup === 'ok' && hunterExt.boomerang.hits === 2 && hunterExt.boomerang.settled,
+    JSON.stringify(hunterExt.boomerang),
+  );
+
   // 3aa. SKILL TREE UX (Casey's spec, permanent) — driven by REAL taps on the real
   // screen: instant spend (no confirmation window) respects locks and points with
   // shake/toast feedback; the name-bar "Add" button round-trips through the hotkey

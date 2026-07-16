@@ -41,6 +41,11 @@ export interface ProjectileSpawn {
    *  to the scene through onEnemyHit when the bolt lands on an enemy (stun/slow/
    *  weaken/knockback at the impact point — the scene owns the effects). */
   impactRider?: unknown;
+  /** RETURNING (player bolts, Hunter framework): a boomerang — at max range the bolt
+   *  TURNS and flies home (the scene resolves "home" via onReturnHome), hitting on
+   *  the way OUT and again on the way BACK (the pierce dedup set is cleared at the
+   *  apex, and enemy hits never despawn it — only home, terrain, or spent range do). */
+  returning?: boolean;
 }
 
 /** One pooled bolt: a glowing sprite plus its flight state. */
@@ -66,6 +71,9 @@ class Bolt {
   seek = false;
   seekTurnRate = 6;
   impactRider?: unknown;
+  returning = false;
+  /** True once a returning bolt has turned at its apex (the flight home). */
+  returnLeg = false;
 
   constructor(scene: Phaser.Scene, layer: Phaser.GameObjects.Layer) {
     this.sprite = scene.add.image(0, 0, TEXTURE_KEY).setDepth(13).setVisible(false);
@@ -94,6 +102,8 @@ class Bolt {
     this.seek = s.seek ?? false;
     this.seekTurnRate = s.seekTurnRate ?? 6;
     this.impactRider = s.impactRider;
+    this.returning = s.returning ?? false;
+    this.returnLeg = false;
     this.sprite
       .setPosition(s.x, s.y)
       .setTint(this.color)
@@ -148,6 +158,9 @@ export class ProjectileSystem {
   /** SEEKING bolts: the nearest live enemy to (x,y) within `range` — the scene owns
    *  the enemy lists, so it resolves the homing target. Null = fly straight. */
   onSeekTarget?: (x: number, y: number, range: number) => { x: number; y: number } | null;
+  /** RETURNING bolts: where "home" is right now (the moving player) — the return
+   *  leg re-aims at it every frame so the boomerang lands back in the hand. */
+  onReturnHome?: () => { x: number; y: number };
 
   constructor(scene: Phaser.Scene, map: GameMap, layer: Phaser.GameObjects.Layer) {
     this.scene = scene;
@@ -183,8 +196,21 @@ export class ProjectileSystem {
     const dt = deltaMs / 1000;
     for (const b of this.pool) {
       if (!b.active) continue;
+      // RETURN LEG (returning player bolts): re-aim at home (the moving player)
+      // every frame; landing back in the hand is the quiet despawn.
+      if (b.returnLeg && this.onReturnHome) {
+        const home = this.onReturnHome();
+        if (Phaser.Math.Distance.Between(b.sprite.x, b.sprite.y, home.x, home.y) <= b.radius + playerRadius) {
+          b.deactivate(); // caught — no impact FX/splash on the catch
+          continue;
+        }
+        const ang = Math.atan2(home.y - b.sprite.y, home.x - b.sprite.x);
+        b.dirX = Math.cos(ang);
+        b.dirY = Math.sin(ang);
+        b.sprite.setRotation(ang);
+      }
       // SEEKING (player bolts): curve toward the nearest live enemy at the turn rate.
-      if (b.seek && b.faction === 'player' && this.onSeekTarget) {
+      if (b.seek && !b.returnLeg && b.faction === 'player' && this.onSeekTarget) {
         const t = this.onSeekTarget(b.sprite.x, b.sprite.y, Math.max(0, b.maxRange - b.traveled) + 120);
         if (t) {
           const want = Math.atan2(t.y - b.sprite.y, t.x - b.sprite.x);
@@ -201,8 +227,17 @@ export class ProjectileSystem {
       b.traveled += step;
 
       if (b.traveled >= b.maxRange) {
-        this.impact(b);
-        continue;
+        // A returning bolt TURNS at its apex instead of despawning: fresh range for
+        // the flight home, and the pierce dedup set is cleared so everything it cut
+        // through on the way out is fair game on the way back.
+        if (b.returning && !b.returnLeg && b.faction === 'player') {
+          b.returnLeg = true;
+          b.traveled = 0;
+          b.hits.clear();
+        } else {
+          this.impact(b);
+          continue;
+        }
       }
       const terr = this.map.terrainAtWorld(b.sprite.x, b.sprite.y);
       if (terr?.blocks) {
@@ -225,8 +260,12 @@ export class ProjectileSystem {
       // PLAYER bolt: ask the scene to resolve a hit on a NEW enemy (pierce dedup via b.hits).
       // Each distinct enemy hit consumes one pierce; the bolt despawns when pierce is spent.
       if (b.faction === 'player' && this.onEnemyHit?.(b.sprite.x, b.sprite.y, b.radius, b.damage, b.hits, b.impactRider)) {
-        b.pierce -= 1;
-        if (b.pierce <= 0) this.impact(b);
+        // Returning bolts pass THROUGH enemies both ways (the dedup set caps each
+        // leg to one hit per foe) — only home, terrain, or spent range end them.
+        if (!b.returning) {
+          b.pierce -= 1;
+          if (b.pierce <= 0) this.impact(b);
+        }
       }
     }
   }
