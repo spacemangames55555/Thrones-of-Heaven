@@ -1288,6 +1288,56 @@ try {
         const execute = { lowKilled: !b.isAlive, healthyDrop: cHp0 - c.health.current, healthySurvived: c.isAlive };
         b.destroy();
         c.destroy();
+        // BLOOD SCENT through the real keyed passive (Casey's re-spec): one
+        // swing over TWO foes — the BLEEDING one takes ×1.2, the clean one the
+        // base — measured synchronously off the same cast.
+        unlock(['sav_jg_lunge', 'sav_jg_snarl', 'sav_jg_jaguar', 'sav_jg_hide', 'sav_jg_hunt', 'sav_jg_pack']);
+        ms.recomputeSkillEffects();
+        const scentArmed = ms.bloodScentBonus > 0;
+        const s1 = spawnAt(70, 30);
+        const s2 = spawnAt(70, -30);
+        await wait(200);
+        for (const f of [s1, s2]) ms.stunEnemiesInRange(f.x, f.y, 60, 30000);
+        s1.sprite.body.reset(ms.player.x + 60, ms.player.y + 26);
+        s2.sprite.body.reset(ms.player.x + 60, ms.player.y - 26);
+        ms.addDot(s1, 1, 800, 5000, 0xd04a3a); // a token bleed marks the wounded one
+        ms.player.facingX = 1;
+        ms.player.facingY = 0;
+        const s1Hp0 = s1.health.current;
+        const s2Hp0 = s2.health.current;
+        ms.runActiveSkill('sav_slash');
+        const scent = { armed: scentArmed, bleedDrop: s1Hp0 - s1.health.current, cleanDrop: s2Hp0 - s2.health.current };
+        s1.destroy();
+        s2.destroy();
+        // JAGUAR SPIRIT through the REAL activation path (Casey's swap): the
+        // FORM's stats go live, a real strike rakes the jaguar's bleed, and NO
+        // summon machinery remains reachable from the Savage.
+        ms.energy.full();
+        ms.activateSkill('sav_jg_jaguar');
+        const formOn = ms.skillTimed.some((t) => t.id === 'sav_jg_jaguar');
+        const mods = ms.combinedSkillMods();
+        const f1 = spawnAt(70, 0);
+        await wait(200);
+        ms.stunEnemiesInRange(f1.x, f1.y, 60, 30000);
+        f1.sprite.body.reset(ms.player.x + 60, ms.player.y);
+        ms.player.facingX = 1;
+        ms.player.facingY = 0;
+        const f1Hp0 = f1.health.current;
+        ms.runActiveSkill('sav_slash');
+        const jaguarDefs = {
+          formKind: defs.find((d) => d.id === 'sav_jg_jaguar').effect.kind,
+          scentKind: defs.find((d) => d.id === 'sav_jg_pack').effect.kind,
+        };
+        const form = {
+          on: formOn,
+          statsLive: (mods.attackSpeedMult ?? 0) >= 0.25 && (mods.moveSpeedMult ?? 0) >= 0.15,
+          struck: f1Hp0 - f1.health.current > 0,
+          bleedRaked: ms.dots.some((d) => d.target === f1),
+          noSummons: ms.summons.list.length === 0,
+          formKind: jaguarDefs.formKind,
+          scentKind: jaguarDefs.scentKind,
+        };
+        f1.destroy();
         // WARRIOR'S MOMENTUM through the real keyed passive: four real slashes,
         // each on a FRESH live foe (no overkill caps), each drop harder than
         // the last as the stacks build.
@@ -1309,25 +1359,12 @@ try {
           foe.destroy();
         }
         const momentum = { armed, drops, stacks: ms.frenzy ? ms.frenzy.stacks : 0, growing: drops[0] < drops[1] && drops[1] < drops[2] && drops[2] < drops[3], ratio: drops[3] / drops[0] };
-        // JAGUAR + PACK BOND through the real skills: the companion stands, the
-        // bond takes; recast the bond with the pack gone and it whiff-refunds.
-        ms.runActiveSkill('sav_jaguar');
-        await wait(200);
-        const jaguarUp = ms.summons.list.some((sm) => sm.isAlive);
-        ms.runActiveSkill('sav_pack');
-        const bonded = ms.allyBond !== null;
-        ms.allyBond = null;
-        ms.summons.clear();
-        ms.actionWhiffed = false;
-        ms.runActiveSkill('sav_pack');
-        const packWhiff = ms.actionWhiffed === true;
-        ms.actionWhiffed = false;
         ms.playerHealth.full();
         ms.playerHealth.shield = 1e9;
-        return { setup: 'ok', leap, paidCast, refusal, execute, momentum, jaguarUp, bonded, packWhiff };
+        return { setup: 'ok', leap, paidCast, refusal, execute, scent, form, momentum };
       });
       ok(
-        'savage: leap-slam, blood-priced nova (paid + refused), the headtaker execute, momentum growth, jaguar + pack bond — each through the real skill',
+        'savage: leap-slam, blood-priced nova (paid + refused), the headtaker execute, blood scent vs a bleeder, the jaguar form (stats + raked bleed, no summons), momentum growth — each through the real skill',
         savKit.setup === 'ok' &&
           savKit.leap.moved > 140 &&
           savKit.leap.hit &&
@@ -1340,13 +1377,20 @@ try {
           savKit.execute.lowKilled &&
           savKit.execute.healthyDrop === 20 &&
           savKit.execute.healthySurvived &&
+          savKit.scent.armed &&
+          savKit.scent.cleanDrop > 0 &&
+          Math.abs(savKit.scent.bleedDrop / savKit.scent.cleanDrop - 1.2) < 0.05 &&
+          savKit.form.on &&
+          savKit.form.statsLive &&
+          savKit.form.struck &&
+          savKit.form.bleedRaked &&
+          savKit.form.noSummons &&
+          savKit.form.formKind === 'transformation' &&
+          savKit.form.scentKind === 'passive' &&
           savKit.momentum.armed &&
           savKit.momentum.growing &&
           savKit.momentum.ratio >= 1.15 &&
-          savKit.momentum.stacks >= 3 &&
-          savKit.jaguarUp &&
-          savKit.bonded &&
-          savKit.packWhiff,
+          savKit.momentum.stacks >= 3,
         JSON.stringify(savKit),
       );
     }

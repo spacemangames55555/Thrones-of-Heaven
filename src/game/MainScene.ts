@@ -120,8 +120,6 @@ import {
   REVENANT_TUNING,
   ASTRAL_DECOY_CONFIG,
   ASTRAL_DECOY_TUNING,
-  JAGUAR_CONFIG,
-  JAGUAR_TUNING,
 } from '../summon/summonData';
 import { TAPESTRY_TUNING, BEAR_MIGHT_ID, ELEPHANT_RAGE_ID } from '../skills/druidTapestry';
 import { RESTORATION_TUNING, CLAY_ID, OIL_IMMUNITY_ID, OIL_VITALITY_ID } from '../skills/druidRestoration';
@@ -147,7 +145,7 @@ import { PRS_REBUKE_TUNING } from '../skills/priestRebuke';
 import { PRS_GRACE_TUNING, PROPHETIC_VISION_ID } from '../skills/priestGrace';
 import { SAV_EDGE_TUNING, WARRIORS_MOMENTUM_ID } from '../skills/savageObsidian';
 import { SAV_BLOOD_TUNING } from '../skills/savageBlood';
-import { SAV_JAGUAR_TUNING } from '../skills/savageJaguar';
+import { SAV_JAGUAR_TUNING, JAGUAR_FORM_ID, BLOOD_SCENT_ID } from '../skills/savageJaguar';
 import { PlayerPower } from '../player/PlayerPower';
 import { URIEL_SCENE } from '../story/urielData';
 import { URIEL_SENDOFF_LINES, RIFT_SCENE } from '../story/riftSceneData';
@@ -795,6 +793,9 @@ export class MainScene extends Phaser.Scene {
    *  ALL damage by (1 + perStackMult); stacks fall to zero after decayMs
    *  without blood. Public-readable so the runtime gate can observe it. */
   frenzy: { perStackMult: number; maxStacks: number; decayMs: number; stacks: number; until: number } | null = null;
+  /** BLOOD SCENT (Savage keyed passive): while > 0, BLEEDING targets take
+   *  ×(1+this) from the player's AoE funnel. 0 for every other class. */
+  bloodScentBonus = 0;
   /**
    * CHANNELED-BEAM state (the channel primitive). Transient: a single active channel locks
    * one enemy, ticks damage, optionally trickles energy, and is cancelled by movement / any
@@ -2333,6 +2334,8 @@ export class MainScene extends Phaser.Scene {
     } else if (this.frenzy) {
       this.disarmFrenzy();
     }
+    // SAVAGE keyed passive: Blood Scent — bleeding targets take ×(1+bonus).
+    this.bloodScentBonus = this.skills.isUnlocked(BLOOD_SCENT_ID) ? SAV_JAGUAR_TUNING.scent.bonusVsBleeding : 0;
     // Block chance + strength (Double Block / Dual Shield) — rolled per hit in Health.
     if (this.playerHealth) {
       this.playerHealth.blockChance = Phaser.Math.Clamp(m.blockChance ?? 0, 0, 0.9);
@@ -3169,19 +3172,6 @@ export class MainScene extends Phaser.Scene {
       const c = SAV_JAGUAR_TUNING.snarl;
       const turned = this.confuseNearestEnemy(px, py, c.range, c.chance, c.durationMs, c.chipDamage, c.chipMs);
       this.showBanner(turned ? 'It flees into its own' : 'The snarl goes unheard', 1100);
-    } else if (action === 'sav_jaguar') {
-      // Savage Jaguar #3 — the bleeding attacker companion.
-      this.summonAlliedUnits(JAGUAR_CONFIG, 1, JAGUAR_TUNING.maxConcurrent);
-      this.showBanner('The spotted shadow answers', 1200);
-    } else if (action === 'sav_pack') {
-      // Savage Jaguar #6 — the ally-bond behind the ALLY RULE (no pack = whiff).
-      const c = SAV_JAGUAR_TUNING.pack;
-      if (this.summons.list.some((sm) => sm.isAlive)) {
-        this.startAllyBond(c.sharePct, c.durationMs);
-      } else {
-        this.showBanner('No pack to share the wound', 1000);
-        this.actionWhiffed = true;
-      }
     }
   }
 
@@ -3290,6 +3280,12 @@ export class MainScene extends Phaser.Scene {
         if (dmg > 0) this.aoeHitAll(x, y, radius, dmg);
         // RAZOR'S EDGE (Samurai keyed passive): strikes leave a bleed DoT.
         if (dmg > 0 && this.strikeBleed) this.applyDotInRange(x, y, radius, this.strikeBleed.dmgPerTick, this.strikeBleed.tickMs, this.strikeBleed.durationMs, 0xd04a3a);
+        // JAGUAR SPIRIT (Savage form): while the form holds, EVERY strike rakes
+        // the jaguar's bleed (read live off the timed state — no recompute needed).
+        if (dmg > 0 && this.skillTimed.some((t) => t.id === JAGUAR_FORM_ID && this.time.now < t.endsAt)) {
+          const jb = SAV_JAGUAR_TUNING.jaguar.bleed;
+          this.applyDotInRange(x, y, radius, jb.dmgPerTick, jb.tickMs, jb.durationMs, 0xe8a03a);
+        }
         // VOODOO DOLL (Witch Doctor): a melee strike landing on the doll mirrors
         // a fraction of its damage to the bound target at any range.
         if (dmg > 0) this.maybeVoodooMirror(x, y, radius, dmg);
@@ -5172,9 +5168,23 @@ export class MainScene extends Phaser.Scene {
    *  enemies are hit — this is what lets the CONE (Dust Devil) and LINE/WALL (Jet Stream)
    *  AoE reuse the exact same full-reward path with a real, non-circular hitbox. */
   private aoeHitAll(x: number, y: number, range: number, dmg: number, where?: (ex: number, ey: number) => boolean): void {
+    // BLOOD SCENT (Savage keyed passive): BLEEDING targets take ×(1+bonus).
+    // Resolved as TWO position-filtered passes (the damageOneEnemy filter
+    // precedent) so no per-family helper changes; at zero bonus — every other
+    // class — the single original path below runs untouched.
+    if (this.bloodScentBonus > 0 && dmg > 0) {
+      const bleeding = (ex: number, ey: number): boolean => this.dots.some((d) => d.target.isAlive && d.target.x === ex && d.target.y === ey);
+      this.aoeHitAllRaw(x, y, range, dmg * (1 + this.bloodScentBonus), (ex, ey) => bleeding(ex, ey) && (!where || where(ex, ey)));
+      this.aoeHitAllRaw(x, y, range, dmg, (ex, ey) => !bleeding(ex, ey) && (!where || where(ex, ey)));
+      return;
+    }
+    this.aoeHitAllRaw(x, y, range, dmg, where);
+  }
+
+  private aoeHitAllRaw(x: number, y: number, range: number, dmg: number, where?: (ex: number, ey: number) => boolean): void {
     // ECHO (Bard framework): while armed, the resolution repeats once, delayed,
     // at echoPct strength (the guard inside maybeEcho stops echoes of echoes).
-    this.maybeEcho(() => this.aoeHitAll(x, y, range, dmg * this.echoPct, where));
+    this.maybeEcho(() => this.aoeHitAllRaw(x, y, range, dmg * this.echoPct, where));
     if (this.sasquatch.isAlive && this.sasquatch.distanceTo(x, y) <= range && (!where || where(this.sasquatch.x, this.sasquatch.y))) {
       const dealt = this.sasquatch.takeHit(dmg);
       if (dealt > 0) this.dmgDealtAccum += dealt; // lifesteal accounting

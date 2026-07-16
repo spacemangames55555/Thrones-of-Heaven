@@ -376,8 +376,6 @@ export type ActiveActionId =
   | 'sav_hunger'
   | 'sav_lunge'
   | 'sav_snarl'
-  | 'sav_jaguar'
-  | 'sav_pack'
   | 'sav_lick'
   | 'sav_totem';
 
@@ -723,9 +721,9 @@ const NON_DAMAGING_ACTIVE_ACTIONS: ReadonlySet<ActiveActionId> = new Set([
   // word, the dormant revive, and the mending zones — Beacon/Burst/Ground/
   // Grace Incarnate DO damage and stay damaging actives).
   'prs_shield_faith', 'prs_embrace', 'prs_radiant', 'prs_barrier', 'prs_blessing', 'prs_intervene', 'prs_aegis', 'prs_word', 'prs_forgive', 'prs_renewal', 'prs_hymn', 'prs_ascend',
-  // Savage utility actives (the pure-fear roar, the confusion snarl, the
-  // companion, the ally-bond, and the animal's mend).
-  'sav_roar', 'sav_snarl', 'sav_jaguar', 'sav_pack', 'sav_lick',
+  // Savage utility actives (the pure-fear roar, the confusion snarl, and the
+  // animal's mend).
+  'sav_roar', 'sav_snarl', 'sav_lick',
 ]);
 
 /**
@@ -799,9 +797,9 @@ const NON_AIMABLE_ACTIONS: ReadonlySet<ActiveActionId> = new Set<ActiveActionId>
   // Light / Smite / Rebuke / the Beacon's beam stay directional (drag-to-aim).
   'prs_shield_faith', 'prs_embrace', 'prs_radiant', 'prs_barrier', 'prs_blessing', 'prs_intervene', 'prs_aegis', 'prs_word', 'prs_ground', 'prs_vanquish', 'prs_judgment', 'prs_burst', 'prs_forgive', 'prs_renewal', 'prs_hymn', 'prs_ascend', 'prs_grace_field',
   // Savage: self-states, self-AoEs, the auto-targeting casts (snarl/veins/
-  // transfusion find their own target), the companion, and the mend. Slash/
-  // Jagged/Leap/Cleave/Skull/Headtaker/Spike/Mire/Lunge/Totem stay directional.
-  'sav_roar', 'sav_slaughter', 'sav_crimson', 'sav_sacrifice', 'sav_hunger', 'sav_snarl', 'sav_jaguar', 'sav_pack', 'sav_lick', 'sav_veins', 'sav_transfusion',
+  // transfusion find their own target), and the mend. Slash/Jagged/Leap/
+  // Cleave/Skull/Headtaker/Spike/Mire/Lunge/Totem stay directional.
+  'sav_roar', 'sav_slaughter', 'sav_crimson', 'sav_sacrifice', 'sav_hunger', 'sav_snarl', 'sav_lick', 'sav_veins', 'sav_transfusion',
 ]);
 
 /**
