@@ -784,6 +784,12 @@ export class MainScene extends Phaser.Scene {
    *  that HEALS friendlies inside it (caster included) and DAMAGES enemies it
    *  crosses, both ticking until it ends. Public-readable for the gate. */
   dualChannel: { until: number; nextAt: number; tickMs: number; healPerTick: number; dmgPerTick: number; length: number; width: number; fx: Phaser.GameObjects.Graphics } | null = null;
+  // --- Savage framework primitives (composable/bespoke; class-agnostic) ---
+  /** FRENZY (momentum stacks): armed by a keyed passive. Every frame the player
+   *  DEALS damage adds one stack (capped at maxStacks); each stack multiplies
+   *  ALL damage by (1 + perStackMult); stacks fall to zero after decayMs
+   *  without blood. Public-readable so the runtime gate can observe it. */
+  frenzy: { perStackMult: number; maxStacks: number; decayMs: number; stacks: number; until: number } | null = null;
   /**
    * CHANNELED-BEAM state (the channel primitive). Transient: a single active channel locks
    * one enemy, ticks damage, optionally trickles energy, and is cancelled by movement / any
@@ -2253,9 +2259,10 @@ export class MainScene extends Phaser.Scene {
     this.showBanner(`Aim Cone: ${next}°`, 1200);
   }
 
-  /** The live melee damage (level-derived × skill multiplier from passives + buffs/forms). */
+  /** The live melee damage (level-derived × skill multiplier from passives + buffs/forms
+   *  × the Savage frenzy momentum while armed). */
   private playerDamage(): number {
-    return Math.round(this.progression.effectiveDamage * this.skillDamageMult * this.osteoDamageMult);
+    return Math.round(this.progression.effectiveDamage * this.skillDamageMult * this.osteoDamageMult * this.frenzyMult());
   }
 
   /** Level-derived max HP adjusted by skill passive/timed maxHP mods. */
@@ -4628,6 +4635,93 @@ export class MainScene extends Phaser.Scene {
     for (const s of this.allyShields) s.health.shield = 0;
     this.allyShields = [];
     this.harmImmuneUntil = 0;
+    // Savage transients ride the same reset: momentum never survives it.
+    if (this.frenzy) {
+      this.frenzy.stacks = 0;
+      this.frenzy.until = 0;
+    }
+  }
+
+  // --- Savage framework: frenzy + leap-slam + blood price + the execute --------
+
+  /** Arm the FRENZY momentum state (a keyed passive owns this; the gate calls
+   *  it directly). Disarm with {@link disarmFrenzy}. */
+  armFrenzy(perStackMult: number, maxStacks: number, decayMs: number): void {
+    this.frenzy = { perStackMult, maxStacks, decayMs, stacks: 0, until: 0 };
+  }
+
+  disarmFrenzy(): void {
+    this.frenzy = null;
+  }
+
+  /** The frenzy damage multiplier (1 while disarmed/at zero stacks) — folded
+   *  into playerDamage() and skillDamage(), so EVERY damage path scales. */
+  private frenzyMult(): number {
+    const f = this.frenzy;
+    return f && f.stacks > 0 ? 1 + f.stacks * f.perStackMult : 1;
+  }
+
+  /** Per-frame frenzy bookkeeping, fed the frame's dealt-damage accumulator
+   *  (called at the lifesteal flush, before the accumulator resets): blood
+   *  drawn this frame = +1 stack + a fresh decay window; silence past the
+   *  window drops every stack at once. */
+  private updateFrenzy(dealtThisFrame: number): void {
+    const f = this.frenzy;
+    if (!f) return;
+    if (dealtThisFrame > 0) {
+      f.stacks = Math.min(f.maxStacks, f.stacks + 1);
+      f.until = this.time.now + f.decayMs;
+    } else if (f.stacks > 0 && this.time.now >= f.until) {
+      f.stacks = 0;
+    }
+  }
+
+  /** LEAP-SLAM: an aimed jump along the facing — land `distance` out (halted
+   *  at unwalkable ground), slam an AoE, and KNOCK DOWN (stun) what it hits.
+   *  Damage arrives pre-scaled by the caller. */
+  leapSlam(distance: number, radius: number, damage: number, stunMs: number): void {
+    this.breakPlayerStealth(); // it's an attack
+    const { dx, dy } = this.facingUnit();
+    const w = this.activeMap().nearestWalkableWorld(this.player.x + dx * distance, this.player.y + dy * distance) ?? { x: this.player.x + dx * distance, y: this.player.y + dy * distance };
+    (this.player.sprite.body as Phaser.Physics.Arcade.Body).reset(w.x, w.y);
+    this.spawnSkillRing(w.x, w.y, radius, 0xff8a5a);
+    this.aoeHitAll(w.x, w.y, radius, damage);
+    this.stunEnemiesInRange(w.x, w.y, radius, stunMs);
+    this.lastCombatTime = this.time.now;
+  }
+
+  /** Pay a cast's BLOOD PRICE: health, not Faith/energy — the willing cut
+   *  bypasses shields. Returns false (a graceful refusal; the caller flags
+   *  actionWhiffed so cooldown + energy refund) when it would bleed you out. */
+  payBloodPrice(cost: number): boolean {
+    if (this.playerHealth.current <= cost) {
+      this.showBanner('Your blood runs too thin', 1000);
+      return false;
+    }
+    this.playerHealth.current -= cost;
+    this.spawnDamageNumber(this.player.x, this.player.y - 26, cost, '#ff7a7a');
+    return true;
+  }
+
+  /** HP-THRESHOLD EXECUTE: the finisher variant keyed off LOW HEALTH — enemies
+   *  at/below `threshold` (fraction of max HP) take damage × mult; the rest
+   *  take the ordinary blow. Returns counts (gate-observable). */
+  executeHitAll(x: number, y: number, radius: number, damage: number, threshold: number, mult: number, tint = 0xff8a5a): { hit: number; executed: number } {
+    let hit = 0;
+    let executed = 0;
+    this.spawnSkillRing(x, y, radius, tint);
+    for (const e of this.combatEnemiesInRange(x, y, radius)) {
+      const qualifies = e.health.current / e.health.max <= threshold;
+      const dealt = e.takeHit(qualifies ? damage * mult : damage);
+      if (dealt > 0) {
+        this.dmgDealtAccum += dealt;
+        this.spawnDamageNumber(e.x, e.y - 24, dealt, qualifies ? '#ff8a5a' : '#ffffff');
+      }
+      hit++;
+      if (qualifies) executed++;
+    }
+    this.lastCombatTime = this.time.now;
+    return { hit, executed };
   }
 
   // --- DoT (damage-over-time) + contagion primitive (Toxic Bolt / Plague) -------
@@ -4922,9 +5016,10 @@ export class MainScene extends Phaser.Scene {
   }
 
   /** A skill's base damage scaled by the player's damage multiplier (Berserker's Edge,
-   *  Crazed, Prism Quartz) so active abilities scale with offensive passives + buffs. */
+   *  Crazed, Prism Quartz) so active abilities scale with offensive passives + buffs —
+   *  × the Savage frenzy momentum while armed. */
   private skillDamage(base: number): number {
-    return Math.round(base * this.skillDamageMult * this.osteoDamageMult);
+    return Math.round(base * this.skillDamageMult * this.osteoDamageMult * this.frenzyMult());
   }
 
   /** A quick expanding ring FX for a skill activation (world FX, main camera). */
@@ -5556,6 +5651,7 @@ export class MainScene extends Phaser.Scene {
     if (!this.playerDead && lifesteal > 0 && this.dmgDealtAccum > 0 && this.playerHealth.current < this.playerHealth.max) {
       this.playerHealth.heal(this.dmgDealtAccum * lifesteal);
     }
+    this.updateFrenzy(this.dmgDealtAccum); // Savage momentum: blood this frame = a stack
     this.dmgDealtAccum = 0; // reset the accumulator every frame
     if (!this.playerDead) {
       // HP regen (War Chant) — heal per second from any active regen mod.
