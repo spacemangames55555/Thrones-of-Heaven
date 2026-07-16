@@ -337,6 +337,169 @@ try {
       );
     }
 
+    // 2q. THE SEVEN-BEAT HOME OPENING, played END TO END by REAL actions
+    // (mentor already talked by the home check above): the c1 delivery walked
+    // parcel-to-neighbor, the first cull killed through the live damage
+    // funnel, the c2 gather walked pickup by pickup, the c3 ESCORT defended
+    // to arrival (its waves must be WILDLIFE only — scouts stay staged), the
+    // discovery walked in, the evil VISIBLY arriving, and the first-evil
+    // elite cut down — all seven in order.
+    if (cls === 'blacksmith' || cls === 'witchdoctor' || cls === 'hunter') {
+      const P = {
+        blacksmith: { zoneId: 'munich-anvil-hold', c1: 'mun-c1-errand', b02: 'mun-02-foothill-wolves', c2: 'mun-c2-hands', c3: 'mun-c3-cart', b03: 'mun-03-black-veins', b04: 'mun-04-forge-raid', city: 'Munich' },
+        witchdoctor: { zoneId: 'kinshasa-river-drum', c1: 'kin-c1-errand', b02: 'kin-02-first-blood', c2: 'kin-c2-hands', c3: 'kin-c3-landing', b03: 'kin-03-discovery', b04: 'kin-04-first-evil', city: 'Kinshasa' },
+        hunter: { zoneId: 'sydney-harbour-watch', c1: 'syd-c1-errand', b02: 'syd-02-first-blood', c2: 'syd-c2-hands', c3: 'syd-c3-jetty', b03: 'syd-03-discovery', b04: 'syd-04-first-evil', city: 'Sydney' },
+      }[cls];
+      const run = await page.evaluate(async (P) => {
+        const ms = window.__ready();
+        const wait = (t) => new Promise((r) => setTimeout(r, t));
+        const st = (id) => ms.chain.status(id);
+        const evil = () => ms.regionLive.filter((r) => r.zoneId === P.zoneId && r.family === 'lesser-evil-scouts' && r.entity.isAlive).length;
+        const out = { steps: [], maxEvilThroughCivics: 0, waveEvil: 0, evilAfterDiscovery: -1, ok: false };
+        const home = ms.regionZoneArrivals[P.zoneId];
+        ms.player.sprite.body.reset(home.x, home.y);
+        await wait(600);
+        // C1 — the delivery, walked for real.
+        out.maxEvilThroughCivics = Math.max(out.maxEvilThroughCivics, evil());
+        for (let i = 0; i < 30 && !ms.beatDelivery; i++) await wait(100);
+        if (!ms.beatDelivery) return { ...out, steps: ['no delivery staged'] };
+        ms.player.sprite.body.reset(ms.beatDelivery.from.x, ms.beatDelivery.from.y);
+        await wait(350);
+        if (!ms.beatDelivery || !ms.beatDelivery.carrying) return { ...out, steps: ['no carry'] };
+        ms.player.sprite.body.reset(ms.beatDelivery.to.x, ms.beatDelivery.to.y);
+        await wait(450);
+        out.steps.push('c1:' + st(P.c1));
+        // 02 — the first cull: real damage through the live funnel; if the
+        // packs run dry, a chunk re-entry respawns them (the counter holds).
+        for (let i = 0; i < 60 && st(P.b02) !== 'complete'; i++) {
+          out.maxEvilThroughCivics = Math.max(out.maxEvilThroughCivics, evil());
+          const w = ms.regionLive.find((r) => r.zoneId === P.zoneId && r.family === 'corrupted-wildlife' && r.entity.isAlive);
+          if (w) ms.aoeHitAll(w.entity.x, w.entity.y, 70, 400);
+          else {
+            ms.deactivateRegionZone(P.zoneId);
+            await wait(400);
+          }
+          await wait(180);
+        }
+        out.steps.push('02:' + st(P.b02));
+        // C2 — the gather: three real pickup walk-ins.
+        for (let i = 0; i < 30 && !ms.beatPickups; i++) await wait(100);
+        for (let k = 0; k < 3 && ms.beatPickups; k++) {
+          const it = ms.beatPickups.items.find((x) => !x.taken);
+          if (!it) break;
+          out.maxEvilThroughCivics = Math.max(out.maxEvilThroughCivics, evil());
+          ms.player.sprite.body.reset(it.x, it.y);
+          await wait(350);
+        }
+        out.steps.push('c2:' + st(P.c2));
+        // C3 — the escort: stand with the convoy and cut down every wave
+        // (they must be wildlife; scouts are still staged).
+        for (let i = 0; i < 40 && !ms.escort; i++) await wait(200);
+        if (!ms.escort) return { ...out, steps: [...out.steps, 'no convoy'] };
+        const deadline = Date.now() + 60000;
+        while (ms.escort && Date.now() < deadline) {
+          const e = ms.escort;
+          ms.player.sprite.body.reset(e.npcSprite.x + 26, e.npcSprite.y - 10);
+          out.waveEvil = Math.max(out.waveEvil, evil());
+          ms.aoeHitAll(e.npcSprite.x, e.npcSprite.y, 260, 320);
+          await wait(300);
+        }
+        out.steps.push('c3:' + st(P.c3));
+        out.maxEvilThroughCivics = Math.max(out.maxEvilThroughCivics, evil());
+        // 03 — the discovery: walk into the story marker.
+        for (let i = 0; i < 30 && !ms.beatMarker; i++) await wait(150);
+        if (ms.beatMarker) {
+          ms.player.sprite.body.reset(ms.beatMarker.pos.x, ms.beatMarker.pos.y);
+          await wait(450);
+        }
+        out.steps.push('03:' + st(P.b03));
+        // The staged scouts VISIBLY arrive.
+        for (let i = 0; i < 30 && evil() === 0; i++) await wait(150);
+        out.evilAfterDiscovery = evil();
+        // 04 — the first evil: the gate elite at the boss anchor, cut down.
+        for (let i = 0; i < 40 && !ms.beatElite; i++) await wait(200);
+        const deadline2 = Date.now() + 25000;
+        while (st(P.b04) !== 'complete' && Date.now() < deadline2) {
+          const el = ms.beatElite?.entity;
+          if (el && el.isAlive) {
+            ms.player.sprite.body.reset(el.sprite.x + 50, el.sprite.y);
+            ms.aoeHitAll(el.sprite.x, el.sprite.y, 90, 420);
+          }
+          await wait(250);
+        }
+        out.steps.push('04:' + st(P.b04));
+        out.ok =
+          st(P.c1) === 'complete' && st(P.b02) === 'complete' && st(P.c2) === 'complete' && st(P.c3) === 'complete' && st(P.b03) === 'complete' && st(P.b04) === 'complete';
+        ms.playerHealth.full();
+        ms.playerHealth.shield = 1e9;
+        return out;
+      }, P);
+      ok(
+        `seven-beat home opening (${P.city}): mentor → errand → cull → hands → escort → discovery → first evil, all by real actions; scouts absent through the civics (waves wildlife-only) and VISIBLY arriving after the discovery`,
+        run.ok && run.maxEvilThroughCivics === 0 && run.waveEvil === 0 && run.evilAfterDiscovery > 0,
+        JSON.stringify(run),
+      );
+
+      // 2q2. GRANDFATHER on a REAL save (Sydney only): strip the civic ids
+      // from the just-played save — the pre-retrofit shape — and load: the
+      // rule marks them complete again (a discovery-complete character is
+      // never trapped behind the inserted beats).
+      if (cls === 'hunter') {
+        const gf = await page.evaluate(async () => {
+          const ms = window.__ready();
+          const civ = ['syd-c1-errand', 'syd-c2-hands', 'syd-c3-jetty'];
+          const snap = ms.serialize();
+          const hadAll = civ.every((id) => snap.quests.completed.includes(id));
+          snap.quests.completed = snap.quests.completed.filter((id) => !civ.includes(id));
+          ms.applySave(snap);
+          await new Promise((r) => setTimeout(r, 300));
+          const back = civ.map((id) => ms.chain.status(id));
+          const discovery = ms.chain.status('syd-03-discovery');
+          ms.playerHealth.full();
+          ms.playerHealth.shield = 1e9;
+          return { hadAll, back, discovery };
+        });
+        ok(
+          'grandfather: a discovery-complete save stripped of its civic ids loads with all three civics complete again',
+          gf.hadAll && gf.back.every((s) => s === 'complete') && gf.discovery === 'complete',
+          JSON.stringify(gf),
+        );
+      }
+    }
+
+    // 2r. THE REVERENCE BEATS (Lhasa's prayer wheels / Bali's shore offerings):
+    // marker-only — completed by real walk-ins and spawning NO combat.
+    if (cls === 'monk' || cls === 'atlantean') {
+      const R = cls === 'monk' ? { zoneId: 'lhasa-prayer-citadel', beat: 'lha-c2-hands', name: 'Lhasa prayer wheels' } : { zoneId: 'bali-drowned-crown', beat: 'bal-c2-hands', name: 'Bali shore offerings' };
+      const rev = await page.evaluate(async (R) => {
+        const ms = window.__ready();
+        const wait = (t) => new Promise((r) => setTimeout(r, t));
+        ms.devJumpToQuest(R.beat);
+        ms.playerHealth.shield = 1e9;
+        await wait(1600);
+        const aliveInZone = () => ms.regionLive.filter((r) => r.zoneId === R.zoneId && r.entity.isAlive).length;
+        const evil = () => ms.regionLive.filter((r) => r.zoneId === R.zoneId && r.family === 'lesser-evil-scouts' && r.entity.isAlive).length;
+        const before = aliveInZone();
+        for (let i = 0; i < 30 && !ms.beatPickups; i++) await wait(100);
+        if (!ms.beatPickups) return { setup: 'no markers' };
+        let evilSeen = evil();
+        for (let k = 0; k < 3 && ms.beatPickups; k++) {
+          const it = ms.beatPickups.items.find((x) => !x.taken);
+          if (!it) break;
+          ms.player.sprite.body.reset(it.x, it.y);
+          await wait(350);
+          evilSeen = Math.max(evilSeen, evil());
+        }
+        const after = aliveInZone();
+        return { setup: 'ok', status: ms.chain.status(R.beat), before, after, evilSeen, noNewSpawns: after <= before };
+      }, R);
+      ok(
+        `reverence beat (${R.name}): three real walk-ins complete it with NO combat spawn (no scouts, nothing new materialized)`,
+        rev.setup === 'ok' && rev.status === 'complete' && rev.noNewSpawns && rev.evilSeen === 0,
+        JSON.stringify(rev),
+      );
+    }
+
     // 2o. NEIGHBOR NPC (home civics, permanent): every generated home city
     // fields a SECOND named interactable a real walk from the mentor; stepping
     // up shows the Speak button and speaking shows a generated line (never a
@@ -2921,11 +3084,38 @@ try {
     ms.cairoMentorTalk();
     await wait(300);
     const s1 = ms.chain.status('cai-01-mentor');
+    // cai-c1 — the CIVIC errand: walk the water jars from the Keeper to Amara.
+    for (let i = 0; i < 30 && !ms.beatDelivery; i++) await wait(100);
+    if (ms.beatDelivery) {
+      ms.player.sprite.body.reset(ms.beatDelivery.from.x, ms.beatDelivery.from.y);
+      await wait(350);
+      if (ms.beatDelivery) ms.player.sprite.body.reset(ms.beatDelivery.to.x, ms.beatDelivery.to.y);
+      await wait(450);
+    }
+    const c1 = ms.chain.status('cai-c1-errand');
     // cai-02 — five REAL delta-wolf deaths, swept through the shared clear path.
     const wolves = ms.cairoLive.filter((r) => !r.bossBeatId && r.entity.isAlive).slice(0, 5);
     for (const w of wolves) w.entity.takeHit(999999);
     await wait(700);
     const s2 = ms.chain.status('cai-02-first-blood');
+    // cai-c2 — the CIVIC gather: three palm-frond pickups on the gate road.
+    for (let i = 0; i < 30 && !ms.beatPickups; i++) await wait(100);
+    for (let k = 0; k < 3 && ms.beatPickups; k++) {
+      const it = ms.beatPickups.items.find((x) => !x.taken);
+      if (!it) break;
+      ms.player.sprite.body.reset(it.x, it.y);
+      await wait(350);
+    }
+    const c2 = ms.chain.status('cai-c2-hands');
+    // cai-c3 — the CIVIC cull: five more jackals (the throttled replenish
+    // refills counted posts while the player stands away from them).
+    for (let i = 0; i < 40 && ms.chain.status('cai-c3-stalls') !== 'complete'; i++) {
+      const w2 = ms.cairoLive.find((r) => !r.bossBeatId && r.entity.isAlive);
+      if (w2) w2.entity.takeHit(999999);
+      else await wait(1500); // wait out the replenish throttle
+      await wait(500);
+    }
+    const c3 = ms.chain.status('cai-c3-stalls');
     // cai-03 — walk onto the rot site on the river road.
     ms.player.sprite.body.reset(ms.cairoDiscoveryPos.x, ms.cairoDiscoveryPos.y);
     await wait(700);
@@ -2940,25 +3130,39 @@ try {
     const egyptIntact = ms.egyptMap.terrainAtWorld(ms.egyptArrivalPos.x, ms.egyptArrivalPos.y) !== null;
     ms.devClassOverride = null;
     ms.announcePlayerClass();
-    return { mentorButton, wolves: wolves.length, s1, s2, s3, s4, faiyumIntact, egyptIntact };
+    return { mentorButton, wolves: wolves.length, s1, c1, s2, c2, c3, s3, s4, faiyumIntact, egyptIntact };
   });
   ok(
-    'cairo act i: cai-01..04 complete end to end by hand in the Egypt world',
-    cairo.mentorButton && cairo.wolves === 5 && cairo.s1 === 'complete' && cairo.s2 === 'complete' && cairo.s3 === 'complete' && cairo.s4 === 'complete' && cairo.faiyumIntact && cairo.egyptIntact,
+    'cairo act i: the seven-beat chain (cai-01, c1 errand, 02, c2 hands, c3 cull, 03, 04) completes end to end by hand in the Egypt world',
+    cairo.mentorButton &&
+      cairo.wolves === 5 &&
+      cairo.s1 === 'complete' &&
+      cairo.c1 === 'complete' &&
+      cairo.s2 === 'complete' &&
+      cairo.c2 === 'complete' &&
+      cairo.c3 === 'complete' &&
+      cairo.s3 === 'complete' &&
+      cairo.s4 === 'complete' &&
+      cairo.faiyumIntact &&
+      cairo.egyptIntact,
     JSON.stringify(cairo),
   );
 
   // 3p. GENERIC BEAT COMPLETION — one full home chain per continent plays END
   // TO END by real actions: mentor talk (proximity button + the same handler),
-  // five real kills, the story-marker walk-in, the elite-boss kill. All three
-  // chains share the mentor→clear→story→boss shape.
+  // the c1 delivery walked parcel-to-neighbor, real cull kills, the c2 gather
+  // walked pickup by pickup, the c3 escort defended to arrival, the
+  // story-marker walk-in, the elite-boss kill. All three chains share the
+  // seven-beat mentor→errand→cull→hands→escort→discovery→boss shape.
   const playHomeChain = (params) =>
-    page.evaluate(async ({ className, zoneId, ids }) => {
+    page.evaluate(async ({ className, zoneId, ids, civics }) => {
       const ms = window.__ready();
       const wait = (t) => new Promise((r) => setTimeout(r, t));
+      const st = (id) => ms.chain.status(id);
       ms.devClassOverride = className;
       ms.announcePlayerClass();
       ms.chain.load({ completed: [], activeId: null, activeObjective: 0 }); // the verified-clean fresh-start state
+      ms.regionKillCounts = {}; // kill counters persist across chain.load — start the cull from zero
       ms.applyWorldSwap('globe', ms.regionZoneArrivals[zoneId]);
       ms.playerHealth.shield = 1e9; // re-arm past the swap's debuff clear
       await wait(1700); // transition + chunk activation + packs
@@ -2970,37 +3174,87 @@ try {
       const btn = ms.mentorButton.isVisible;
       ms.regionMentorTalk();
       await wait(300);
-      const s1 = ms.chain.status(ids[0]);
-      // 2) the clear: five REAL wildlife kills inside the zone.
-      const prey = ms.regionLive.filter((r) => r.zoneId === zoneId && r.family === 'corrupted-wildlife' && r.entity.isAlive).slice(0, 5);
-      for (const r of prey) r.entity.takeHit(999999);
-      await wait(800);
-      const s2 = ms.chain.status(ids[1]);
-      // 3) the discovery: walk onto the story marker.
-      await wait(400); // marker spawns once the beat is active
+      const s1 = st(ids[0]);
+      // 2) the errand: the delivery walked from the mentor's parcel to the
+      // neighbor's door.
+      for (let i = 0; i < 30 && !ms.beatDelivery; i++) await wait(100);
+      if (ms.beatDelivery) {
+        ms.player.sprite.body.reset(ms.beatDelivery.from.x, ms.beatDelivery.from.y);
+        await wait(350);
+        if (ms.beatDelivery) ms.player.sprite.body.reset(ms.beatDelivery.to.x, ms.beatDelivery.to.y);
+        await wait(450);
+      }
+      const c1 = st(civics.c1);
+      // 3) the cull: REAL wildlife kills inside the zone until the beat
+      // clears (a chunk re-entry respawns the packs if they run dry).
+      let prey = 0;
+      for (let i = 0; i < 60 && st(ids[1]) !== 'complete'; i++) {
+        const w = ms.regionLive.find((r) => r.zoneId === zoneId && r.family === 'corrupted-wildlife' && r.entity.isAlive);
+        if (w) {
+          w.entity.takeHit(999999);
+          prey++;
+        } else {
+          ms.deactivateRegionZone(zoneId);
+          await wait(400);
+        }
+        await wait(180);
+      }
+      const s2 = st(ids[1]);
+      // 4) the gather: three real pickup walk-ins.
+      for (let i = 0; i < 30 && !ms.beatPickups; i++) await wait(100);
+      for (let k = 0; k < 3 && ms.beatPickups; k++) {
+        const it = ms.beatPickups.items.find((x) => !x.taken);
+        if (!it) break;
+        ms.player.sprite.body.reset(it.x, it.y);
+        await wait(350);
+      }
+      const c2 = st(civics.c2);
+      // 5) the escort: stand with the convoy and cut down every wave.
+      for (let i = 0; i < 40 && !ms.escort; i++) await wait(200);
+      const deadline = Date.now() + 60000;
+      while (ms.escort && Date.now() < deadline) {
+        const e = ms.escort;
+        ms.player.sprite.body.reset(e.npcSprite.x + 26, e.npcSprite.y - 10);
+        ms.aoeHitAll(e.npcSprite.x, e.npcSprite.y, 260, 320);
+        await wait(300);
+      }
+      const c3 = st(civics.c3);
+      // 6) the discovery: walk onto the story marker.
+      for (let i = 0; i < 30 && !ms.beatMarker; i++) await wait(150);
       const mk = ms.beatMarker;
       if (mk) ms.player.sprite.body.reset(mk.pos.x, mk.pos.y);
       await wait(600);
-      const s3 = ms.chain.status(ids[2]);
-      // 4) the first evil: fell the elite at the boss anchor.
-      await wait(700); // elite spawns (beat active + chunk active)
+      const s3 = st(ids[2]);
+      // 7) the first evil: fell the elite at the boss anchor.
+      for (let i = 0; i < 40 && !ms.beatElite; i++) await wait(200);
       const el = ms.beatElite;
-      if (el) el.entity.takeHit(999999);
-      await wait(700);
-      const s4 = ms.chain.status(ids[3]);
+      const deadline2 = Date.now() + 25000;
+      while (st(ids[3]) !== 'complete' && Date.now() < deadline2) {
+        const b = ms.beatElite?.entity;
+        if (b && b.isAlive) {
+          ms.player.sprite.body.reset(b.sprite.x + 50, b.sprite.y);
+          ms.aoeHitAll(b.sprite.x, b.sprite.y, 90, 420);
+        }
+        await wait(250);
+      }
+      const s4 = st(ids[3]);
       ms.devClassOverride = null;
       ms.announcePlayerClass();
-      return { btn, prey: prey.length, marker: !!mk, elite: !!el, s1, s2, s3, s4 };
+      ms.playerHealth.full();
+      ms.playerHealth.shield = 1e9;
+      return { btn, prey, marker: !!mk, elite: !!el, s1, c1, s2, c2, c3, s3, s4 };
     }, params);
   for (const chain of [
-    { name: 'Europe (Rome, Priest)', className: 'Priest', zoneId: 'rome-eternal-seat', ids: ['rom-01-mentor', 'rom-02-catacomb-vermin', 'rom-03-reliquary-rot', 'rom-04-appian-gate'] },
-    { name: 'Africa (Kinshasa, Witch Doctor)', className: 'Witch Doctor', zoneId: 'kinshasa-river-drum', ids: ['kin-01-mentor', 'kin-02-first-blood', 'kin-03-discovery', 'kin-04-first-evil'] },
-    { name: 'Asia (Lhasa, Monk)', className: 'Monk', zoneId: 'lhasa-prayer-citadel', ids: ['lha-01-mentor', 'lha-02-first-blood', 'lha-03-discovery', 'lha-04-first-evil'] },
+    { name: 'Europe (Rome, Priest)', className: 'Priest', zoneId: 'rome-eternal-seat', ids: ['rom-01-mentor', 'rom-02-catacomb-vermin', 'rom-03-reliquary-rot', 'rom-04-appian-gate'], civics: { c1: 'rom-c1-errand', c2: 'rom-c2-hands', c3: 'rom-c3-dawn' } },
+    { name: 'Africa (Kinshasa, Witch Doctor)', className: 'Witch Doctor', zoneId: 'kinshasa-river-drum', ids: ['kin-01-mentor', 'kin-02-first-blood', 'kin-03-discovery', 'kin-04-first-evil'], civics: { c1: 'kin-c1-errand', c2: 'kin-c2-hands', c3: 'kin-c3-landing' } },
+    { name: 'Asia (Lhasa, Monk)', className: 'Monk', zoneId: 'lhasa-prayer-citadel', ids: ['lha-01-mentor', 'lha-02-first-blood', 'lha-03-discovery', 'lha-04-first-evil'], civics: { c1: 'lha-c1-errand', c2: 'lha-c2-hands', c3: 'lha-c3-pilgrim' } },
   ]) {
     const r = await playHomeChain(chain);
     ok(
       `home chain end to end by hand: ${chain.name}`,
-      r.btn && r.prey === 5 && r.marker && r.elite && r.s1 === 'complete' && r.s2 === 'complete' && r.s3 === 'complete' && r.s4 === 'complete',
+      r.btn && r.prey >= 5 && r.marker && r.elite &&
+        r.s1 === 'complete' && r.c1 === 'complete' && r.s2 === 'complete' && r.c2 === 'complete' &&
+        r.c3 === 'complete' && r.s3 === 'complete' && r.s4 === 'complete',
       JSON.stringify(r),
     );
   }
