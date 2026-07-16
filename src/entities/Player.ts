@@ -11,6 +11,7 @@ const BARD_TEXTURE_KEY = 'bard-figure'; // Bard (London memory-keeper) avatar
 const WITCHDOCTOR_TEXTURE_KEY = 'witchdoctor-figure'; // Witch Doctor (Kinshasa spirit-speaker) avatar
 const SAMURAI_TEXTURE_KEY = 'samurai-figure'; // Samurai (Kyoto blade) avatar
 const MONK_TEXTURE_KEY = 'monk-figure'; // Monk (Lhasa ascetic) avatar
+const ASSASSIN_TEXTURE_KEY = 'assassin-figure'; // Assassin (Dubai knife-in-the-dark) avatar
 const WIDTH = 32; // ~1 tile wide
 const HEIGHT = 48; // ~1.5 tiles tall — fixes the "character = one giant block" look
 
@@ -24,6 +25,7 @@ function textureForClass(classId: string): string {
   if (classId === 'witchdoctor') return WITCHDOCTOR_TEXTURE_KEY;
   if (classId === 'samurai') return SAMURAI_TEXTURE_KEY;
   if (classId === 'monk') return MONK_TEXTURE_KEY;
+  if (classId === 'assassin') return ASSASSIN_TEXTURE_KEY;
   return TEXTURE_KEY;
 }
 
@@ -54,6 +56,7 @@ export class Player {
     Player.ensureWitchDoctorTexture(scene);
     Player.ensureSamuraiTexture(scene);
     Player.ensureMonkTexture(scene);
+    Player.ensureAssassinTexture(scene);
 
     this.baseKey = textureForClass(classId);
     this.sprite = scene.physics.add.sprite(x, y, this.baseKey);
@@ -476,6 +479,49 @@ export class Player {
     g.fillStyle(0xa8ffd0, 1);
     g.fillRect(w - 11, 34, 4, 2.4);
     g.generateTexture(MONK_TEXTURE_KEY, w, h);
+    g.destroy();
+  }
+
+  /** Draw the Dubai ASSASSIN avatar (charcoal hooded cloak, shadowed face, a
+   *  sash of throwing knives) as a generated texture — a CODE-DRAWN PLACEHOLDER
+   *  (a real sprite PNG drops in later via the sprite override under this same
+   *  key). Same footprint as the other figures. */
+  private static ensureAssassinTexture(scene: Phaser.Scene): void {
+    if (scene.textures.exists(ASSASSIN_TEXTURE_KEY)) return;
+    const w = WIDTH;
+    const h = HEIGHT;
+    const g = scene.make.graphics({ x: 0, y: 0 }, false);
+    // Dark outline + the charcoal cloak body.
+    g.fillStyle(0x0e0c12, 1);
+    g.fillRoundedRect(4, 8, w - 8, h - 10, 9);
+    g.fillStyle(0x2a2632, 1); // charcoal cloak
+    g.fillRoundedRect(6, 10, w - 12, h - 14, 7);
+    // The cloak's inner shadow-split (it hangs open over darker underlayers).
+    g.fillStyle(0x1a1722, 1);
+    g.fillRect(w / 2 - 3, 22, 6, h - 32);
+    // The hood: a peaked cowl swallowing most of the face.
+    g.fillStyle(0x211d2a, 1);
+    g.fillTriangle(w / 2 - 10, 18, w / 2 + 10, 18, w / 2, 2);
+    g.fillRoundedRect(w / 2 - 10, 8, 20, 10, 4);
+    // What shows of the face: a shadowed slit + pale grey eyes.
+    g.fillStyle(0x0e0c12, 1);
+    g.fillRect(w / 2 - 7, 12, 14, 5);
+    g.fillStyle(0xb8c0d0, 1);
+    g.fillCircle(w / 2 - 3, 14.5, 1.1);
+    g.fillCircle(w / 2 + 3, 14.5, 1.1);
+    // A knife sash across the chest: three slim steel glints.
+    g.fillStyle(0x3a3644, 1);
+    g.fillRect(8, 24, w - 16, 4);
+    g.fillStyle(0xc8d0e0, 1);
+    g.fillRect(11, 24.8, 2, 2.4);
+    g.fillRect(16, 24.8, 2, 2.4);
+    g.fillRect(21, 24.8, 2, 2.4);
+    // A dagger at the hip (dark grip, pale edge).
+    g.fillStyle(0x0e0c12, 1);
+    g.fillRect(6, h - 26, 3, 12);
+    g.fillStyle(0xc8d0e0, 1);
+    g.fillRect(6.8, h - 24, 1.4, 8);
+    g.generateTexture(ASSASSIN_TEXTURE_KEY, w, h);
     g.destroy();
   }
 }

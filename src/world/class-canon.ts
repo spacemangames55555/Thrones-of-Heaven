@@ -25,7 +25,7 @@ export const MANIFEST_CLASS_FOR: Record<string, string> = {
   monk: 'Monk', // Lhasa (Asia) — built as a playable class today
   samurai: 'Samurai', // Kyoto (Asia) — class kit not built yet
   atlantean: 'Atlantean', // Bali (Asia) — class kit not built yet
-  assassin: 'Assassin', // Dubai (Near East) — class kit not built yet
+  assassin: 'Assassin', // Dubai (Near East) — built as a playable class today
   hunter: 'Hunter', // Sydney (Oceania) — class kit not built yet
   savage: 'Savage', // Mexico City (Mesoamerica) — class kit not built yet
 };

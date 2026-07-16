@@ -138,6 +138,8 @@ import { SAM_BOW_TUNING } from '../skills/samuraiBow';
 import { MONK_PALM_TUNING } from '../skills/monkIronPalm';
 import { MONK_CHI_TUNING } from '../skills/monkChi';
 import { MONK_SPIRIT_TUNING, ENLIGHTENED_MIND_ID, MEDITATION_ID } from '../skills/monkSpiritual';
+import { ASN_TRAP_TUNING, TRAP_MASTERY_ID } from '../skills/assassinTraps';
+import { ASN_SHADOW_TUNING, POISONED_EDGE_ID } from '../skills/assassinShadow';
 import { PlayerPower } from '../player/PlayerPower';
 import { URIEL_SCENE } from '../story/urielData';
 import { URIEL_SENDOFF_LINES, RIFT_SCENE } from '../story/riftSceneData';
@@ -2282,9 +2284,18 @@ export class MainScene extends Phaser.Scene {
       ? { damage: VOODOO_DOLL_TUNING.assault.damage, tickMs: VOODOO_DOLL_TUNING.assault.tickMs, nextAt: this.voodooAssault?.nextAt ?? 0 }
       : null;
     // SAMURAI keyed passives: the strike bleed + the parry upgrade, armed while owned.
-    this.strikeBleed = this.skills.isUnlocked(RAZORS_EDGE_ID) ? { ...SAM_BLADE_TUNING.razor } : null;
+    // POISONED EDGE (Assassin) rides the same strike-DoT hook (one class per save —
+    // whichever venom/bleed is owned arms it; neither owned = null).
+    this.strikeBleed = this.skills.isUnlocked(RAZORS_EDGE_ID)
+      ? { ...SAM_BLADE_TUNING.razor }
+      : this.skills.isUnlocked(POISONED_EDGE_ID)
+        ? { ...ASN_SHADOW_TUNING.poisoned }
+        : null;
     this.parryRiposteBonus = this.skills.isUnlocked(COUNTERSTRIKE_ID) ? SAM_STANCE_TUNING.counter.riposteBonus : 0;
     this.parryRefundEnergy = this.skills.isUnlocked(COUNTERSTRIKE_ID) ? SAM_STANCE_TUNING.counter.energyRefund : 0;
+    // ASSASSIN keyed passive: Trap Mastery's +1 armed-device cap (its faster
+    // arming + stronger payloads fold in where a device is placed).
+    this.trapCap = ASN_TRAP_TUNING.baseCap + (this.skills.isUnlocked(TRAP_MASTERY_ID) ? ASN_TRAP_TUNING.mastery.capBonus : 0);
     // Block chance + strength (Double Block / Dual Shield) — rolled per hit in Health.
     if (this.playerHealth) {
       this.playerHealth.blockChance = Phaser.Math.Clamp(m.blockChance ?? 0, 0, 0.9);
@@ -2843,7 +2854,121 @@ export class MainScene extends Phaser.Scene {
       const c = MONK_SPIRIT_TUNING.wheel;
       this.startPulseRing(c.durationMs, c.intervalMs, c.radius, this.skillDamage(c.damage), c.tint);
       this.showBanner('The wheel turns', 1100);
+    } else if (action === 'asn_blade_trap') {
+      // Assassin Traps #1 — the spring-blade device: quick arm, a heavy snap.
+      const c = ASN_TRAP_TUNING.blade;
+      this.assassinPlaceTrap(c.placeAhead, { armDelayMs: c.armDelayMs, lifetimeMs: c.lifetimeMs, triggerRadius: c.triggerRadius, payload: { burstDamage: c.burstDamage, burstRadius: c.burstRadius }, tint: 0xffb060 });
+    } else if (action === 'asn_snare_trap') {
+      // Assassin Traps #2 — pure control: roots whoever springs it.
+      const c = ASN_TRAP_TUNING.snare;
+      this.assassinPlaceTrap(c.placeAhead, { armDelayMs: c.armDelayMs, lifetimeMs: c.lifetimeMs, triggerRadius: c.triggerRadius, payload: { rootMs: c.rootMs }, tint: 0xc8b060 });
+    } else if (action === 'asn_toxic_trap') {
+      // Assassin Traps #4 — bursts into a lingering poison cloud.
+      const c = ASN_TRAP_TUNING.toxic;
+      this.assassinPlaceTrap(c.placeAhead, { armDelayMs: c.armDelayMs, lifetimeMs: c.lifetimeMs, triggerRadius: c.triggerRadius, payload: { zone: { ...c.zone, fill: 0x3a5a2a, stroke: 0x9ad07a } }, tint: 0x9ad07a });
+    } else if (action === 'asn_flash_trap') {
+      // Assassin Traps #5 — the blinding burst: the sprung enemy turns confused.
+      const c = ASN_TRAP_TUNING.flash;
+      this.assassinPlaceTrap(c.placeAhead, { armDelayMs: c.armDelayMs, lifetimeMs: c.lifetimeMs, triggerRadius: c.triggerRadius, payload: { confuse: { chance: c.confuse.chance, durationMs: c.confuse.durationMs } }, tint: 0xffe9a8 });
+    } else if (action === 'asn_explosive_trap') {
+      // Assassin Traps #6 — the heavy charge: area damage on trigger.
+      const c = ASN_TRAP_TUNING.explosive;
+      this.assassinPlaceTrap(c.placeAhead, { armDelayMs: c.armDelayMs, lifetimeMs: c.lifetimeMs, triggerRadius: c.triggerRadius, payload: { burstDamage: c.burstDamage, burstRadius: c.burstRadius }, tint: 0xff8a3a });
+    } else if (action === 'asn_frost_trap') {
+      // Assassin Traps #7 — erupts into a slowing frost field.
+      const c = ASN_TRAP_TUNING.frost;
+      this.assassinPlaceTrap(c.placeAhead, { armDelayMs: c.armDelayMs, lifetimeMs: c.lifetimeMs, triggerRadius: c.triggerRadius, payload: { zone: { ...c.zone } }, tint: 0xb8d8ff });
+    } else if (action === 'asn_remote_det') {
+      // Assassin Traps #8 — the trigger-now hook; nothing armed = a refunded whiff.
+      const fired = this.detonateArmedTraps();
+      if (fired === 0) {
+        this.showBanner('Nothing armed to fire', 1000);
+        this.actionWhiffed = true;
+      } else {
+        this.showBanner(fired === 1 ? 'The device fires' : `${fired} devices fire`, 1100);
+      }
+    } else if (action === 'asn_minefield') {
+      // Assassin Traps #10 ultimate — seed the area ahead with explosive devices.
+      const c = ASN_TRAP_TUNING.minefield;
+      const m = this.skills.isUnlocked(TRAP_MASTERY_ID);
+      const t = ASN_TRAP_TUNING.mastery;
+      const { dx, dy } = this.facingUnit();
+      this.placeMinefield(px + dx * c.placeAhead, py + dy * c.placeAhead, c.count, c.spreadRadius, {
+        armDelayMs: m ? c.armDelayMs * t.armFactor : c.armDelayMs,
+        lifetimeMs: c.lifetimeMs,
+        triggerRadius: c.triggerRadius,
+        payload: { burstDamage: c.burstDamage, burstRadius: c.burstRadius },
+        tint: 0xff8a3a,
+        damageMult: m ? t.damageMult : 1,
+      });
+      this.showBanner('MINEFIELD', 1400);
+    } else if (action === 'asn_ambush') {
+      // Assassin Shadow #3 — the payoff strike that REQUIRES stealth (unhidden
+      // it whiffs and the ally-rule machinery refunds the cast).
+      const c = ASN_SHADOW_TUNING.ambush;
+      if (this.playerStealthActive || this.time.now < this.shadowDanceUntil) {
+        this.runComposedSteps([{ p: 'strike', at: 'front', range: c.range, damage: c.damage, tint: 0x9a9ab8 }]);
+      } else {
+        this.showBanner('Ambush needs the shadows', 1000);
+        this.actionWhiffed = true;
+      }
+    } else if (action === 'asn_shadow_step') {
+      // Assassin Shadow #5 — the Blink reuse aimed AT a target: reappear behind
+      // it, blade first (no target = a refunded whiff).
+      const c = ASN_SHADOW_TUNING.step;
+      const target = this.nearestEnemy(px, py, c.seekRange);
+      if (!target) {
+        this.showBanner('No one to step to', 1000);
+        this.actionWhiffed = true;
+      } else {
+        const ang = Math.atan2(target.y - py, target.x - px);
+        const bx = target.x + Math.cos(ang) * c.behindGap;
+        const by = target.y + Math.sin(ang) * c.behindGap;
+        const w = this.activeMap().nearestWalkableWorld(bx, by) ?? { x: bx, y: by };
+        (this.player.sprite.body as Phaser.Physics.Arcade.Body).reset(w.x, w.y);
+        this.player.facingX = -Math.cos(ang); // land facing BACK at the target
+        this.player.facingY = -Math.sin(ang);
+        this.spawnSkillRing(w.x, w.y, 40, 0x9a9ab8);
+        this.runComposedSteps([{ p: 'strike', at: 'front', range: c.strikeRange, damage: c.damage, tint: 0x9a9ab8 }]);
+      }
+    } else if (action === 'asn_smoke_bomb') {
+      // Assassin Shadow #6 — the confusion + aggro-drop reuse: they lose you.
+      const c = ASN_SHADOW_TUNING.smoke;
+      this.spawnSkillRing(px, py, c.range * 0.6, 0x9a9ab8);
+      const turned = this.confuseNearestEnemy(px, py, c.range, c.chance, c.confuseMs, c.chipDamage, c.chipMs);
+      this.startPlayerStealth(c.dropMs); // the "lose you" breath — any attack ends it
+      this.showBanner(turned ? 'Smoke — and they turn on each other' : 'Smoke fills the street', 1100);
+    } else if (action === 'asn_takedown') {
+      // Assassin Shadow #7 — the conditional finisher: execute the weakened.
+      const c = ASN_SHADOW_TUNING.takedown;
+      const { dx, dy } = this.facingUnit();
+      this.finisherHitAll(px + dx * c.reach, py + dy * c.reach, c.radius, this.skillDamage(c.damage), c.bonusMult, 0x9a9ab8);
+    } else if (action === 'asn_vanish') {
+      // Assassin Shadow #8 — extension #4: the instant re-stealth + the breath.
+      const c = ASN_SHADOW_TUNING.vanish;
+      this.vanish(c.stealthMs, c.graceMs);
+      this.showBanner('Gone', 900);
+    } else if (action === 'asn_shadow_dance') {
+      // Assassin Shadow #10 ultimate — extension #3: striking stays hidden.
+      const c = ASN_SHADOW_TUNING.dance;
+      this.startShadowDance(c.durationMs);
+      this.showBanner('SHADOW DANCE', 1400);
     }
+  }
+
+  /** Place one Assassin device AHEAD of the player, folding TRAP MASTERY in
+   *  while owned (faster arming + stronger payloads; the +1 cap lands at
+   *  recompute). Every trap skill routes through here. */
+  private assassinPlaceTrap(placeAhead: number, cfg: TrapConfig): void {
+    const { dx, dy } = this.facingUnit();
+    const m = this.skills.isUnlocked(TRAP_MASTERY_ID);
+    const t = ASN_TRAP_TUNING.mastery;
+    this.placeTrap(this.player.x + dx * placeAhead, this.player.y + dy * placeAhead, {
+      ...cfg,
+      armDelayMs: m ? cfg.armDelayMs * t.armFactor : cfg.armDelayMs,
+      damageMult: m ? t.damageMult : 1,
+    });
+    this.lastCombatTime = this.time.now;
   }
 
   /** THE COMPOSED-ACTION EXECUTOR: runs a skill declared as data (steps of

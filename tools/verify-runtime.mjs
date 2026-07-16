@@ -2176,6 +2176,7 @@ try {
     ms.iaijutsu = null;
     ms.pulseRing = null;
     ms.empoweredStrikes = null;
+    ms.clearTraps(); // devices + shadow-dance/vanish state (assassin)
     ms.darkVulnUntil = 0;
     ms.clearDots();
     ms.playerHealth.full();
@@ -2185,7 +2186,7 @@ try {
   });
   ok(
     'skill framework: every skill in every tree executes; composed actions match their declared primitives',
-    skillSweep.errors.length === 0 && skillSweep.mismatches.length === 0 && skillSweep.composed === 119 && skillSweep.total >= 270,
+    skillSweep.errors.length === 0 && skillSweep.mismatches.length === 0 && skillSweep.composed === 131 && skillSweep.total >= 300,
     `total=${skillSweep.total} composed=${skillSweep.composed} bespokeActive=${skillSweep.bespokeActive} timed/other=${skillSweep.other} passive=${skillSweep.passive}` +
       (skillSweep.errors.length ? ` ERRORS=${JSON.stringify(skillSweep.errors.slice(0, 3))}` : '') +
       (skillSweep.mismatches.length ? ` MISMATCH=${JSON.stringify(skillSweep.mismatches.slice(0, 3))}` : ''),

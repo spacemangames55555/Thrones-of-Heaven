@@ -46,12 +46,15 @@ import { SAM_BOW_SKILLS, SAM_BOW_TREE } from './samuraiBow';
 import { MONK_PALM_SKILLS, MONK_PALM_TREE } from './monkIronPalm';
 import { MONK_CHI_SKILLS, MONK_CHI_TREE } from './monkChi';
 import { MONK_SPIRIT_SKILLS, MONK_SPIRIT_TREE } from './monkSpiritual';
+import { ASN_TRAP_SKILLS, ASN_TRAP_TREE } from './assassinTraps';
+import { ASN_SHADOW_SKILLS, ASN_SHADOW_TREE } from './assassinShadow';
+import { ASN_MARKS_SKILLS, ASN_MARKS_TREE } from './assassinMarksman';
 
 /** How many active skills the player can equip to on-screen slots. */
 export const LOADOUT_SLOTS = 6;
 
 /** The playable classes. Only the Blacksmith has trees this batch; others slot in later. */
-export type ClassId = 'blacksmith' | 'necromancer' | 'wizard' | 'druid' | 'mage' | 'bard' | 'witchdoctor' | 'samurai' | 'monk';
+export type ClassId = 'blacksmith' | 'necromancer' | 'wizard' | 'druid' | 'mage' | 'bard' | 'witchdoctor' | 'samurai' | 'monk' | 'assassin';
 
 /** Stat modifiers a skill contributes — used by PASSIVE (permanent) and by timed
  *  BUFF / TRANSFORMATION effects (while active). All optional; absent = no change. */
@@ -296,7 +299,34 @@ export type ActiveActionId =
   | 'monk_divine'
   | 'monk_astral'
   | 'monk_wheel'
-  | 'monk_mantra';
+  | 'monk_mantra'
+  // Assassin actives (bespoke ids; composed skills share the executor).
+  | 'asn_blade_trap'
+  | 'asn_snare_trap'
+  | 'asn_toxic_trap'
+  | 'asn_flash_trap'
+  | 'asn_explosive_trap'
+  | 'asn_frost_trap'
+  | 'asn_remote_det'
+  | 'asn_caltrops'
+  | 'asn_minefield'
+  | 'asn_silent_blade'
+  | 'asn_cloak'
+  | 'asn_ambush'
+  | 'asn_shadow_step'
+  | 'asn_smoke_bomb'
+  | 'asn_takedown'
+  | 'asn_vanish'
+  | 'asn_shadow_dance'
+  | 'asn_star'
+  | 'asn_rapid'
+  | 'asn_ensnare'
+  | 'asn_piercing'
+  | 'asn_poison_stars'
+  | 'asn_trick'
+  | 'asn_fan'
+  | 'asn_cripple'
+  | 'asn_rain_steel';
 
 /**
  * The five supported EFFECT KINDS. The scene applies them generically:
@@ -633,6 +663,9 @@ const NON_DAMAGING_ACTIVE_ACTIONS: ReadonlySet<ActiveActionId> = new Set([
   // restores/cleanse/the HP-cost infusion, shield, stealth, the confusion, the
   // ally-bond, the decoy, and the no-damage stillness field).
   'monk_deflect', 'monk_empower', 'monk_silent', 'monk_soothe', 'monk_tranquil', 'monk_aura', 'monk_acupuncture', 'monk_infusion', 'monk_barrier', 'monk_enigma', 'monk_divine', 'monk_astral', 'monk_mantra',
+  // Assassin utility actives (pure-control devices, the stealth entries, the
+  // confusion bomb, and the no-damage Shadow Dance state).
+  'asn_snare_trap', 'asn_flash_trap', 'asn_frost_trap', 'asn_cloak', 'asn_smoke_bomb', 'asn_vanish', 'asn_shadow_dance',
 ]);
 
 /**
@@ -697,6 +730,10 @@ const NON_AIMABLE_ACTIONS: ReadonlySet<ActiveActionId> = new Set<ActiveActionId>
   // spirit casts, and the decoy. Palm/Flurry/Sweep/Pressure/Rising Dragon/
   // Chi Wave/Force Palm stay directional (drag-to-aim).
   'monk_deflect', 'monk_empower', 'monk_silent', 'monk_hundred', 'monk_soothe', 'monk_tranquil', 'monk_aura', 'monk_acupuncture', 'monk_infusion', 'monk_barrier', 'monk_explosion', 'monk_enigma', 'monk_divine', 'monk_astral', 'monk_wheel', 'monk_mantra',
+  // Assassin: self-states, the everything-now trigger, and the auto-targeting
+  // step/ricochet. Every placed device, Caltrops/Minefield/Rain (placed ahead),
+  // the strikes, and every star stay directional (drag-to-aim).
+  'asn_remote_det', 'asn_cloak', 'asn_shadow_step', 'asn_smoke_bomb', 'asn_vanish', 'asn_shadow_dance', 'asn_trick',
 ]);
 
 /**
@@ -917,6 +954,30 @@ const SAMURAI: ClassSkills = {
   ],
 };
 
+// ─── ASSASSIN (the Near East's native; Dubai) ──────────────────────────────────
+// Hidden blades, empty shadows — three trees of 10: TRAPPER'S ARSENAL (the trap
+// system: place → arm → spring → payload, with Mastery/Remote Detonation/
+// Minefield as the hooks), SHADOW ARTS (the stealth loop: cloak, the stealth-
+// bonus rider, Ambush behind the ally-rule refund, Vanish, Shadow Dance), and
+// MARKSMAN'S PRECISION (thrown steel on the full bolt-rider set + the ricochet
+// + the placed volley). Tier-0s: Blade Trap, Silent Blade, Throwing Star.
+const ASSASSIN: ClassSkills = {
+  classId: 'assassin',
+  trees: [
+    { id: ASN_TRAP_TREE, name: 'Traps' }, // 10 device skills (opens on Blade Trap)
+    { id: ASN_SHADOW_TREE, name: 'Shadow' }, // 10 stealth skills (opens on Silent Blade)
+    { id: ASN_MARKS_TREE, name: 'Marksman' }, // 10 thrown skills (opens on Throwing Star)
+  ],
+  skills: [
+    // --- TRAPPER'S ARSENAL (10 skills, linear; devices). Data in assassinTraps.ts. ---
+    ...ASN_TRAP_SKILLS,
+    // --- SHADOW ARTS (10 skills, linear; stealth). Data in assassinShadow.ts. ---
+    ...ASN_SHADOW_SKILLS,
+    // --- MARKSMAN'S PRECISION (10 skills, linear; thrown). Data in assassinMarksman.ts. ---
+    ...ASN_MARKS_SKILLS,
+  ],
+};
+
 // ─── MONK (Asia's second native; Lhasa) ────────────────────────────────────────
 // Empty hands, full spirit — three trees of 10: IRON PALM (fast open-hand melee,
 // Deflect = the parry window's melee+projectile config, Hundred Hands combo
@@ -952,6 +1013,7 @@ export const CLASS_SKILLS: Record<ClassId, ClassSkills> = {
   witchdoctor: WITCHDOCTOR,
   samurai: SAMURAI,
   monk: MONK,
+  assassin: ASSASSIN,
 };
 
 /** Look up a class's full skill set (trees + skills). */
