@@ -121,7 +121,10 @@ for (const zone of WORLD) {
     }
     for (let i = 0; i < defs.length; i++) {
       const beat = zone.questChain[i];
-      const reserved = beat.handAuthored === true || zone.handAuthored === true;
+      // A beat's OWN flag wins over the zone default (the quest-factory rule):
+      // `handAuthored: false` civic beats stay loop-writable inside hand-
+      // authored home zones — generated prose, never a TODO marker.
+      const reserved = beat.handAuthored ?? zone.handAuthored === true;
       const hasTodo = defs[i].npcInactiveLines[0].includes(`HAND_AUTHORED_TODO: ${beat.id}`);
       if (reserved && !hasTodo) throw new Error(`hand-authored beat '${beat.id}' is missing its HAND_AUTHORED_TODO marker`);
       if (!reserved && hasTodo) throw new Error(`loop-authored beat '${beat.id}' unexpectedly carries a TODO marker`);

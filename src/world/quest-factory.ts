@@ -60,6 +60,7 @@ export function triggerForBeat(beat: QuestBeat): string {
     escort: 'escorted',
     boss: 'boss-defeated',
     portal_approach: 'ritual-complete',
+    deliver: 'delivered',
   };
   return `${beat.id}-${suffix[beat.archetype]}`;
 }
@@ -92,7 +93,10 @@ function objectiveForBeat(beat: QuestBeat, handAuthored: boolean): ObjectiveDef 
  *  The class-start feature (later) accepts it explicitly; the rest of the
  *  chain stays auto so completed beats flow forward. */
 export function questForBeat(zone: Zone, beat: QuestBeat, prerequisites: readonly QuestPrerequisite[], isFirstBeat = false): QuestDef {
-  const handAuthored = beat.handAuthored === true || zone.handAuthored === true;
+  // A beat's OWN flag wins over the zone default (unset = inherit, exactly the
+  // old behavior). `handAuthored: false` lets a civic beat inside a hand-
+  // authored home zone stay loop-writable (generated prose, no TODO marker).
+  const handAuthored = beat.handAuthored ?? zone.handAuthored === true;
   const line = handAuthored
     ? placeholderProse(beat.id) // HAND_AUTHORED_TODO: prose written by the designer later
     : `${zone.displayName}: ${beat.summary}`;
