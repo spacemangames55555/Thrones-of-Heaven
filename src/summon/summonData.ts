@@ -662,6 +662,46 @@ export const ASTRAL_DECOY_CONFIG: AlliedSummonConfig = {
   aggroPriority: AGGRO_TIER.MAGNET, // enemies prefer the spirit-self
 };
 
+// JAGUAR COMPANION (Savage): the Wolverine's attacker lineage in the hunt's
+// colors — a fast melee cat whose swipes leave a BLEED.
+export const JAGUAR_TUNING = {
+  maxHP: 95,
+  attackDamage: 12,
+  attackDot: { dmgPerTick: 5, tickMs: 500, durationMs: 2500, color: 0xd04a3a }, // raked bleed
+  attackCooldownMs: 750,
+  attackRange: 48,
+  seekRange: 360,
+  leashRange: 560,
+  durationMs: 20000,
+  aggroRadius: 120,
+  followRange: 150,
+  moveTilesPerSec: 7.5,
+  bodyRadius: 13,
+  maxConcurrent: 1,
+  tint: 0xe8a03a, // sun-gold pelt
+} as const;
+
+export const JAGUAR_CONFIG: AlliedSummonConfig = {
+  key: 'sav_jaguar',
+  name: 'Jaguar',
+  behavior: 'attacker',
+  maxHP: JAGUAR_TUNING.maxHP,
+  durationMs: JAGUAR_TUNING.durationMs,
+  aggroRadius: JAGUAR_TUNING.aggroRadius,
+  followRange: JAGUAR_TUNING.followRange,
+  moveTilesPerSec: JAGUAR_TUNING.moveTilesPerSec,
+  bodyRadius: JAGUAR_TUNING.bodyRadius,
+  tint: JAGUAR_TUNING.tint,
+  drawsAggro: true,
+  aggroPriority: AGGRO_TIER.MINION,
+  attackDamage: JAGUAR_TUNING.attackDamage,
+  attackCooldownMs: JAGUAR_TUNING.attackCooldownMs,
+  attackRange: JAGUAR_TUNING.attackRange,
+  seekRange: JAGUAR_TUNING.seekRange,
+  leashRange: JAGUAR_TUNING.leashRange,
+  attackDot: JAGUAR_TUNING.attackDot,
+};
+
 // MINI-DECOY (Spectral Echoes): tiny short-lived illusions on the decoy seam —
 // they pull light aggro (MINION tier, below any true tank) and simply stand there.
 export const MINI_DECOY_TUNING = {

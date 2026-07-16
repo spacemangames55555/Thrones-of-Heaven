@@ -120,6 +120,8 @@ import {
   REVENANT_TUNING,
   ASTRAL_DECOY_CONFIG,
   ASTRAL_DECOY_TUNING,
+  JAGUAR_CONFIG,
+  JAGUAR_TUNING,
 } from '../summon/summonData';
 import { TAPESTRY_TUNING, BEAR_MIGHT_ID, ELEPHANT_RAGE_ID } from '../skills/druidTapestry';
 import { RESTORATION_TUNING, CLAY_ID, OIL_IMMUNITY_ID, OIL_VITALITY_ID } from '../skills/druidRestoration';
@@ -143,6 +145,9 @@ import { ASN_SHADOW_TUNING, POISONED_EDGE_ID } from '../skills/assassinShadow';
 import { PRS_LIGHT_TUNING, PRS_FORTRESS_ID } from '../skills/priestLight';
 import { PRS_REBUKE_TUNING } from '../skills/priestRebuke';
 import { PRS_GRACE_TUNING, PROPHETIC_VISION_ID } from '../skills/priestGrace';
+import { SAV_EDGE_TUNING, WARRIORS_MOMENTUM_ID } from '../skills/savageObsidian';
+import { SAV_BLOOD_TUNING } from '../skills/savageBlood';
+import { SAV_JAGUAR_TUNING } from '../skills/savageJaguar';
 import { PlayerPower } from '../player/PlayerPower';
 import { URIEL_SCENE } from '../story/urielData';
 import { URIEL_SENDOFF_LINES, RIFT_SCENE } from '../story/riftSceneData';
@@ -784,6 +789,12 @@ export class MainScene extends Phaser.Scene {
    *  that HEALS friendlies inside it (caster included) and DAMAGES enemies it
    *  crosses, both ticking until it ends. Public-readable for the gate. */
   dualChannel: { until: number; nextAt: number; tickMs: number; healPerTick: number; dmgPerTick: number; length: number; width: number; fx: Phaser.GameObjects.Graphics } | null = null;
+  // --- Savage framework primitives (composable/bespoke; class-agnostic) ---
+  /** FRENZY (momentum stacks): armed by a keyed passive. Every frame the player
+   *  DEALS damage adds one stack (capped at maxStacks); each stack multiplies
+   *  ALL damage by (1 + perStackMult); stacks fall to zero after decayMs
+   *  without blood. Public-readable so the runtime gate can observe it. */
+  frenzy: { perStackMult: number; maxStacks: number; decayMs: number; stacks: number; until: number } | null = null;
   /**
    * CHANNELED-BEAM state (the channel primitive). Transient: a single active channel locks
    * one enemy, ticks damage, optionally trickles energy, and is cancelled by movement / any
@@ -2253,9 +2264,10 @@ export class MainScene extends Phaser.Scene {
     this.showBanner(`Aim Cone: ${next}°`, 1200);
   }
 
-  /** The live melee damage (level-derived × skill multiplier from passives + buffs/forms). */
+  /** The live melee damage (level-derived × skill multiplier from passives + buffs/forms
+   *  × the Savage frenzy momentum while armed). */
   private playerDamage(): number {
-    return Math.round(this.progression.effectiveDamage * this.skillDamageMult * this.osteoDamageMult);
+    return Math.round(this.progression.effectiveDamage * this.skillDamageMult * this.osteoDamageMult * this.frenzyMult());
   }
 
   /** Level-derived max HP adjusted by skill passive/timed maxHP mods. */
@@ -2314,6 +2326,13 @@ export class MainScene extends Phaser.Scene {
     // ASSASSIN keyed passive: Trap Mastery's +1 armed-device cap (its faster
     // arming + stronger payloads fold in where a device is placed).
     this.trapCap = ASN_TRAP_TUNING.baseCap + (this.skills.isUnlocked(TRAP_MASTERY_ID) ? ASN_TRAP_TUNING.mastery.capBonus : 0);
+    // SAVAGE keyed passive: Warrior's Momentum arms the frenzy stacks (already-
+    // armed frenzy keeps its live stacks through a recompute).
+    if (this.skills.isUnlocked(WARRIORS_MOMENTUM_ID)) {
+      if (!this.frenzy) this.armFrenzy(SAV_EDGE_TUNING.momentum.perStackMult, SAV_EDGE_TUNING.momentum.maxStacks, SAV_EDGE_TUNING.momentum.decayMs);
+    } else if (this.frenzy) {
+      this.disarmFrenzy();
+    }
     // Block chance + strength (Double Block / Dual Shield) — rolled per hit in Health.
     if (this.playerHealth) {
       this.playerHealth.blockChance = Phaser.Math.Clamp(m.blockChance ?? 0, 0, 0.9);
@@ -3084,6 +3103,85 @@ export class MainScene extends Phaser.Scene {
       this.vanish(c.durationMs, c.durationMs);
       this.startTimedSkill('prs_gr_ascend', c.durationMs, { regenPerSec: c.regenPerSec }, c.tint);
       this.showBanner('Ascendance', 1100);
+    } else if (action === 'sav_jagged') {
+      // Savage Obsidian #2 — the tearing strike whose wound keeps bleeding.
+      const c = SAV_EDGE_TUNING.jagged;
+      const { dx, dy } = this.facingUnit();
+      this.runComposedSteps([{ p: 'strike', at: 'front', range: c.range, damage: c.damage, tint: 0xd04a3a }]);
+      this.applyDotInRange(px + dx * c.range * 0.6, py + dy * c.range * 0.6, c.range, c.dot.dmgPerTick, c.dot.tickMs, c.dot.durationMs, 0xd04a3a);
+    } else if (action === 'sav_leap') {
+      // Savage Obsidian #4 — extension #2: the aimed jump + slam + knockdown.
+      const c = SAV_EDGE_TUNING.leap;
+      this.leapSlam(c.distance, c.radius, this.skillDamage(c.damage), c.stunMs);
+    } else if (action === 'sav_roar') {
+      // Savage Obsidian #7 — pure fear: everything near slows + strikes softer.
+      const c = SAV_EDGE_TUNING.roar;
+      this.spawnSkillRing(px, py, c.radius, 0xff8a5a);
+      this.slowEnemiesInRange(px, py, c.radius, c.slowMs, c.slowFactor);
+      if (this.combatEnemiesInRange(px, py, c.radius).length > 0) this.setPoisonWeaken(c.weaken, c.weakenMs);
+      this.showBanner('The roar carries', 1100);
+      this.lastCombatTime = this.time.now;
+    } else if (action === 'sav_headtaker') {
+      // Savage Obsidian #8 — extension #4: the low-health execute.
+      const c = SAV_EDGE_TUNING.headtaker;
+      const { dx, dy } = this.facingUnit();
+      this.breakPlayerStealth();
+      this.executeHitAll(px + dx * c.reach, py + dy * c.reach, c.radius, this.skillDamage(c.damage), c.threshold, c.mult);
+    } else if (action === 'sav_slaughter') {
+      // Savage Obsidian #10 ultimate — the combo-ultimate machinery, heavy beat.
+      const c = SAV_EDGE_TUNING.slaughter;
+      this.startComboUltimate('sav_ob_slaughter', {
+        durationMs: c.durationMs, intervalMs: c.intervalMs, range: c.range, damage: c.damage,
+        jumps: c.jumps, jumpRange: c.jumpRange, falloff: c.falloff, tint: c.tint,
+        stats: { damageMult: c.damageMult },
+      });
+      this.showBanner('ENDLESS SLAUGHTER', 1400);
+    } else if (action === 'sav_crimson') {
+      // Savage Blood #3 — extension #3: the nova paid in blood (refusal whiffs).
+      const c = SAV_BLOOD_TUNING.crimson;
+      if (!this.payBloodPrice(c.bloodCost)) this.actionWhiffed = true;
+      else this.runComposedSteps([{ p: 'strike', at: 'self', radius: c.radius, damage: c.damage, tint: 0xd04a3a }]);
+    } else if (action === 'sav_sacrifice') {
+      // Savage Blood #7 — extension #3: the great fury paid in blood.
+      const c = SAV_BLOOD_TUNING.sacrifice;
+      if (!this.payBloodPrice(c.bloodCost)) {
+        this.actionWhiffed = true;
+      } else {
+        this.startTimedSkill('sav_br_sacrifice', c.durationMs, { damageMult: c.damageMult }, c.tint);
+        this.showBanner('The altar accepts', 1200);
+      }
+    } else if (action === 'sav_hunger') {
+      // Savage Blood #10 ultimate — the devouring nova: blood out, life back per bite.
+      const c = SAV_BLOOD_TUNING.hunger;
+      if (!this.payBloodPrice(c.bloodCost)) {
+        this.actionWhiffed = true;
+      } else {
+        this.runComposedSteps([{ p: 'strike', at: 'self', radius: c.radius, damage: c.damage, tint: 0xd04a3a, healPerHit: c.healPerHit, maxHeals: c.maxHeals }]);
+        this.showBanner("BLOOD GOD'S HUNGER", 1400);
+      }
+    } else if (action === 'sav_lunge') {
+      // Savage Jaguar #1 — the pounce: damage + knockdown along the path.
+      const c = SAV_JAGUAR_TUNING.lunge;
+      this.breakPlayerStealth(); // it's an attack
+      this.startCharge({ distance: c.distance, damage: this.skillDamage(c.damage), knockdownMs: c.knockdownMs });
+    } else if (action === 'sav_snarl') {
+      // Savage Jaguar #2 — the confusion reuse: prey turns on its own kind.
+      const c = SAV_JAGUAR_TUNING.snarl;
+      const turned = this.confuseNearestEnemy(px, py, c.range, c.chance, c.durationMs, c.chipDamage, c.chipMs);
+      this.showBanner(turned ? 'It flees into its own' : 'The snarl goes unheard', 1100);
+    } else if (action === 'sav_jaguar') {
+      // Savage Jaguar #3 — the bleeding attacker companion.
+      this.summonAlliedUnits(JAGUAR_CONFIG, 1, JAGUAR_TUNING.maxConcurrent);
+      this.showBanner('The spotted shadow answers', 1200);
+    } else if (action === 'sav_pack') {
+      // Savage Jaguar #6 — the ally-bond behind the ALLY RULE (no pack = whiff).
+      const c = SAV_JAGUAR_TUNING.pack;
+      if (this.summons.list.some((sm) => sm.isAlive)) {
+        this.startAllyBond(c.sharePct, c.durationMs);
+      } else {
+        this.showBanner('No pack to share the wound', 1000);
+        this.actionWhiffed = true;
+      }
     }
   }
 
@@ -4628,6 +4726,93 @@ export class MainScene extends Phaser.Scene {
     for (const s of this.allyShields) s.health.shield = 0;
     this.allyShields = [];
     this.harmImmuneUntil = 0;
+    // Savage transients ride the same reset: momentum never survives it.
+    if (this.frenzy) {
+      this.frenzy.stacks = 0;
+      this.frenzy.until = 0;
+    }
+  }
+
+  // --- Savage framework: frenzy + leap-slam + blood price + the execute --------
+
+  /** Arm the FRENZY momentum state (a keyed passive owns this; the gate calls
+   *  it directly). Disarm with {@link disarmFrenzy}. */
+  armFrenzy(perStackMult: number, maxStacks: number, decayMs: number): void {
+    this.frenzy = { perStackMult, maxStacks, decayMs, stacks: 0, until: 0 };
+  }
+
+  disarmFrenzy(): void {
+    this.frenzy = null;
+  }
+
+  /** The frenzy damage multiplier (1 while disarmed/at zero stacks) — folded
+   *  into playerDamage() and skillDamage(), so EVERY damage path scales. */
+  private frenzyMult(): number {
+    const f = this.frenzy;
+    return f && f.stacks > 0 ? 1 + f.stacks * f.perStackMult : 1;
+  }
+
+  /** Per-frame frenzy bookkeeping, fed the frame's dealt-damage accumulator
+   *  (called at the lifesteal flush, before the accumulator resets): blood
+   *  drawn this frame = +1 stack + a fresh decay window; silence past the
+   *  window drops every stack at once. */
+  private updateFrenzy(dealtThisFrame: number): void {
+    const f = this.frenzy;
+    if (!f) return;
+    if (dealtThisFrame > 0) {
+      f.stacks = Math.min(f.maxStacks, f.stacks + 1);
+      f.until = this.time.now + f.decayMs;
+    } else if (f.stacks > 0 && this.time.now >= f.until) {
+      f.stacks = 0;
+    }
+  }
+
+  /** LEAP-SLAM: an aimed jump along the facing — land `distance` out (halted
+   *  at unwalkable ground), slam an AoE, and KNOCK DOWN (stun) what it hits.
+   *  Damage arrives pre-scaled by the caller. */
+  leapSlam(distance: number, radius: number, damage: number, stunMs: number): void {
+    this.breakPlayerStealth(); // it's an attack
+    const { dx, dy } = this.facingUnit();
+    const w = this.activeMap().nearestWalkableWorld(this.player.x + dx * distance, this.player.y + dy * distance) ?? { x: this.player.x + dx * distance, y: this.player.y + dy * distance };
+    (this.player.sprite.body as Phaser.Physics.Arcade.Body).reset(w.x, w.y);
+    this.spawnSkillRing(w.x, w.y, radius, 0xff8a5a);
+    this.aoeHitAll(w.x, w.y, radius, damage);
+    this.stunEnemiesInRange(w.x, w.y, radius, stunMs);
+    this.lastCombatTime = this.time.now;
+  }
+
+  /** Pay a cast's BLOOD PRICE: health, not Faith/energy — the willing cut
+   *  bypasses shields. Returns false (a graceful refusal; the caller flags
+   *  actionWhiffed so cooldown + energy refund) when it would bleed you out. */
+  payBloodPrice(cost: number): boolean {
+    if (this.playerHealth.current <= cost) {
+      this.showBanner('Your blood runs too thin', 1000);
+      return false;
+    }
+    this.playerHealth.current -= cost;
+    this.spawnDamageNumber(this.player.x, this.player.y - 26, cost, '#ff7a7a');
+    return true;
+  }
+
+  /** HP-THRESHOLD EXECUTE: the finisher variant keyed off LOW HEALTH — enemies
+   *  at/below `threshold` (fraction of max HP) take damage × mult; the rest
+   *  take the ordinary blow. Returns counts (gate-observable). */
+  executeHitAll(x: number, y: number, radius: number, damage: number, threshold: number, mult: number, tint = 0xff8a5a): { hit: number; executed: number } {
+    let hit = 0;
+    let executed = 0;
+    this.spawnSkillRing(x, y, radius, tint);
+    for (const e of this.combatEnemiesInRange(x, y, radius)) {
+      const qualifies = e.health.current / e.health.max <= threshold;
+      const dealt = e.takeHit(qualifies ? damage * mult : damage);
+      if (dealt > 0) {
+        this.dmgDealtAccum += dealt;
+        this.spawnDamageNumber(e.x, e.y - 24, dealt, qualifies ? '#ff8a5a' : '#ffffff');
+      }
+      hit++;
+      if (qualifies) executed++;
+    }
+    this.lastCombatTime = this.time.now;
+    return { hit, executed };
   }
 
   // --- DoT (damage-over-time) + contagion primitive (Toxic Bolt / Plague) -------
@@ -4922,9 +5107,10 @@ export class MainScene extends Phaser.Scene {
   }
 
   /** A skill's base damage scaled by the player's damage multiplier (Berserker's Edge,
-   *  Crazed, Prism Quartz) so active abilities scale with offensive passives + buffs. */
+   *  Crazed, Prism Quartz) so active abilities scale with offensive passives + buffs —
+   *  × the Savage frenzy momentum while armed. */
   private skillDamage(base: number): number {
-    return Math.round(base * this.skillDamageMult * this.osteoDamageMult);
+    return Math.round(base * this.skillDamageMult * this.osteoDamageMult * this.frenzyMult());
   }
 
   /** A quick expanding ring FX for a skill activation (world FX, main camera). */
@@ -5556,6 +5742,7 @@ export class MainScene extends Phaser.Scene {
     if (!this.playerDead && lifesteal > 0 && this.dmgDealtAccum > 0 && this.playerHealth.current < this.playerHealth.max) {
       this.playerHealth.heal(this.dmgDealtAccum * lifesteal);
     }
+    this.updateFrenzy(this.dmgDealtAccum); // Savage momentum: blood this frame = a stack
     this.dmgDealtAccum = 0; // reset the accumulator every frame
     if (!this.playerDead) {
       // HP regen (War Chant) — heal per second from any active regen mod.

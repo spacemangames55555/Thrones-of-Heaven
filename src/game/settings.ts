@@ -203,6 +203,9 @@ export const CLASS_BASE_STATS: Record<string, ClassBaseStats> = {
   // Priest — Rome's keeper of the honest Light: x0.80 HP / x0.90 damage / x1.00
   // speed of the Blacksmith baseline (rounded: 80/16 HP, 23/5 damage). (Tune here.)
   priest: { baseMaxHP: 80, hpPerLevel: 16, baseDamage: 23, dmgPerLevel: 5, moveSpeedMult: 1 },
+  // Savage — Mexico City's blood-and-sun bruiser: x0.90 HP / x1.15 damage /
+  // x1.05 speed of the Blacksmith baseline (rounded: 90/18 HP, 29/6 damage). (Tune here.)
+  savage: { baseMaxHP: 90, hpPerLevel: 18, baseDamage: 29, dmgPerLevel: 6, moveSpeedMult: 1.05 },
 };
 
 /** The base-stat profile for a class id (defaults to the Blacksmith baseline). */

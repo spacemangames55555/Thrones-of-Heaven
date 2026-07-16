@@ -52,12 +52,15 @@ import { ASN_MARKS_SKILLS, ASN_MARKS_TREE } from './assassinMarksman';
 import { PRS_LIGHT_SKILLS, PRS_LIGHT_TREE } from './priestLight';
 import { PRS_REBUKE_SKILLS, PRS_REBUKE_TREE } from './priestRebuke';
 import { PRS_GRACE_SKILLS, PRS_GRACE_TREE } from './priestGrace';
+import { SAV_EDGE_SKILLS, SAV_EDGE_TREE } from './savageObsidian';
+import { SAV_BLOOD_SKILLS, SAV_BLOOD_TREE } from './savageBlood';
+import { SAV_JAGUAR_SKILLS, SAV_JAGUAR_TREE } from './savageJaguar';
 
 /** How many active skills the player can equip to on-screen slots. */
 export const LOADOUT_SLOTS = 6;
 
 /** The playable classes. Only the Blacksmith has trees this batch; others slot in later. */
-export type ClassId = 'blacksmith' | 'necromancer' | 'wizard' | 'druid' | 'mage' | 'bard' | 'witchdoctor' | 'samurai' | 'monk' | 'assassin' | 'priest';
+export type ClassId = 'blacksmith' | 'necromancer' | 'wizard' | 'druid' | 'mage' | 'bard' | 'witchdoctor' | 'samurai' | 'monk' | 'assassin' | 'priest' | 'savage';
 
 /** Stat modifiers a skill contributes — used by PASSIVE (permanent) and by timed
  *  BUFF / TRANSFORMATION effects (while active). All optional; absent = no change. */
@@ -353,7 +356,30 @@ export type ActiveActionId =
   | 'prs_renewal'
   | 'prs_hymn'
   | 'prs_ascend'
-  | 'prs_grace_field';
+  | 'prs_grace_field'
+  // Savage actives (bespoke ids; composed skills share the executor; Hemorrhage
+  // is a stacking-DoT-kind skill and needs no action id).
+  | 'sav_slash'
+  | 'sav_jagged'
+  | 'sav_leap'
+  | 'sav_cleave'
+  | 'sav_skull'
+  | 'sav_roar'
+  | 'sav_headtaker'
+  | 'sav_slaughter'
+  | 'sav_spike'
+  | 'sav_veins'
+  | 'sav_crimson'
+  | 'sav_transfusion'
+  | 'sav_sacrifice'
+  | 'sav_mire'
+  | 'sav_hunger'
+  | 'sav_lunge'
+  | 'sav_snarl'
+  | 'sav_jaguar'
+  | 'sav_pack'
+  | 'sav_lick'
+  | 'sav_totem';
 
 /**
  * The five supported EFFECT KINDS. The scene applies them generically:
@@ -697,6 +723,9 @@ const NON_DAMAGING_ACTIVE_ACTIONS: ReadonlySet<ActiveActionId> = new Set([
   // word, the dormant revive, and the mending zones — Beacon/Burst/Ground/
   // Grace Incarnate DO damage and stay damaging actives).
   'prs_shield_faith', 'prs_embrace', 'prs_radiant', 'prs_barrier', 'prs_blessing', 'prs_intervene', 'prs_aegis', 'prs_word', 'prs_forgive', 'prs_renewal', 'prs_hymn', 'prs_ascend',
+  // Savage utility actives (the pure-fear roar, the confusion snarl, the
+  // companion, the ally-bond, and the animal's mend).
+  'sav_roar', 'sav_snarl', 'sav_jaguar', 'sav_pack', 'sav_lick',
 ]);
 
 /**
@@ -769,6 +798,10 @@ const NON_AIMABLE_ACTIONS: ReadonlySet<ActiveActionId> = new Set<ActiveActionId>
   // find their own target), self zones/fields, and the dormant revive. Ray of
   // Light / Smite / Rebuke / the Beacon's beam stay directional (drag-to-aim).
   'prs_shield_faith', 'prs_embrace', 'prs_radiant', 'prs_barrier', 'prs_blessing', 'prs_intervene', 'prs_aegis', 'prs_word', 'prs_ground', 'prs_vanquish', 'prs_judgment', 'prs_burst', 'prs_forgive', 'prs_renewal', 'prs_hymn', 'prs_ascend', 'prs_grace_field',
+  // Savage: self-states, self-AoEs, the auto-targeting casts (snarl/veins/
+  // transfusion find their own target), the companion, and the mend. Slash/
+  // Jagged/Leap/Cleave/Skull/Headtaker/Spike/Mire/Lunge/Totem stay directional.
+  'sav_roar', 'sav_slaughter', 'sav_crimson', 'sav_sacrifice', 'sav_hunger', 'sav_snarl', 'sav_jaguar', 'sav_pack', 'sav_lick', 'sav_veins', 'sav_transfusion',
 ]);
 
 /**
@@ -989,6 +1022,30 @@ const SAMURAI: ClassSkills = {
   ],
 };
 
+// ─── SAVAGE (Mesoamerica's native; Mexico City) ────────────────────────────────
+// Blood for the sun — three trees of 10: OBSIDIAN EDGE (glass-edged fury:
+// Warrior's Momentum frenzy stacks, the leap-slam, the Headtaker execute, the
+// combo ultimate), BLOOD RITES (the willing cut: blood-priced casts, contagion
+// + stacking wounds, the drain, the hungering nova), and JAGUAR SPIRIT (the
+// pounce, the bleeding companion, the pack bond, the standing sun, the apex
+// state). Tier-0s: Obsidian Slash, Blood Spike, Feral Lunge.
+const SAVAGE: ClassSkills = {
+  classId: 'savage',
+  trees: [
+    { id: SAV_EDGE_TREE, name: 'Obsidian' }, // 10 melee-fury skills (opens on Obsidian Slash)
+    { id: SAV_BLOOD_TREE, name: 'Blood' }, // 10 sacrifice skills (opens on Blood Spike)
+    { id: SAV_JAGUAR_TREE, name: 'Jaguar' }, // 10 hunt skills (opens on Feral Lunge)
+  ],
+  skills: [
+    // --- OBSIDIAN EDGE (10 skills, linear; melee fury). Data in savageObsidian.ts. ---
+    ...SAV_EDGE_SKILLS,
+    // --- BLOOD RITES (10 skills, linear; sacrifice). Data in savageBlood.ts. ---
+    ...SAV_BLOOD_SKILLS,
+    // --- JAGUAR SPIRIT (10 skills, linear; the hunt). Data in savageJaguar.ts. ---
+    ...SAV_JAGUAR_SKILLS,
+  ],
+};
+
 // ─── PRIEST (Europe's fourth native; Rome) ─────────────────────────────────────
 // Heaven lied, the Light didn't — three trees of 10: LIGHT (the targeted
 // ally-shield + its AoE/ultimate forms, the HP-cost mend, Divine Intervention
@@ -1075,6 +1132,7 @@ export const CLASS_SKILLS: Record<ClassId, ClassSkills> = {
   monk: MONK,
   assassin: ASSASSIN,
   priest: PRIEST,
+  savage: SAVAGE,
 };
 
 /** Look up a class's full skill set (trees + skills). */

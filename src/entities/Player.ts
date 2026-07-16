@@ -13,6 +13,7 @@ const SAMURAI_TEXTURE_KEY = 'samurai-figure'; // Samurai (Kyoto blade) avatar
 const MONK_TEXTURE_KEY = 'monk-figure'; // Monk (Lhasa ascetic) avatar
 const ASSASSIN_TEXTURE_KEY = 'assassin-figure'; // Assassin (Dubai knife-in-the-dark) avatar
 const PRIEST_TEXTURE_KEY = 'priest-figure'; // Priest (Rome keeper of the Light) avatar
+const SAVAGE_TEXTURE_KEY = 'savage-figure'; // Savage (Mexico City blood-and-sun bruiser) avatar
 const WIDTH = 32; // ~1 tile wide
 const HEIGHT = 48; // ~1.5 tiles tall — fixes the "character = one giant block" look
 
@@ -28,6 +29,7 @@ function textureForClass(classId: string): string {
   if (classId === 'monk') return MONK_TEXTURE_KEY;
   if (classId === 'assassin') return ASSASSIN_TEXTURE_KEY;
   if (classId === 'priest') return PRIEST_TEXTURE_KEY;
+  if (classId === 'savage') return SAVAGE_TEXTURE_KEY;
   return TEXTURE_KEY;
 }
 
@@ -60,6 +62,7 @@ export class Player {
     Player.ensureMonkTexture(scene);
     Player.ensureAssassinTexture(scene);
     Player.ensurePriestTexture(scene);
+    Player.ensureSavageTexture(scene);
 
     this.baseKey = textureForClass(classId);
     this.sprite = scene.physics.add.sprite(x, y, this.baseKey);
@@ -563,6 +566,52 @@ export class Player {
     g.fillStyle(0xfff8e0, 1);
     g.fillCircle(w - 8, 26, 1.2);
     g.generateTexture(PRIEST_TEXTURE_KEY, w, h);
+    g.destroy();
+  }
+
+  /** Draw the Mexico City SAVAGE avatar (bronze skin, jaguar-pelt mantle, red
+   *  war paint, an obsidian-edged club) as a generated texture — a CODE-DRAWN
+   *  PLACEHOLDER (a real sprite PNG drops in later via the sprite override
+   *  under this same key). Same footprint as the other figures. */
+  private static ensureSavageTexture(scene: Phaser.Scene): void {
+    if (scene.textures.exists(SAVAGE_TEXTURE_KEY)) return;
+    const w = WIDTH;
+    const h = HEIGHT;
+    const g = scene.make.graphics({ x: 0, y: 0 }, false);
+    // Dark outline + bare bronze torso.
+    g.fillStyle(0x2a140c, 1);
+    g.fillRoundedRect(4, 8, w - 8, h - 10, 9);
+    g.fillStyle(0xa8623a, 1); // bronze skin
+    g.fillRoundedRect(6, 10, w - 12, h - 14, 7);
+    // The jaguar-pelt mantle across one shoulder (sun-gold with dark rosettes).
+    g.fillStyle(0xe8a03a, 1);
+    g.fillRect(6, 18, (w - 12) * 0.5, 12);
+    g.fillStyle(0x5a3a14, 1);
+    g.fillCircle(10, 22, 1.4);
+    g.fillCircle(15, 26, 1.4);
+    g.fillCircle(12, 28, 1.2);
+    // A hide kilt at the waist.
+    g.fillStyle(0x8a5a2a, 1);
+    g.fillRect(8, h - 20, w - 16, 10);
+    // Head: tied dark hair + red war paint across the eyes.
+    g.fillStyle(0xb8724a, 1); // face
+    g.fillCircle(w / 2, 13, 6);
+    g.fillStyle(0x1a0e08, 1); // hair knot
+    g.fillRoundedRect(w / 2 - 6, 5, 12, 5, 2);
+    g.fillRect(w / 2 + 4, 3, 3, 5);
+    g.fillStyle(0xd04a3a, 1); // the paint stripe
+    g.fillRect(w / 2 - 6.5, 12.5, 13, 2.6);
+    g.fillStyle(0x1a0e08, 1); // eyes inside the stripe
+    g.fillCircle(w / 2 - 2.4, 13.8, 1);
+    g.fillCircle(w / 2 + 2.4, 13.8, 1);
+    // The macuahuitl at the hip: a dark club edged with pale obsidian teeth.
+    g.fillStyle(0x3a2410, 1);
+    g.fillRect(5, h - 32, 4, 18);
+    g.fillStyle(0xd8d8e0, 1);
+    g.fillRect(4.2, h - 30, 1.6, 3);
+    g.fillRect(4.2, h - 25, 1.6, 3);
+    g.fillRect(4.2, h - 20, 1.6, 3);
+    g.generateTexture(SAVAGE_TEXTURE_KEY, w, h);
     g.destroy();
   }
 }
