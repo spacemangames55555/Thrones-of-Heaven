@@ -173,12 +173,13 @@ try {
     JSON.stringify(preRuling),
   );
 
-  // 2) CLASS HOME STARTS (Casey's ruling) + the fresh-start guard: every playable
-  //    class fresh-starts at its correct HOME (world + beside the mentor), the
-  //    home opener is AVAILABLE (manual — nothing auto-starts) and acceptable
-  //    immediately through the real mentor/giver UI path. The Druid keeps the
-  //    UNCHANGED WA start. Druid runs LAST: the WA-opening check below plays on
-  //    in ITS session.
+  // 2) CLASS HOME STARTS (Casey's ruling) + the GUIDANCE contract: every playable
+  //    class fresh-starts at its correct HOME (world + beside the mentor). For
+  //    generated homes the opener is AUTO-ACCEPTED at spawn (the tracker shows
+  //    the chain from minute one) and the arrow has a live target; mentor talk
+  //    completes it through the real UI path. The Druid keeps the UNCHANGED WA
+  //    start (NPC-given opener, pre-accept giver arrow). Druid runs LAST: the
+  //    WA-opening check below plays on in ITS session.
   const HOMES = {
     blacksmith: { world: 'globe', zone: 'munich-anvil-hold', opener: 'mun-01-mentor', kind: 'region' },
     wizard: { world: 'egypt', zone: 'cairo-nile-crown', opener: 'cai-01-mentor', kind: 'cairo' },
@@ -204,9 +205,16 @@ try {
         const wait = (t) => new Promise((r) => setTimeout(r, t));
         ms.playerHealth.shield = 1e9; // home-city packs may engage during the check
         const out = { world: ms.activeWorld, active: ms.chain.activeQuest?.id ?? null };
+        // GUIDANCE (permanent): a fresh character at EVERY home has a visible
+        // quest-log entry (tracker) and a live arrow target for its current
+        // beat — the playtest gap where a fresh Monk saw neither.
+        const t = ms.currentMarkerTarget();
+        out.arrow = t ? { x: Math.round(t.x), y: Math.round(t.y), label: t.label } : null;
+        out.trackerShown = !!ms.chain.activeQuest;
         if (home.kind === 'region') {
           const m = ms.regionMentors.find((x) => x.zoneId === home.zone);
           out.mentorDist = m ? Math.hypot(m.pos.x - ms.player.x, m.pos.y - ms.player.y) : -1;
+          out.arrowAtMentor = t && m ? Math.hypot(t.x - m.pos.x, t.y - m.pos.y) : -1;
           out.openerBefore = ms.chain.status(home.opener);
           if (m) {
             ms.player.sprite.body.reset(m.pos.x + 40, m.pos.y); // step up to the elder
@@ -218,6 +226,7 @@ try {
           }
         } else if (home.kind === 'cairo') {
           out.mentorDist = Math.hypot(ms.cairoMentorPos.x - ms.player.x, ms.cairoMentorPos.y - ms.player.y);
+          out.arrowAtMentor = t ? Math.hypot(t.x - ms.cairoMentorPos.x, t.y - ms.cairoMentorPos.y) : -1;
           out.openerBefore = ms.chain.status(home.opener);
           ms.player.sprite.body.reset(ms.cairoMentorPos.x + 50, ms.cairoMentorPos.y);
           await wait(500);
@@ -251,11 +260,71 @@ try {
     }
     const openerDone = home.kind === 'earth' ? s.openerAfter === 'active' : s.openerAfter === 'complete';
     const atHome = home.kind === 'earth' ? s.spawnDist < 8 : true;
+    // GUIDANCE contract per home kind: generated homes spawn with the opener
+    // ACTIVE (tracker live) + the arrow ON the mentor; the Druid's Earth start
+    // keeps its NPC-given opener (tracker empty, pre-accept arrow at a giver).
+    const guided =
+      home.kind === 'earth'
+        ? s.active === null && s.openerBefore === 'available' && s.arrow !== null
+        : s.active === home.opener && s.trackerShown === true && s.openerBefore === 'active' && s.arrow !== null && s.arrowAtMentor >= 0 && s.arrowAtMentor < 30;
     ok(
-      `home start (${cls}): lands at ${home.world} home beside the mentor; opener manual + immediately acceptable`,
-      s.world === home.world && s.active === null && atHome && s.mentorDist >= 0 && s.mentorDist < 400 && s.openerBefore === 'available' && s.button === true && openerDone,
+      `home start (${cls}): lands at ${home.world} home beside the mentor; tracker + arrow live from minute one; mentor completes the opener`,
+      s.world === home.world && atHome && s.mentorDist >= 0 && s.mentorDist < 400 && guided && s.button === true && openerDone,
       JSON.stringify(s),
     );
+
+    // 2g. GUIDANCE RETARGETING (permanent, the real playtest gap): as the
+    // Monk, the arrow retargets through the first three beats by REAL play —
+    // the opener was just completed at the mentor above, so drive c1's
+    // delivery stage by stage (pickup at the mentor → carry → hand-off at
+    // Pemba) and land on the 02 cull: four distinct live targets in a row.
+    if (cls === 'monk') {
+      const g = await page.evaluate(async () => {
+        const ms = window.__ready();
+        const wait = (t) => new Promise((r) => setTimeout(r, t));
+        const Z = 'lhasa-prayer-citadel';
+        const arrow = () => {
+          const t = ms.currentMarkerTarget();
+          return t ? { x: Math.round(t.x), y: Math.round(t.y), label: t.label } : null;
+        };
+        const mpos = ms.regionMentors.find((m) => m.zoneId === Z)?.pos;
+        const npos = ms.regionNeighbors.find((n) => n.zoneId === Z)?.pos;
+        const rz = ms.regionSpawnZones.find((z) => z.zoneId === Z);
+        if (!mpos || !npos || !rz) return { setup: 'missing lhasa anchors' };
+        // Stage 1 — c1 active, NOT carrying: restart the delivery run from afar
+        // (the walk from the mentor talk may already have grabbed the parcel).
+        ms.clearBeatDelivery();
+        const far = ms.activeMap().nearestWalkableWorld(mpos.x + 500, mpos.y + 300);
+        ms.player.sprite.body.reset(far.x, far.y);
+        await wait(500);
+        const c1 = ms.chain.activeQuest?.id ?? null;
+        const a1 = arrow(); // → the parcel at the mentor
+        // Stage 2 — pick it up (walk in): the arrow flips to the neighbor.
+        ms.player.sprite.body.reset(mpos.x, mpos.y);
+        await wait(450);
+        const carrying = ms.beatDelivery?.carrying === true;
+        const a2 = arrow(); // → Pemba
+        // Stage 3 — hand it over (walk in): c1 completes, the 02 cull activates.
+        ms.player.sprite.body.reset(npos.x, npos.y);
+        await wait(450);
+        const c1After = ms.chain.status('lha-c1-errand');
+        const q02 = ms.chain.activeQuest?.id ?? null;
+        const a3 = arrow(); // → the cull ground (the zone's center)
+        const d = (a, p) => (a ? Math.round(Math.hypot(a.x - p.x, a.y - p.y)) : -1);
+        return {
+          c1, carrying, c1After, q02, a1, a2, a3,
+          a1AtMentor: d(a1, mpos), a2AtNeighbor: d(a2, npos), a3AtCenter: d(a3, rz.center),
+          moved: !!(a1 && a2 && a3) && (a1.x !== a2.x || a1.y !== a2.y) && (a2.x !== a3.x || a2.y !== a3.y),
+        };
+      });
+      ok(
+        'guidance retargeting (Monk, real play): arrow walks the chain — parcel at the mentor → Pemba → the cull ground; beats complete as it goes',
+        g.c1 === 'lha-c1-errand' && g.a1AtMentor >= 0 && g.a1AtMentor < 30 && g.carrying === true &&
+          g.a2AtNeighbor >= 0 && g.a2AtNeighbor < 30 && g.c1After === 'complete' && g.q02 === 'lha-02-first-blood' &&
+          g.a3AtCenter >= 0 && g.a3AtCenter < 60 && g.moved === true,
+        JSON.stringify(g),
+      );
+    }
 
     // 2p. HOME-CITY PACING (staged spawns + hearth radius), proven in the live
     // Assassin session at Dubai: a FRESH character sees wildlife but ZERO
