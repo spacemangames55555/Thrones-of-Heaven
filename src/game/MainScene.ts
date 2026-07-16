@@ -49,6 +49,7 @@ import { SparseWorldMap } from '../map/SparseWorldMap';
 import { WORLD_CALIBRATION, WORLD_SPAN_DEGREES } from '../world/world-calibration';
 import { createSparseWorld, stampZone, buildChunkMapData, CONTINENT_WORLD, type BuiltChunk } from '../world/world-builder';
 import { getZone, WORLD } from '../world/world-manifest';
+import { HOME_NEIGHBORS, civicBeatIds, neighborLineFor } from '../world/home-civics';
 import { EUROPE_BUILT_ZONES, buildEuropeQuestDefs } from '../world/europe-built';
 import { appendToRegistry } from '../world/quest-factory';
 import { ENEMY_ROSTER, DOMAIN_TINT, EXISTING_FAMILY_DOMAIN, EXISTING_FAMILY_PACK, makeRegionChampion } from '../world/enemy-roster';
@@ -1075,6 +1076,16 @@ export class MainScene extends Phaser.Scene {
   private regionMentors: { beatId: string; zoneId: string; pos: { x: number; y: number } }[] = [];
   private mentorButton!: TouchButton;
   private mentorNear?: { beatId: string; zoneId: string; pos: { x: number; y: number } };
+  /** NEIGHBOR NPCs (home civics): the second named interactable per generated
+   *  home city — the c1 errand's recipient. Mentor pattern reused. */
+  private regionNeighbors: { zoneId: string; name: string; pos: { x: number; y: number } }[] = [];
+  private neighborButton!: TouchButton;
+  private neighborNear?: { zoneId: string; name: string; pos: { x: number; y: number } };
+  /** DELIVERY composite (home civics): pickup at the mentor → carry → walk-in
+   *  hand-off at the neighbor. One live run at a time, keyed to the active
+   *  'deliver' beat (synthetic = the framework gate check's direct drive).
+   *  Public-readable for the runtime gate. */
+  beatDelivery?: { beatId: string; from: { x: number; y: number }; to: { x: number; y: number }; toName: string; carrying: boolean; fx: Phaser.GameObjects.GameObject[]; synthetic?: boolean; onDone: () => void };
   private beatMarker?: { beatId: string; pos: { x: number; y: number }; objs: Phaser.GameObjects.GameObject[] };
   private beatPickups?: { beatId: string; taken: number; items: { obj: Phaser.GameObjects.Arc; taken: boolean; x: number; y: number }[] };
   private beatElite?: { beatId: string; zoneId: string; kind: 'demon' | 'angel'; entity: Demon | AngelEnemy; label: Phaser.GameObjects.Text };
@@ -1713,6 +1724,8 @@ export class MainScene extends Phaser.Scene {
     // CAIRO binding: the Keeper's proximity talk button (Egypt world only).
     this.cairoMentorButton = new TouchButton(this, 'Speak with the Keeper', () => this.cairoMentorTalk());
     this.mentorButton = new TouchButton(this, 'Speak with the Mentor', () => this.regionMentorTalk());
+    // NEIGHBOR NPCs (home civics): the second named interactable per home city.
+    this.neighborButton = new TouchButton(this, 'Speak with the Neighbor', () => this.neighborTalk());
     this.zoomControls = new ZoomControls(this, cam, this.map.pixelWidth, this.map.pixelHeight);
     this.readout = new DebugReadout(this, () => this.activeMap(), this.player);
     // DEV-only live perf readout (FPS / frame-time + entity, effect + pool counts) so
@@ -1908,6 +1921,7 @@ export class MainScene extends Phaser.Scene {
       }
       this.updateAngels();
       this.updateTownsfolk(); // prune dead first so the wave manager sees the live count
+      this.updateHomeCivics(); // neighbor NPCs + the delivery composite (globe + Egypt)
       if (this.activeWorld === WORLD_EGYPT) this.updateCairoBinding(); // Wizard Act I ambient content
       if (this.activeWorld === WORLD_EARTH) {
         this.checkUrielArrival(); // Act II finale: scripted Uriel scene back in the square
@@ -8346,6 +8360,19 @@ export class MainScene extends Phaser.Scene {
         this.holyAura = undefined;
       }
 
+      // GRANDFATHER (home civics): a character already past its home DISCOVERY
+      // loads with the retrofitted civic beats complete — nobody is ever
+      // trapped behind quests inserted beneath their progress. Idempotent.
+      if (s.quests?.completed) {
+        const done = new Set(s.quests.completed);
+        for (const z of WORLD) {
+          if (!z.homeClass || !z.spawnStaging) continue;
+          const discovery = Object.values(z.spawnStaging)[0];
+          if (!discovery || !done.has(discovery)) continue;
+          for (const id of civicBeatIds(z.id)) if (!done.has(id)) s.quests.completed.push(id);
+        }
+      }
+
       // Quests.
       this.chain.load(s.quests);
 
@@ -9070,6 +9097,19 @@ export class MainScene extends Phaser.Scene {
       this.add.image(mpos.x, mpos.y, 'cairo-keeper').setDepth(9);
       this.addHeavenLabel(mpos.x, mpos.y - 34, opener.title, '#ffe9a8');
       this.regionMentors.push({ beatId: opener.id, zoneId: id, pos: mpos });
+
+      // NEIGHBOR NPC (home civics): the second named interactable, a sensible
+      // walk NORTH of the settlement center — the errand crosses town.
+      const neighborName = HOME_NEIGHBORS[id];
+      if (neighborName) {
+        const npos = map.nearestWalkableWorld(
+          origin.x + chunk.centerLocalPx.x + chunk.data.width * 16 * 0.3,
+          origin.y + chunk.centerLocalPx.y - chunk.data.width * 16 * 0.25,
+        );
+        this.add.image(npos.x, npos.y, 'cairo-keeper').setDepth(9).setTint(0x9ad0b0);
+        this.addHeavenLabel(npos.x, npos.y - 34, neighborName, '#c8f0d8');
+        this.regionNeighbors.push({ zoneId: id, name: neighborName, pos: npos });
+      }
     }
 
     // BOSS ANCHOR: mirror the (south) arrival to the settlement's NORTH side —
@@ -9177,6 +9217,16 @@ export class MainScene extends Phaser.Scene {
     this.add.image(this.cairoMentorPos.x, this.cairoMentorPos.y, 'cairo-keeper').setDepth(9);
     this.addHeavenLabel(this.cairoMentorPos.x, this.cairoMentorPos.y - 34, 'The Keeper of the Old Kingdom', '#ffe9a8');
 
+    // 1b) THE NEIGHBOR (home civics): Amara the date-seller, a walk north-west
+    // of the Keeper along the gate road — Cairo's c1 errand recipient.
+    const amara = HOME_NEIGHBORS['cairo-nile-crown'];
+    if (amara) {
+      const npos = map.nearestWalkableWorld(gate.x - 420, gate.y - 160);
+      this.add.image(npos.x, npos.y, 'cairo-keeper').setDepth(9).setTint(0x9ad0b0);
+      this.addHeavenLabel(npos.x, npos.y - 34, amara, '#c8f0d8');
+      this.regionNeighbors.push({ zoneId: 'cairo-nile-crown', name: amara, pos: npos });
+    }
+
     // 2) DELTA-ROAD WOLVES (cai-02): red corrupted wildlife on posts fanning
     // north-west of the arrival — the roads out of the crown city.
     for (let i = 0; i < CAIRO_WOLF_PACK; i++) {
@@ -9236,6 +9286,16 @@ export class MainScene extends Phaser.Scene {
     const near = Phaser.Math.Distance.Between(this.player.x, this.player.y, this.cairoMentorPos.x, this.cairoMentorPos.y) <= CAIRO_INTERACT_RANGE;
     const free = !this.transitioning && !this.dialogue.isOpen() && !this.talkButton.isVisible && !this.cityGateButton.isVisible && !this.playerDead;
     this.cairoMentorButton.setVisible(near && free);
+
+    // CAIRO CIVICS (the Cairo-binding precedent, additive): the shared FETCH
+    // drive against a synthetic chunk shape around the gate road — the c1
+    // delivery runs through the global updateHomeCivics, and the c3 cull
+    // counts through the existing wolf kill sweep below.
+    const cq = this.chain.activeQuest;
+    const chit = this.regionBeatForQuest(cq?.id);
+    if (chit?.zone.id === 'cairo-nile-crown') {
+      this.driveBeatFetch(cq, chit, { center: this.cairoMentorPos, radiusPx: 520 });
+    }
 
     // cai-03 discovery: stepping onto the rot completes the active beat.
     if (this.chain.activeQuest?.id === 'cai-03-discovery') {
@@ -9336,6 +9396,98 @@ export class MainScene extends Phaser.Scene {
     }
   }
 
+  // --- HOME CIVICS: neighbor NPCs + the DELIVERY composite ----------------------
+
+  /** The neighbor's talk action: their line is the zone's generated c1 errand
+   *  summary — loop-writable prose, never a HAND_AUTHORED_TODO. */
+  private neighborTalk(): void {
+    const n = this.neighborNear;
+    if (!n) return;
+    this.showBanner(`${n.name}: ${neighborLineFor(n.zoneId)}`, 2600);
+  }
+
+  /** Per-frame (globe + Egypt): the neighbor proximity button and the delivery
+   *  composite's state machine (pickup at the mentor → carry → hand-off). */
+  private updateHomeCivics(): void {
+    // Neighbor proximity button (the mentor pattern; never contends for the slot).
+    let near: (typeof this.regionNeighbors)[number] | undefined;
+    for (const n of this.regionNeighbors) {
+      if (Phaser.Math.Distance.Between(this.player.x, this.player.y, n.pos.x, n.pos.y) <= MENTOR_INTERACT_RANGE) {
+        near = n;
+        break;
+      }
+    }
+    this.neighborNear = near;
+    const free = !this.transitioning && !this.dialogue.isOpen() && !this.talkButton.isVisible && !this.cityGateButton.isVisible && !this.mentorButton.isVisible && !this.cairoMentorButton.isVisible && !this.playerDead;
+    this.neighborButton.setVisible(!!near && free);
+
+    // THE DELIVERY: begin/prune against the ACTIVE 'deliver' beat, then drive
+    // the two walk-in transitions. (A synthetic run — the framework gate check
+    // driving the machine directly — is never pruned by quest state.)
+    const q = this.chain.activeQuest;
+    const hit = this.regionBeatForQuest(q?.id);
+    const want = !!q && !!hit && hit.beat.archetype === 'deliver';
+    if (this.beatDelivery && !this.beatDelivery.synthetic && (!want || this.beatDelivery.beatId !== q?.id)) this.clearBeatDelivery();
+    if (want && !this.beatDelivery && hit && q) {
+      const from = hit.zone.id === 'cairo-nile-crown' ? this.cairoMentorPos : this.regionMentors.find((m) => m.zoneId === hit.zone.id)?.pos;
+      const dest = this.regionNeighbors.find((n) => n.zoneId === hit.zone.id);
+      if (from && dest) {
+        this.beginBeatDelivery(q.id, from, dest.pos, dest.name, () => {
+          this.notifyQuest(triggerForBeat(hit.beat) as ObjectiveTrigger);
+          this.showBanner(this.beatProse(hit.zone, hit.beat), 2800);
+        });
+      }
+    }
+    const d = this.beatDelivery;
+    if (d && !this.playerDead) {
+      if (!d.carrying) {
+        if (Phaser.Math.Distance.Between(this.player.x, this.player.y, d.from.x, d.from.y) <= BEAT_PICKUP_RADIUS) {
+          d.carrying = true;
+          for (const o of d.fx) {
+            this.tweens.killTweensOf(o);
+            o.destroy();
+          }
+          d.fx = [this.spawnDeliveryFx(d.to.x, d.to.y, `${d.toName} (hand it over)`)].flat();
+          this.showBanner(`Picked up — take it to ${d.toName}.`, 2200);
+        }
+      } else if (Phaser.Math.Distance.Between(this.player.x, this.player.y, d.to.x, d.to.y) <= MENTOR_INTERACT_RANGE) {
+        const done = d.onDone;
+        this.clearBeatDelivery();
+        done();
+      }
+    }
+  }
+
+  /** Start a delivery run: a glowing parcel at `from`, handed off at `to`.
+   *  Real beats wire onDone = the beat's trigger; the gate check drives a
+   *  synthetic run directly. */
+  beginBeatDelivery(beatId: string, from: { x: number; y: number }, to: { x: number; y: number }, toName: string, onDone: () => void, synthetic = false): void {
+    this.clearBeatDelivery();
+    const fx = this.spawnDeliveryFx(from.x, from.y, 'Pick up the delivery');
+    this.beatDelivery = { beatId, from: { ...from }, to: { ...to }, toName, carrying: false, fx, ...(synthetic ? { synthetic } : {}), onDone };
+  }
+
+  /** A pulsing parcel ring + label (the beat-marker look, parcel-gold). */
+  private spawnDeliveryFx(x: number, y: number, text: string): Phaser.GameObjects.GameObject[] {
+    const ring = this.add.circle(x, y, 12, 0xd8b25a, 0.6).setStrokeStyle(2, 0xffe27a, 0.95).setDepth(7);
+    this.tweens.add({ targets: ring, scale: 1.4, alpha: 0.3, duration: 1100, yoyo: true, repeat: -1, ease: 'Sine.inOut' });
+    const label = this.add
+      .text(x, y - 22, text, { fontFamily: 'system-ui, sans-serif', fontSize: '12px', color: '#ffe9a8' })
+      .setOrigin(0.5)
+      .setStroke('#101830', 4)
+      .setDepth(7);
+    return [ring, label];
+  }
+
+  clearBeatDelivery(): void {
+    if (!this.beatDelivery) return;
+    for (const o of this.beatDelivery.fx) {
+      this.tweens.killTweensOf(o);
+      o.destroy();
+    }
+    this.beatDelivery = undefined;
+  }
+
   /** Per-frame (region worlds): mentors' proximity button + the ACTIVE beat's
    *  marker / pickups / elite, spawned and cleaned by archetype. */
   private updateRegionBeatObjectives(): void {
@@ -9371,27 +9523,9 @@ export class MainScene extends Phaser.Scene {
     }
 
     // FETCH PICKUPS: three glowing objects around the settlement; collecting
-    // all of them completes the beat.
-    const wantPickups = !!q && !!hit && !!zone && hit.beat.archetype === 'fetch';
-    if (this.beatPickups && (!wantPickups || this.beatPickups.beatId !== q?.id)) this.clearBeatPickups();
-    if (wantPickups && !this.beatPickups) this.spawnBeatPickups(q.id, zone);
-    if (this.beatPickups && q && hit && this.beatPickups.beatId === q.id && !this.playerDead) {
-      for (const it of this.beatPickups.items) {
-        if (it.taken) continue;
-        if (Phaser.Math.Distance.Between(this.player.x, this.player.y, it.x, it.y) <= BEAT_PICKUP_RADIUS) {
-          it.taken = true;
-          this.tweens.killTweensOf(it.obj);
-          it.obj.destroy();
-          this.beatPickups.taken++;
-          this.showBanner(`${hit.beat.title} — ${this.beatPickups.taken}/${BEAT_PICKUP_COUNT} recovered.`, 1600);
-        }
-      }
-      if (this.beatPickups.taken >= BEAT_PICKUP_COUNT) {
-        this.clearBeatPickups();
-        this.notifyQuest(triggerForBeat(hit.beat) as ObjectiveTrigger);
-        this.showBanner(this.beatProse(hit.zone, hit.beat), 2800); // prose outlives the reward banner
-      }
-    }
+    // all of them completes the beat. (Shared drive — Cairo's Egypt binding
+    // runs the same machine against its own chunk shape.)
+    this.driveBeatFetch(q, hit, zone);
 
     // ELITE BOSS FALLBACK (boss beats with NO champion spec): one boosted
     // enemy of the beat's family at the zone's boss anchor — Cairo's gate
@@ -9442,8 +9576,38 @@ export class MainScene extends Phaser.Scene {
     this.beatMarker = undefined;
   }
 
+  /** THE FETCH DRIVE (shared): spawn/collect/complete the active fetch beat's
+   *  pickups against any chunk-shaped area (region zones; Cairo's synthetic
+   *  shape in the Egypt binding). Behavior identical to the old inline block. */
+  private driveBeatFetch(
+    q: { id: string } | null | undefined,
+    hit: { zone: ManifestZone; beat: QuestBeat } | null | undefined,
+    shape: { center: { x: number; y: number }; radiusPx: number } | undefined,
+  ): void {
+    const wantPickups = !!q && !!hit && !!shape && hit.beat.archetype === 'fetch';
+    if (this.beatPickups && (!wantPickups || this.beatPickups.beatId !== q?.id)) this.clearBeatPickups();
+    if (wantPickups && !this.beatPickups) this.spawnBeatPickups(q.id, shape);
+    if (this.beatPickups && q && hit && this.beatPickups.beatId === q.id && !this.playerDead) {
+      for (const it of this.beatPickups.items) {
+        if (it.taken) continue;
+        if (Phaser.Math.Distance.Between(this.player.x, this.player.y, it.x, it.y) <= BEAT_PICKUP_RADIUS) {
+          it.taken = true;
+          this.tweens.killTweensOf(it.obj);
+          it.obj.destroy();
+          this.beatPickups.taken++;
+          this.showBanner(`${hit.beat.title} — ${this.beatPickups.taken}/${BEAT_PICKUP_COUNT} recovered.`, 1600);
+        }
+      }
+      if (this.beatPickups.taken >= BEAT_PICKUP_COUNT) {
+        this.clearBeatPickups();
+        this.notifyQuest(triggerForBeat(hit.beat) as ObjectiveTrigger);
+        this.showBanner(this.beatProse(hit.zone, hit.beat), 2800); // prose outlives the reward banner
+      }
+    }
+  }
+
   /** Three pickups on a ring outside the settlement walls, walkable-snapped. */
-  private spawnBeatPickups(beatId: string, zone: (typeof this.regionSpawnZones)[number]): void {
+  private spawnBeatPickups(beatId: string, zone: { center: { x: number; y: number }; radiusPx: number }): void {
     const items: NonNullable<typeof this.beatPickups>['items'] = [];
     for (let i = 0; i < BEAT_PICKUP_COUNT; i++) {
       const ang = -Math.PI / 2 + (Math.PI * 2 * i) / BEAT_PICKUP_COUNT;
@@ -10161,7 +10325,14 @@ export class MainScene extends Phaser.Scene {
    *  spawn steered at the convoy; angel-only zones fall back to the pooled spawner
    *  (harassers around the run). Cap-respecting and pooled via regionLive. */
   private spawnEscortWave(e: NonNullable<typeof this.escort>): void {
-    const fams = (getZone(e.zoneId)?.enemyFamilies ?? []).filter((f) => f in EXISTING_FAMILY_DOMAIN);
+    const fams = (getZone(e.zoneId)?.enemyFamilies ?? [])
+      .filter((f) => f in EXISTING_FAMILY_DOMAIN)
+      // STAGED families never ride an escort wave before their beat (home
+      // civics: a home-city escort throws corrupted wildlife, never scouts).
+      .filter((f) => {
+        const g = getZone(e.zoneId)?.spawnStaging?.[f];
+        return !g || this.spawnStageCleared(g);
+      });
     if (fams.length === 0) return;
     const melee = fams.filter((f) => f === 'corrupted-wildlife' || f === 'evil-raiders' || f === 'hollowed-brutes');
     const fam = melee[(e.wavesFired - 1) % Math.max(1, melee.length)] ?? fams[0];

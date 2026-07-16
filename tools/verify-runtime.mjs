@@ -337,6 +337,32 @@ try {
       );
     }
 
+    // 2o. NEIGHBOR NPC (home civics, permanent): every generated home city
+    // fields a SECOND named interactable a real walk from the mentor; stepping
+    // up shows the Speak button and speaking shows a generated line (never a
+    // HAND_AUTHORED_TODO). Proven in the live Blacksmith session at Munich.
+    if (cls === 'blacksmith') {
+      const neighbor = await page.evaluate(async () => {
+        const ms = window.__ready();
+        const wait = (t) => new Promise((r) => setTimeout(r, t));
+        const n = ms.regionNeighbors.find((x) => x.zoneId === 'munich-anvil-hold');
+        if (!n) return { setup: 'no munich neighbor' };
+        const m = ms.regionMentors.find((x) => x.zoneId === 'munich-anvil-hold');
+        const walkApart = m ? Math.hypot(n.pos.x - m.pos.x, n.pos.y - m.pos.y) : 0;
+        ms.player.sprite.body.reset(n.pos.x + 40, n.pos.y);
+        await wait(400);
+        const button = ms.neighborButton.isVisible;
+        ms.neighborTalk();
+        const line = ms.banner.text;
+        return { setup: 'ok', name: n.name, walkApart: Math.round(walkApart), button, line, noTodo: !line.includes('HAND_AUTHORED_TODO') };
+      });
+      ok(
+        "neighbor npc: Greta stands a real walk from Munich's mentor, her Speak button shows, and she speaks a generated line (no TODO markers)",
+        neighbor.setup === 'ok' && neighbor.walkApart > 300 && neighbor.button && neighbor.line.includes('Greta') && neighbor.noTodo,
+        JSON.stringify(neighbor),
+      );
+    }
+
     // 2n. REAL NECROMANCER ART (the first shipped 8-way sprite drop-in): all
     // eight rotation frames + the canonical key minted at the canonical 32×48,
     // and the avatar TURNS with its real movement facing (east / north / a
@@ -5013,6 +5039,34 @@ try {
       sundianExt.rename.sydneyForSundian === 'locked' &&
       sundianExt.rename.sydneyForHunter === 'available',
     JSON.stringify(sundianExt.rename),
+  );
+
+  // 3an. CIVIC FRAMEWORK (permanent): the DELIVERY composite round-trips —
+  // the parcel appears at the source, the walk-in picks it up (carry flag),
+  // and the walk-in at the destination hands it off and fires completion.
+  const civicDelivery = await page.evaluate(async () => {
+    const ms = window.__ready();
+    const wait = (t) => new Promise((r) => setTimeout(r, t));
+    if (!window.__quietSpot()) return { setup: 'no quiet spot' };
+    const A = ms.activeMap().nearestWalkableWorld(ms.player.x + 90, ms.player.y);
+    const B = ms.activeMap().nearestWalkableWorld(ms.player.x + 340, ms.player.y + 120);
+    let delivered = false;
+    ms.beginBeatDelivery('__civic_test', A, B, 'the neighbor', () => {
+      delivered = true;
+    }, true);
+    const staged = !!ms.beatDelivery && ms.beatDelivery.carrying === false && ms.beatDelivery.fx.length > 0;
+    ms.player.sprite.body.reset(A.x, A.y);
+    await wait(350);
+    const carrying = !!ms.beatDelivery && ms.beatDelivery.carrying === true && !delivered;
+    ms.player.sprite.body.reset(B.x, B.y);
+    await wait(350);
+    const handedOff = delivered && ms.beatDelivery === undefined;
+    return { setup: 'ok', staged, carrying, handedOff };
+  });
+  ok(
+    'civic framework — delivery: the parcel stages at the source, the walk-in carries it, the walk-in at the neighbor hands it off and completes',
+    civicDelivery.setup === 'ok' && civicDelivery.staged && civicDelivery.carrying && civicDelivery.handedOff,
+    JSON.stringify(civicDelivery),
   );
 
   // 3aa. SKILL TREE UX (Casey's spec, permanent) — driven by REAL taps on the real

@@ -40,7 +40,8 @@ export type QuestArchetype =
   | 'fetch' // gather / retrieve
   | 'escort' // protect an NPC or convoy
   | 'boss' // single elite/boss encounter
-  | 'portal_approach'; // the ritual/assault beats leading into a Heaven portal
+  | 'portal_approach' // the ritual/assault beats leading into a Heaven portal
+  | 'deliver'; // HOME CIVICS: take a pickup at the mentor, walk it to the neighbor NPC
 
 // ── Shapes ──────────────────────────────────────────────────────────────────
 
