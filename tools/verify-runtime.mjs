@@ -3298,6 +3298,149 @@ try {
     JSON.stringify(monkExt.infusion),
   );
 
+  // 3ai. ASSASSIN FRAMEWORK EXTENSIONS (permanent): the TRAP SYSTEM lifecycle
+  // (place APART → arm → spring on a REAL enemy → payload → consumed; the cap;
+  // Remote Detonation; Minefield; expiry), the STEALTH-BONUS strike rider
+  // (measured against the SAME strike unstealthed), SHADOW DANCE (striking
+  // stays hidden), and VANISH (instant re-stealth + the untargetable breath) —
+  // every phase through the live runtime seams.
+  const assassinExt = await page.evaluate(async () => {
+    const ms = window.__ready();
+    const wait = (t) => new Promise((r) => setTimeout(r, t));
+    if (!window.__quietSpot()) return { setup: 'no quiet spot' };
+    const spawnAt = (dx, dy) => {
+      const w = ms.activeMap().nearestWalkableWorld(ms.player.x + dx, ms.player.y + dy);
+      return ms.spawnAngel('darkcaster', w.x, w.y);
+    };
+    const px0 = ms.player.x;
+    const py0 = ms.player.y;
+    // TRAP LIFECYCLE: the device is placed 220px away (the player stands apart),
+    // stays INERT while arming, then springs on the pinned foe inside its radius.
+    const a = spawnAt(220, 0);
+    await wait(200);
+    ms.stunEnemiesInRange(a.x, a.y, 60, 30000);
+    a.sprite.body.reset(px0 + 220, py0);
+    const aHp0 = a.health.current;
+    ms.placeTrap(a.x, a.y, { armDelayMs: 600, lifetimeMs: 8000, triggerRadius: 80, payload: { burstDamage: 10, burstRadius: 90 } });
+    const placed = ms.traps.length === 1;
+    await wait(250);
+    const inert = ms.traps.length === 1 && a.health.current === aHp0; // arming ≠ armed
+    await wait(700);
+    const lifecycle = { placed, inert, payloadLanded: aHp0 - a.health.current > 0, consumed: ms.traps.length === 0, apart: Math.hypot(ms.player.x - a.x, ms.player.y - a.y) > 150 };
+    // THE CAP: cap+1 capped placements leave exactly trapCap devices (oldest recycled).
+    const cap = ms.trapCap;
+    for (let i = 0; i <= cap; i++) ms.placeTrap(px0 - 260 - i * 34, py0 + 120, { armDelayMs: 100, lifetimeMs: 9000, triggerRadius: 40, payload: { burstDamage: 5 } });
+    const capHeld = ms.traps.length === cap;
+    await wait(250); // all armed
+    const detFiredFar = ms.detonateArmedTraps(); // REMOTE DETONATION consumes them all
+    const detCleared = ms.traps.length === 0;
+    // REMOTE DETONATION lands its payload: a foe OUTSIDE the trigger radius but
+    // INSIDE the burst radius is only hurt when the device is fired by hand.
+    const b = spawnAt(320, 60);
+    await wait(200);
+    ms.stunEnemiesInRange(b.x, b.y, 60, 30000);
+    ms.placeTrap(b.x - 60, b.y, { armDelayMs: 100, lifetimeMs: 9000, triggerRadius: 40, payload: { burstDamage: 8, burstRadius: 120 } });
+    await wait(300);
+    const bHp0 = b.health.current;
+    const notSprung = ms.traps.length === 1 && b.health.current === bHp0;
+    const detFiredNear = ms.detonateArmedTraps();
+    const remote = { fired: detFiredFar + detFiredNear, notSprung, landed: bHp0 - b.health.current > 0, cleared: detCleared && ms.traps.length === 0 };
+    // MINEFIELD seeds N devices UNCAPPED; untriggered devices EXPIRE clean.
+    ms.placeMinefield(px0 - 420, py0 - 200, 6, 120, { armDelayMs: 5000, lifetimeMs: 700, triggerRadius: 40, payload: { burstDamage: 5 } });
+    const seeded = ms.traps.length === 6;
+    await wait(1000);
+    const minefield = { seeded, expired: ms.traps.length === 0 };
+    // STEALTH-BONUS rider: the SAME raw-damage strike, unstealthed then stealthed —
+    // the ratio IS the bonus, and the stealthed cast breaks stealth.
+    const c = spawnAt(80, 0);
+    await wait(200);
+    ms.stunEnemiesInRange(c.x, c.y, 60, 30000);
+    c.sprite.body.reset(px0 + 80, py0);
+    ms.player.facingX = 1;
+    ms.player.facingY = 0;
+    // damageRaw 4 keeps the 55-HP foe alive through all five measured strikes (4+8+3×8=36).
+    const strike = [{ p: 'strike', at: 'front', range: 95, damageRaw: 4, stealthBonus: 2, tint: 0x9a9ab8 }];
+    const cHp0 = c.health.current;
+    ms.runComposedSteps(strike);
+    await wait(120);
+    const baseDrop = cHp0 - c.health.current;
+    ms.startPlayerStealth(6000);
+    const cHp1 = c.health.current;
+    ms.runComposedSteps(strike);
+    await wait(120);
+    const rider = { baseDrop, stealthDrop: cHp1 - c.health.current, broke: !ms.playerStealthActive };
+    // SHADOW DANCE: three strikes in the state — every one boosted, stealth INTACT.
+    ms.startShadowDance(5000);
+    const danceOn = ms.playerStealthActive;
+    const danceDrops = [];
+    for (let i = 0; i < 3; i++) {
+      const before = c.health.current;
+      ms.runComposedSteps(strike);
+      await wait(120);
+      danceDrops.push(before - c.health.current);
+    }
+    const dance = { danceOn, drops: danceDrops, stillHidden: ms.playerStealthActive };
+    ms.shadowDanceUntil = 0;
+    ms.breakPlayerStealth();
+    // VANISH: the instant mid-combat re-stealth + the breath where a REAL bolt
+    // seam and a REAL wolf bite both meet empty shadow — and the breath ENDS.
+    const wolf = ms.spawnTownsfolk(px0 + 60, py0, null, 'wolf');
+    await wait(200);
+    ms.playerHealth.shield = 0;
+    ms.playerHealth.full();
+    ms.vanish(4000, 900);
+    const hidden = ms.playerStealthActive;
+    let hp = ms.playerHealth.current;
+    ms.onProjectileHitPlayer(15);
+    const boltPassed = ms.playerHealth.current === hp;
+    hp = ms.playerHealth.current;
+    ms.onTownsfolkHitPlayer(wolf);
+    const bitePassed = ms.playerHealth.current === hp;
+    await wait(1000); // the breath ends (stealth itself continues)
+    hp = ms.playerHealth.current;
+    ms.onProjectileHitPlayer(10);
+    const graceEnded = ms.playerHealth.current < hp;
+    const vanish = { hidden, boltPassed, bitePassed, graceEnded, stillStealthed: ms.playerStealthActive };
+    ms.breakPlayerStealth();
+    if (wolf.isAlive) wolf.takeHit(1e9);
+    a.destroy();
+    b.destroy();
+    c.destroy();
+    ms.playerHealth.full();
+    ms.playerHealth.shield = 1e9;
+    return { setup: 'ok', lifecycle, cap, capHeld, remote, minefield, rider, dance, vanish };
+  });
+  ok(
+    'assassin ext — trap lifecycle: placed apart, inert while arming, springs on a real enemy, payload lands, device consumed',
+    assassinExt.setup === 'ok' && assassinExt.lifecycle.placed && assassinExt.lifecycle.inert && assassinExt.lifecycle.payloadLanded && assassinExt.lifecycle.consumed && assassinExt.lifecycle.apart,
+    JSON.stringify(assassinExt.lifecycle),
+  );
+  ok(
+    'assassin ext — cap + remote detonation: the cap recycles the oldest; detonation fires every armed device (payload included)',
+    assassinExt.setup === 'ok' && assassinExt.capHeld && assassinExt.remote.fired === assassinExt.cap + 1 && assassinExt.remote.notSprung && assassinExt.remote.landed && assassinExt.remote.cleared,
+    `cap=${assassinExt.cap} ${JSON.stringify(assassinExt.remote)}`,
+  );
+  ok(
+    'assassin ext — minefield + expiry: six devices seeded past the cap; untriggered devices expire clean',
+    assassinExt.setup === 'ok' && assassinExt.minefield.seeded && assassinExt.minefield.expired,
+    JSON.stringify(assassinExt.minefield),
+  );
+  ok(
+    'assassin ext — stealth bonus: the same strike lands ×2 from stealth, and the cast breaks stealth',
+    assassinExt.setup === 'ok' && assassinExt.rider.baseDrop > 0 && Math.abs(assassinExt.rider.stealthDrop / assassinExt.rider.baseDrop - 2) < 0.05 && assassinExt.rider.broke,
+    JSON.stringify(assassinExt.rider),
+  );
+  ok(
+    'assassin ext — shadow dance: three strikes, every one boosted, stealth intact throughout',
+    assassinExt.setup === 'ok' && assassinExt.dance.danceOn && assassinExt.dance.drops.length === 3 && assassinExt.dance.drops.every((d) => assassinExt.rider.baseDrop > 0 && Math.abs(d / assassinExt.rider.baseDrop - 2) < 0.05) && assassinExt.dance.stillHidden,
+    JSON.stringify(assassinExt.dance),
+  );
+  ok(
+    'assassin ext — vanish: instant mid-combat re-stealth; a real bolt and a real bite pass through the breath, which then ends',
+    assassinExt.setup === 'ok' && assassinExt.vanish.hidden && assassinExt.vanish.boltPassed && assassinExt.vanish.bitePassed && assassinExt.vanish.graceEnded && assassinExt.vanish.stillStealthed,
+    JSON.stringify(assassinExt.vanish),
+  );
+
   // 3aa. SKILL TREE UX (Casey's spec, permanent) — driven by REAL taps on the real
   // screen: instant spend (no confirmation window) respects locks and points with
   // shake/toast feedback; the name-bar "Add" button round-trips through the hotkey

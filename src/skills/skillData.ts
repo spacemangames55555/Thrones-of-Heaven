@@ -376,6 +376,10 @@ export type ComposedStep =
        *  detonates ALL stacks on enemies in its radius for damage per stack. */
       crystallize?: number;
       crystallizeMax?: number;
+      /** STEALTH-BONUS rider (Assassin framework): a strike cast FROM stealth (or
+       *  during Shadow Dance) deals damage × this. The cast still breaks stealth
+       *  per the normal rule — the bonus is captured before the break. */
+      stealthBonus?: number;
     }
   | {
       p: 'bolt';
