@@ -189,9 +189,10 @@ try {
     samurai: { world: 'globe', zone: 'kyoto-thousand-gates', opener: 'kyo-01-mentor', kind: 'region' },
     monk: { world: 'globe', zone: 'lhasa-prayer-citadel', opener: 'lha-01-mentor', kind: 'region' },
     assassin: { world: 'globe', zone: 'dubai-glass-souk', opener: 'dub-01-mentor', kind: 'region' },
+    priest: { world: 'globe', zone: 'rome-eternal-seat', opener: 'rom-01-mentor', kind: 'region' },
     druid: { world: 'earth', zone: null, opener: 'honest-days-work', kind: 'earth' },
   };
-  for (const cls of ['blacksmith', 'wizard', 'necromancer', 'mage', 'bard', 'witchdoctor', 'samurai', 'monk', 'assassin', 'druid']) {
+  for (const cls of ['blacksmith', 'wizard', 'necromancer', 'mage', 'bard', 'witchdoctor', 'samurai', 'monk', 'assassin', 'priest', 'druid']) {
     await newGame(cls);
     const home = HOMES[cls];
     const s = await page.evaluate(
@@ -1124,6 +1125,88 @@ try {
           asnKit.trick.hitAll &&
           asnKit.trick.falloff,
         JSON.stringify(asnKit),
+      );
+    }
+
+    // 2v. EVERY PRIEST EXTENSION THROUGH A REAL PRIEST SKILL, in the live
+    // Priest session: Shield of Faith (the real skill wraps the solo caster and
+    // a live wolf's bite is absorbed whole), Beacon of Light (ONE channel
+    // measured healing the wounded caster AND burning the pinned foe in the
+    // beam), and Divine Intervention (through the REAL unlock + activation
+    // path: party-dormant, it whiff-refunds cooldown, Faith and life).
+    if (cls === 'priest') {
+      const prsKit = await page.evaluate(async () => {
+        const ms = window.__ready();
+        const wait = (t) => new Promise((r) => setTimeout(r, t));
+        if (!window.__quietSpot()) return { setup: 'no quiet spot' };
+        ms.summons.clear();
+        ms.clearDots();
+        // SHIELD OF FAITH through the real skill: solo → the caster; the bite
+        // meets the light, not the flesh.
+        ms.playerHealth.shield = 0;
+        ms.playerHealth.full();
+        ms.runActiveSkill('prs_shield_faith');
+        const shielded = ms.playerHealth.shield;
+        const wolf = ms.spawnTownsfolk(ms.player.x + 60, ms.player.y, null, 'wolf');
+        await wait(200);
+        const hp0 = ms.playerHealth.current;
+        ms.onTownsfolkHitPlayer(wolf); // the wolf's REAL melee hit path
+        const faith = { shielded, untouched: ms.playerHealth.current === hp0, spent: ms.playerHealth.shield < shielded };
+        if (wolf.isAlive) wolf.takeHit(1e9);
+        ms.playerHealth.shield = 0;
+        // BEACON OF LIGHT through the real skill: one channel, both halves.
+        const w = ms.activeMap().nearestWalkableWorld(ms.player.x + 140, ms.player.y);
+        const foe = ms.spawnAngel('darkcaster', w.x, w.y);
+        await wait(200);
+        ms.stunEnemiesInRange(foe.x, foe.y, 60, 30000);
+        foe.sprite.body.reset(ms.player.x + 140, ms.player.y);
+        ms.player.facingX = 1;
+        ms.player.facingY = 0;
+        ms.playerHealth.full();
+        ms.playerHealth.current -= 40;
+        const pHp0 = ms.playerHealth.current;
+        const fHp0 = foe.health.current;
+        ms.runActiveSkill('prs_beacon');
+        const started = ms.dualChannel !== null;
+        await wait(1300);
+        const beacon = { started, healed: ms.playerHealth.current - pHp0, burned: fHp0 - foe.health.current };
+        foe.destroy();
+        // DIVINE INTERVENTION through the REAL unlock + activation path:
+        // party-dormant, the whiff refunds cooldown + Faith, and the life
+        // price is never taken.
+        const defs = ms.classSkillsAll['priest'].skills;
+        ms.skills.awardPoints(10);
+        for (const id of ['prs_li_ray', 'prs_li_shield', 'prs_li_retribution', 'prs_li_embrace', 'prs_li_radiant', 'prs_li_barrier', 'prs_li_fortress', 'prs_li_blessing', 'prs_li_intervention']) {
+          if (!ms.skills.isUnlocked(id)) ms.skills.unlock(defs.find((d) => d.id === id));
+        }
+        ms.energy.full();
+        ms.playerHealth.full();
+        const e0 = ms.energy.current;
+        const h0 = ms.playerHealth.current;
+        ms.activateSkill('prs_li_intervention');
+        const intervene = {
+          cooldownRefunded: (ms.skillCooldownUntil['prs_li_intervention'] ?? 0) === 0,
+          faithRefunded: ms.energy.current === e0,
+          lifeUnspent: ms.playerHealth.current === h0,
+        };
+        ms.clearPriestState();
+        ms.playerHealth.full();
+        ms.playerHealth.shield = 1e9;
+        return { setup: 'ok', faith, beacon, intervene };
+      });
+      ok(
+        'priest: shield of faith absorbs a live bite, beacon of light heals + burns in one channel, divine intervention whiff-refunds — each through the real skill',
+        prsKit.setup === 'ok' &&
+          prsKit.faith.shielded === 40 &&
+          prsKit.faith.untouched &&
+          prsKit.faith.spent &&
+          prsKit.beacon.started &&
+          prsKit.beacon.healed >= 10 &&
+          prsKit.beacon.burned >= 12 &&
+          prsKit.intervene.cooldownRefunded &&
+          prsKit.intervene.faithRefunded &&
+          prsKit.intervene.lifeUnspent,
+        JSON.stringify(prsKit),
       );
     }
   }
