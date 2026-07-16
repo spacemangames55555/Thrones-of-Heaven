@@ -190,9 +190,10 @@ try {
     monk: { world: 'globe', zone: 'lhasa-prayer-citadel', opener: 'lha-01-mentor', kind: 'region' },
     assassin: { world: 'globe', zone: 'dubai-glass-souk', opener: 'dub-01-mentor', kind: 'region' },
     priest: { world: 'globe', zone: 'rome-eternal-seat', opener: 'rom-01-mentor', kind: 'region' },
+    savage: { world: 'globe', zone: 'mexico-lake-crown', opener: 'mex-01-mentor', kind: 'region' },
     druid: { world: 'earth', zone: null, opener: 'honest-days-work', kind: 'earth' },
   };
-  for (const cls of ['blacksmith', 'wizard', 'necromancer', 'mage', 'bard', 'witchdoctor', 'samurai', 'monk', 'assassin', 'priest', 'druid']) {
+  for (const cls of ['blacksmith', 'wizard', 'necromancer', 'mage', 'bard', 'witchdoctor', 'samurai', 'monk', 'assassin', 'priest', 'savage', 'druid']) {
     await newGame(cls);
     const home = HOMES[cls];
     const s = await page.evaluate(
@@ -1207,6 +1208,146 @@ try {
           prsKit.intervene.faithRefunded &&
           prsKit.intervene.lifeUnspent,
         JSON.stringify(prsKit),
+      );
+    }
+
+    // 2w. EVERY SAVAGE EXTENSION THROUGH A REAL SAVAGE SKILL, in the live
+    // Savage session: Savage Leap (the real skill jumps + slams + downs a live
+    // foe), Crimson Nova through the REAL unlock + activation path (blood paid
+    // at full health; the rite REFUSES + refunds at low blood), Headtaker (the
+    // execute measured both ways in one swing), Warrior's Momentum (the real
+    // keyed passive grows four real slashes), and the Jaguar + Pack Bond.
+    if (cls === 'savage') {
+      const savKit = await page.evaluate(async () => {
+        const ms = window.__ready();
+        const wait = (t) => new Promise((r) => setTimeout(r, t));
+        if (!window.__quietSpot()) return { setup: 'no quiet spot' };
+        ms.summons.clear();
+        const spawnAt = (dx, dy) => {
+          const w = ms.activeMap().nearestWalkableWorld(ms.player.x + dx, ms.player.y + dy);
+          return ms.spawnAngel('darkcaster', w.x, w.y);
+        };
+        const defs = ms.classSkillsAll['savage'].skills;
+        ms.skills.awardPoints(12);
+        const unlock = (ids) => {
+          for (const id of ids) if (!ms.skills.isUnlocked(id)) ms.skills.unlock(defs.find((d) => d.id === id));
+        };
+        // SAVAGE LEAP through the real skill: jump 220, slam, knockdown.
+        const a = spawnAt(220, 0);
+        await wait(250);
+        const from = { x: ms.player.x, y: ms.player.y };
+        ms.player.facingX = 1;
+        ms.player.facingY = 0;
+        a.sprite.body.reset(from.x + 220, from.y);
+        const aHp0 = a.health.current;
+        ms.runActiveSkill('sav_leap');
+        const leap = { moved: Math.hypot(ms.player.x - from.x, ms.player.y - from.y), hit: aHp0 - a.health.current > 0, down: (ms.stunnedEnemies.get(a) ?? 0) > ms.time.now };
+        a.destroy();
+        // CRIMSON NOVA through the REAL unlock + activation path: the blood is
+        // paid at full health; at low blood the rite refuses and refunds.
+        unlock(['sav_br_spike', 'sav_br_veins', 'sav_br_crimson']);
+        const b = spawnAt(90, 0);
+        await wait(200);
+        ms.stunEnemiesInRange(b.x, b.y, 60, 30000);
+        b.sprite.body.reset(ms.player.x + 90, ms.player.y);
+        ms.playerHealth.shield = 0;
+        ms.playerHealth.full();
+        ms.energy.full();
+        const hp0 = ms.playerHealth.current;
+        const bHp0 = b.health.current;
+        ms.activateSkill('sav_br_crimson');
+        await wait(120);
+        const paidCast = { bloodPaid: hp0 - ms.playerHealth.current === 15, novaLanded: bHp0 - b.health.current > 0 };
+        ms.skillCooldownUntil['sav_br_crimson'] = 0;
+        ms.energy.full();
+        ms.playerHealth.current = 10; // too thin for the 15-blood rite
+        const e0 = ms.energy.current;
+        const bHp1 = b.health.current;
+        ms.activateSkill('sav_br_crimson');
+        const refusal = {
+          refused: ms.playerHealth.current === 10 && b.health.current === bHp1,
+          cooldownRefunded: (ms.skillCooldownUntil['sav_br_crimson'] ?? 0) === 0,
+          energyRefunded: ms.energy.current === e0,
+        };
+        ms.playerHealth.full();
+        ms.playerHealth.shield = 1e9;
+        // HEADTAKER through the real skill: one swing, both verdicts — the bled
+        // foe under the 35% line is KILLED OUTRIGHT (the ×2 overkills what
+        // little it had), the healthy one beside it takes exactly the base.
+        const c = spawnAt(70, 40);
+        await wait(200);
+        for (const f of [b, c]) ms.stunEnemiesInRange(f.x, f.y, 60, 30000);
+        b.sprite.body.reset(ms.player.x + 60, ms.player.y + 30);
+        c.sprite.body.reset(ms.player.x + 60, ms.player.y - 30);
+        b.health.current = Math.floor(b.health.max * 0.3);
+        const cHp0 = c.health.current;
+        ms.player.facingX = 1;
+        ms.player.facingY = 0;
+        ms.runActiveSkill('sav_headtaker');
+        await wait(100);
+        const execute = { lowKilled: !b.isAlive, healthyDrop: cHp0 - c.health.current, healthySurvived: c.isAlive };
+        b.destroy();
+        c.destroy();
+        // WARRIOR'S MOMENTUM through the real keyed passive: four real slashes,
+        // each on a FRESH live foe (no overkill caps), each drop harder than
+        // the last as the stacks build.
+        unlock(['sav_ob_slash', 'sav_ob_jagged', 'sav_ob_momentum']);
+        ms.recomputeSkillEffects(); // the keyed passive arms the frenzy
+        const armed = ms.frenzy !== null;
+        const drops = [];
+        for (let i = 0; i < 4; i++) {
+          const foe = spawnAt(80, 0);
+          await wait(200);
+          ms.stunEnemiesInRange(foe.x, foe.y, 60, 30000);
+          foe.sprite.body.reset(ms.player.x + 60, ms.player.y);
+          ms.player.facingX = 1;
+          ms.player.facingY = 0;
+          const before = foe.health.current;
+          ms.runActiveSkill('sav_slash');
+          await wait(120);
+          drops.push(before - foe.health.current);
+          foe.destroy();
+        }
+        const momentum = { armed, drops, stacks: ms.frenzy ? ms.frenzy.stacks : 0, growing: drops[0] < drops[1] && drops[1] < drops[2] && drops[2] < drops[3], ratio: drops[3] / drops[0] };
+        // JAGUAR + PACK BOND through the real skills: the companion stands, the
+        // bond takes; recast the bond with the pack gone and it whiff-refunds.
+        ms.runActiveSkill('sav_jaguar');
+        await wait(200);
+        const jaguarUp = ms.summons.list.some((sm) => sm.isAlive);
+        ms.runActiveSkill('sav_pack');
+        const bonded = ms.allyBond !== null;
+        ms.allyBond = null;
+        ms.summons.clear();
+        ms.actionWhiffed = false;
+        ms.runActiveSkill('sav_pack');
+        const packWhiff = ms.actionWhiffed === true;
+        ms.actionWhiffed = false;
+        ms.playerHealth.full();
+        ms.playerHealth.shield = 1e9;
+        return { setup: 'ok', leap, paidCast, refusal, execute, momentum, jaguarUp, bonded, packWhiff };
+      });
+      ok(
+        'savage: leap-slam, blood-priced nova (paid + refused), the headtaker execute, momentum growth, jaguar + pack bond — each through the real skill',
+        savKit.setup === 'ok' &&
+          savKit.leap.moved > 140 &&
+          savKit.leap.hit &&
+          savKit.leap.down &&
+          savKit.paidCast.bloodPaid &&
+          savKit.paidCast.novaLanded &&
+          savKit.refusal.refused &&
+          savKit.refusal.cooldownRefunded &&
+          savKit.refusal.energyRefunded &&
+          savKit.execute.lowKilled &&
+          savKit.execute.healthyDrop === 20 &&
+          savKit.execute.healthySurvived &&
+          savKit.momentum.armed &&
+          savKit.momentum.growing &&
+          savKit.momentum.ratio >= 1.15 &&
+          savKit.momentum.stacks >= 3 &&
+          savKit.jaguarUp &&
+          savKit.bonded &&
+          savKit.packWhiff,
+        JSON.stringify(savKit),
       );
     }
   }
