@@ -20,7 +20,7 @@ export class AlliedSummonManager {
   // PET-TARGETED BUFFS: active summon buffs (each refreshes its own id rather than stacking).
   // The AGGREGATE multipliers are pushed onto every summon each frame, so a buff covers both
   // currently-summoned AND newly-summoned units for its window.
-  private buffs: { id: string; damageBonus: number; hpBonus: number; drBonus: number; endsAt: number }[] = [];
+  private buffs: { id: string; damageBonus: number; hpBonus: number; drBonus: number; attackSpeedBonus: number; endsAt: number }[] = [];
 
   /** Fired when a summon is spawned (the scene routes it past the UI camera + adds colliders). */
   onSpawn?: (summon: AlliedSummon) => void;
@@ -71,7 +71,7 @@ export class AlliedSummonManager {
    *  now; the per-frame push covers any summoned later while it's active. */
   addBuff(buff: SummonBuff, time: number): void {
     this.buffs = this.buffs.filter((b) => b.id !== buff.id);
-    this.buffs.push({ id: buff.id, damageBonus: buff.damageBonus ?? 0, hpBonus: buff.hpBonus ?? 0, drBonus: buff.drBonus ?? 0, endsAt: time + buff.durationMs });
+    this.buffs.push({ id: buff.id, damageBonus: buff.damageBonus ?? 0, hpBonus: buff.hpBonus ?? 0, drBonus: buff.drBonus ?? 0, attackSpeedBonus: buff.attackSpeedBonus ?? 0, endsAt: time + buff.durationMs });
     this.applyBuffsToAll();
   }
 
@@ -83,16 +83,18 @@ export class AlliedSummonManager {
   }
 
   /** The aggregate live multipliers from all active buffs (additive bonuses, dr capped). */
-  private aggregateBuffs(): { damageBonus: number; drBonus: number; hpMult: number } {
+  private aggregateBuffs(): { damageBonus: number; drBonus: number; hpMult: number; attackSpeedBonus: number } {
     let dmg = 0;
     let dr = 0;
     let hp = 0;
+    let atk = 0;
     for (const b of this.buffs) {
       dmg += b.damageBonus;
       dr += b.drBonus;
       hp += b.hpBonus;
+      atk += b.attackSpeedBonus;
     }
-    return { damageBonus: dmg, drBonus: Math.min(0.9, dr), hpMult: 1 + hp };
+    return { damageBonus: dmg, drBonus: Math.min(0.9, dr), hpMult: 1 + hp, attackSpeedBonus: atk };
   }
 
   private applyBuffsTo(s: AlliedSummon): void {
@@ -101,7 +103,7 @@ export class AlliedSummonManager {
     const damageBonus = a.damageBonus + (p.damageBonus ?? 0);
     const drBonus = Math.min(0.9, a.drBonus + (p.drBonus ?? 0));
     const hpMult = a.hpMult + (p.hpBonus ?? 0); // a.hpMult = 1 + Σtimed; add passive hpBonus
-    s.applyBuffs(damageBonus, drBonus, hpMult, p.aggroRadiusMult ?? 1, p.attackRangeMult ?? 1);
+    s.applyBuffs(damageBonus, drBonus, hpMult, p.aggroRadiusMult ?? 1, p.attackRangeMult ?? 1, a.attackSpeedBonus);
   }
   private applyBuffsToAll(): void {
     for (const s of this.summons) if (s.isAlive) this.applyBuffsTo(s);

@@ -55,12 +55,15 @@ import { PRS_GRACE_SKILLS, PRS_GRACE_TREE } from './priestGrace';
 import { SAV_EDGE_SKILLS, SAV_EDGE_TREE } from './savageObsidian';
 import { SAV_BLOOD_SKILLS, SAV_BLOOD_TREE } from './savageBlood';
 import { SAV_JAGUAR_SKILLS, SAV_JAGUAR_TREE } from './savageJaguar';
+import { HUN_BEAST_SKILLS, HUN_BEAST_TREE } from './hunterBeast';
+import { HUN_MARKS_SKILLS, HUN_MARKS_TREE } from './hunterMarksman';
+import { HUN_WILD_SKILLS, HUN_WILD_TREE } from './hunterFrenzy';
 
 /** How many active skills the player can equip to on-screen slots. */
 export const LOADOUT_SLOTS = 6;
 
 /** The playable classes. Only the Blacksmith has trees this batch; others slot in later. */
-export type ClassId = 'blacksmith' | 'necromancer' | 'wizard' | 'druid' | 'mage' | 'bard' | 'witchdoctor' | 'samurai' | 'monk' | 'assassin' | 'priest' | 'savage';
+export type ClassId = 'blacksmith' | 'necromancer' | 'wizard' | 'druid' | 'mage' | 'bard' | 'witchdoctor' | 'samurai' | 'monk' | 'assassin' | 'priest' | 'savage' | 'hunter';
 
 /** Stat modifiers a skill contributes — used by PASSIVE (permanent) and by timed
  *  BUFF / TRANSFORMATION effects (while active). All optional; absent = no change. */
@@ -377,7 +380,28 @@ export type ActiveActionId =
   | 'sav_lunge'
   | 'sav_snarl'
   | 'sav_lick'
-  | 'sav_totem';
+  | 'sav_totem'
+  // Hunter actives (bespoke ids; composed skills share the executor).
+  | 'hun_tame'
+  | 'hun_focus'
+  | 'hun_scatter'
+  | 'hun_great'
+  | 'hun_horde'
+  | 'hun_mend'
+  | 'hun_rage'
+  | 'hun_mastery'
+  | 'hun_steady'
+  | 'hun_multi'
+  | 'hun_cripple'
+  | 'hun_net'
+  | 'hun_boomerang'
+  | 'hun_eagle'
+  | 'hun_swipe'
+  | 'hun_twin'
+  | 'hun_hamstring'
+  | 'hun_call'
+  | 'hun_hunt'
+  | 'hun_bloodlet';
 
 /**
  * The five supported EFFECT KINDS. The scene applies them generically:
@@ -481,6 +505,9 @@ export type ComposedStep =
       /** IMPACT rider (Bard framework, plain bolts): control applied where the bolt
        *  lands. ROTATING RIDERS = several bolt steps, each with a different onHit. */
       onHit?: { stunMs?: number; slowFactor?: number; slowMs?: number; weaken?: number; weakenMs?: number; knockback?: number; rootMs?: number };
+      /** RETURNING rider (Hunter framework, plain bolts): the boomerang — at max
+       *  range the bolt turns and flies home, hitting on the way out AND back. */
+      returning?: boolean;
     }
   | { p: 'cone'; range: number; halfAngleDeg: number; damage: number; tint: number; knockback?: number; knockbackStunMs?: number; slowFactor?: number; slowMs?: number; stunMs?: number }
   | { p: 'line'; length: number; width: number; damage: number; tint: number }
@@ -736,6 +763,10 @@ const NON_DAMAGING_ACTIVE_ACTIONS: ReadonlySet<ActiveActionId> = new Set([
   // Savage utility actives (the pure-fear roar, the confusion snarl, and the
   // animal's mend).
   'sav_roar', 'sav_snarl', 'sav_lick',
+  // Hunter utility actives (the pet commands, the two modes, the pet mend, the
+  // pet frenzy, and the temporary pack — Tame stays a DAMAGING active via its
+  // whittle, Casey's ruling; its offense is the beast it wins).
+  'hun_focus', 'hun_scatter', 'hun_great', 'hun_horde', 'hun_mend', 'hun_rage', 'hun_call',
 ]);
 
 /**
@@ -812,6 +843,11 @@ const NON_AIMABLE_ACTIONS: ReadonlySet<ActiveActionId> = new Set<ActiveActionId>
   // transfusion find their own target), and the mend. Slash/Jagged/Leap/
   // Cleave/Skull/Headtaker/Spike/Mire/Lunge/Totem stay directional.
   'sav_roar', 'sav_slaughter', 'sav_crimson', 'sav_sacrifice', 'sav_hunger', 'sav_snarl', 'sav_lick', 'sav_veins', 'sav_transfusion',
+  // Hunter: the auto-targeting casts (Tame/Focus/Mastery/Hunt find their own
+  // target), the commands, the modes, the pet mend/frenzy, and the pack call.
+  // Steady/Multishot/Crippling/Net/Boomerang/Eagle/Swipe/Twin/Hamstring/
+  // Bloodletter stay directional (drag-to-aim).
+  'hun_tame', 'hun_focus', 'hun_scatter', 'hun_great', 'hun_horde', 'hun_mend', 'hun_rage', 'hun_mastery', 'hun_call', 'hun_hunt',
 ]);
 
 /**
@@ -1130,6 +1166,32 @@ const MONK: ClassSkills = {
   ],
 };
 
+// ─── HUNTER (Oceania's native; Sydney — The Harbour Watch) ─────────────────────
+// The pack is a choice, the hunt isn't — three trees of 10: BEAST CONTROL (the
+// TAME whittle-and-capture bond, FOCUS/SCATTER commands, the GREAT BEAST and
+// BEAST HORDE modes, the joint-kill ultimate), MARKSMANSHIP (fully standalone:
+// clean arrows, riders, the BOOMERANG returning bolt, the impossible shot), and
+// WILD FRENZY (fully standalone: raking knives, venom, the answering wild pack,
+// the alpha form). "Focus" is prose over standard energy. Tier-0s: Tame
+// Companion (damaging via its whittle — Casey's ruling), Steady Shot, Feral
+// Swipe.
+const HUNTER: ClassSkills = {
+  classId: 'hunter',
+  trees: [
+    { id: HUN_BEAST_TREE, name: 'Beasts' }, // 10 bond/command skills (opens on Tame Companion)
+    { id: HUN_MARKS_TREE, name: 'Marksman' }, // 10 ranged skills (opens on Steady Shot)
+    { id: HUN_WILD_TREE, name: 'Frenzy' }, // 10 melee skills (opens on Feral Swipe)
+  ],
+  skills: [
+    // --- BEAST CONTROL (10 skills, linear; the bond). Data in hunterBeast.ts. ---
+    ...HUN_BEAST_SKILLS,
+    // --- MARKSMANSHIP (10 skills, linear; standalone ranged). Data in hunterMarksman.ts. ---
+    ...HUN_MARKS_SKILLS,
+    // --- WILD FRENZY (10 skills, linear; standalone melee). Data in hunterFrenzy.ts. ---
+    ...HUN_WILD_SKILLS,
+  ],
+};
+
 export const CLASS_SKILLS: Record<ClassId, ClassSkills> = {
   blacksmith: BLACKSMITH,
   wizard: WIZARD,
@@ -1143,6 +1205,7 @@ export const CLASS_SKILLS: Record<ClassId, ClassSkills> = {
   assassin: ASSASSIN,
   priest: PRIEST,
   savage: SAVAGE,
+  hunter: HUNTER,
 };
 
 /** Look up a class's full skill set (trees + skills). */

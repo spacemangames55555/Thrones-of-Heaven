@@ -146,6 +146,9 @@ export interface SaveData {
     /** Act II: Q7 done, Uriel queued to play on return to the square. Optional → old saves default false. */
     urielPending?: boolean;
     title: string | null;
+    /** HUNTER: a beast is bonded (Tame) — restored mended; the companion re-manifests
+     *  on load. Optional → pre-Hunter saves default false (no migration needed). */
+    hunterBonded?: boolean;
   };
 
   /** The full quest-chain state (completed set + active quest + objective index). */

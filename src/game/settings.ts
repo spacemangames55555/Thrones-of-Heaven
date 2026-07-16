@@ -206,6 +206,10 @@ export const CLASS_BASE_STATS: Record<string, ClassBaseStats> = {
   // Savage — Mexico City's blood-and-sun bruiser: x0.90 HP / x1.15 damage /
   // x1.05 speed of the Blacksmith baseline (rounded: 90/18 HP, 29/6 damage). (Tune here.)
   savage: { baseMaxHP: 90, hpPerLevel: 18, baseDamage: 29, dmgPerLevel: 6, moveSpeedMult: 1.05 },
+  // Hunter — Sydney's beast-bonded tracker: x0.90 HP / x0.95 damage / x1.05
+  // speed of the Blacksmith baseline (rounded: 90/18 HP, 24/5 damage) — the
+  // bonded beast carries the difference. (Tune here.)
+  hunter: { baseMaxHP: 90, hpPerLevel: 18, baseDamage: 24, dmgPerLevel: 5, moveSpeedMult: 1.05 },
 };
 
 /** The base-stat profile for a class id (defaults to the Blacksmith baseline). */

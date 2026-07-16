@@ -662,6 +662,163 @@ export const ASTRAL_DECOY_CONFIG: AlliedSummonConfig = {
   aggroPriority: AGGRO_TIER.MAGNET, // enemies prefer the spirit-self
 };
 
+// ─── HUNTER BOND (the Tame framework) ─────────────────────────────────────────
+// The cleansed beast's three EXPRESSIONS of the one persistent bond. None of
+// them expire on a clock (durationMs Infinity — they leave only by death or a
+// mode swap); the bond itself lives on the character save, so death is a
+// despawn + resummon, never a loss.
+
+/** The bond itself (not one expression): how long a fallen beast takes to mend
+ *  before the Tame recall can call it back. */
+export const HUNTER_BOND_TUNING = {
+  respawnCooldownMs: 8000,
+} as const;
+
+/** Base companion: a Wolverine-tier melee attacker (the cleansed wolf). */
+export const HUNTER_COMPANION_TUNING = {
+  maxHP: 110,
+  attackDamage: 12,
+  attackCooldownMs: 800,
+  attackRange: 48,
+  seekRange: 360,
+  leashRange: 560,
+  aggroRadius: 120,
+  followRange: 150,
+  moveTilesPerSec: 7,
+  bodyRadius: 13,
+  tint: 0xa0c86a, // cleansed-green pelt
+} as const;
+
+export const HUNTER_COMPANION_CONFIG: AlliedSummonConfig = {
+  key: 'hunter_companion',
+  name: 'Bonded Beast',
+  behavior: 'attacker',
+  maxHP: HUNTER_COMPANION_TUNING.maxHP,
+  durationMs: Number.POSITIVE_INFINITY,
+  aggroRadius: HUNTER_COMPANION_TUNING.aggroRadius,
+  followRange: HUNTER_COMPANION_TUNING.followRange,
+  moveTilesPerSec: HUNTER_COMPANION_TUNING.moveTilesPerSec,
+  bodyRadius: HUNTER_COMPANION_TUNING.bodyRadius,
+  tint: HUNTER_COMPANION_TUNING.tint,
+  drawsAggro: true,
+  aggroPriority: AGGRO_TIER.MINION,
+  attackDamage: HUNTER_COMPANION_TUNING.attackDamage,
+  attackCooldownMs: HUNTER_COMPANION_TUNING.attackCooldownMs,
+  attackRange: HUNTER_COMPANION_TUNING.attackRange,
+  seekRange: HUNTER_COMPANION_TUNING.seekRange,
+  leashRange: HUNTER_COMPANION_TUNING.leashRange,
+};
+
+/** GREAT BEAST mode: the bond manifests LARGE — a taunting magnet tank. */
+export const GREAT_BEAST_TUNING = {
+  maxHP: 320,
+  attackDamage: 10,
+  attackCooldownMs: 1100,
+  attackRange: 56,
+  seekRange: 300,
+  leashRange: 480,
+  aggroRadius: 260,
+  followRange: 160,
+  moveTilesPerSec: 5.5,
+  bodyRadius: 20,
+  tint: 0x7aa84a,
+} as const;
+
+export const GREAT_BEAST_CONFIG: AlliedSummonConfig = {
+  key: 'hunter_great',
+  name: 'Great Beast',
+  behavior: 'attacker',
+  maxHP: GREAT_BEAST_TUNING.maxHP,
+  durationMs: Number.POSITIVE_INFINITY,
+  aggroRadius: GREAT_BEAST_TUNING.aggroRadius,
+  followRange: GREAT_BEAST_TUNING.followRange,
+  moveTilesPerSec: GREAT_BEAST_TUNING.moveTilesPerSec,
+  bodyRadius: GREAT_BEAST_TUNING.bodyRadius,
+  tint: GREAT_BEAST_TUNING.tint,
+  drawsAggro: true,
+  aggroPriority: AGGRO_TIER.MAGNET, // it taunts — enemies prefer it
+  attackDamage: GREAT_BEAST_TUNING.attackDamage,
+  attackCooldownMs: GREAT_BEAST_TUNING.attackCooldownMs,
+  attackRange: GREAT_BEAST_TUNING.attackRange,
+  seekRange: GREAT_BEAST_TUNING.seekRange,
+  leashRange: GREAT_BEAST_TUNING.leashRange,
+};
+
+/** BEAST HORDE mode: the bond splits into three small strikers. */
+export const BEAST_HORDE_TUNING = {
+  count: 3,
+  maxHP: 45,
+  attackDamage: 8,
+  attackCooldownMs: 700,
+  attackRange: 44,
+  seekRange: 360,
+  leashRange: 560,
+  aggroRadius: 110,
+  followRange: 150,
+  moveTilesPerSec: 7.5,
+  bodyRadius: 10,
+  tint: 0xb8d87a,
+} as const;
+
+export const BEAST_HORDE_CONFIG: AlliedSummonConfig = {
+  key: 'hunter_horde',
+  name: 'Horde Beast',
+  behavior: 'attacker',
+  maxHP: BEAST_HORDE_TUNING.maxHP,
+  durationMs: Number.POSITIVE_INFINITY,
+  aggroRadius: BEAST_HORDE_TUNING.aggroRadius,
+  followRange: BEAST_HORDE_TUNING.followRange,
+  moveTilesPerSec: BEAST_HORDE_TUNING.moveTilesPerSec,
+  bodyRadius: BEAST_HORDE_TUNING.bodyRadius,
+  tint: BEAST_HORDE_TUNING.tint,
+  drawsAggro: true,
+  aggroPriority: AGGRO_TIER.MINION,
+  attackDamage: BEAST_HORDE_TUNING.attackDamage,
+  attackCooldownMs: BEAST_HORDE_TUNING.attackCooldownMs,
+  attackRange: BEAST_HORDE_TUNING.attackRange,
+  seekRange: BEAST_HORDE_TUNING.seekRange,
+  leashRange: BEAST_HORDE_TUNING.leashRange,
+};
+
+/** CALL OF THE WILD (Wild Frenzy T7): a TEMPORARY answering pack — deliberately
+ *  NOT a bond expression (different key, so its deaths never touch the bond's
+ *  mend cooldown and mode swaps never cull it). Timed like the skeleton swarm. */
+export const WILD_PACK_TUNING = {
+  count: 2,
+  maxHP: 40,
+  durationMs: 10000,
+  attackDamage: 7,
+  attackCooldownMs: 750,
+  attackRange: 44,
+  seekRange: 340,
+  leashRange: 520,
+  aggroRadius: 110,
+  followRange: 150,
+  moveTilesPerSec: 7.5,
+  bodyRadius: 10,
+  tint: 0x8fae5a,
+} as const;
+
+export const WILD_PACK_CONFIG: AlliedSummonConfig = {
+  key: 'hunter_wildpack',
+  name: 'Wild Beast',
+  behavior: 'attacker',
+  maxHP: WILD_PACK_TUNING.maxHP,
+  durationMs: WILD_PACK_TUNING.durationMs,
+  aggroRadius: WILD_PACK_TUNING.aggroRadius,
+  followRange: WILD_PACK_TUNING.followRange,
+  moveTilesPerSec: WILD_PACK_TUNING.moveTilesPerSec,
+  bodyRadius: WILD_PACK_TUNING.bodyRadius,
+  tint: WILD_PACK_TUNING.tint,
+  drawsAggro: true,
+  aggroPriority: AGGRO_TIER.MINION,
+  attackDamage: WILD_PACK_TUNING.attackDamage,
+  attackCooldownMs: WILD_PACK_TUNING.attackCooldownMs,
+  attackRange: WILD_PACK_TUNING.attackRange,
+  seekRange: WILD_PACK_TUNING.seekRange,
+  leashRange: WILD_PACK_TUNING.leashRange,
+};
+
 // MINI-DECOY (Spectral Echoes): tiny short-lived illusions on the decoy seam —
 // they pull light aggro (MINION tier, below any true tank) and simply stand there.
 export const MINI_DECOY_TUNING = {
@@ -770,6 +927,9 @@ export interface SummonBuff {
   readonly damageBonus?: number;
   readonly hpBonus?: number;
   readonly drBonus?: number;
+  /** +fraction of ATTACK SPEED (0.3 = swings 30% more often — the attack
+   *  cooldown divides by 1+this). Hunter's Bestial Rage / Trueshot Aura. */
+  readonly attackSpeedBonus?: number;
   readonly durationMs: number;
 }
 

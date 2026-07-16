@@ -54,6 +54,9 @@ export class AlliedSummon {
   // appliedHpMult tracks the max-HP scaling currently baked in so it can be re-scaled/reverted.
   private damageBonus = 0;
   private appliedHpMult = 1;
+  /** +fraction of attack speed from timed buffs (Bestial Rage / Trueshot Aura):
+   *  the swing cooldown divides by (1 + this). 0 = unmodified. */
+  private attackSpeedBonus = 0;
   /** Aggro-pull radius multiplier (Marrow Skeleton widens it) + melee reach multiplier
    *  (Tentacles makes the Monster cleave farther). 1 = unmodified. */
   private aggroRadiusMult = 1;
@@ -181,7 +184,7 @@ export class AlliedSummon {
           // attackDot rider: the hit also POISONS/BLEEDS what it struck (Viper/Wolverine).
           const dot = this.config.attackDot;
           if (dot) ctx?.applyDot?.(enemy.x, enemy.y, reach, dot.dmgPerTick, dot.tickMs, dot.durationMs, dot.color);
-          this.attackReadyAt = time + (this.config.attackCooldownMs ?? 1000);
+          this.attackReadyAt = time + (this.config.attackCooldownMs ?? 1000) / (1 + Math.max(0, this.attackSpeedBonus));
           this.swingFx();
         }
       } else {
@@ -219,7 +222,7 @@ export class AlliedSummon {
           this.config.projectileRadius ?? 7,
           this.config.projectileColor ?? 0xff6a4a,
         );
-        this.attackReadyAt = time + (this.config.attackCooldownMs ?? 900);
+        this.attackReadyAt = time + (this.config.attackCooldownMs ?? 900) / (1 + Math.max(0, this.attackSpeedBonus));
         this.swingFx();
       }
       return;
@@ -248,11 +251,12 @@ export class AlliedSummon {
    * multiplier; max-HP scaling is re-applied only when the multiplier actually changes (and
    * reverted, current clamped, when a buff lapses) so it works for current + new summons.
    */
-  applyBuffs(damageBonus: number, drBonus: number, hpMult: number, aggroRadiusMult = 1, attackRangeMult = 1): void {
+  applyBuffs(damageBonus: number, drBonus: number, hpMult: number, aggroRadiusMult = 1, attackRangeMult = 1, attackSpeedBonus = 0): void {
     if (this.dead) return;
     this.damageBonus = damageBonus;
     this.aggroRadiusMult = aggroRadiusMult;
     this.attackRangeMult = attackRangeMult;
+    this.attackSpeedBonus = attackSpeedBonus;
     this.health.incomingMultiplier = Math.max(0.1, 1 - drBonus); // take (1-dr)x damage
     if (Math.abs(hpMult - this.appliedHpMult) > 1e-4) {
       const factor = hpMult / this.appliedHpMult;
