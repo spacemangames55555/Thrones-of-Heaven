@@ -138,6 +138,8 @@ import { SAM_BOW_TUNING } from '../skills/samuraiBow';
 import { MONK_PALM_TUNING } from '../skills/monkIronPalm';
 import { MONK_CHI_TUNING } from '../skills/monkChi';
 import { MONK_SPIRIT_TUNING, ENLIGHTENED_MIND_ID, MEDITATION_ID } from '../skills/monkSpiritual';
+import { ASN_TRAP_TUNING, TRAP_MASTERY_ID } from '../skills/assassinTraps';
+import { ASN_SHADOW_TUNING, POISONED_EDGE_ID } from '../skills/assassinShadow';
 import { PlayerPower } from '../player/PlayerPower';
 import { URIEL_SCENE } from '../story/urielData';
 import { URIEL_SENDOFF_LINES, RIFT_SCENE } from '../story/riftSceneData';
@@ -475,6 +477,41 @@ interface CombatEnemy {
  *  decides inside its branch (only its enemy-hit path is an attack). */
 const OFFENSIVE_PRIMITIVES = new Set<string>(['strike', 'bolt', 'cone', 'line', 'hazard', 'drain', 'plague', 'chain']);
 
+/** A TRAP DEVICE'S PAYLOAD, declared as DATA — each half composes a shipped
+ *  effect (AoE hit, root, confusion, ground zone), so new trap flavors are new
+ *  payload literals, never new code. Damage numbers are skill-scale (scaled by
+ *  skillDamage at trigger time, × the device's damageMult). */
+export interface TrapPayload {
+  /** Burst AoE damage at the device on trigger. */
+  burstDamage?: number;
+  /** Burst/effect radius — defaults to the trigger radius. */
+  burstRadius?: number;
+  /** Root whoever sprang it (the nearest enemy) in place. */
+  rootMs?: number;
+  /** A blinding/confusing burst — the sprung enemy turns on its own. */
+  confuse?: { chance: number; durationMs: number; chipDamage?: number; chipMs?: number };
+  /** A lingering ground zone at the device (poison cloud / frost field / …) —
+   *  the shipped spell-hazard machinery (damage and/or slow and/or weaken). */
+  zone?: { radius: number; tickDamage: number; tickMs: number; durationMs: number; slowFactor?: number; weaken?: number; fill?: number; stroke?: number };
+}
+
+/** One trap placement, as data (every tunable an author touches). */
+export interface TrapConfig {
+  /** The device is inert while arming (placing under an enemy's feet is never free). */
+  armDelayMs: number;
+  /** Untriggered devices expire after this long. */
+  lifetimeMs: number;
+  /** An enemy inside this radius springs the armed device. */
+  triggerRadius: number;
+  payload: TrapPayload;
+  tint?: number;
+  /** Payload damage multiplier (Trap Mastery folds in here; default 1). */
+  damageMult?: number;
+  /** Default true — capped placements recycle the oldest at trapCap. Minefield
+   *  passes false (an ultimate seeds past the cap by design). */
+  countsTowardCap?: boolean;
+}
+
 export class MainScene extends Phaser.Scene {
   private map!: GameMap;
   private player!: Player;
@@ -713,6 +750,25 @@ export class MainScene extends Phaser.Scene {
   empoweredStrikes: { remaining: number; mult: number } | null = null;
   /** How many sprite drop-in overrides applied at create() (gate-observable). */
   spriteOverridesApplied = 0;
+  // --- Assassin framework primitives (composable/bespoke; class-agnostic) ---
+  /** ARMED DEVICES (the trap system): place → arm after a delay → the first enemy
+   *  inside the radius triggers the PAYLOAD → the device is consumed. Untriggered
+   *  devices expire. Plain world objects (never combat targets — the untargetable
+   *  precedent). Public-readable so the runtime gate can observe the lifecycle. */
+  traps: { x: number; y: number; armedAt: number; expireAt: number; triggerRadius: number; payload: TrapPayload; damageMult: number; capped: boolean; tint: number; fx: Phaser.GameObjects.Arc }[] = [];
+  /** Concurrent armed-device cap for CAPPED placements (the oldest is recycled at
+   *  the cap). Trap Mastery's +1 lands here via its recompute; Minefield devices
+   *  are placed uncapped. Public for the gate + the mastery hook. */
+  trapCap = 3;
+  /** True while the current composed cast was made FROM stealth — captured BEFORE
+   *  the attack breaks it, so strike steps with a `stealthBonus` rider still read it. */
+  private castFromStealth = false;
+  /** SHADOW DANCE: while now < until, attacking does NOT break stealth (and the
+   *  stealth-bonus rider applies to every strike that carries one). */
+  shadowDanceUntil = 0;
+  /** VANISH: a breath of UNTARGETABILITY after the instant re-stealth — melee
+   *  (parryGate) and bolts (onProjectileHitPlayer) pass through until this. */
+  vanishGraceUntil = 0;
   /**
    * CHANNELED-BEAM state (the channel primitive). Transient: a single active channel locks
    * one enemy, ticks damage, optionally trickles energy, and is cancelled by movement / any
@@ -1769,6 +1825,7 @@ export class MainScene extends Phaser.Scene {
     this.updateConfusion(); // Bard confusion: expiry + a confused enemy chips at its fellow
     this.updateVoodoo(); // Witch Doctor: bind expiry + spirit assault + spirit split pulses
     this.updatePulseRing(); // Monk: the following damage pulse ring
+    this.updateTraps(); // Assassin: device arming/trigger/expiry
     this.updateComboUltimate(); // Bard War Song: the auto-chain cadence
     this.updateDots(); // poison DoTs + Plague contagion spread + stacking DoTs
     this.updateChannel(delta); // channeled beam: tick damage + energy trickle + redraw
@@ -2128,6 +2185,7 @@ export class MainScene extends Phaser.Scene {
     this.pulseRing = null; // Monk state never survives a reset either
     this.actionWhiffed = false;
     this.empoweredStrikes = null;
+    this.clearTraps(); // Assassin state never survives a reset either
     this.breakPlayerStealth();
     this.clearDots();
     this.summons.clear();
@@ -2226,9 +2284,18 @@ export class MainScene extends Phaser.Scene {
       ? { damage: VOODOO_DOLL_TUNING.assault.damage, tickMs: VOODOO_DOLL_TUNING.assault.tickMs, nextAt: this.voodooAssault?.nextAt ?? 0 }
       : null;
     // SAMURAI keyed passives: the strike bleed + the parry upgrade, armed while owned.
-    this.strikeBleed = this.skills.isUnlocked(RAZORS_EDGE_ID) ? { ...SAM_BLADE_TUNING.razor } : null;
+    // POISONED EDGE (Assassin) rides the same strike-DoT hook (one class per save —
+    // whichever venom/bleed is owned arms it; neither owned = null).
+    this.strikeBleed = this.skills.isUnlocked(RAZORS_EDGE_ID)
+      ? { ...SAM_BLADE_TUNING.razor }
+      : this.skills.isUnlocked(POISONED_EDGE_ID)
+        ? { ...ASN_SHADOW_TUNING.poisoned }
+        : null;
     this.parryRiposteBonus = this.skills.isUnlocked(COUNTERSTRIKE_ID) ? SAM_STANCE_TUNING.counter.riposteBonus : 0;
     this.parryRefundEnergy = this.skills.isUnlocked(COUNTERSTRIKE_ID) ? SAM_STANCE_TUNING.counter.energyRefund : 0;
+    // ASSASSIN keyed passive: Trap Mastery's +1 armed-device cap (its faster
+    // arming + stronger payloads fold in where a device is placed).
+    this.trapCap = ASN_TRAP_TUNING.baseCap + (this.skills.isUnlocked(TRAP_MASTERY_ID) ? ASN_TRAP_TUNING.mastery.capBonus : 0);
     // Block chance + strength (Double Block / Dual Shield) — rolled per hit in Health.
     if (this.playerHealth) {
       this.playerHealth.blockChance = Phaser.Math.Clamp(m.blockChance ?? 0, 0, 0.9);
@@ -2787,7 +2854,121 @@ export class MainScene extends Phaser.Scene {
       const c = MONK_SPIRIT_TUNING.wheel;
       this.startPulseRing(c.durationMs, c.intervalMs, c.radius, this.skillDamage(c.damage), c.tint);
       this.showBanner('The wheel turns', 1100);
+    } else if (action === 'asn_blade_trap') {
+      // Assassin Traps #1 — the spring-blade device: quick arm, a heavy snap.
+      const c = ASN_TRAP_TUNING.blade;
+      this.assassinPlaceTrap(c.placeAhead, { armDelayMs: c.armDelayMs, lifetimeMs: c.lifetimeMs, triggerRadius: c.triggerRadius, payload: { burstDamage: c.burstDamage, burstRadius: c.burstRadius }, tint: 0xffb060 });
+    } else if (action === 'asn_snare_trap') {
+      // Assassin Traps #2 — pure control: roots whoever springs it.
+      const c = ASN_TRAP_TUNING.snare;
+      this.assassinPlaceTrap(c.placeAhead, { armDelayMs: c.armDelayMs, lifetimeMs: c.lifetimeMs, triggerRadius: c.triggerRadius, payload: { rootMs: c.rootMs }, tint: 0xc8b060 });
+    } else if (action === 'asn_toxic_trap') {
+      // Assassin Traps #4 — bursts into a lingering poison cloud.
+      const c = ASN_TRAP_TUNING.toxic;
+      this.assassinPlaceTrap(c.placeAhead, { armDelayMs: c.armDelayMs, lifetimeMs: c.lifetimeMs, triggerRadius: c.triggerRadius, payload: { zone: { ...c.zone, fill: 0x3a5a2a, stroke: 0x9ad07a } }, tint: 0x9ad07a });
+    } else if (action === 'asn_flash_trap') {
+      // Assassin Traps #5 — the blinding burst: the sprung enemy turns confused.
+      const c = ASN_TRAP_TUNING.flash;
+      this.assassinPlaceTrap(c.placeAhead, { armDelayMs: c.armDelayMs, lifetimeMs: c.lifetimeMs, triggerRadius: c.triggerRadius, payload: { confuse: { chance: c.confuse.chance, durationMs: c.confuse.durationMs } }, tint: 0xffe9a8 });
+    } else if (action === 'asn_explosive_trap') {
+      // Assassin Traps #6 — the heavy charge: area damage on trigger.
+      const c = ASN_TRAP_TUNING.explosive;
+      this.assassinPlaceTrap(c.placeAhead, { armDelayMs: c.armDelayMs, lifetimeMs: c.lifetimeMs, triggerRadius: c.triggerRadius, payload: { burstDamage: c.burstDamage, burstRadius: c.burstRadius }, tint: 0xff8a3a });
+    } else if (action === 'asn_frost_trap') {
+      // Assassin Traps #7 — erupts into a slowing frost field.
+      const c = ASN_TRAP_TUNING.frost;
+      this.assassinPlaceTrap(c.placeAhead, { armDelayMs: c.armDelayMs, lifetimeMs: c.lifetimeMs, triggerRadius: c.triggerRadius, payload: { zone: { ...c.zone } }, tint: 0xb8d8ff });
+    } else if (action === 'asn_remote_det') {
+      // Assassin Traps #8 — the trigger-now hook; nothing armed = a refunded whiff.
+      const fired = this.detonateArmedTraps();
+      if (fired === 0) {
+        this.showBanner('Nothing armed to fire', 1000);
+        this.actionWhiffed = true;
+      } else {
+        this.showBanner(fired === 1 ? 'The device fires' : `${fired} devices fire`, 1100);
+      }
+    } else if (action === 'asn_minefield') {
+      // Assassin Traps #10 ultimate — seed the area ahead with explosive devices.
+      const c = ASN_TRAP_TUNING.minefield;
+      const m = this.skills.isUnlocked(TRAP_MASTERY_ID);
+      const t = ASN_TRAP_TUNING.mastery;
+      const { dx, dy } = this.facingUnit();
+      this.placeMinefield(px + dx * c.placeAhead, py + dy * c.placeAhead, c.count, c.spreadRadius, {
+        armDelayMs: m ? c.armDelayMs * t.armFactor : c.armDelayMs,
+        lifetimeMs: c.lifetimeMs,
+        triggerRadius: c.triggerRadius,
+        payload: { burstDamage: c.burstDamage, burstRadius: c.burstRadius },
+        tint: 0xff8a3a,
+        damageMult: m ? t.damageMult : 1,
+      });
+      this.showBanner('MINEFIELD', 1400);
+    } else if (action === 'asn_ambush') {
+      // Assassin Shadow #3 — the payoff strike that REQUIRES stealth (unhidden
+      // it whiffs and the ally-rule machinery refunds the cast).
+      const c = ASN_SHADOW_TUNING.ambush;
+      if (this.playerStealthActive || this.time.now < this.shadowDanceUntil) {
+        this.runComposedSteps([{ p: 'strike', at: 'front', range: c.range, damage: c.damage, tint: 0x9a9ab8 }]);
+      } else {
+        this.showBanner('Ambush needs the shadows', 1000);
+        this.actionWhiffed = true;
+      }
+    } else if (action === 'asn_shadow_step') {
+      // Assassin Shadow #5 — the Blink reuse aimed AT a target: reappear behind
+      // it, blade first (no target = a refunded whiff).
+      const c = ASN_SHADOW_TUNING.step;
+      const target = this.nearestEnemy(px, py, c.seekRange);
+      if (!target) {
+        this.showBanner('No one to step to', 1000);
+        this.actionWhiffed = true;
+      } else {
+        const ang = Math.atan2(target.y - py, target.x - px);
+        const bx = target.x + Math.cos(ang) * c.behindGap;
+        const by = target.y + Math.sin(ang) * c.behindGap;
+        const w = this.activeMap().nearestWalkableWorld(bx, by) ?? { x: bx, y: by };
+        (this.player.sprite.body as Phaser.Physics.Arcade.Body).reset(w.x, w.y);
+        this.player.facingX = -Math.cos(ang); // land facing BACK at the target
+        this.player.facingY = -Math.sin(ang);
+        this.spawnSkillRing(w.x, w.y, 40, 0x9a9ab8);
+        this.runComposedSteps([{ p: 'strike', at: 'front', range: c.strikeRange, damage: c.damage, tint: 0x9a9ab8 }]);
+      }
+    } else if (action === 'asn_smoke_bomb') {
+      // Assassin Shadow #6 — the confusion + aggro-drop reuse: they lose you.
+      const c = ASN_SHADOW_TUNING.smoke;
+      this.spawnSkillRing(px, py, c.range * 0.6, 0x9a9ab8);
+      const turned = this.confuseNearestEnemy(px, py, c.range, c.chance, c.confuseMs, c.chipDamage, c.chipMs);
+      this.startPlayerStealth(c.dropMs); // the "lose you" breath — any attack ends it
+      this.showBanner(turned ? 'Smoke — and they turn on each other' : 'Smoke fills the street', 1100);
+    } else if (action === 'asn_takedown') {
+      // Assassin Shadow #7 — the conditional finisher: execute the weakened.
+      const c = ASN_SHADOW_TUNING.takedown;
+      const { dx, dy } = this.facingUnit();
+      this.finisherHitAll(px + dx * c.reach, py + dy * c.reach, c.radius, this.skillDamage(c.damage), c.bonusMult, 0x9a9ab8);
+    } else if (action === 'asn_vanish') {
+      // Assassin Shadow #8 — extension #4: the instant re-stealth + the breath.
+      const c = ASN_SHADOW_TUNING.vanish;
+      this.vanish(c.stealthMs, c.graceMs);
+      this.showBanner('Gone', 900);
+    } else if (action === 'asn_shadow_dance') {
+      // Assassin Shadow #10 ultimate — extension #3: striking stays hidden.
+      const c = ASN_SHADOW_TUNING.dance;
+      this.startShadowDance(c.durationMs);
+      this.showBanner('SHADOW DANCE', 1400);
     }
+  }
+
+  /** Place one Assassin device AHEAD of the player, folding TRAP MASTERY in
+   *  while owned (faster arming + stronger payloads; the +1 cap lands at
+   *  recompute). Every trap skill routes through here. */
+  private assassinPlaceTrap(placeAhead: number, cfg: TrapConfig): void {
+    const { dx, dy } = this.facingUnit();
+    const m = this.skills.isUnlocked(TRAP_MASTERY_ID);
+    const t = ASN_TRAP_TUNING.mastery;
+    this.placeTrap(this.player.x + dx * placeAhead, this.player.y + dy * placeAhead, {
+      ...cfg,
+      armDelayMs: m ? cfg.armDelayMs * t.armFactor : cfg.armDelayMs,
+      damageMult: m ? t.damageMult : 1,
+    });
+    this.lastCombatTime = this.time.now;
   }
 
   /** THE COMPOSED-ACTION EXECUTOR: runs a skill declared as data (steps of
@@ -2796,9 +2977,11 @@ export class MainScene extends Phaser.Scene {
   runComposedSteps(steps: ComposedStep[]): void {
     this.lastCombatTime = this.time.now;
     this.lastComposedPrimitives = steps.map((s) => s.p);
-    // ATTACKING BREAKS STEALTH: any offensive primitive ends it before running.
-    // (dualbolt decides inside its branch — its heal path is not an attack.)
-    if (steps.some((s) => OFFENSIVE_PRIMITIVES.has(s.p))) this.breakPlayerStealth();
+    // ATTACKING BREAKS STEALTH: any offensive primitive ends it before running —
+    // UNLESS Shadow Dance holds (the Assassin state where striking stays hidden).
+    // The from-stealth flag is captured FIRST so stealth-bonus riders still read it.
+    this.castFromStealth = this.playerStealthActive;
+    if (steps.some((s) => OFFENSIVE_PRIMITIVES.has(s.p)) && this.time.now >= this.shadowDanceUntil) this.breakPlayerStealth();
     for (const s of steps) this.runComposedStep(s);
   }
 
@@ -2864,6 +3047,10 @@ export class MainScene extends Phaser.Scene {
           dmg *= this.empoweredStrikes.mult;
           if (--this.empoweredStrikes.remaining <= 0) this.empoweredStrikes = null;
         }
+        // STEALTH-BONUS rider (Assassin): a strike cast FROM stealth — or thrown
+        // during Shadow Dance — lands ×stealthBonus (the cast then breaks stealth
+        // per the normal rule, captured before the break).
+        if (dmg > 0 && s.stealthBonus !== undefined && (this.castFromStealth || this.time.now < this.shadowDanceUntil)) dmg *= s.stealthBonus;
         if (dmg > 0) this.aoeHitAll(x, y, radius, dmg);
         // RAZOR'S EDGE (Samurai keyed passive): strikes leave a bleed DoT.
         if (dmg > 0 && this.strikeBleed) this.applyDotInRange(x, y, radius, this.strikeBleed.dmgPerTick, this.strikeBleed.tickMs, this.strikeBleed.durationMs, 0xd04a3a);
@@ -3958,6 +4145,8 @@ export class MainScene extends Phaser.Scene {
    *  paths (bolts, beams, DoT ticks) never call it. */
   private parryGate(ex: number, ey: number): boolean {
     const now = this.time.now;
+    if (now < this.vanishGraceUntil) return true; // VANISH: the breath of untargetability — the swing meets nothing
+
     const perfect = now < this.perfectFormUntil;
     const windowOpen = this.parry !== null && now < this.parry.until;
     if (!perfect && !windowOpen) {
@@ -4064,6 +4253,126 @@ export class MainScene extends Phaser.Scene {
     this.spawnSkillRing(ally.x, ally.y, 50, 0xa8ffd0);
     this.lastCombatTime = this.time.now;
     return true;
+  }
+
+  // --- Assassin framework: the trap system + stealth riders ---------------------
+
+  /** Place a TRAP DEVICE at (x,y). Capped placements recycle the OLDEST capped
+   *  device once trapCap are out (never a refused cast); Minefield's devices are
+   *  uncapped. The device arms after armDelayMs (dim while arming), triggers on
+   *  the first enemy inside triggerRadius, executes its payload, and is consumed. */
+  placeTrap(x: number, y: number, cfg: TrapConfig): void {
+    const capped = cfg.countsTowardCap !== false;
+    if (capped) {
+      while (this.traps.filter((t) => t.capped).length >= this.trapCap) {
+        const oldest = this.traps.find((t) => t.capped);
+        if (!oldest) break;
+        this.removeTrap(oldest);
+      }
+    }
+    const now = this.time.now;
+    const tint = cfg.tint ?? 0xffb060;
+    const fx = this.add.circle(x, y, 7, tint, 0.5).setStrokeStyle(2, tint, 0.9).setDepth(6);
+    fx.setAlpha(0.3); // dim while arming; updateTraps brightens it once armed
+    this.worldFx.add(fx);
+    this.traps.push({
+      x, y,
+      armedAt: now + cfg.armDelayMs,
+      expireAt: now + cfg.lifetimeMs,
+      triggerRadius: cfg.triggerRadius,
+      payload: cfg.payload,
+      damageMult: cfg.damageMult ?? 1,
+      capped,
+      tint,
+      fx,
+    });
+  }
+
+  /** MINEFIELD (the multi-place hook): seed `count` devices in a ring across the
+   *  target area — each a normal device (same lifecycle), placed UNCAPPED. */
+  placeMinefield(cx: number, cy: number, count: number, spreadRadius: number, cfg: Omit<TrapConfig, 'countsTowardCap'>): void {
+    for (let i = 0; i < count; i++) {
+      const ang = (i / count) * Math.PI * 2;
+      const dist = i === 0 ? 0 : spreadRadius * 0.75; // one center + a ring
+      this.placeTrap(cx + Math.cos(ang) * dist, cy + Math.sin(ang) * dist, { ...cfg, countsTowardCap: false });
+    }
+  }
+
+  /** REMOTE DETONATION (the trigger-now hook): every ARMED device fires its
+   *  payload where it stands, enemy or no enemy. Returns how many fired. */
+  detonateArmedTraps(): number {
+    const now = this.time.now;
+    const armed = this.traps.filter((t) => now >= t.armedAt);
+    for (const t of armed) this.triggerTrap(t);
+    return armed.length;
+  }
+
+  /** Per-frame trap lifecycle: expire the stale, brighten the newly armed, and
+   *  spring any armed device with an enemy inside its radius. */
+  private updateTraps(): void {
+    if (this.traps.length === 0) return;
+    const now = this.time.now;
+    for (const t of [...this.traps]) {
+      if (now >= t.expireAt) {
+        this.removeTrap(t);
+        continue;
+      }
+      if (now < t.armedAt) continue;
+      t.fx.setAlpha(0.85);
+      if (this.combatEnemiesInRange(t.x, t.y, t.triggerRadius).length > 0) this.triggerTrap(t);
+    }
+  }
+
+  /** Execute a device's PAYLOAD (each half a shipped effect) and consume it. */
+  private triggerTrap(t: (typeof this.traps)[number]): void {
+    const p = t.payload;
+    const r = p.burstRadius ?? t.triggerRadius;
+    this.spawnSkillRing(t.x, t.y, r, t.tint);
+    if (p.burstDamage) this.aoeHitAll(t.x, t.y, r, this.skillDamage(p.burstDamage) * t.damageMult);
+    if (p.rootMs) this.rootNearestEnemy(t.x, t.y, r, p.rootMs);
+    if (p.confuse) this.confuseNearestEnemy(t.x, t.y, r, p.confuse.chance, p.confuse.durationMs, p.confuse.chipDamage ?? 8, p.confuse.chipMs ?? 700);
+    if (p.zone) {
+      const z = p.zone;
+      const opts: { slowFactor?: number; weaken?: number; fill?: number; stroke?: number } = {};
+      if (z.slowFactor !== undefined) opts.slowFactor = z.slowFactor;
+      if (z.weaken !== undefined) opts.weaken = z.weaken;
+      if (z.fill !== undefined) opts.fill = z.fill;
+      if (z.stroke !== undefined) opts.stroke = z.stroke;
+      this.spawnSpellHazard(t.x, t.y, z.radius, z.tickDamage > 0 ? this.skillDamage(z.tickDamage) * t.damageMult : 0, z.durationMs, z.tickMs, Object.keys(opts).length ? opts : undefined);
+    }
+    this.lastCombatTime = this.time.now;
+    this.removeTrap(t);
+  }
+
+  /** Remove a device (triggered / expired / recycled / reset) + its marker. */
+  private removeTrap(t: (typeof this.traps)[number]): void {
+    this.tweens.killTweensOf(t.fx);
+    t.fx.destroy();
+    const i = this.traps.indexOf(t);
+    if (i >= 0) this.traps.splice(i, 1);
+  }
+
+  /** Clear every device (reset/load/death/world swap — traps never survive). */
+  private clearTraps(): void {
+    for (const t of [...this.traps]) this.removeTrap(t);
+    this.shadowDanceUntil = 0;
+    this.vanishGraceUntil = 0;
+  }
+
+  /** SHADOW DANCE: for durationMs, attacking does NOT break stealth and every
+   *  stealth-bonus strike keeps its bonus. Enters stealth if not already in it. */
+  startShadowDance(durationMs: number): void {
+    this.shadowDanceUntil = this.time.now + durationMs;
+    if (!this.playerStealthActive) this.startPlayerStealth(durationMs);
+    else this.playerStealthUntil = Math.max(this.playerStealthUntil, this.shadowDanceUntil);
+  }
+
+  /** VANISH: the instant in-combat re-stealth + a breath of untargetability
+   *  (melee and bolts pass through until the grace ends). */
+  vanish(stealthMs: number, graceMs: number): void {
+    this.startPlayerStealth(stealthMs);
+    this.vanishGraceUntil = this.time.now + graceMs;
+    this.spawnSkillRing(this.player.x, this.player.y, 44, 0x9a9ab8);
   }
 
   // --- DoT (damage-over-time) + contagion primitive (Toxic Bolt / Plague) -------
@@ -5220,6 +5529,7 @@ export class MainScene extends Phaser.Scene {
     this.pulseRing = null; // Monk state never survives a reset either
     this.actionWhiffed = false;
     this.empoweredStrikes = null;
+    this.clearTraps(); // Assassin state never survives a reset either
     this.breakPlayerStealth();
     this.clearDots();
     this.despawnRegionChampion(); // death resets a champion encounter cleanly
@@ -5614,6 +5924,7 @@ export class MainScene extends Phaser.Scene {
    *  family's on-hit debuffs (the dark-caster's slow/weaken + stacking DoT). */
   private onProjectileHitPlayer(damage: number, tag?: string): void {
     if (this.playerDead) return;
+    if (this.time.now < this.vanishGraceUntil) return; // VANISH: the bolt finds empty shadow
     if (this.deflectProjectileGate()) return; // Monk DEFLECT: the bolt is turned aside
     const dealt = this.playerHealth.damage(damage);
     this.player.flash();
@@ -6706,6 +7017,7 @@ export class MainScene extends Phaser.Scene {
       this.pulseRing = null;
       this.actionWhiffed = false;
       this.empoweredStrikes = null;
+      this.clearTraps(); // Assassin state never survives a load either
       this.breakPlayerStealth();
       this.clearDots(); // drop any poison DoTs
       this.summons.clear(); // summons are transient — never carried across a load
@@ -9348,6 +9660,7 @@ export class MainScene extends Phaser.Scene {
     this.pulseRing = null; // Monk state never survives a reset either
     this.actionWhiffed = false;
     this.empoweredStrikes = null;
+    this.clearTraps(); // Assassin state never survives a reset either
     this.breakPlayerStealth();
     this.clearDots();
 
@@ -10720,6 +11033,7 @@ export class MainScene extends Phaser.Scene {
     this.pulseRing = null; // Monk state never survives a reset either
     this.actionWhiffed = false;
     this.empoweredStrikes = null;
+    this.clearTraps(); // Assassin state never survives a reset either
     this.breakPlayerStealth();
     this.clearDots();
     this.summons.clear();

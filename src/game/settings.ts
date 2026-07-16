@@ -197,6 +197,9 @@ export const CLASS_BASE_STATS: Record<string, ClassBaseStats> = {
   // Monk — Lhasa's empty-handed ascetic: x0.90 HP / x0.95 damage / x1.05 speed
   // of the Blacksmith baseline (rounded: 90/18 HP, 24/5 damage). (Tune here.)
   monk: { baseMaxHP: 90, hpPerLevel: 18, baseDamage: 24, dmgPerLevel: 5, moveSpeedMult: 1.05 },
+  // Assassin — Dubai's knife in the dark: x0.75 HP / x1.10 damage / x1.10 speed
+  // of the Blacksmith baseline (rounded: 75/15 HP, 28/6 damage). (Tune here.)
+  assassin: { baseMaxHP: 75, hpPerLevel: 15, baseDamage: 28, dmgPerLevel: 6, moveSpeedMult: 1.1 },
 };
 
 /** The base-stat profile for a class id (defaults to the Blacksmith baseline). */
