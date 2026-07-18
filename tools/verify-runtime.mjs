@@ -5671,6 +5671,52 @@ try {
     JSON.stringify(feelCfg),
   );
 
+  // 3at. FLOATING COMBAT TEXT (permanent): a burst past the pool cap REUSES
+  // slots (size never exceeds the cap, zero orphaned display objects), the
+  // FEEL hook layer floats a number over a live enemy victim, and everything
+  // retires on schedule.
+  const fct = await page.evaluate(async () => {
+    const ms = window.__ready();
+    const wait = (t) => new Promise((r) => setTimeout(r, t));
+    if (!window.__quietSpot()) return { setup: 'no quiet spot' };
+    const cap = ms.feel.text.poolSize;
+    for (let i = 0; i < cap + 24; i++) ms.floatingText.show(ms.player.x + (i % 5) * 8, ms.player.y - 20, '-1', '#ffffff');
+    const sizeAfterBurst = ms.floatingText.size;
+    const activeAfterBurst = ms.floatingText.activeCount;
+    await wait(800); // the burst retires (default life 600ms)
+    const clearedAfterBurst = ms.floatingText.activeCount === 0;
+    // HOOK LAYER: a real registered enemy takes a non-site hit → one number.
+    const w = ms.activeMap().nearestWalkableWorld(ms.player.x + 120, ms.player.y);
+    const foe = ms.spawnTownsfolk(w.x, w.y, null, 'wolf');
+    await wait(150);
+    // Short stun: its own pooled ✦ spark lives exactly stun-long and must
+    // retire inside the drain window (the foe dies moments later anyway).
+    ms.stunEnemiesInRange(foe.x, foe.y, 60, 1500);
+    const before = ms.floatingText.activeCount;
+    foe.takeHit(7);
+    await wait(150); // the queue flushes on the next frame
+    const hookLanded = ms.floatingText.activeCount > before;
+    foe.takeHit(1e9);
+    // Clear any wanderers that closed in during the check — their bites would
+    // keep spawning legitimate numbers and mask the orphan question.
+    for (const e of ms.combatEnemiesInRange(ms.player.x, ms.player.y, 1200)) e.destroy();
+    // DRAIN: poll to quiet — the kill's own late credit (an XP float) is
+    // living text that retires on schedule; a true orphan would never clear.
+    let drainedActive = -1;
+    for (let i = 0; i < 20; i++) {
+      await wait(150);
+      drainedActive = ms.floatingText.activeCount;
+      if (drainedActive === 0) break;
+    }
+    const sizeStable = ms.floatingText.size === sizeAfterBurst && sizeAfterBurst <= cap;
+    return { setup: 'ok', cap, sizeAfterBurst, activeAfterBurst, clearedAfterBurst, hookLanded, drainedActive, sizeStable };
+  });
+  ok(
+    'game-feel — floating text: burst reuses the pool (size <= cap, zero orphans), the hook floats enemy damage, all retire on time',
+    fct.setup === 'ok' && fct.sizeAfterBurst <= fct.cap && fct.activeAfterBurst <= fct.cap && fct.clearedAfterBurst && fct.hookLanded && fct.drainedActive === 0 && fct.sizeStable,
+    JSON.stringify(fct),
+  );
+
   // 3aa. SKILL TREE UX (Casey's spec, permanent) — driven by REAL taps on the real
   // screen: instant spend (no confirmation window) respects locks and points with
   // shake/toast feedback; the name-bar "Add" button round-trips through the hotkey

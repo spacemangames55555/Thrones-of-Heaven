@@ -1107,6 +1107,15 @@ export class MainScene extends Phaser.Scene {
   /** GAME-FEEL CONFIG (presentation pass): every feel tunable, readable by the
    *  runtime gate. The single source is src/ui/feel-config.ts. */
   readonly feel = FEEL;
+  /** FEEL registry: enemy health pools → their sprite, so the Health hook can
+   *  float numbers over the victim. Enemies only — the player's numbers render
+   *  at their existing seams (now domain-colored). WeakMap → no leaks. */
+  private feelTargets = new WeakMap<Health, { sprite: { x: number; y: number }; enemy: boolean }>();
+  /** Per-frame dedupe: where SITE calls already rendered a number this frame —
+   *  the hook layer never doubles a skill's own flavor text. */
+  private feelSiteSpawns: { x: number; y: number }[] = [];
+  /** Hook-queued enemy damage numbers, flushed (deduped) next tick. */
+  private feelQueue: { x: number; y: number; amt: number }[] = [];
   private beatMarker?: { beatId: string; pos: { x: number; y: number }; objs: Phaser.GameObjects.GameObject[] };
   private beatPickups?: { beatId: string; taken: number; items: { obj: Phaser.GameObjects.Arc; taken: boolean; x: number; y: number }[] };
   private beatElite?: { beatId: string; zoneId: string; kind: 'demon' | 'angel'; entity: Demon | AngelEnemy; label: Phaser.GameObjects.Text };
@@ -1478,6 +1487,15 @@ export class MainScene extends Phaser.Scene {
     // Pooled transient FX (perf): reuse damage-number Texts + impact circles instead
     // of allocating/freeing them per hit — the measured cause of the under-load stutter.
     this.floatingText = new FloatingTextPool(this, this.worldFx, MAX_FLOATING_TEXTS);
+    // GAME-FEEL (presentation): the Health hooks float numbers over registered
+    // enemy victims (queued + site-deduped). Cleared on shutdown — the statics
+    // must never outlive this scene instance (fresh sessions re-register).
+    Health.onAnyDamaged = (pool, removed) => this.onFeelDamaged(pool, removed);
+    Health.onAnyHealed = (pool, restored) => this.onFeelHealed(pool, restored);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      Health.onAnyDamaged = undefined;
+      Health.onAnyHealed = undefined;
+    });
     this.circleFx = new CircleFxPool(this, this.worldFx, MAX_CIRCLE_FX);
     this.swingFx = new SwingFxPool(this, this.worldFx, MAX_SWING_FX); // melee swing crescents (strike primitive)
     // The reusable projectile system draws bolts into the world-FX layer (so the
@@ -1841,6 +1859,7 @@ export class MainScene extends Phaser.Scene {
     this.zoomControls.update(delta);
     // Pooled transient FX animate every frame (even during dialogue/death freezes, so
     // in-flight labels/flashes finish fading instead of sticking).
+    this.flushFeelQueue(); // FEEL numbers land after site dedupe, before the pool ticks
     this.floatingText.tick(this.time.now);
     this.circleFx.tick(this.time.now);
     this.swingFx.tick(this.time.now);
@@ -2128,6 +2147,10 @@ export class MainScene extends Phaser.Scene {
       this.energy.heal(WD_VOODOO_TUNING.harvest.energyPerKill);
     }
     const levelsGained = this.progression.addXP(amount);
+    // FEEL: XP floats above the player (every source funnels through here).
+    if (amount > 0) {
+      this.floatingText.show(this.player.x, this.player.y - 44, `+${Math.round(amount)} XP`, MainScene.feelHex(FEEL.text.colors.xp), { fontSize: FEEL.text.xpFontPx });
+    }
     if (levelsGained > 0) {
       this.skills.awardPoints(levelsGained); // 1 skill point per level gained
       this.onLevelUp();
@@ -7138,6 +7161,7 @@ export class MainScene extends Phaser.Scene {
   /** Spawn an angel of the given variant; wire its volleys to the projectile system. */
   private spawnAngel(variantKey: AngelVariantKey, x: number, y: number): AngelEnemy {
     const a = new AngelEnemy(this, x, y, variantKey);
+    this.feelTargets.set(a.health, { sprite: a.sprite, enemy: true }); // FEEL: numbers float over this victim
     const v = a.variant;
     a.onFire = (origin, dirs) => {
       for (const d of dirs) {
@@ -7256,7 +7280,8 @@ export class MainScene extends Phaser.Scene {
     if (this.deflectProjectileGate()) return; // Monk DEFLECT: the bolt is turned aside
     const dealt = this.playerHealth.damage(damage);
     this.player.flash();
-    this.spawnDamageNumber(this.player.x, this.player.y - 26, dealt, '#ffd27a');
+    // FEEL: caster bolts are Mental; the remaining bolt sources are angelic (Spiritual).
+    this.spawnDamageNumber(this.player.x, this.player.y - 26, dealt, MainScene.feelHex(tag === 'caster-bolt' ? DOMAIN_TINT.mental : DOMAIN_TINT.spiritual));
     this.lastCombatTime = this.time.now;
     if (tag === 'caster-bolt' && !this.playerHealth.isDead) this.applyCasterDebuffs();
     if (this.playerHealth.isDead) this.onPlayerDeath();
@@ -8616,6 +8641,7 @@ export class MainScene extends Phaser.Scene {
     t.setTarget(target);
     if (target) t.onHitPortal = () => this.damagePortal(TOWNSFOLK_PORTAL_DAMAGE);
     t.onHitPlayer = () => this.onTownsfolkHitPlayer(t);
+    this.feelTargets.set(t.health, { sprite: t.sprite, enemy: true }); // FEEL: numbers float over this victim
     this.physics.add.collider(t.sprite, this.activeMap().layer); // the world it spawns IN
     this.uiCamera?.ignore(t.sprite); // runtime world object: keep off the UI camera
     this.townsfolk.push(t);
@@ -8657,7 +8683,9 @@ export class MainScene extends Phaser.Scene {
     const dmg = (t && TOWNSFOLK_VARIANTS[t.variant].playerDamage) || TOWNSFOLK_PLAYER_DAMAGE;
     const dealt = this.playerHealth.damage(dmg);
     this.player.flash();
-    this.spawnDamageNumber(this.player.x, this.player.y - 26, dealt, '#ff9a6a');
+    // FEEL: the number wears the ATTACKER's damage domain (existing tint source).
+    const meleeDomain = t?.variant === 'ambusher' ? DOMAIN_TINT.mental : t?.variant === 'brute' ? DOMAIN_TINT.spiritual : DOMAIN_TINT.physical;
+    this.spawnDamageNumber(this.player.x, this.player.y - 26, dealt, MainScene.feelHex(meleeDomain));
     this.lastCombatTime = this.time.now;
     if (this.playerHealth.isDead) this.onPlayerDeath();
   }
@@ -10303,6 +10331,7 @@ export class MainScene extends Phaser.Scene {
     const champ = makeRegionChampion(spec.name, domain, hit.zone.tier, signature);
     const def = this.championDef(beatId, zoneId, champ.name, champ.tint, champ.stats, champ.tier, signature);
     const boss = this.spawnBoss(def, anchor.x, anchor.y, this.activeMap().layer);
+    this.feelTargets.set(boss.health, { sprite: boss.sprite, enemy: true }); // FEEL: numbers float over the champion
     this.championBoss = boss;
     this.championBeatId = beatId;
     this.championZoneId = zoneId;
@@ -10733,6 +10762,7 @@ export class MainScene extends Phaser.Scene {
   private spawnDemon(x: number, y: number, mapLayer: Phaser.Tilemaps.TilemapLayerBase): Demon {
     const d = new Demon(this, x, y);
     d.onMelee = (dmg) => this.enemyMeleeDamage(d.x, d.y, dmg); // a summon it's chasing soaks the blow
+    this.feelTargets.set(d.health, { sprite: d.sprite, enemy: true }); // FEEL: numbers float over this victim
     this.physics.add.collider(d.sprite, mapLayer);
     this.uiCamera?.ignore(d.objects());
     this.demons.push(d);
@@ -12226,9 +12256,55 @@ export class MainScene extends Phaser.Scene {
     this.cameras.main.centerOn(p.x, p.y);
   }
 
-  private spawnDamageNumber(x: number, y: number, amount: number, color: string): void {
+  private spawnDamageNumber(x: number, y: number, amount: number, color: string, crit = false): void {
+    if (Math.round(amount) < 1) return; // fully-absorbed hits render NOTHING (feel: no '-0' spam)
+    // Record the site render so the FEEL hook layer never doubles it.
+    this.feelSiteSpawns.push({ x, y });
     // Pooled (perf): reuse a Text from the pool instead of allocating one per hit.
-    this.floatingText.show(x, y, `-${Math.round(amount)}`, color);
+    // CRIT SCALING is machinery only until the crit system ships — no caller
+    // fakes the flag today (FEEL.text.critScale drives the size when one does).
+    this.floatingText.show(x, y, `-${Math.round(amount)}`, color, crit ? { fontSize: Math.round(FEEL.text.fontPx * FEEL.text.critScale) } : undefined);
+  }
+
+  /** Hex-string form of a FEEL/domain tint for the text pool. */
+  private static feelHex(n: number): string {
+    return `#${n.toString(16).padStart(6, '0')}`;
+  }
+
+  /** FEEL hook (enemy victims): queue the number; flushFeelQueue dedupes it
+   *  against any site-rendered flavor text from the same frame. */
+  private onFeelDamaged(pool: Health, removed: number): void {
+    const t = this.feelTargets.get(pool);
+    if (!t || !t.enemy || removed < 1) return;
+    this.feelQueue.push({ x: t.sprite.x, y: t.sprite.y - 24, amt: removed });
+  }
+
+  /** FEEL hook (enemy victims): heals float green immediately (no site doubles
+   *  these — site heal numbers target the player/allies, not enemies). */
+  private onFeelHealed(pool: Health, restored: number): void {
+    const t = this.feelTargets.get(pool);
+    if (!t || !t.enemy || restored < 1) return;
+    this.floatingText.show(t.sprite.x, t.sprite.y - 24, `+${Math.round(restored)}`, MainScene.feelHex(FEEL.text.colors.heal), { fontSize: FEEL.text.fontPx });
+  }
+
+  /** Flush the FEEL queue (once per frame, before the pool ticks): anything a
+   *  site already rendered nearby this frame is dropped, the rest floats in
+   *  the player's neutral gold (classes carry no damage domain yet). */
+  private flushFeelQueue(): void {
+    if (this.feelQueue.length) {
+      for (const q of this.feelQueue) {
+        const dup = this.feelSiteSpawns.some((s) => Math.abs(s.x - q.x) < 30 && Math.abs(s.y - q.y) < 34);
+        if (!dup) {
+          this.floatingText.show(q.x, q.y, `-${Math.round(q.amt)}`, MainScene.feelHex(FEEL.text.colors.playerDealt), {
+            fontSize: FEEL.text.fontPx,
+            riseBy: FEEL.text.risePx,
+            durationMs: FEEL.text.riseMs,
+          });
+        }
+      }
+      this.feelQueue = [];
+    }
+    if (this.feelSiteSpawns.length) this.feelSiteSpawns = [];
   }
 
   private spawnSlash(x: number, y: number, angle: number): void {

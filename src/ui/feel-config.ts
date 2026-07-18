@@ -1,4 +1,5 @@
 import { DOMAIN_TINT } from '../world/enemy-roster';
+import { MAX_FLOATING_TEXTS } from '../game/settings';
 
 /**
  * GAME-FEEL CONFIG (the presentation pass) — the single home for EVERY tunable
@@ -14,9 +15,11 @@ export const FEEL = {
   /** The existing domain palette, by reference (Physical/Mental/Spiritual). */
   domainTint: DOMAIN_TINT,
 
-  /** FLOATING COMBAT TEXT (object-pooled; frozen whenever update() pauses). */
+  /** FLOATING COMBAT TEXT (the shipped FxPools pool; frozen whenever update()
+   *  pauses). Values here drive the NEW feel layer (hook-rendered numbers,
+   *  XP, crits); shipped skill-site calls keep their own opts untouched. */
   text: {
-    poolSize: 48, // hard cap on live text objects — spawns beyond this recycle the oldest
+    poolSize: MAX_FLOATING_TEXTS, // by reference — the shipped pool cap is the single source
     fontPx: 13,
     risePx: 34, // world-px the number climbs over its life
     riseMs: 750,

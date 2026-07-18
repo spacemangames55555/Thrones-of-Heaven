@@ -2,6 +2,13 @@
  * A reusable health pool. Generic across the player and any enemy.
  */
 export class Health {
+  /** PRESENTATION hooks (game-feel pass): fired for EVERY pool after damage
+   *  actually lands / a heal actually restores. Read-only observers — they
+   *  see the post-math result and never influence it. The scene registers
+   *  them on create and clears them on shutdown. */
+  static onAnyDamaged?: (pool: Health, removed: number) => void;
+  static onAnyHealed?: (pool: Health, restored: number) => void;
+
   max: number;
   current: number;
   /** Multiplier applied to incoming damage (1 = none). Skill damage-reduction sets
@@ -63,12 +70,18 @@ export class Health {
     const before = this.current;
     this.current = Math.max(0, this.current - amt);
     const removed = before - this.current;
-    if (removed > 0) this.onDamaged?.(removed);
+    if (removed > 0) {
+      this.onDamaged?.(removed);
+      Health.onAnyDamaged?.(this, removed);
+    }
     return removed;
   }
 
   heal(amount: number): void {
+    const before = this.current;
     this.current = Math.min(this.max, this.current + amount);
+    const restored = this.current - before;
+    if (restored > 0) Health.onAnyHealed?.(this, restored);
   }
 
   full(): void {
