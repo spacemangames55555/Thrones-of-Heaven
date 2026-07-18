@@ -50,6 +50,7 @@ import { WORLD_CALIBRATION, WORLD_SPAN_DEGREES } from '../world/world-calibratio
 import { createSparseWorld, stampZone, buildChunkMapData, CONTINENT_WORLD, type BuiltChunk } from '../world/world-builder';
 import { getZone, WORLD } from '../world/world-manifest';
 import { HOME_NEIGHBORS, civicBeatIds, neighborLineFor } from '../world/home-civics';
+import { WATCHER_LINE, AZAZEL_CAMPFIRE_LINES, FAUNA_CANON, HERALD_DUELS, narrativeBannerFor } from '../world/narrative-canon';
 import { EUROPE_BUILT_ZONES, buildEuropeQuestDefs } from '../world/europe-built';
 import { appendToRegistry } from '../world/quest-factory';
 import { ENEMY_ROSTER, DOMAIN_TINT, EXISTING_FAMILY_DOMAIN, EXISTING_FAMILY_PACK, makeRegionChampion } from '../world/enemy-roster';
@@ -1085,7 +1086,23 @@ export class MainScene extends Phaser.Scene {
    *  hand-off at the neighbor. One live run at a time, keyed to the active
    *  'deliver' beat (synthetic = the framework gate check's direct drive).
    *  Public-readable for the runtime gate. */
-  beatDelivery?: { beatId: string; from: { x: number; y: number }; to: { x: number; y: number }; toName: string; carrying: boolean; fx: Phaser.GameObjects.GameObject[]; synthetic?: boolean; onDone: () => void };
+  beatDelivery?: { beatId: string; from: { x: number; y: number }; to: { x: number; y: number }; toName: string; carrying: boolean; armed: boolean; fx: Phaser.GameObjects.GameObject[]; synthetic?: boolean; onDone: () => void };
+  /** THE WATCHER: a distant, luminous, non-hostile angel present in a home
+   *  city during its discovery / first-evil beats. Pure display objects — no
+   *  physics body, never in a combat array — so it cannot aggro or block. */
+  private watcher?: { objs: Phaser.GameObjects.GameObject[]; pos: { x: number; y: number }; questId: string };
+  /** One line, once per character (serialized): set at the first lesser-evil
+   *  kill, after which the Watcher never returns. */
+  private watcherSpoken = false;
+  /** AZAZEL'S CAMPFIRES: one repeatable flavor interaction per generated
+   *  region outpost (the azazel-welcome zones), rotating a fixed line list. */
+  private regionCampfires: { zoneId: string; pos: { x: number; y: number } }[] = [];
+  private campfireButton!: TouchButton;
+  private campfireNear?: { zoneId: string; pos: { x: number; y: number } };
+  private campfireIdx = 0;
+  /** FAUNA NAMEPLATES: floating animal names over home-city wildlife (display
+   *  only). Swept per frame — a dead or despawned beast drops its label. */
+  private faunaLabels: { t: Townsfolk; label: Phaser.GameObjects.Text }[] = [];
   private beatMarker?: { beatId: string; pos: { x: number; y: number }; objs: Phaser.GameObjects.GameObject[] };
   private beatPickups?: { beatId: string; taken: number; items: { obj: Phaser.GameObjects.Arc; taken: boolean; x: number; y: number }[] };
   private beatElite?: { beatId: string; zoneId: string; kind: 'demon' | 'angel'; entity: Demon | AngelEnemy; label: Phaser.GameObjects.Text };
@@ -1726,6 +1743,7 @@ export class MainScene extends Phaser.Scene {
     this.mentorButton = new TouchButton(this, 'Speak with the Mentor', () => this.regionMentorTalk());
     // NEIGHBOR NPCs (home civics): the second named interactable per home city.
     this.neighborButton = new TouchButton(this, 'Speak with the Neighbor', () => this.neighborTalk());
+    this.campfireButton = new TouchButton(this, "Sit at Azazel's Fire", () => this.campfireTalk());
     this.zoomControls = new ZoomControls(this, cam, this.map.pixelWidth, this.map.pixelHeight);
     this.readout = new DebugReadout(this, () => this.activeMap(), this.player);
     // DEV-only live perf readout (FPS / frame-time + entity, effect + pool counts) so
@@ -1922,6 +1940,7 @@ export class MainScene extends Phaser.Scene {
       this.updateAngels();
       this.updateTownsfolk(); // prune dead first so the wave manager sees the live count
       this.updateHomeCivics(); // neighbor NPCs + the delivery composite (globe + Egypt)
+      this.updateNarrativePresence(); // the Watcher + Azazel's campfires
       if (this.activeWorld === WORLD_EGYPT) this.updateCairoBinding(); // Wizard Act I ambient content
       if (this.activeWorld === WORLD_EARTH) {
         this.checkUrielArrival(); // Act II finale: scripted Uriel scene back in the square
@@ -8282,6 +8301,7 @@ export class MainScene extends Phaser.Scene {
         urielPending: this.urielPending,
         title: this.currentTitle,
         hunterBonded: !!this.hunterBond,
+        watcherSpoken: this.watcherSpoken,
       },
       quests: this.chain.toJSON(),
       skills: this.skills.toJSON(),
@@ -8333,6 +8353,7 @@ export class MainScene extends Phaser.Scene {
       // the companion re-manifests at the end of the restore, world in place.
       this.clearHunterState(true);
       this.hunterBond = s.player.hunterBonded ? { deathUntil: 0 } : null;
+      this.watcherSpoken = s.player.watcherSpoken === true; // absent (old save) = never spoken
       this.breakPlayerStealth();
       this.clearDots(); // drop any poison DoTs
       this.summons.clear(); // summons are transient — never carried across a load
@@ -9112,6 +9133,18 @@ export class MainScene extends Phaser.Scene {
       }
     }
 
+    // AZAZEL'S CAMPFIRE (region outposts): the azazel-welcome muster zones get
+    // a repeatable flavor interaction — a small fire near the arrival where
+    // Azazel's rotation lines play (see campfireTalk / narrative-canon).
+    if (zone.kind === 'outpost' && opener?.id.endsWith('azazel-welcome')) {
+      const fpos = map.nearestWalkableWorld(origin.x + chunk.arrivalLocalPx.x - 90, origin.y + chunk.arrivalLocalPx.y - 30);
+      const glow = this.add.circle(fpos.x, fpos.y, 16, 0xff9a3c, 0.35).setDepth(6);
+      this.tweens.add({ targets: glow, scale: 1.35, alpha: 0.15, duration: 900, yoyo: true, repeat: -1, ease: 'Sine.inOut' });
+      this.add.circle(fpos.x, fpos.y, 7, 0xffc46a, 0.95).setDepth(7);
+      this.addHeavenLabel(fpos.x, fpos.y - 26, "Azazel's Fire", '#ffc98a');
+      this.regionCampfires.push({ zoneId: id, pos: fpos });
+    }
+
     // BOSS ANCHOR: mirror the (south) arrival to the settlement's NORTH side —
     // where a boss beat's region champion spawns. Marked when the zone has one.
     const bossAnchor = map.nearestWalkableWorld(
@@ -9246,10 +9279,12 @@ export class MainScene extends Phaser.Scene {
     this.spawnCairoBoss(bossPost);
   }
 
-  /** One red delta wolf at its post (canon: corrupted-wildlife = Physical). */
+  /** One red delta beast at its post (canon: corrupted-wildlife = Physical).
+   *  Display name per FAUNA CANON: Cairo's wildlife reads 'sacred ibis'. */
   private spawnCairoWolf(post: { x: number; y: number }): void {
     const t = this.spawnTownsfolk(post.x, post.y, null, 'wolf');
     t.sprite.setTint(DOMAIN_TINT.physical);
+    if (FAUNA_CANON['cairo-nile-crown']) this.addFaunaLabel(t, FAUNA_CANON['cairo-nile-crown']);
     this.cairoLive.push({ family: 'corrupted-wildlife', entity: t, post: { ...post }, counted: false });
   }
 
@@ -9264,13 +9299,15 @@ export class MainScene extends Phaser.Scene {
   }
 
   /** The Keeper's talk action: ACCEPTS the manual-start opener (Wizard only —
-   *  class gating decides) and completes it. All prose is a TODO placeholder. */
+   *  class gating decides) and completes it. The opening line is canon
+   *  (beatProse → narrative-canon); the idle line stays a TODO placeholder. */
   private cairoMentorTalk(): void {
     const id = 'cai-01-mentor';
     const st = this.chain.status(id);
     if (st === 'available' || st === 'active') {
       if (st === 'available') this.chain.accept(id);
-      this.showBanner('HAND_AUTHORED_TODO: cai-01-mentor — designer prose goes here.', 2800);
+      const hit = this.regionBeatForQuest(id);
+      this.proseBanner(hit ? this.beatProse(hit.zone, hit.beat) : 'HAND_AUTHORED_TODO: cai-01-mentor — designer prose goes here.');
       this.notifyQuest('cai-01-mentor-story-complete' as ObjectiveTrigger);
     } else {
       this.showBanner('HAND_AUTHORED_TODO: cai-01-mentor (idle line) — designer prose goes here.', 2200);
@@ -9311,6 +9348,7 @@ export class MainScene extends Phaser.Scene {
     for (const rec of this.cairoLive) {
       if (rec.counted || rec.entity.isAlive) continue;
       rec.counted = true;
+      this.onEvilKilled(rec.family); // the Watcher's first-kill hook (the gate scout counts)
       if (rec.bossBeatId) {
         if (this.chain.activeQuest?.id === rec.bossBeatId) {
           const hit = this.regionBeatForQuest(rec.bossBeatId);
@@ -9370,11 +9408,29 @@ export class MainScene extends Phaser.Scene {
   // champions, Cairo's own binding) are untouched. ALL prose stays a
   // HAND_AUTHORED_TODO placeholder for hand-authored beats.
 
-  /** Placeholder prose for a beat's banner — never invented content. */
+  /** Placeholder prose for a beat's banner — never invented content.
+   *  CLASS-VARIANT TEXT: a beat with a per-class map (the composed QuestDef's
+   *  classVariants — the eu-06 callback pattern) renders the PLAYER's class
+   *  entry. The dev override maps by lowercase name, matching the callback
+   *  keys (classIds); an unmatched override falls through to the shared line. */
   private beatProse(zone: ManifestZone, beat: QuestBeat): string {
+    // CANON FIRST: an inserted verbatim text owns its slot outright (mentor
+    // openings, Azazel arrivals/drops, discovery flavor, class callbacks).
+    const cls = this.devClassOverride?.toLowerCase() ?? this.classId;
+    const canon = narrativeBannerFor(beat.id, cls);
+    if (canon) return canon;
+    const def = this.chain.get(beat.id);
+    const variant = def?.classVariants?.[cls]?.[0];
+    if (variant) return variant;
     return beat.handAuthored === true || zone.handAuthored === true
       ? `HAND_AUTHORED_TODO: ${beat.id} — designer prose goes here.`
       : `${beat.title} — ${beat.summary}`;
+  }
+
+  /** Show beat prose for as long as it takes to read (canon openings run
+   *  long) — the short-line behavior is exactly the old 2800ms. */
+  private proseBanner(text: string): void {
+    this.showBanner(text, Math.min(14000, Math.max(2800, text.length * 42)));
   }
 
   /** The mentor's talk action (generic Cairo Keeper): ACCEPT the manual-start
@@ -9390,7 +9446,7 @@ export class MainScene extends Phaser.Scene {
       // Trigger FIRST, prose banner AFTER — the placeholder line outlives the
       // completion's reward banner (which fires synchronously in between).
       this.notifyQuest(triggerForBeat(hit.beat) as ObjectiveTrigger);
-      this.showBanner(this.beatProse(hit.zone, hit.beat), 2800);
+      this.proseBanner(this.beatProse(hit.zone, hit.beat));
     } else {
       this.showBanner(`HAND_AUTHORED_TODO: ${m.beatId} (idle line) — designer prose goes here.`, 2200);
     }
@@ -9434,14 +9490,17 @@ export class MainScene extends Phaser.Scene {
       if (from && dest) {
         this.beginBeatDelivery(q.id, from, dest.pos, dest.name, () => {
           this.notifyQuest(triggerForBeat(hit.beat) as ObjectiveTrigger);
-          this.showBanner(this.beatProse(hit.zone, hit.beat), 2800);
+          this.proseBanner(this.beatProse(hit.zone, hit.beat));
         });
       }
     }
     const d = this.beatDelivery;
     if (d && !this.playerDead) {
       if (!d.carrying) {
-        if (Phaser.Math.Distance.Between(this.player.x, this.player.y, d.from.x, d.from.y) <= BEAT_PICKUP_RADIUS) {
+        const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, d.from.x, d.from.y);
+        if (!d.armed) {
+          if (dist > BEAT_PICKUP_RADIUS) d.armed = true; // stepped out once — the walk-in now counts
+        } else if (dist <= BEAT_PICKUP_RADIUS) {
           d.carrying = true;
           for (const o of d.fx) {
             this.tweens.killTweensOf(o);
@@ -9464,7 +9523,12 @@ export class MainScene extends Phaser.Scene {
   beginBeatDelivery(beatId: string, from: { x: number; y: number }, to: { x: number; y: number }, toName: string, onDone: () => void, synthetic = false): void {
     this.clearBeatDelivery();
     const fx = this.spawnDeliveryFx(from.x, from.y, 'Pick up the delivery');
-    this.beatDelivery = { beatId, from: { ...from }, to: { ...to }, toName, carrying: false, fx, ...(synthetic ? { synthetic } : {}), onDone };
+    // EDGE-TRIGGERED pickup: a run that begins with the player already at the
+    // source (talking to the mentor as c1 activates) arms only after they
+    // step out once — the parcel never leaps into their hands mid-speech and
+    // the mentor's opening banner survives to be read.
+    const armed = Phaser.Math.Distance.Between(this.player.x, this.player.y, from.x, from.y) > BEAT_PICKUP_RADIUS;
+    this.beatDelivery = { beatId, from: { ...from }, to: { ...to }, toName, carrying: false, armed, fx, ...(synthetic ? { synthetic } : {}), onDone };
   }
 
   /** A pulsing parcel ring + label (the beat-marker look, parcel-gold). */
@@ -9486,6 +9550,138 @@ export class MainScene extends Phaser.Scene {
       o.destroy();
     }
     this.beatDelivery = undefined;
+  }
+
+  // --- NARRATIVE PRESENCE: the Watcher + Azazel's campfires ---------------------
+
+  /** Per-frame (globe + Egypt): drive the Watcher's appearance and keep-away,
+   *  and the campfire proximity button. */
+  private updateNarrativePresence(): void {
+    // THE WATCHER: present only while a HOME city's discovery (X-03) or
+    // first-evil (X-04) beat is the active quest, and only until it has spoken.
+    const q = this.chain.activeQuest;
+    const hit = this.regionBeatForQuest(q?.id);
+    const isLateHomeBeat = !!q && !!hit && !!hit.zone.homeClass && /-0[34]-/.test(hit.beat.id);
+    if (this.watcher && (!isLateHomeBeat || this.watcher.questId !== q?.id || this.watcherSpoken)) this.despawnWatcher();
+    if (isLateHomeBeat && !this.watcher && !this.watcherSpoken && q) {
+      const anchor = this.regionBeatArrowTarget(q.id); // the beat's action ground (same-world only)
+      if (anchor) {
+        // Far back from the action, on the side away from the player.
+        const dx = anchor.x - this.player.x;
+        const dy = anchor.y - this.player.y;
+        const len = Math.hypot(dx, dy) || 1;
+        this.spawnWatcher({ x: anchor.x + (dx / len) * 700, y: anchor.y + (dy / len) * 700 }, q.id);
+      }
+    }
+    const w = this.watcher;
+    if (w) {
+      // Unreachable: fade and step away whenever the player closes within 300px.
+      const d = Phaser.Math.Distance.Between(this.player.x, this.player.y, w.pos.x, w.pos.y);
+      if (d < 300) {
+        const dx = w.pos.x - this.player.x;
+        const dy = w.pos.y - this.player.y;
+        const len = Math.hypot(dx, dy);
+        // Degenerate overlap (the player standing IN the figure) still steps
+        // away — due east rather than nowhere.
+        const nx = len > 1 ? dx / len : 1;
+        const ny = len > 1 ? dy / len : 0;
+        w.pos = { x: this.player.x + nx * 680, y: this.player.y + ny * 680 };
+        this.positionWatcher(); // restack on the new spot…
+        for (const o of w.objs) {
+          const shape = o as Phaser.GameObjects.Shape;
+          this.tweens.killTweensOf(shape);
+          shape.setAlpha(0); // …fading back in there (the "it was never close" look)
+          this.tweens.add({ targets: shape, alpha: 1, duration: 900, ease: 'Sine.out' });
+        }
+      }
+    }
+
+    // CAMPFIRES: the outpost proximity button (mentor-pattern; never contends).
+    let near: (typeof this.regionCampfires)[number] | undefined;
+    for (const c of this.regionCampfires) {
+      if (Phaser.Math.Distance.Between(this.player.x, this.player.y, c.pos.x, c.pos.y) <= MENTOR_INTERACT_RANGE) {
+        near = c;
+        break;
+      }
+    }
+    this.campfireNear = near;
+    const free = !this.transitioning && !this.dialogue.isOpen() && !this.talkButton.isVisible && !this.cityGateButton.isVisible && !this.mentorButton.isVisible && !this.neighborButton.isVisible && !this.playerDead;
+    this.campfireButton.setVisible(!!near && free);
+
+    this.updateFaunaLabels();
+  }
+
+  /** The luminous far-off figure: pure display shapes, no body, no combat list. */
+  private spawnWatcher(pos: { x: number; y: number }, questId: string): void {
+    const halo = this.add.circle(pos.x, pos.y, 30, 0xfff2c8, 0.22).setDepth(8);
+    const body = this.add.ellipse(pos.x, pos.y + 8, 18, 40, 0xf0e2b6, 0.85).setDepth(8);
+    const head = this.add.circle(pos.x, pos.y - 18, 7, 0xfaf0d2, 0.9).setDepth(8);
+    this.tweens.add({ targets: [halo, body, head], y: '-=6', duration: 1600, yoyo: true, repeat: -1, ease: 'Sine.inOut' });
+    this.watcher = { objs: [halo, body, head], pos: { ...pos }, questId };
+  }
+
+  /** Restack the watcher's shapes on its (possibly moved) position. */
+  private positionWatcher(): void {
+    const w = this.watcher;
+    if (!w) return;
+    const [halo, body, head] = w.objs as Phaser.GameObjects.Shape[];
+    halo.setPosition(w.pos.x, w.pos.y);
+    body.setPosition(w.pos.x, w.pos.y + 8);
+    head.setPosition(w.pos.x, w.pos.y - 18);
+  }
+
+  private despawnWatcher(): void {
+    if (!this.watcher) return;
+    for (const o of this.watcher.objs) {
+      this.tweens.killTweensOf(o);
+      o.destroy();
+    }
+    this.watcher = undefined;
+  }
+
+  /** FIRST-EVIL HOOK (all counted kill paths): at the character's FIRST
+   *  lesser-evil kill the Watcher speaks its one canon line, then is gone for
+   *  good (the flag is serialized — once per character, ever). */
+  private onEvilKilled(family: string): void {
+    if (family !== 'lesser-evil-scouts' || this.watcherSpoken) return;
+    this.watcherSpoken = true;
+    // A beat after any completion banners this kill also fired — the far voice
+    // gets the last word, then the figure is gone for good.
+    this.time.delayedCall(1800, () => this.showBanner(WATCHER_LINE, 3400));
+    this.despawnWatcher();
+  }
+
+  /** Attach a fauna nameplate to a home-city beast (display only). */
+  private addFaunaLabel(t: Townsfolk, name: string): void {
+    const label = this.add
+      .text(t.sprite.x, t.sprite.y - 26, name, { fontFamily: 'system-ui, sans-serif', fontSize: '11px', color: '#e8d8c0' })
+      .setOrigin(0.5)
+      .setStroke('#101830', 3)
+      .setDepth(9);
+    this.faunaLabels.push({ t, label });
+  }
+
+  /** Per-frame: nameplates follow their beasts; the dead drop theirs. */
+  private updateFaunaLabels(): void {
+    if (!this.faunaLabels.length) return;
+    let prune = false;
+    for (const f of this.faunaLabels) {
+      if (!f.t.isAlive || !f.t.sprite.active) {
+        f.label.destroy();
+        prune = true;
+      } else {
+        f.label.setPosition(f.t.sprite.x, f.t.sprite.y - 26).setVisible(f.t.sprite.visible);
+      }
+    }
+    if (prune) this.faunaLabels = this.faunaLabels.filter((f) => f.t.isAlive && f.t.sprite.active);
+  }
+
+  /** Azazel's campfire rotation: the fixed line list, in order, looping. */
+  private campfireTalk(): void {
+    if (!this.campfireNear) return;
+    const line = AZAZEL_CAMPFIRE_LINES[this.campfireIdx % AZAZEL_CAMPFIRE_LINES.length];
+    this.campfireIdx++;
+    this.showBanner(line, 3000);
   }
 
   /** Per-frame (region worlds): mentors' proximity button + the ACTIVE beat's
@@ -9518,7 +9714,15 @@ export class MainScene extends Phaser.Scene {
       if (d <= BEAT_MARKER_RADIUS) {
         this.clearBeatMarker();
         this.notifyQuest(triggerForBeat(hit.beat) as ObjectiveTrigger);
-        this.showBanner(this.beatProse(hit.zone, hit.beat), 2800); // prose outlives the reward banner
+        // HERALD DUELS render as a two-voice exchange: the herald's truth,
+        // then Azazel's inversion a beat later. Everything else is one banner.
+        const duel = HERALD_DUELS[hit.beat.id];
+        if (duel) {
+          this.proseBanner(`Herald: "${duel.herald}"`);
+          this.time.delayedCall(3600, () => this.proseBanner(`Azazel: "${duel.azazel}"`));
+        } else {
+          this.proseBanner(this.beatProse(hit.zone, hit.beat)); // prose outlives the reward banner
+        }
       }
     }
 
@@ -9537,8 +9741,9 @@ export class MainScene extends Phaser.Scene {
       if (!this.beatElite.entity.isAlive) {
         // A REAL defeat (despawns go through despawnBeatElite, never here).
         if (q && hit && this.beatElite.beatId === q.id) {
+          this.onEvilKilled(hit.beat.enemyFamily ?? 'lesser-evil-scouts'); // the Watcher hook fires BEFORE the beat prose
           this.notifyQuest(triggerForBeat(hit.beat) as ObjectiveTrigger);
-          this.showBanner(this.beatProse(hit.zone, hit.beat), 2800); // prose outlives the reward banner
+          this.proseBanner(this.beatProse(hit.zone, hit.beat)); // prose outlives the reward banner
         }
         this.beatElite.label.destroy();
         this.beatElite = undefined;
@@ -9601,7 +9806,7 @@ export class MainScene extends Phaser.Scene {
       if (this.beatPickups.taken >= BEAT_PICKUP_COUNT) {
         this.clearBeatPickups();
         this.notifyQuest(triggerForBeat(hit.beat) as ObjectiveTrigger);
-        this.showBanner(this.beatProse(hit.zone, hit.beat), 2800); // prose outlives the reward banner
+        this.proseBanner(this.beatProse(hit.zone, hit.beat)); // prose outlives the reward banner
       }
     }
   }
@@ -9839,6 +10044,7 @@ export class MainScene extends Phaser.Scene {
       if (!rec.counted && !rec.entity.isAlive) {
         rec.counted = true;
         this.onRegionEnemyKilled(rec.family, rec.zoneId);
+        this.onEvilKilled(rec.family); // the Watcher's first-kill hook
       }
     }
     this.regionLive = this.regionLive.filter((r) => r.entity.isAlive || !r.counted);
@@ -9937,6 +10143,9 @@ export class MainScene extends Phaser.Scene {
       const t = this.spawnTownsfolk(x, y, null, family === 'corrupted-wildlife' ? 'wolf' : 'raider');
       t.sprite.setTint(tint);
       this.regionLive.push({ zoneId, family, kind: 'townsfolk', entity: t, counted: false });
+      // FAUNA NAMEPLATE (display only): a home's wildlife wears its canonical
+      // animal name — mechanics, family, and spawner untouched.
+      if (family === 'corrupted-wildlife' && FAUNA_CANON[zoneId]) this.addFaunaLabel(t, FAUNA_CANON[zoneId]);
     } else if (family === 'dark-casters') {
       // Low HP + ranged + native kiting (backs off inside preferred range); its
       // tagged bolts apply the slow/weaken + stacking DoT in onProjectileHitPlayer.
