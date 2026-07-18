@@ -11,6 +11,7 @@ import {
   type TownsfolkVariant,
   PORTAL_ATTACK_RANGE,
 } from '../game/settings';
+import { FEEL } from '../ui/feel-config';
 
 const TEXTURE_KEY = 'townsfolk';
 let NEXT_ID = 1;
@@ -39,7 +40,10 @@ export class Townsfolk {
   private readonly cooldownMs: number;
   /** Max turn rate (rad/sec); Infinity = the classic instant snap toward the target. */
   private readonly turnRadPerSec: number;
-  private readonly tint: number;
+  /** The tint the hit-flash RESTORES to. Starts as the variant color; region
+   *  spawns override it with their domain tint via setBaseTint (game-feel:
+   *  guaranteed restore of the original domain tint, never the variant's). */
+  private baseTint: number;
   private nextAttackAt = 0;
   private dead = false;
   /** Fixed target point; null means target the player directly. */
@@ -56,13 +60,13 @@ export class Townsfolk {
     this.variant = variant;
     const cfg = TOWNSFOLK_VARIANTS[variant];
     this.xpReward = cfg.xpReward;
-    this.tint = cfg.color;
+    this.baseTint = cfg.color;
     this.speed = (cfg.moveTilesPerSec ?? TOWNSFOLK_MOVE_TILES_PER_SEC) * TILE_SIZE;
     this.cooldownMs = cfg.attackCooldownMs ?? TOWNSFOLK_ATTACK_COOLDOWN_MS;
     this.turnRadPerSec = cfg.turnRadPerSec ?? Infinity;
     Townsfolk.ensureTexture(scene);
     this.sprite = scene.physics.add.sprite(x, y, TEXTURE_KEY).setDepth(9);
-    if (this.tint !== 0xffffff) this.sprite.setTint(this.tint);
+    if (this.baseTint !== 0xffffff) this.sprite.setTint(this.baseTint);
     const body = this.sprite.body as Phaser.Physics.Arcade.Body;
     body.setSize(18, 22);
     this.sprite.setCollideWorldBounds(true);
@@ -90,13 +94,19 @@ export class Townsfolk {
     return Phaser.Math.Distance.Between(this.sprite.x, this.sprite.y, x, y);
   }
 
+  /** Override the restore tint (region domain tints) — game-feel pass. */
+  setBaseTint(tint: number): void {
+    this.baseTint = tint;
+    this.sprite.setTint(tint).setTintMode(Phaser.TintModes.MULTIPLY);
+  }
+
   takeHit(amount: number): number {
     if (this.dead) return 0;
     const dealt = this.health.damage(amount);
     this.sprite.setTint(0xffffff).setTintMode(Phaser.TintModes.FILL);
-    this.sprite.scene.time.delayedCall(70, () => {
+    this.sprite.scene.time.delayedCall(FEEL.flash.flashMs, () => {
       if (this.dead) return;
-      if (this.tint !== 0xffffff) this.sprite.setTint(this.tint).setTintMode(Phaser.TintModes.MULTIPLY);
+      if (this.baseTint !== 0xffffff) this.sprite.setTint(this.baseTint).setTintMode(Phaser.TintModes.MULTIPLY);
       else this.sprite.clearTint();
     });
     if (this.health.isDead) this.die();

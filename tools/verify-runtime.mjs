@@ -5717,6 +5717,49 @@ try {
     JSON.stringify(fct),
   );
 
+  // 3au. HIT FEEDBACK (permanent): a damaged DOMAIN-TINTED region enemy
+  // flashes white then GUARANTEED-restores to its domain tint (the old code
+  // silently reverted to the variant color); a player hit at/over the FEEL
+  // threshold shakes the camera, a lighter hit does not.
+  const hitFeel = await page.evaluate(async () => {
+    const ms = window.__ready();
+    const wait = (t) => new Promise((r) => setTimeout(r, t));
+    if (!window.__quietSpot()) return { setup: 'no quiet spot' };
+    const RED = ms.feel.domainTint.physical;
+    const w = ms.activeMap().nearestWalkableWorld(ms.player.x + 140, ms.player.y);
+    // The REAL region spawn path (domain tint via setBaseTint):
+    const before = ms.regionLive.length;
+    ms.spawnRegionEnemy('lhasa-prayer-citadel', 'corrupted-wildlife', w.x, w.y, RED);
+    const rec = ms.regionLive[ms.regionLive.length - 1];
+    if (ms.regionLive.length === before || !rec.entity.isAlive) return { setup: 'no spawn' };
+    const foe = rec.entity;
+    await wait(150);
+    ms.stunEnemiesInRange(foe.sprite.x, foe.sprite.y, 60, 1500);
+    const tintBefore = foe.sprite.tintTopLeft;
+    foe.takeHit(3);
+    const whiteDuringFlash = foe.sprite.tintTopLeft === 0xffffff; // synchronous read inside the flash window
+    await wait(ms.feel.flash.flashMs + 120);
+    const restored = foe.sprite.tintTopLeft;
+    foe.takeHit(1e9);
+    // SHAKE: a big hit shakes; wait out the effect; a chip hit does not.
+    ms.playerHealth.shield = 0;
+    ms.playerHealth.full();
+    ms.playerHealth.damage(ms.feel.shake.shakeThreshold + 5);
+    const shookOnBig = ms.cameras.main.shakeEffect.isRunning === true;
+    await wait(ms.feel.shake.shakeMs + 250);
+    const settled = ms.cameras.main.shakeEffect.isRunning === false;
+    ms.playerHealth.damage(1);
+    const noShakeOnChip = ms.cameras.main.shakeEffect.isRunning === false;
+    ms.playerHealth.full();
+    ms.playerHealth.shield = 1e9;
+    return { setup: 'ok', tintBefore, whiteDuringFlash, restored, RED, shookOnBig, settled, noShakeOnChip };
+  });
+  ok(
+    'game-feel — hit feedback: white flash then guaranteed domain-tint restore; threshold camera shake (big yes, chip no)',
+    hitFeel.setup === 'ok' && hitFeel.tintBefore === hitFeel.RED && hitFeel.whiteDuringFlash && hitFeel.restored === hitFeel.RED && hitFeel.shookOnBig && hitFeel.settled && hitFeel.noShakeOnChip,
+    JSON.stringify(hitFeel),
+  );
+
   // 3aa. SKILL TREE UX (Casey's spec, permanent) — driven by REAL taps on the real
   // screen: instant spend (no confirmation window) respects locks and points with
   // shake/toast feedback; the name-bar "Add" button round-trips through the hotkey

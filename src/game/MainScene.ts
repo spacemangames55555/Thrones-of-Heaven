@@ -9315,7 +9315,7 @@ export class MainScene extends Phaser.Scene {
    *  Display name per FAUNA CANON: Cairo's wildlife reads 'sacred ibis'. */
   private spawnCairoWolf(post: { x: number; y: number }): void {
     const t = this.spawnTownsfolk(post.x, post.y, null, 'wolf');
-    t.sprite.setTint(DOMAIN_TINT.physical);
+    t.setBaseTint(DOMAIN_TINT.physical); // the hit-flash restores the domain tint (game-feel)
     if (FAUNA_CANON['cairo-nile-crown']) this.addFaunaLabel(t, FAUNA_CANON['cairo-nile-crown']);
     this.cairoLive.push({ family: 'corrupted-wildlife', entity: t, post: { ...post }, counted: false });
   }
@@ -9323,7 +9323,8 @@ export class MainScene extends Phaser.Scene {
   /** The cai-04 gate boss: one boosted lesser-evil scout (a demon, canon red). */
   private spawnCairoBoss(post: { x: number; y: number }): void {
     const d = this.spawnDemon(post.x, post.y, this.egyptMap.layer);
-    d.sprite.setTint(DOMAIN_TINT.physical).setScale(d.sprite.scale * 1.4);
+    d.setBaseTint(DOMAIN_TINT.physical); // the hit-flash restores the domain tint (game-feel)
+    d.sprite.setScale(d.sprite.scale * 1.4);
     d.health.setMax(CAIRO_BOSS_HP);
     d.health.full();
     this.addHeavenLabel(post.x, post.y - 46, '☠ Evil at the Crown', '#e6d6ff');
@@ -10169,11 +10170,11 @@ export class MainScene extends Phaser.Scene {
   private spawnRegionEnemy(zoneId: string, family: string, x: number, y: number, tint: number): void {
     if (family === 'lesser-evil-scouts') {
       const d = this.spawnDemon(x, y, this.activeMap().layer);
-      d.sprite.setTint(tint);
+      d.setBaseTint(tint); // the hit-flash restores THIS domain tint (game-feel)
       this.regionLive.push({ zoneId, family, kind: 'demon', entity: d, counted: false });
     } else if (family === 'corrupted-wildlife' || family === 'evil-raiders') {
       const t = this.spawnTownsfolk(x, y, null, family === 'corrupted-wildlife' ? 'wolf' : 'raider');
-      t.sprite.setTint(tint);
+      t.setBaseTint(tint); // the hit-flash restores THIS domain tint (game-feel)
       this.regionLive.push({ zoneId, family, kind: 'townsfolk', entity: t, counted: false });
       // FAUNA NAMEPLATE (display only): a home's wildlife wears its canonical
       // animal name — mechanics, family, and spawner untouched.
@@ -10182,7 +10183,7 @@ export class MainScene extends Phaser.Scene {
       // Low HP + ranged + native kiting (backs off inside preferred range); its
       // tagged bolts apply the slow/weaken + stacking DoT in onProjectileHitPlayer.
       const a = this.spawnAngel('darkcaster', x, y);
-      a.sprite.setTint(tint);
+      a.setBaseTint(tint); // the hit-flash restores THIS domain tint (game-feel)
       this.regionLive.push({ zoneId, family, kind: 'angel', entity: a, counted: false });
     } else if (family === 'veil-ambushers') {
       this.spawnRegionAmbusher(zoneId, x, y);
@@ -12274,6 +12275,9 @@ export class MainScene extends Phaser.Scene {
   /** FEEL hook (enemy victims): queue the number; flushFeelQueue dedupes it
    *  against any site-rendered flavor text from the same frame. */
   private onFeelDamaged(pool: Health, removed: number): void {
+    if (pool === this.playerHealth && removed >= FEEL.shake.shakeThreshold) {
+      this.cameras.main.shake(FEEL.shake.shakeMs, FEEL.shake.shakeIntensity);
+    }
     const t = this.feelTargets.get(pool);
     if (!t || !t.enemy || removed < 1) return;
     this.feelQueue.push({ x: t.sprite.x, y: t.sprite.y - 24, amt: removed });

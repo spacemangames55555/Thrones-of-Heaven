@@ -3,6 +3,7 @@ import { Health } from '../combat/Health';
 import { HealthBar } from '../combat/HealthBar';
 import { TILE_SIZE } from '../render/tileAtlas';
 import { DEMON } from '../game/settings';
+import { FEEL } from '../ui/feel-config';
 
 const TEXTURE_KEY = 'demon-enemy';
 let NEXT_ID = 1;
@@ -73,6 +74,15 @@ export class Demon {
     return [this.sprite, ...this.bar.objects()];
   }
 
+  /** The tint the hit-flash RESTORES to (region spawns override the default
+   *  demon red with their domain tint — game-feel: guaranteed restore). */
+  private baseTint: number = DEMON.color;
+
+  setBaseTint(tint: number): void {
+    this.baseTint = tint;
+    this.sprite.setTint(tint).setTintMode(Phaser.TintModes.MULTIPLY);
+  }
+
   takeHit(amount: number): number {
     if (this.state === 'dead') return 0;
     if (this.state === 'idle') this.state = 'engage';
@@ -80,8 +90,8 @@ export class Demon {
     this.revealBar();
     this.bar.setRatio(this.health.ratio);
     this.sprite.setTint(0xffffff).setTintMode(Phaser.TintModes.FILL);
-    this.scene.time.delayedCall(70, () => {
-      if (this.state !== 'dead') this.sprite.setTint(DEMON.color).setTintMode(Phaser.TintModes.MULTIPLY);
+    this.scene.time.delayedCall(FEEL.flash.flashMs, () => {
+      if (this.state !== 'dead') this.sprite.setTint(this.baseTint).setTintMode(Phaser.TintModes.MULTIPLY);
     });
     if (this.health.isDead) this.die();
     return dealt;

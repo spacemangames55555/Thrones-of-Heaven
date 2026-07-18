@@ -3,6 +3,7 @@ import { Health } from '../combat/Health';
 import { HealthBar } from '../combat/HealthBar';
 import { TILE_SIZE } from '../render/tileAtlas';
 import { ANGEL_VARIANTS, type AngelVariantConfig, type AngelVariantKey } from '../game/settings';
+import { FEEL } from '../ui/feel-config';
 
 const TEXTURE_KEY = 'angel-enemy';
 let NEXT_ID = 1;
@@ -81,14 +82,22 @@ export class AngelEnemy {
     return [this.sprite, ...this.bar.objects()];
   }
 
+  /** The tint the hit-flash RESTORES to when set (region domain tints). */
+  private baseTint: number | null = null;
+
+  setBaseTint(tint: number): void {
+    this.baseTint = tint;
+    this.sprite.setTint(tint).setTintMode(Phaser.TintModes.MULTIPLY);
+  }
+
   takeHit(amount: number): number {
     if (this.state === 'dead') return 0;
     const dealt = this.health.damage(amount);
     this.revealBar();
     this.bar.setRatio(this.health.ratio);
     this.sprite.setTint(0xffffff).setTintMode(Phaser.TintModes.FILL);
-    this.sprite.scene.time.delayedCall(70, () => {
-      if (this.state !== 'dead') this.sprite.setTint(this.variant.color).setTintMode(Phaser.TintModes.MULTIPLY);
+    this.sprite.scene.time.delayedCall(FEEL.flash.flashMs, () => {
+      if (this.state !== 'dead') this.sprite.setTint(this.baseTint ?? this.variant.color).setTintMode(Phaser.TintModes.MULTIPLY);
     });
     if (this.health.isDead) this.die();
     return dealt;
