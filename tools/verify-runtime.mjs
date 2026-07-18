@@ -22,7 +22,9 @@
 // chains it), starts its own preview server on :4174, exits nonzero on any
 // failure. Requires the window.__game handle exported by src/main.ts.
 import { spawn } from 'node:child_process';
-import { readdirSync, readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { chromium } from 'playwright-core';
 
@@ -34,6 +36,78 @@ const ok = (name, pass, detail = '') => {
   results.push(pass);
   console.log(`${pass ? 'PASS' : 'FAIL'}  ${name}${detail ? ' — ' + detail : ''}`);
 };
+
+// 0) SPRITE-GEN ASSET CONTRACT (pure Node, before the browser): the 9 shipped
+// enemy-family PNGs must exist at the drop-in pipeline paths with each family's
+// CANONICAL shared-key dimensions in 8-bit RGBA; stay TINT-COMPATIBLE (near-
+// neutral channels so the multiplicative domain tint colorizes them); carry a
+// readable silhouette (opaque coverage inside the config band); and regenerate
+// BYTE-IDENTICALLY from the committed config + seed (determinism).
+{
+  const { loadConfig, decodePng, generateAll } = await import('../scripts/gen-sprites.mjs');
+  const cfg = await loadConfig();
+  const sprites = cfg.SPRITE_FAMILIES.map((f) => {
+    const want = cfg.SIZE_CLASS[f.sizeClass];
+    const path = cfg.spriteFileFor(f.id);
+    if (!existsSync(path)) return { id: f.id, path, missing: true };
+    const png = decodePng(readFileSync(path));
+    let solid = 0;
+    let spread = 0;
+    for (let i = 0; i < png.w * png.h; i++) {
+      const a = png.rgba[i * 4 + 3];
+      if (a >= 128) solid++;
+      if (a > 0) {
+        const r = png.rgba[i * 4];
+        const g = png.rgba[i * 4 + 1];
+        const b = png.rgba[i * 4 + 2];
+        spread = Math.max(spread, Math.abs(r - g), Math.abs(g - b), Math.abs(r - b));
+      }
+    }
+    return {
+      id: f.id,
+      path,
+      shapeOk: png.w === want.w && png.h === want.h && png.bitDepth === 8 && png.colorType === 6,
+      dims: `${png.w}x${png.h}`,
+      spread,
+      coverage: Number((solid / (png.w * png.h)).toFixed(3)),
+    };
+  });
+  const nine = sprites.length === 9 && sprites.every((s) => !s.missing);
+  ok(
+    'sprite-gen — files: all 9 enemy-family PNGs exist at pipeline paths with canonical dims, 8-bit RGBA',
+    nine && sprites.every((s) => s.shapeOk),
+    JSON.stringify(sprites.map((s) => `${s.id}:${s.missing ? 'MISSING' : s.dims}`)),
+  );
+  ok(
+    `sprite-gen — tint-compat: every drawn pixel near-neutral (max channel spread ≤ ${cfg.TINT_NEUTRALITY_MAX_SPREAD}) so domain tint colorizes`,
+    nine && sprites.every((s) => s.spread <= cfg.TINT_NEUTRALITY_MAX_SPREAD),
+    JSON.stringify(sprites.map((s) => `${s.id}:${s.missing ? 'MISSING' : s.spread}`)),
+  );
+  ok(
+    `sprite-gen — silhouette: opaque coverage within [${cfg.COVERAGE_MIN}, ${cfg.COVERAGE_MAX}] (no near-empty or blob sprite)`,
+    nine && sprites.every((s) => s.coverage >= cfg.COVERAGE_MIN && s.coverage <= cfg.COVERAGE_MAX),
+    JSON.stringify(sprites.map((s) => `${s.id}:${s.missing ? 'MISSING' : s.coverage}`)),
+  );
+  const regenDir = mkdtempSync(join(tmpdir(), 'toh-spritegen-'));
+  let regen;
+  try {
+    await generateAll(regenDir);
+    const sha = (buf) => createHash('sha256').update(buf).digest('hex');
+    regen = cfg.SPRITE_FAMILIES.map((f) => {
+      const name = `${cfg.spriteKeyFor(f.id)}.png`;
+      const shipped = cfg.spriteFileFor(f.id);
+      if (!existsSync(shipped) || !existsSync(join(regenDir, name))) return { id: f.id, identical: false };
+      return { id: f.id, identical: sha(readFileSync(shipped)) === sha(readFileSync(join(regenDir, name))) };
+    });
+  } finally {
+    rmSync(regenDir, { recursive: true, force: true });
+  }
+  ok(
+    'sprite-gen — determinism: regeneration from committed config + seed is byte-identical to the shipped set (hash compare)',
+    regen.length === 9 && regen.every((r) => r.identical),
+    JSON.stringify(regen.map((r) => `${r.id}:${r.identical}`)),
+  );
+}
 
 // 1) Preview server (killed on exit).
 const server = spawn('npx', ['vite', 'preview', '--port', String(PORT), '--strictPort'], { stdio: 'ignore' });
@@ -5839,6 +5913,65 @@ try {
     'game-feel — depth ordering: screen UI > nameplates/floating text > world layers (live objects)',
     depths.ui > depths.plate && depths.ui > depths.text && depths.plate > depths.world && depths.text > depths.world && depths.text >= 0,
     JSON.stringify(depths),
+  );
+
+  // 3ay. SPRITE FALLBACK CHAIN (permanent): with per-family PNGs ABSENT every
+  // family resolves to its SHARED texture (which itself exists — the gray-box
+  // guard) with zero errors; when a per-family key EXISTS (simulated canvas
+  // texture) the same spawn wears it. Proves the sanctioned wiring inert-safe
+  // in both directions.
+  const chain9 = await page.evaluate(async () => {
+    const ms = window.__ready();
+    const wait = (t) => new Promise((r) => setTimeout(r, t));
+    if (!window.__quietSpot()) return { setup: 'no quiet spot' };
+    const Z = 'lhasa-prayer-citadel';
+    const SHARED = {
+      'corrupted-wildlife': 'townsfolk',
+      'evil-raiders': 'townsfolk',
+      'veil-ambushers': 'townsfolk',
+      'hollowed-brutes': 'townsfolk',
+      'lesser-evil-scouts': 'demon-enemy',
+      'herald-angels': 'angel-enemy',
+      'radiant-guardians': 'angel-enemy',
+      'lesser-angels': 'angel-enemy',
+      'dark-casters': 'angel-enemy',
+    };
+    const fams = Object.keys(SHARED);
+    const grayBoxes = ['townsfolk', 'demon-enemy', 'angel-enemy'].every((k) => ms.textures.exists(k));
+    // Every real spawn wears EXACTLY what the chain dictates for the current
+    // art state: its per-family key when that texture shipped, else its
+    // shared texture — never anything else. (Permanent under both states.)
+    const worn = {};
+    let last = null;
+    for (let i = 0; i < fams.length; i++) {
+      const w = ms.activeMap().nearestWalkableWorld(ms.player.x + 90 + i * 26, ms.player.y + (i % 3) * 30);
+      ms.spawnRegionEnemy(Z, fams[i], w.x, w.y, ms.feel.domainTint.physical);
+      const rec = ms.regionLive[ms.regionLive.length - 1];
+      const expect = ms.textures.exists(`enemy-${fams[i]}`) ? `enemy-${fams[i]}` : SHARED[fams[i]];
+      worn[fams[i]] = rec.entity.sprite.texture.key === expect;
+      last = rec.entity;
+    }
+    // MISS path, forever: a family with no texture leaves the sprite untouched.
+    const beforeKey = last.sprite.texture.key;
+    ms.applyFamilyTexture(last.sprite, 'no-such-family-probe');
+    const missInert = last.sprite.texture.key === beforeKey;
+    // HIT path, forever: a synthetic per-family key (never ships) is worn.
+    const fakeKey = 'enemy-probe-art';
+    const cv = ms.textures.createCanvas(fakeKey, 24, 34);
+    cv.context.fillStyle = '#808080';
+    cv.context.fillRect(0, 0, 24, 34);
+    cv.refresh();
+    ms.applyFamilyTexture(last.sprite, 'probe-art');
+    const hitWorn = last.sprite.texture.key === fakeKey;
+    ms.deactivateRegionZone(Z);
+    await wait(150);
+    ms.textures.remove(fakeKey);
+    return { setup: 'ok', grayBoxes, worn, missInert, hitWorn };
+  });
+  ok(
+    'sprite-gen — fallback chain: every family wears per-family art when shipped else its shared texture (gray box intact); miss inert, hit worn',
+    chain9.setup === 'ok' && chain9.grayBoxes && Object.values(chain9.worn).length === 9 && Object.values(chain9.worn).every(Boolean) && chain9.missInert && chain9.hitWorn,
+    JSON.stringify(chain9),
   );
 
   // 3aa. SKILL TREE UX (Casey's spec, permanent) — driven by REAL taps on the real
