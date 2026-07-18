@@ -10149,6 +10149,16 @@ export class MainScene extends Phaser.Scene {
     this.despawnRegionEscort(); // nor does a convoy run
   }
 
+  /** SPRITE-GEN (sanctioned wiring, the single texture-selection choke point):
+   *  per-family art keys. Resolution chain: enemy-<family-id> texture (the
+   *  drop-in pipeline mints it when its PNG ships) -> the family's shared
+   *  texture (set by the entity constructor) -> gray box (the entity's own
+   *  ensure-texture fallback). INERT while no per-family PNG exists. */
+  private applyFamilyTexture(sprite: Phaser.GameObjects.Sprite, family: string): void {
+    const key = `enemy-${family}`;
+    if (this.textures.exists(key)) sprite.setTexture(key);
+  }
+
   /** One mapped-family enemy via its EXISTING spawner (see EXISTING_FAMILY_SPAWNERS).
    *  The three new families are behavior VARIANTS over those same spawners:
    *  dark-caster = a kiting AngelEnemy variant, veil-ambusher / hollowed-brute =
@@ -10157,11 +10167,13 @@ export class MainScene extends Phaser.Scene {
     if (family === 'lesser-evil-scouts') {
       const d = this.spawnDemon(x, y, this.activeMap().layer);
       d.setBaseTint(tint); // the hit-flash restores THIS domain tint (game-feel)
+      this.applyFamilyTexture(d.sprite, family);
       this.regionLive.push({ zoneId, family, kind: 'demon', entity: d, counted: false });
       this.attachPlate(zoneId, family, d.sprite, () => d.isAlive, () => d.health.ratio);
     } else if (family === 'corrupted-wildlife' || family === 'evil-raiders') {
       const t = this.spawnTownsfolk(x, y, null, family === 'corrupted-wildlife' ? 'wolf' : 'raider');
       t.setBaseTint(tint); // the hit-flash restores THIS domain tint (game-feel)
+      this.applyFamilyTexture(t.sprite, family);
       this.regionLive.push({ zoneId, family, kind: 'townsfolk', entity: t, counted: false });
       this.attachPlate(zoneId, family, t.sprite, () => t.isAlive, () => t.health.ratio);
     } else if (family === 'dark-casters') {
@@ -10169,6 +10181,7 @@ export class MainScene extends Phaser.Scene {
       // tagged bolts apply the slow/weaken + stacking DoT in onProjectileHitPlayer.
       const a = this.spawnAngel('darkcaster', x, y);
       a.setBaseTint(tint); // the hit-flash restores THIS domain tint (game-feel)
+      this.applyFamilyTexture(a.sprite, family);
       this.regionLive.push({ zoneId, family, kind: 'angel', entity: a, counted: false });
       this.attachPlate(zoneId, family, a.sprite, () => a.isAlive, () => a.health.ratio);
     } else if (family === 'veil-ambushers') {
@@ -10180,6 +10193,7 @@ export class MainScene extends Phaser.Scene {
       // tint on them (their EXISTING_FAMILY_DOMAIN entry gates spawning only).
       const variant = family === 'herald-angels' ? 'herald' : family === 'radiant-guardians' ? 'warden' : 'lesser';
       const a = this.spawnAngel(variant, x, y);
+      this.applyFamilyTexture(a.sprite, family);
       this.regionLive.push({ zoneId, family, kind: 'angel', entity: a, counted: false });
       this.attachPlate(zoneId, family, a.sprite, () => a.isAlive, () => a.health.ratio);
     }
@@ -10190,6 +10204,7 @@ export class MainScene extends Phaser.Scene {
    *  touch it). updateRegionAmbushers runs the reveal/burst/re-hide machine. */
   private spawnRegionAmbusher(zoneId: string, x: number, y: number): void {
     const t = this.spawnTownsfolk(x, y, null, 'ambusher');
+    this.applyFamilyTexture(t.sprite, 'veil-ambushers');
     this.hideAmbusher(t);
     this.regionLive.push({ zoneId, family: 'veil-ambushers', kind: 'townsfolk', entity: t, counted: false });
     this.attachPlate(zoneId, 'veil-ambushers', t.sprite, () => t.isAlive, () => t.health.ratio);
@@ -10210,6 +10225,7 @@ export class MainScene extends Phaser.Scene {
    *  the townsfolk chase AI has no flee state. */
   private spawnEuropeBrute(zoneId: string, x: number, y: number): void {
     const t = this.spawnTownsfolk(x, y, null, 'brute');
+    this.applyFamilyTexture(t.sprite, 'hollowed-brutes');
     const tier = getZone(zoneId)?.tier ?? 1;
     t.health.setMax(BRUTE_HP_PER_TIER * tier);
     t.health.full();

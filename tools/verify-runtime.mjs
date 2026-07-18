@@ -5841,6 +5841,65 @@ try {
     JSON.stringify(depths),
   );
 
+  // 3ay. SPRITE FALLBACK CHAIN (permanent): with per-family PNGs ABSENT every
+  // family resolves to its SHARED texture (which itself exists — the gray-box
+  // guard) with zero errors; when a per-family key EXISTS (simulated canvas
+  // texture) the same spawn wears it. Proves the sanctioned wiring inert-safe
+  // in both directions.
+  const chain9 = await page.evaluate(async () => {
+    const ms = window.__ready();
+    const wait = (t) => new Promise((r) => setTimeout(r, t));
+    if (!window.__quietSpot()) return { setup: 'no quiet spot' };
+    const Z = 'lhasa-prayer-citadel';
+    const SHARED = {
+      'corrupted-wildlife': 'townsfolk',
+      'evil-raiders': 'townsfolk',
+      'veil-ambushers': 'townsfolk',
+      'hollowed-brutes': 'townsfolk',
+      'lesser-evil-scouts': 'demon-enemy',
+      'herald-angels': 'angel-enemy',
+      'radiant-guardians': 'angel-enemy',
+      'lesser-angels': 'angel-enemy',
+      'dark-casters': 'angel-enemy',
+    };
+    const fams = Object.keys(SHARED);
+    const grayBoxes = ['townsfolk', 'demon-enemy', 'angel-enemy'].every((k) => ms.textures.exists(k));
+    // Every real spawn wears EXACTLY what the chain dictates for the current
+    // art state: its per-family key when that texture shipped, else its
+    // shared texture — never anything else. (Permanent under both states.)
+    const worn = {};
+    let last = null;
+    for (let i = 0; i < fams.length; i++) {
+      const w = ms.activeMap().nearestWalkableWorld(ms.player.x + 90 + i * 26, ms.player.y + (i % 3) * 30);
+      ms.spawnRegionEnemy(Z, fams[i], w.x, w.y, ms.feel.domainTint.physical);
+      const rec = ms.regionLive[ms.regionLive.length - 1];
+      const expect = ms.textures.exists(`enemy-${fams[i]}`) ? `enemy-${fams[i]}` : SHARED[fams[i]];
+      worn[fams[i]] = rec.entity.sprite.texture.key === expect;
+      last = rec.entity;
+    }
+    // MISS path, forever: a family with no texture leaves the sprite untouched.
+    const beforeKey = last.sprite.texture.key;
+    ms.applyFamilyTexture(last.sprite, 'no-such-family-probe');
+    const missInert = last.sprite.texture.key === beforeKey;
+    // HIT path, forever: a synthetic per-family key (never ships) is worn.
+    const fakeKey = 'enemy-probe-art';
+    const cv = ms.textures.createCanvas(fakeKey, 24, 34);
+    cv.context.fillStyle = '#808080';
+    cv.context.fillRect(0, 0, 24, 34);
+    cv.refresh();
+    ms.applyFamilyTexture(last.sprite, 'probe-art');
+    const hitWorn = last.sprite.texture.key === fakeKey;
+    ms.deactivateRegionZone(Z);
+    await wait(150);
+    ms.textures.remove(fakeKey);
+    return { setup: 'ok', grayBoxes, worn, missInert, hitWorn };
+  });
+  ok(
+    'sprite-gen — fallback chain: every family wears per-family art when shipped else its shared texture (gray box intact); miss inert, hit worn',
+    chain9.setup === 'ok' && chain9.grayBoxes && Object.values(chain9.worn).length === 9 && Object.values(chain9.worn).every(Boolean) && chain9.missInert && chain9.hitWorn,
+    JSON.stringify(chain9),
+  );
+
   // 3aa. SKILL TREE UX (Casey's spec, permanent) — driven by REAL taps on the real
   // screen: instant spend (no confirmation window) respects locks and points with
   // shake/toast feedback; the name-bar "Add" button round-trips through the hotkey
