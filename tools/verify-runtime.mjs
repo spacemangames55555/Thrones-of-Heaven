@@ -5597,7 +5597,7 @@ try {
       else ms.player.sprite.body.reset(dest.x, dest.y);
       ms.playerHealth.shield = 1e9;
       await wait(2400); // chunk activation + pack spawns + a label sweep
-      const plate = ms.faunaLabels.some((f) => f.t.isAlive && f.label.text === c.animal);
+      const plate = ms.nameplates.livePlates().some((p) => p.name === c.animal);
       const hit = ms.regionBeatForQuest(c.beat);
       homes.push({ zone: c.zone, plate, cullNames: !!hit && hit.beat.summary.includes(c.animal) });
     }
@@ -5758,6 +5758,48 @@ try {
     'game-feel — hit feedback: white flash then guaranteed domain-tint restore; threshold camera shake (big yes, chip no)',
     hitFeel.setup === 'ok' && hitFeel.tintBefore === hitFeel.RED && hitFeel.whiteDuringFlash && hitFeel.restored === hitFeel.RED && hitFeel.shookOnBig && hitFeel.settled && hitFeel.noShakeOnChip,
     JSON.stringify(hitFeel),
+  );
+
+  // 3av. NAMEPLATES (permanent): every roster family archetype gets a plate on
+  // spawn (name + level + bar), the plate DETACHES on despawn (chunk
+  // deactivation leaks nothing), the pool never grows, and an
+  // 'onAggroOrDamage' plate lights up when its owner is hit nearby.
+  const plates = await page.evaluate(async () => {
+    const ms = window.__ready();
+    const wait = (t) => new Promise((r) => setTimeout(r, t));
+    if (!window.__quietSpot()) return { setup: 'no quiet spot' };
+    const FAMILIES = ['corrupted-wildlife', 'evil-raiders', 'lesser-evil-scouts', 'herald-angels', 'radiant-guardians', 'lesser-angels', 'dark-casters', 'veil-ambushers', 'hollowed-brutes'];
+    const Z = 'lhasa-prayer-citadel';
+    const poolSize0 = ms.nameplates.size;
+    const base = ms.nameplates.activeCount;
+    const perFamily = {};
+    const spawned = [];
+    for (let i = 0; i < FAMILIES.length; i++) {
+      const fam = FAMILIES[i];
+      const w = ms.activeMap().nearestWalkableWorld(ms.player.x + 90 + i * 30, ms.player.y + (i % 3) * 40);
+      const beforeN = ms.nameplates.activeCount;
+      ms.spawnRegionEnemy(Z, fam, w.x, w.y, ms.feel.domainTint.physical);
+      perFamily[fam] = ms.nameplates.activeCount === beforeN + 1;
+      spawned.push(ms.regionLive[ms.regionLive.length - 1]);
+    }
+    const attachedAll = Object.values(perFamily).every(Boolean);
+    // AGGRO-OR-DAMAGE visibility: hit the first spawn → its plate shows.
+    await wait(120);
+    spawned[0].entity.takeHit(2);
+    await wait(120);
+    const litOnDamage = ms.nameplates.livePlates().some((p) => p.visible);
+    // DESPAWN: the chunk-boundary path (deactivate destroys the entities) —
+    // the sweep must release every plate we attached, pool size unchanged.
+    ms.deactivateRegionZone(Z);
+    await wait(250); // the release sweep runs on the next frames
+    const stale = ms.nameplates.livePlates().filter((p) => p.stale).length;
+    const poolStable = ms.nameplates.size === poolSize0;
+    return { setup: 'ok', poolSize0, base, perFamily, attachedAll, litOnDamage, stale, poolStable };
+  });
+  ok(
+    'game-feel — nameplates: all nine family archetypes attach on spawn, light on damage, detach on chunk despawn (zero stale plates, pool stable)',
+    plates.setup === 'ok' && plates.attachedAll && plates.litOnDamage && plates.stale === 0 && plates.poolStable && plates.poolSize0 > 0,
+    JSON.stringify(plates),
   );
 
   // 3aa. SKILL TREE UX (Casey's spec, permanent) — driven by REAL taps on the real

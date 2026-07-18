@@ -52,6 +52,7 @@ import { getZone, WORLD } from '../world/world-manifest';
 import { HOME_NEIGHBORS, civicBeatIds, neighborLineFor } from '../world/home-civics';
 import { WATCHER_LINE, AZAZEL_CAMPFIRE_LINES, FAUNA_CANON, HERALD_DUELS, narrativeBannerFor } from '../world/narrative-canon';
 import { FEEL } from '../ui/feel-config';
+import { NameplatePool, FAMILY_DISPLAY, type PlateTarget } from '../ui/Nameplates';
 import { EUROPE_BUILT_ZONES, buildEuropeQuestDefs } from '../world/europe-built';
 import { appendToRegistry } from '../world/quest-factory';
 import { ENEMY_ROSTER, DOMAIN_TINT, EXISTING_FAMILY_DOMAIN, EXISTING_FAMILY_PACK, makeRegionChampion } from '../world/enemy-roster';
@@ -1101,9 +1102,10 @@ export class MainScene extends Phaser.Scene {
   private campfireButton!: TouchButton;
   private campfireNear?: { zoneId: string; pos: { x: number; y: number } };
   private campfireIdx = 0;
-  /** FAUNA NAMEPLATES: floating animal names over home-city wildlife (display
-   *  only). Swept per frame — a dead or despawned beast drops its label. */
-  private faunaLabels: { t: Townsfolk; label: Phaser.GameObjects.Text }[] = [];
+  /** NAMEPLATES + HEALTH BARS (game-feel pass): the pooled plate layer for
+   *  every roster enemy + champions. Subsumes the old fauna label list —
+   *  home wildlife wears its FAUNA canon animal as the plate name. */
+  nameplates!: NameplatePool;
   /** GAME-FEEL CONFIG (presentation pass): every feel tunable, readable by the
    *  runtime gate. The single source is src/ui/feel-config.ts. */
   readonly feel = FEEL;
@@ -1487,6 +1489,7 @@ export class MainScene extends Phaser.Scene {
     // Pooled transient FX (perf): reuse damage-number Texts + impact circles instead
     // of allocating/freeing them per hit — the measured cause of the under-load stutter.
     this.floatingText = new FloatingTextPool(this, this.worldFx, MAX_FLOATING_TEXTS);
+    this.nameplates = new NameplatePool(this, this.worldFx);
     // GAME-FEEL (presentation): the Health hooks float numbers over registered
     // enemy victims (queued + site-deduped). Cleared on shutdown — the statics
     // must never outlive this scene instance (fresh sessions re-register).
@@ -1861,6 +1864,7 @@ export class MainScene extends Phaser.Scene {
     // in-flight labels/flashes finish fading instead of sticking).
     this.flushFeelQueue(); // FEEL numbers land after site dedupe, before the pool ticks
     this.floatingText.tick(this.time.now);
+    this.nameplates.update(this.time.now, this.player.x, this.player.y, this.cameras.main.zoom);
     this.circleFx.tick(this.time.now);
     this.swingFx.tick(this.time.now);
     this.perfReadout?.sample(delta); // DEV-only FPS / frame-time + counts (runs every frame)
@@ -9316,7 +9320,7 @@ export class MainScene extends Phaser.Scene {
   private spawnCairoWolf(post: { x: number; y: number }): void {
     const t = this.spawnTownsfolk(post.x, post.y, null, 'wolf');
     t.setBaseTint(DOMAIN_TINT.physical); // the hit-flash restores the domain tint (game-feel)
-    if (FAUNA_CANON['cairo-nile-crown']) this.addFaunaLabel(t, FAUNA_CANON['cairo-nile-crown']);
+    this.attachPlate('cairo-nile-crown', 'corrupted-wildlife', t.sprite, () => t.isAlive, () => t.health.ratio);
     this.cairoLive.push({ family: 'corrupted-wildlife', entity: t, post: { ...post }, counted: false });
   }
 
@@ -9325,6 +9329,7 @@ export class MainScene extends Phaser.Scene {
     const d = this.spawnDemon(post.x, post.y, this.egyptMap.layer);
     d.setBaseTint(DOMAIN_TINT.physical); // the hit-flash restores the domain tint (game-feel)
     d.sprite.setScale(d.sprite.scale * 1.4);
+    this.attachPlate('cairo-nile-crown', 'lesser-evil-scouts', d.sprite, () => d.isAlive, () => d.health.ratio);
     d.health.setMax(CAIRO_BOSS_HP);
     d.health.full();
     this.addHeavenLabel(post.x, post.y - 46, '☠ Evil at the Crown', '#e6d6ff');
@@ -9640,8 +9645,6 @@ export class MainScene extends Phaser.Scene {
     this.campfireNear = near;
     const free = !this.transitioning && !this.dialogue.isOpen() && !this.talkButton.isVisible && !this.cityGateButton.isVisible && !this.mentorButton.isVisible && !this.neighborButton.isVisible && !this.playerDead;
     this.campfireButton.setVisible(!!near && free);
-
-    this.updateFaunaLabels();
   }
 
   /** The luminous far-off figure: pure display shapes, no body, no combat list. */
@@ -9684,29 +9687,12 @@ export class MainScene extends Phaser.Scene {
     this.despawnWatcher();
   }
 
-  /** Attach a fauna nameplate to a home-city beast (display only). */
-  private addFaunaLabel(t: Townsfolk, name: string): void {
-    const label = this.add
-      .text(t.sprite.x, t.sprite.y - 26, name, { fontFamily: 'system-ui, sans-serif', fontSize: '11px', color: '#e8d8c0' })
-      .setOrigin(0.5)
-      .setStroke('#101830', 3)
-      .setDepth(9);
-    this.faunaLabels.push({ t, label });
-  }
-
-  /** Per-frame: nameplates follow their beasts; the dead drop theirs. */
-  private updateFaunaLabels(): void {
-    if (!this.faunaLabels.length) return;
-    let prune = false;
-    for (const f of this.faunaLabels) {
-      if (!f.t.isAlive || !f.t.sprite.active) {
-        f.label.destroy();
-        prune = true;
-      } else {
-        f.label.setPosition(f.t.sprite.x, f.t.sprite.y - 26).setVisible(f.t.sprite.visible);
-      }
-    }
-    if (prune) this.faunaLabels = this.faunaLabels.filter((f) => f.t.isAlive && f.t.sprite.active);
+  /** Attach a pooled nameplate for a roster enemy: home wildlife wears its
+   *  FAUNA canon animal, everything else its family display name; the level
+   *  reads from the zone's band. Presentation only. */
+  private attachPlate(zoneId: string, family: string, sprite: PlateTarget['sprite'], isAlive: () => boolean, ratio: () => number): void {
+    const name = family === 'corrupted-wildlife' && FAUNA_CANON[zoneId] ? FAUNA_CANON[zoneId] : (FAMILY_DISPLAY[family] ?? family);
+    this.nameplates.attach({ sprite, isAlive, ratio, name, level: getZone(zoneId)?.levelRange[0] ?? 1 });
   }
 
   /** Azazel's campfire rotation: the fixed line list, in order, looping. */
@@ -10172,19 +10158,19 @@ export class MainScene extends Phaser.Scene {
       const d = this.spawnDemon(x, y, this.activeMap().layer);
       d.setBaseTint(tint); // the hit-flash restores THIS domain tint (game-feel)
       this.regionLive.push({ zoneId, family, kind: 'demon', entity: d, counted: false });
+      this.attachPlate(zoneId, family, d.sprite, () => d.isAlive, () => d.health.ratio);
     } else if (family === 'corrupted-wildlife' || family === 'evil-raiders') {
       const t = this.spawnTownsfolk(x, y, null, family === 'corrupted-wildlife' ? 'wolf' : 'raider');
       t.setBaseTint(tint); // the hit-flash restores THIS domain tint (game-feel)
       this.regionLive.push({ zoneId, family, kind: 'townsfolk', entity: t, counted: false });
-      // FAUNA NAMEPLATE (display only): a home's wildlife wears its canonical
-      // animal name — mechanics, family, and spawner untouched.
-      if (family === 'corrupted-wildlife' && FAUNA_CANON[zoneId]) this.addFaunaLabel(t, FAUNA_CANON[zoneId]);
+      this.attachPlate(zoneId, family, t.sprite, () => t.isAlive, () => t.health.ratio);
     } else if (family === 'dark-casters') {
       // Low HP + ranged + native kiting (backs off inside preferred range); its
       // tagged bolts apply the slow/weaken + stacking DoT in onProjectileHitPlayer.
       const a = this.spawnAngel('darkcaster', x, y);
       a.setBaseTint(tint); // the hit-flash restores THIS domain tint (game-feel)
       this.regionLive.push({ zoneId, family, kind: 'angel', entity: a, counted: false });
+      this.attachPlate(zoneId, family, a.sprite, () => a.isAlive, () => a.health.ratio);
     } else if (family === 'veil-ambushers') {
       this.spawnRegionAmbusher(zoneId, x, y);
     } else if (family === 'hollowed-brutes') {
@@ -10195,6 +10181,7 @@ export class MainScene extends Phaser.Scene {
       const variant = family === 'herald-angels' ? 'herald' : family === 'radiant-guardians' ? 'warden' : 'lesser';
       const a = this.spawnAngel(variant, x, y);
       this.regionLive.push({ zoneId, family, kind: 'angel', entity: a, counted: false });
+      this.attachPlate(zoneId, family, a.sprite, () => a.isAlive, () => a.health.ratio);
     }
   }
 
@@ -10205,6 +10192,7 @@ export class MainScene extends Phaser.Scene {
     const t = this.spawnTownsfolk(x, y, null, 'ambusher');
     this.hideAmbusher(t);
     this.regionLive.push({ zoneId, family: 'veil-ambushers', kind: 'townsfolk', entity: t, counted: false });
+    this.attachPlate(zoneId, 'veil-ambushers', t.sprite, () => t.isAlive, () => t.health.ratio);
     this.regionAmbushers.push({ zoneId, t, home: { x, y }, state: 'hidden', burstEndsAt: 0 });
   }
 
@@ -10228,6 +10216,7 @@ export class MainScene extends Phaser.Scene {
     t.sprite.setScale(1.35); // reads as the big slow threat even in gray-box
     t.onHitPlayer = () => this.bruteBeginStrike(t);
     this.regionLive.push({ zoneId, family: 'hollowed-brutes', kind: 'townsfolk', entity: t, counted: false });
+    this.attachPlate(zoneId, 'hollowed-brutes', t.sprite, () => t.isAlive, () => t.health.ratio);
   }
 
   /** The brute's heavy attack: plant in place, show the boss-style windup ring,
@@ -10333,6 +10322,7 @@ export class MainScene extends Phaser.Scene {
     const def = this.championDef(beatId, zoneId, champ.name, champ.tint, champ.stats, champ.tier, signature);
     const boss = this.spawnBoss(def, anchor.x, anchor.y, this.activeMap().layer);
     this.feelTargets.set(boss.health, { sprite: boss.sprite, enemy: true }); // FEEL: numbers float over the champion
+    this.nameplates.attach({ sprite: boss.sprite, isAlive: () => boss.isAlive, ratio: () => boss.health.ratio, name: champ.name, level: getZone(zoneId)?.levelRange[0] ?? 1 });
     this.championBoss = boss;
     this.championBeatId = beatId;
     this.championZoneId = zoneId;
@@ -12280,6 +12270,7 @@ export class MainScene extends Phaser.Scene {
     }
     const t = this.feelTargets.get(pool);
     if (!t || !t.enemy || removed < 1) return;
+    this.nameplates.notifyDamaged(t.sprite, this.time.now); // 'onAggroOrDamage' plates light up
     this.feelQueue.push({ x: t.sprite.x, y: t.sprite.y - 24, amt: removed });
   }
 

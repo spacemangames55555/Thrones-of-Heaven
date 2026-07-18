@@ -57,6 +57,9 @@ export const FEEL = {
      *  player, or for showMs after taking damage. */
     aggroRadiusPx: 260,
     showMs: 4000,
+    /** Below this camera zoom (the continent view) plates are unreadable —
+     *  hide them all and skip the per-frame work entirely. */
+    minZoom: 0.8,
   },
 
   /** HOTBAR CHROME (the shipped LoadoutBar — bottom-right per Casey's
