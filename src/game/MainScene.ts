@@ -2153,7 +2153,7 @@ export class MainScene extends Phaser.Scene {
     const levelsGained = this.progression.addXP(amount);
     // FEEL: XP floats above the player (every source funnels through here).
     if (amount > 0) {
-      this.floatingText.show(this.player.x, this.player.y - 44, `+${Math.round(amount)} XP`, MainScene.feelHex(FEEL.text.colors.xp), { fontSize: FEEL.text.xpFontPx });
+      this.floatingText.show(this.player.x, this.player.y - 44, `+${Math.round(amount)} XP`, MainScene.feelHex(FEEL.text.colors.xp), { fontSize: FEEL.text.xpFontPx, depth: FEEL.depths.floatText });
     }
     if (levelsGained > 0) {
       this.skills.awardPoints(levelsGained); // 1 skill point per level gained
@@ -12279,7 +12279,7 @@ export class MainScene extends Phaser.Scene {
   private onFeelHealed(pool: Health, restored: number): void {
     const t = this.feelTargets.get(pool);
     if (!t || !t.enemy || restored < 1) return;
-    this.floatingText.show(t.sprite.x, t.sprite.y - 24, `+${Math.round(restored)}`, MainScene.feelHex(FEEL.text.colors.heal), { fontSize: FEEL.text.fontPx });
+    this.floatingText.show(t.sprite.x, t.sprite.y - 24, `+${Math.round(restored)}`, MainScene.feelHex(FEEL.text.colors.heal), { fontSize: FEEL.text.fontPx, depth: FEEL.depths.floatText });
   }
 
   /** Flush the FEEL queue (once per frame, before the pool ticks): anything a
@@ -12294,6 +12294,7 @@ export class MainScene extends Phaser.Scene {
             fontSize: FEEL.text.fontPx,
             riseBy: FEEL.text.risePx,
             durationMs: FEEL.text.riseMs,
+            depth: FEEL.depths.floatText,
           });
         }
       }

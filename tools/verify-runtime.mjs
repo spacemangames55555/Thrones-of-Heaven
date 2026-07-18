@@ -5802,6 +5802,45 @@ try {
     JSON.stringify(plates),
   );
 
+  // 3aw. HOTBAR CHROME (permanent): the shipped LoadoutBar renders exactly
+  // FEEL.hotbarSlots slots, every slot pinned to the screen (scrollFactor 0)
+  // at the FEEL screen-UI depth, thumb-sized per FEEL.slotPx.
+  const hotbar = await page.evaluate(() => {
+    const ms = window.__game.scene.getScene('MainScene');
+    const slots = ms.skillBar.slots;
+    return {
+      count: slots.length,
+      want: ms.feel.hotbar.hotbarSlots,
+      allPinned: slots.every((s) => s.bg.scrollFactorX === 0 && s.bg.scrollFactorY === 0),
+      allUiDepth: slots.every((s) => s.bg.depth === ms.feel.depths.screenUi),
+      slotPx: slots.every((s) => s.bg.width === ms.feel.hotbar.slotPx),
+    };
+  });
+  ok(
+    'game-feel — hotbar chrome: exactly FEEL.hotbarSlots slots, all scrollFactor 0 at screen-UI depth, thumb-sized per FEEL',
+    hotbar.count === hotbar.want && hotbar.allPinned && hotbar.allUiDepth && hotbar.slotPx,
+    JSON.stringify(hotbar),
+  );
+
+  // 3ax. DEPTH ORDERING (permanent): live objects prove the bands — screen UI
+  // above nameplates and feel floating text, both above the world tile layer.
+  const depths = await page.evaluate(() => {
+    const ms = window.__ready();
+    ms.floatingText.show(ms.player.x, ms.player.y - 20, '-1', '#ffffff', { depth: ms.feel.depths.floatText });
+    const liveText = ms.floatingText.items.find((it) => it.active);
+    return {
+      ui: ms.skillBar.slots[0].bg.depth,
+      plate: ms.nameplates.pool[0].label.depth,
+      text: liveText ? liveText.text.depth : -1,
+      world: ms.activeMap().layer.depth,
+    };
+  });
+  ok(
+    'game-feel — depth ordering: screen UI > nameplates/floating text > world layers (live objects)',
+    depths.ui > depths.plate && depths.ui > depths.text && depths.plate > depths.world && depths.text > depths.world && depths.text >= 0,
+    JSON.stringify(depths),
+  );
+
   // 3aa. SKILL TREE UX (Casey's spec, permanent) — driven by REAL taps on the real
   // screen: instant spend (no confirmation window) respects locks and points with
   // shake/toast feedback; the name-bar "Add" button round-trips through the hotkey
