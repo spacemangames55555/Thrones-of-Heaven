@@ -5637,6 +5637,40 @@ try {
     JSON.stringify(drops),
   );
 
+  // 3as. GAME-FEEL CONFIG (permanent): FEEL loads, every numeric leaf is
+  // finite, sizes/durations/pools are strictly positive, the domain palette is
+  // the ONE existing tint source (by reference), and the depth bands order
+  // screen UI > floating text / nameplates > world.
+  const feelCfg = await page.evaluate(() => {
+    const ms = window.__game.scene.getScene('MainScene');
+    const f = ms.feel;
+    if (!f) return { loaded: false };
+    const bad = [];
+    const walk = (obj, path) => {
+      for (const [k, v] of Object.entries(obj)) {
+        if (typeof v === 'number') {
+          if (!Number.isFinite(v)) bad.push(`${path}${k}=NaN/inf`);
+          // Offsets are legitimately signed; everything else must be >= 0.
+          else if (v < 0 && !/offset/i.test(k)) bad.push(`${path}${k}<0`);
+        } else if (v && typeof v === 'object') walk(v, `${path}${k}.`);
+      }
+    };
+    walk(f, '');
+    const mustBePositive = [f.text.poolSize, f.text.fontPx, f.text.riseMs, f.text.critScale, f.flash.flashMs, f.shake.shakeMs, f.nameplate.poolSize, f.nameplate.barW, f.hotbar.hotbarSlots, f.hotbar.slotPx];
+    const positive = mustBePositive.every((v) => v > 0);
+    const modeOk = f.nameplate.mode === 'always' || f.nameplate.mode === 'onAggroOrDamage';
+    // Palette values must be EXACTLY the roster's canonical tints (the import
+    // is by reference at compile time; a redefinition would drift here first).
+    const palette = f.domainTint.physical === 0xe04a3a && f.domainTint.mental === 0x3a6de0 && f.domainTint.spiritual === 0x9a4ae0;
+    const depthsOk = f.depths.screenUi > f.depths.floatText && f.depths.screenUi > f.depths.nameplates && f.depths.nameplates > 100 && f.depths.floatText > 100;
+    return { loaded: true, bad, positive, modeOk, palette, depthsOk };
+  });
+  ok(
+    'game-feel — FEEL config: loads, all numerics finite, required values positive, canonical palette, depth bands ordered',
+    feelCfg.loaded && feelCfg.bad.length === 0 && feelCfg.positive && feelCfg.modeOk && feelCfg.palette && feelCfg.depthsOk,
+    JSON.stringify(feelCfg),
+  );
+
   // 3aa. SKILL TREE UX (Casey's spec, permanent) — driven by REAL taps on the real
   // screen: instant spend (no confirmation window) respects locks and points with
   // shake/toast feedback; the name-bar "Add" button round-trips through the hotkey

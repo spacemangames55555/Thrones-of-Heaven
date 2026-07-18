@@ -51,6 +51,7 @@ import { createSparseWorld, stampZone, buildChunkMapData, CONTINENT_WORLD, type 
 import { getZone, WORLD } from '../world/world-manifest';
 import { HOME_NEIGHBORS, civicBeatIds, neighborLineFor } from '../world/home-civics';
 import { WATCHER_LINE, AZAZEL_CAMPFIRE_LINES, FAUNA_CANON, HERALD_DUELS, narrativeBannerFor } from '../world/narrative-canon';
+import { FEEL } from '../ui/feel-config';
 import { EUROPE_BUILT_ZONES, buildEuropeQuestDefs } from '../world/europe-built';
 import { appendToRegistry } from '../world/quest-factory';
 import { ENEMY_ROSTER, DOMAIN_TINT, EXISTING_FAMILY_DOMAIN, EXISTING_FAMILY_PACK, makeRegionChampion } from '../world/enemy-roster';
@@ -1103,6 +1104,9 @@ export class MainScene extends Phaser.Scene {
   /** FAUNA NAMEPLATES: floating animal names over home-city wildlife (display
    *  only). Swept per frame — a dead or despawned beast drops its label. */
   private faunaLabels: { t: Townsfolk; label: Phaser.GameObjects.Text }[] = [];
+  /** GAME-FEEL CONFIG (presentation pass): every feel tunable, readable by the
+   *  runtime gate. The single source is src/ui/feel-config.ts. */
+  readonly feel = FEEL;
   private beatMarker?: { beatId: string; pos: { x: number; y: number }; objs: Phaser.GameObjects.GameObject[] };
   private beatPickups?: { beatId: string; taken: number; items: { obj: Phaser.GameObjects.Arc; taken: boolean; x: number; y: number }[] };
   private beatElite?: { beatId: string; zoneId: string; kind: 'demon' | 'angel'; entity: Demon | AngelEnemy; label: Phaser.GameObjects.Text };
