@@ -4168,8 +4168,12 @@ try {
     const dollHp0 = doll.health.current;
     const hpC = c.health.current;
     const soaked = ms.redirectContactToSummon(c.x, c.y, 10); // the seam enemy contact uses
+    // Read the doll's soak SYNCHRONOUSLY (the seam applies it in the call):
+    // during any wait, a real ambient contact can redirect onto the doll too
+    // and inflate the read (the savage bloodPaid hardening precedent).
+    const dollTook = dollHp0 - doll.health.current;
     await wait(100);
-    const reflect = { soaked, dollTook: dollHp0 - doll.health.current, bite: hpC - c.health.current };
+    const reflect = { soaked, dollTook, bite: hpC - c.health.current };
     ms.voodooReflectDamage = 0;
     c.destroy();
     // SPIRIT ASSAULT: armed → periodic ticks land on the bound target with no input.
@@ -5390,6 +5394,117 @@ try {
     'civic framework — delivery: the parcel stages at the source, the walk-in carries it, the walk-in at the neighbor hands it off and completes',
     civicDelivery.setup === 'ok' && civicDelivery.staged && civicDelivery.carrying && civicDelivery.handedOff,
     JSON.stringify(civicDelivery),
+  );
+
+  // 3ao. NARRATIVE FRAMEWORK (permanent): THE WATCHER appears during a home
+  // discovery beat far from the action, keeps its distance when approached,
+  // is never a combatant, and speaks its one line EXACTLY ONCE at the first
+  // lesser-evil kill; CLASS-VARIANT TEXT renders per class on the same beat;
+  // the CAMPFIRE rotation cycles its fixed line list in order and loops.
+  const watcherRun = await page.evaluate(async () => {
+    const ms = window.__ready();
+    const wait = (t) => new Promise((r) => setTimeout(r, t));
+    const LINE = 'Well done, little one. Heaven sees you.';
+    const def = ms.chain.get('lha-03-discovery');
+    if (!def) return { setup: 'no lha-03 def' };
+    ms.watcherSpoken = false; // a fresh character's state (serialized flag)
+    ms.devJumpToFactoryBeat('lha-03-discovery', def);
+    await wait(1400); // swap + chunk activation + spawn frames
+    ms.playerHealth.shield = 1e9;
+    const active = ms.chain.activeQuest?.id ?? null;
+    const w1 = ms.watcher ? { ...ms.watcher.pos } : null;
+    const anchor = ms.regionBeatArrowTarget('lha-03-discovery');
+    const farFromAction = w1 && anchor ? Math.round(Math.hypot(w1.x - anchor.x, w1.y - anchor.y)) : -1;
+    // Never a combatant: pure display shapes — no physics body on any part,
+    // and no combat entity standing where the figure is drawn.
+    const hasBody = ms.watcher ? ms.watcher.objs.some((o) => !!o.body) : true;
+    const combatAtWatcher = w1 ? ms.combatEnemiesInRange(w1.x, w1.y, 24).length : -1;
+    // KEEP-AWAY: close within 300px → it fades and steps back out of reach.
+    let keepAway = false;
+    let dApproach = -1;
+    if (w1) {
+      const spot = ms.activeMap().nearestWalkableWorld(w1.x, w1.y);
+      ms.player.sprite.body.reset(spot.x, spot.y);
+      dApproach = Math.round(Math.hypot(w1.x - spot.x, w1.y - spot.y)); // must land inside the 300px bubble
+      await wait(700);
+      const w2 = ms.watcher ? { ...ms.watcher.pos } : null;
+      keepAway = !!w2 && Math.hypot(w2.x - ms.player.x, w2.y - ms.player.y) > 300 && (w2.x !== w1.x || w2.y !== w1.y);
+    }
+    // FIRST KILL: complete the discovery (real walk-in) → the evil arrives →
+    // kill ONE scout → the line lands (it is delayed a beat past reward banners).
+    if (ms.beatMarker) ms.player.sprite.body.reset(ms.beatMarker.pos.x, ms.beatMarker.pos.y);
+    await wait(700);
+    const s03 = ms.chain.status('lha-03-discovery');
+    let scout = null;
+    for (let i = 0; i < 20 && !scout; i++) {
+      scout = ms.regionLive.find((r) => r.zoneId === 'lhasa-prayer-citadel' && r.family === 'lesser-evil-scouts' && r.entity.isAlive) ?? null;
+      if (!scout) await wait(300);
+    }
+    if (!scout) return { setup: 'no scout flushed', active, s03 };
+    scout.entity.takeHit(999999);
+    await wait(2600);
+    const spokeOnce = ms.banner.text === LINE && ms.watcherSpoken === true && !ms.watcher;
+    // EXACTLY ONCE: a second kill must not re-show the line.
+    ms.showBanner('__sentinel__', 4000);
+    const scout2 = ms.regionLive.find((r) => r.zoneId === 'lhasa-prayer-citadel' && r.family === 'lesser-evil-scouts' && r.entity.isAlive) ?? null;
+    if (scout2) scout2.entity.takeHit(999999);
+    await wait(2600);
+    const stillOnce = ms.banner.text !== LINE;
+    return { setup: 'ok', active, w1: !!w1, farFromAction, hasBody, combatAtWatcher, dApproach, keepAway, s03, hadSecond: !!scout2, spokeOnce, stillOnce };
+  });
+  ok(
+    'narrative — the Watcher: present + far during the discovery beat, keeps away when approached, no body/combat presence, speaks its line exactly once at the first evil kill',
+    watcherRun.setup === 'ok' && watcherRun.active === 'lha-03-discovery' && watcherRun.w1 && watcherRun.farFromAction >= 600 && !watcherRun.hasBody && watcherRun.combatAtWatcher === 0 && watcherRun.dApproach >= 0 && watcherRun.dApproach < 300 && watcherRun.keepAway && watcherRun.s03 === 'complete' && watcherRun.spokeOnce && watcherRun.stillOnce,
+    JSON.stringify(watcherRun),
+  );
+
+  const variantText = await page.evaluate(() => {
+    const ms = window.__ready();
+    const hit = ms.regionBeatForQuest('eu-06-regional-callback');
+    if (!hit) return { setup: 'no eu-06 beat' };
+    const prev = ms.devClassOverride;
+    ms.devClassOverride = 'Bard';
+    const a = ms.beatProse(hit.zone, hit.beat);
+    ms.devClassOverride = 'Priest';
+    const b = ms.beatProse(hit.zone, hit.beat);
+    ms.devClassOverride = prev;
+    return { setup: 'ok', differ: a !== b, aIsBard: a.includes('(bard)'), bIsPriest: b.includes('(priest)') };
+  });
+  ok(
+    'narrative — class-variant text: the same beat renders per-class entries (Bard vs Priest differ, each picks its own)',
+    variantText.setup === 'ok' && variantText.differ && variantText.aIsBard && variantText.bIsPriest,
+    JSON.stringify(variantText),
+  );
+
+  const campfire = await page.evaluate(async () => {
+    const ms = window.__ready();
+    const wait = (t) => new Promise((r) => setTimeout(r, t));
+    const fire = ms.regionCampfires.find((c) => c.zoneId === 'thessaloniki-outpost');
+    if (!fire) return { setup: 'no thessaloniki campfire' };
+    if (ms.activeWorld !== 'globe') ms.applyWorldSwap('globe', fire.pos);
+    ms.playerHealth.shield = 1e9;
+    ms.player.sprite.body.reset(fire.pos.x, fire.pos.y + 20);
+    await wait(500);
+    const button = ms.campfireButton.isVisible;
+    ms.campfireIdx = 0; // deterministic start for the order/loop proof
+    const seen = [];
+    for (let i = 0; i < 8; i++) {
+      ms.campfireTalk();
+      seen.push(ms.banner.text);
+      await wait(120);
+    }
+    const n = ms.regionCampfires.length;
+    return { setup: 'ok', button, outposts: n, seen };
+  });
+  // Length-agnostic order/loop proof: the list restarts exactly where seen[0]
+  // reappears, and every press matches its modulo slot (fixed order, looping).
+  const cfLines = campfire.seen ?? [];
+  const cfLen = cfLines.indexOf(cfLines[0], 1);
+  const cfCycles = cfLen >= 2 && cfLines.every((l, i) => l === cfLines[i % cfLen]);
+  ok(
+    'narrative — campfire rotation: all six outposts carry a fire; the lines play in fixed order and loop',
+    campfire.setup === 'ok' && campfire.button === true && campfire.outposts === 6 && cfCycles,
+    JSON.stringify(campfire),
   );
 
   // 3aa. SKILL TREE UX (Casey's spec, permanent) — driven by REAL taps on the real

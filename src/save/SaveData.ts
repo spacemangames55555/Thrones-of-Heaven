@@ -149,6 +149,9 @@ export interface SaveData {
     /** HUNTER: a beast is bonded (Tame) — restored mended; the companion re-manifests
      *  on load. Optional → pre-Hunter saves default false (no migration needed). */
     hunterBonded?: boolean;
+    /** THE WATCHER has spoken its one line to this character (narrative one-shot).
+     *  Optional → older saves default false (no migration needed). */
+    watcherSpoken?: boolean;
   };
 
   /** The full quest-chain state (completed set + active quest + objective index). */
