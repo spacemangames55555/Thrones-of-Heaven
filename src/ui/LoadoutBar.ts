@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { getInsets, UI_MARGIN, LEFT_TAB_W, LEFT_TAB_H, leftTabPos } from './uiLayout';
 import { DRAG_AIM_THRESHOLD } from '../game/settings';
+import { FEEL } from './feel-config';
 
 /** Callbacks the scene wires to the loadout buttons (Piece 4: tap = quick fire, drag = aim). */
 export interface LoadoutHandlers {
@@ -15,10 +16,13 @@ export interface LoadoutHandlers {
   onAimRelease: (slot: number, dirX: number, dirY: number) => void;
 }
 
-const SIZE = 58;
-const GAP = 8;
-const COLS = 3; // 3 columns × 2 rows = 6 slots, in the freed bottom-right corner
-const DEPTH = 1350;
+// HOTBAR CHROME (game-feel pass): every chrome tunable sources from FEEL —
+// same shipped values, one home. Bottom-right per Casey's thumb ruling.
+const SIZE = FEEL.hotbar.slotPx;
+const GAP = FEEL.hotbar.gapPx;
+const COLS = FEEL.hotbar.cols;
+const SLOTS = FEEL.hotbar.hotbarSlots;
+const DEPTH = FEEL.depths.screenUi;
 const LABEL_FONT_MAX = 12; // auto-fit label font range (px); shrinks to fit the full name
 const LABEL_FONT_MIN = 7;
 
@@ -41,7 +45,7 @@ export class LoadoutBar {
    *  rank 0, which is every other class always (created up front like all bar
    *  UI so the camera partition stays intact). */
   private readonly cascadeLabel: Phaser.GameObjects.Text;
-  private equipped: (string | null)[] = new Array(6).fill(null);
+  private equipped: (string | null)[] = new Array(SLOTS).fill(null);
   private readonly handlers: LoadoutHandlers;
   /** The in-progress press on a slot button (tap vs drag is resolved on release). */
   private activeDrag: { slot: number; pointerId: number; downX: number; downY: number; aiming: boolean; dirX: number; dirY: number } | null = null;
@@ -50,7 +54,7 @@ export class LoadoutBar {
     this.scene = scene;
     this.handlers = handlers;
 
-    for (let i = 0; i < 6; i++) {
+    for (let i = 0; i < SLOTS; i++) {
       const bg = scene.add
         .rectangle(0, 0, SIZE, SIZE, 0x1d2b40, 0.92)
         .setStrokeStyle(2, 0x44506a, 0.95)
@@ -143,15 +147,16 @@ export class LoadoutBar {
 
   /** Set the equipped skills (6 entries; null = empty) + their button labels. */
   setLoadout(equipped: (string | null)[], labels: (string | null)[]): void {
-    this.equipped = equipped.slice(0, 6);
-    while (this.equipped.length < 6) this.equipped.push(null);
-    for (let i = 0; i < 6; i++) {
+    this.equipped = equipped.slice(0, SLOTS);
+    while (this.equipped.length < SLOTS) this.equipped.push(null);
+    for (let i = 0; i < SLOTS; i++) {
       const filled = !!this.equipped[i];
       const s = this.slots[i];
       if (filled) this.fitLabel(s.label, labels[i] ?? '');
       else s.label.setText('');
-      s.bg.setStrokeStyle(2, filled ? 0xffd24a : 0x36405a, 0.95);
-      s.bg.setFillStyle(filled ? 0x1d2b40 : 0x12161e, filled ? 0.92 : 0.7);
+      // Empty slots read as FRAMED PLACEHOLDERS (FEEL chrome), filled as live keys.
+      s.bg.setStrokeStyle(2, filled ? 0xffd24a : FEEL.hotbar.emptyStroke, filled ? 0.95 : FEEL.hotbar.emptyStrokeAlpha);
+      s.bg.setFillStyle(filled ? 0x1d2b40 : 0x12161e, filled ? 0.92 : FEEL.hotbar.emptyFillAlpha);
       if (!filled) s.cd.setVisible(false);
     }
   }
@@ -200,7 +205,7 @@ export class LoadoutBar {
     // The cascade pip sits just above the 3×2 grid, right-aligned with it.
     this.cascadeLabel.setPosition(rightX + SIZE / 2, bottomY - (SIZE + GAP) - SIZE / 2 - 4);
 
-    for (let i = 0; i < 6; i++) {
+    for (let i = 0; i < SLOTS; i++) {
       const col = i % COLS; // 0 = rightmost column
       const row = Math.floor(i / COLS); // 0 = bottom row
       const x = rightX - col * (SIZE + GAP);

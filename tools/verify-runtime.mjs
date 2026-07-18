@@ -5597,7 +5597,7 @@ try {
       else ms.player.sprite.body.reset(dest.x, dest.y);
       ms.playerHealth.shield = 1e9;
       await wait(2400); // chunk activation + pack spawns + a label sweep
-      const plate = ms.faunaLabels.some((f) => f.t.isAlive && f.label.text === c.animal);
+      const plate = ms.nameplates.livePlates().some((p) => p.name === c.animal);
       const hit = ms.regionBeatForQuest(c.beat);
       homes.push({ zone: c.zone, plate, cullNames: !!hit && hit.beat.summary.includes(c.animal) });
     }
@@ -5635,6 +5635,210 @@ try {
     'narrative — mask drops: all six X-11 banners render their cut verbatim',
     Object.values(drops).length === 6 && Object.values(drops).every(Boolean),
     JSON.stringify(drops),
+  );
+
+  // 3as. GAME-FEEL CONFIG (permanent): FEEL loads, every numeric leaf is
+  // finite, sizes/durations/pools are strictly positive, the domain palette is
+  // the ONE existing tint source (by reference), and the depth bands order
+  // screen UI > floating text / nameplates > world.
+  const feelCfg = await page.evaluate(() => {
+    const ms = window.__game.scene.getScene('MainScene');
+    const f = ms.feel;
+    if (!f) return { loaded: false };
+    const bad = [];
+    const walk = (obj, path) => {
+      for (const [k, v] of Object.entries(obj)) {
+        if (typeof v === 'number') {
+          if (!Number.isFinite(v)) bad.push(`${path}${k}=NaN/inf`);
+          // Offsets are legitimately signed; everything else must be >= 0.
+          else if (v < 0 && !/offset/i.test(k)) bad.push(`${path}${k}<0`);
+        } else if (v && typeof v === 'object') walk(v, `${path}${k}.`);
+      }
+    };
+    walk(f, '');
+    const mustBePositive = [f.text.poolSize, f.text.fontPx, f.text.riseMs, f.text.critScale, f.flash.flashMs, f.shake.shakeMs, f.nameplate.poolSize, f.nameplate.barW, f.hotbar.hotbarSlots, f.hotbar.slotPx];
+    const positive = mustBePositive.every((v) => v > 0);
+    const modeOk = f.nameplate.mode === 'always' || f.nameplate.mode === 'onAggroOrDamage';
+    // Palette values must be EXACTLY the roster's canonical tints (the import
+    // is by reference at compile time; a redefinition would drift here first).
+    const palette = f.domainTint.physical === 0xe04a3a && f.domainTint.mental === 0x3a6de0 && f.domainTint.spiritual === 0x9a4ae0;
+    const depthsOk = f.depths.screenUi > f.depths.floatText && f.depths.screenUi > f.depths.nameplates && f.depths.nameplates > 100 && f.depths.floatText > 100;
+    return { loaded: true, bad, positive, modeOk, palette, depthsOk };
+  });
+  ok(
+    'game-feel — FEEL config: loads, all numerics finite, required values positive, canonical palette, depth bands ordered',
+    feelCfg.loaded && feelCfg.bad.length === 0 && feelCfg.positive && feelCfg.modeOk && feelCfg.palette && feelCfg.depthsOk,
+    JSON.stringify(feelCfg),
+  );
+
+  // 3at. FLOATING COMBAT TEXT (permanent): a burst past the pool cap REUSES
+  // slots (size never exceeds the cap, zero orphaned display objects), the
+  // FEEL hook layer floats a number over a live enemy victim, and everything
+  // retires on schedule.
+  const fct = await page.evaluate(async () => {
+    const ms = window.__ready();
+    const wait = (t) => new Promise((r) => setTimeout(r, t));
+    if (!window.__quietSpot()) return { setup: 'no quiet spot' };
+    const cap = ms.feel.text.poolSize;
+    for (let i = 0; i < cap + 24; i++) ms.floatingText.show(ms.player.x + (i % 5) * 8, ms.player.y - 20, '-1', '#ffffff');
+    const sizeAfterBurst = ms.floatingText.size;
+    const activeAfterBurst = ms.floatingText.activeCount;
+    await wait(800); // the burst retires (default life 600ms)
+    const clearedAfterBurst = ms.floatingText.activeCount === 0;
+    // HOOK LAYER: a real registered enemy takes a non-site hit → one number.
+    const w = ms.activeMap().nearestWalkableWorld(ms.player.x + 120, ms.player.y);
+    const foe = ms.spawnTownsfolk(w.x, w.y, null, 'wolf');
+    await wait(150);
+    // Short stun: its own pooled ✦ spark lives exactly stun-long and must
+    // retire inside the drain window (the foe dies moments later anyway).
+    ms.stunEnemiesInRange(foe.x, foe.y, 60, 1500);
+    const before = ms.floatingText.activeCount;
+    foe.takeHit(7);
+    await wait(150); // the queue flushes on the next frame
+    const hookLanded = ms.floatingText.activeCount > before;
+    foe.takeHit(1e9);
+    // Clear any wanderers that closed in during the check — their bites would
+    // keep spawning legitimate numbers and mask the orphan question.
+    for (const e of ms.combatEnemiesInRange(ms.player.x, ms.player.y, 1200)) e.destroy();
+    // DRAIN: poll to quiet — the kill's own late credit (an XP float) is
+    // living text that retires on schedule; a true orphan would never clear.
+    let drainedActive = -1;
+    for (let i = 0; i < 20; i++) {
+      await wait(150);
+      drainedActive = ms.floatingText.activeCount;
+      if (drainedActive === 0) break;
+    }
+    const sizeStable = ms.floatingText.size === sizeAfterBurst && sizeAfterBurst <= cap;
+    return { setup: 'ok', cap, sizeAfterBurst, activeAfterBurst, clearedAfterBurst, hookLanded, drainedActive, sizeStable };
+  });
+  ok(
+    'game-feel — floating text: burst reuses the pool (size <= cap, zero orphans), the hook floats enemy damage, all retire on time',
+    fct.setup === 'ok' && fct.sizeAfterBurst <= fct.cap && fct.activeAfterBurst <= fct.cap && fct.clearedAfterBurst && fct.hookLanded && fct.drainedActive === 0 && fct.sizeStable,
+    JSON.stringify(fct),
+  );
+
+  // 3au. HIT FEEDBACK (permanent): a damaged DOMAIN-TINTED region enemy
+  // flashes white then GUARANTEED-restores to its domain tint (the old code
+  // silently reverted to the variant color); a player hit at/over the FEEL
+  // threshold shakes the camera, a lighter hit does not.
+  const hitFeel = await page.evaluate(async () => {
+    const ms = window.__ready();
+    const wait = (t) => new Promise((r) => setTimeout(r, t));
+    if (!window.__quietSpot()) return { setup: 'no quiet spot' };
+    const RED = ms.feel.domainTint.physical;
+    const w = ms.activeMap().nearestWalkableWorld(ms.player.x + 140, ms.player.y);
+    // The REAL region spawn path (domain tint via setBaseTint):
+    const before = ms.regionLive.length;
+    ms.spawnRegionEnemy('lhasa-prayer-citadel', 'corrupted-wildlife', w.x, w.y, RED);
+    const rec = ms.regionLive[ms.regionLive.length - 1];
+    if (ms.regionLive.length === before || !rec.entity.isAlive) return { setup: 'no spawn' };
+    const foe = rec.entity;
+    await wait(150);
+    ms.stunEnemiesInRange(foe.sprite.x, foe.sprite.y, 60, 1500);
+    const tintBefore = foe.sprite.tintTopLeft;
+    foe.takeHit(3);
+    const whiteDuringFlash = foe.sprite.tintTopLeft === 0xffffff; // synchronous read inside the flash window
+    await wait(ms.feel.flash.flashMs + 120);
+    const restored = foe.sprite.tintTopLeft;
+    foe.takeHit(1e9);
+    // SHAKE: a big hit shakes; wait out the effect; a chip hit does not.
+    ms.playerHealth.shield = 0;
+    ms.playerHealth.full();
+    ms.playerHealth.damage(ms.feel.shake.shakeThreshold + 5);
+    const shookOnBig = ms.cameras.main.shakeEffect.isRunning === true;
+    await wait(ms.feel.shake.shakeMs + 250);
+    const settled = ms.cameras.main.shakeEffect.isRunning === false;
+    ms.playerHealth.damage(1);
+    const noShakeOnChip = ms.cameras.main.shakeEffect.isRunning === false;
+    ms.playerHealth.full();
+    ms.playerHealth.shield = 1e9;
+    return { setup: 'ok', tintBefore, whiteDuringFlash, restored, RED, shookOnBig, settled, noShakeOnChip };
+  });
+  ok(
+    'game-feel — hit feedback: white flash then guaranteed domain-tint restore; threshold camera shake (big yes, chip no)',
+    hitFeel.setup === 'ok' && hitFeel.tintBefore === hitFeel.RED && hitFeel.whiteDuringFlash && hitFeel.restored === hitFeel.RED && hitFeel.shookOnBig && hitFeel.settled && hitFeel.noShakeOnChip,
+    JSON.stringify(hitFeel),
+  );
+
+  // 3av. NAMEPLATES (permanent): every roster family archetype gets a plate on
+  // spawn (name + level + bar), the plate DETACHES on despawn (chunk
+  // deactivation leaks nothing), the pool never grows, and an
+  // 'onAggroOrDamage' plate lights up when its owner is hit nearby.
+  const plates = await page.evaluate(async () => {
+    const ms = window.__ready();
+    const wait = (t) => new Promise((r) => setTimeout(r, t));
+    if (!window.__quietSpot()) return { setup: 'no quiet spot' };
+    const FAMILIES = ['corrupted-wildlife', 'evil-raiders', 'lesser-evil-scouts', 'herald-angels', 'radiant-guardians', 'lesser-angels', 'dark-casters', 'veil-ambushers', 'hollowed-brutes'];
+    const Z = 'lhasa-prayer-citadel';
+    const poolSize0 = ms.nameplates.size;
+    const base = ms.nameplates.activeCount;
+    const perFamily = {};
+    const spawned = [];
+    for (let i = 0; i < FAMILIES.length; i++) {
+      const fam = FAMILIES[i];
+      const w = ms.activeMap().nearestWalkableWorld(ms.player.x + 90 + i * 30, ms.player.y + (i % 3) * 40);
+      const beforeN = ms.nameplates.activeCount;
+      ms.spawnRegionEnemy(Z, fam, w.x, w.y, ms.feel.domainTint.physical);
+      perFamily[fam] = ms.nameplates.activeCount === beforeN + 1;
+      spawned.push(ms.regionLive[ms.regionLive.length - 1]);
+    }
+    const attachedAll = Object.values(perFamily).every(Boolean);
+    // AGGRO-OR-DAMAGE visibility: hit the first spawn → its plate shows.
+    await wait(120);
+    spawned[0].entity.takeHit(2);
+    await wait(120);
+    const litOnDamage = ms.nameplates.livePlates().some((p) => p.visible);
+    // DESPAWN: the chunk-boundary path (deactivate destroys the entities) —
+    // the sweep must release every plate we attached, pool size unchanged.
+    ms.deactivateRegionZone(Z);
+    await wait(250); // the release sweep runs on the next frames
+    const stale = ms.nameplates.livePlates().filter((p) => p.stale).length;
+    const poolStable = ms.nameplates.size === poolSize0;
+    return { setup: 'ok', poolSize0, base, perFamily, attachedAll, litOnDamage, stale, poolStable };
+  });
+  ok(
+    'game-feel — nameplates: all nine family archetypes attach on spawn, light on damage, detach on chunk despawn (zero stale plates, pool stable)',
+    plates.setup === 'ok' && plates.attachedAll && plates.litOnDamage && plates.stale === 0 && plates.poolStable && plates.poolSize0 > 0,
+    JSON.stringify(plates),
+  );
+
+  // 3aw. HOTBAR CHROME (permanent): the shipped LoadoutBar renders exactly
+  // FEEL.hotbarSlots slots, every slot pinned to the screen (scrollFactor 0)
+  // at the FEEL screen-UI depth, thumb-sized per FEEL.slotPx.
+  const hotbar = await page.evaluate(() => {
+    const ms = window.__game.scene.getScene('MainScene');
+    const slots = ms.skillBar.slots;
+    return {
+      count: slots.length,
+      want: ms.feel.hotbar.hotbarSlots,
+      allPinned: slots.every((s) => s.bg.scrollFactorX === 0 && s.bg.scrollFactorY === 0),
+      allUiDepth: slots.every((s) => s.bg.depth === ms.feel.depths.screenUi),
+      slotPx: slots.every((s) => s.bg.width === ms.feel.hotbar.slotPx),
+    };
+  });
+  ok(
+    'game-feel — hotbar chrome: exactly FEEL.hotbarSlots slots, all scrollFactor 0 at screen-UI depth, thumb-sized per FEEL',
+    hotbar.count === hotbar.want && hotbar.allPinned && hotbar.allUiDepth && hotbar.slotPx,
+    JSON.stringify(hotbar),
+  );
+
+  // 3ax. DEPTH ORDERING (permanent): live objects prove the bands — screen UI
+  // above nameplates and feel floating text, both above the world tile layer.
+  const depths = await page.evaluate(() => {
+    const ms = window.__ready();
+    ms.floatingText.show(ms.player.x, ms.player.y - 20, '-1', '#ffffff', { depth: ms.feel.depths.floatText });
+    const liveText = ms.floatingText.items.find((it) => it.active);
+    return {
+      ui: ms.skillBar.slots[0].bg.depth,
+      plate: ms.nameplates.pool[0].label.depth,
+      text: liveText ? liveText.text.depth : -1,
+      world: ms.activeMap().layer.depth,
+    };
+  });
+  ok(
+    'game-feel — depth ordering: screen UI > nameplates/floating text > world layers (live objects)',
+    depths.ui > depths.plate && depths.ui > depths.text && depths.plate > depths.world && depths.text > depths.world && depths.text >= 0,
+    JSON.stringify(depths),
   );
 
   // 3aa. SKILL TREE UX (Casey's spec, permanent) — driven by REAL taps on the real
