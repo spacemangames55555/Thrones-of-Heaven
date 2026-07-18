@@ -50,7 +50,7 @@ import { WORLD_CALIBRATION, WORLD_SPAN_DEGREES } from '../world/world-calibratio
 import { createSparseWorld, stampZone, buildChunkMapData, CONTINENT_WORLD, type BuiltChunk } from '../world/world-builder';
 import { getZone, WORLD } from '../world/world-manifest';
 import { HOME_NEIGHBORS, civicBeatIds, neighborLineFor } from '../world/home-civics';
-import { WATCHER_LINE, AZAZEL_CAMPFIRE_LINES } from '../world/narrative-canon';
+import { WATCHER_LINE, AZAZEL_CAMPFIRE_LINES, FAUNA_CANON, HERALD_DUELS, narrativeBannerFor } from '../world/narrative-canon';
 import { EUROPE_BUILT_ZONES, buildEuropeQuestDefs } from '../world/europe-built';
 import { appendToRegistry } from '../world/quest-factory';
 import { ENEMY_ROSTER, DOMAIN_TINT, EXISTING_FAMILY_DOMAIN, EXISTING_FAMILY_PACK, makeRegionChampion } from '../world/enemy-roster';
@@ -1100,6 +1100,9 @@ export class MainScene extends Phaser.Scene {
   private campfireButton!: TouchButton;
   private campfireNear?: { zoneId: string; pos: { x: number; y: number } };
   private campfireIdx = 0;
+  /** FAUNA NAMEPLATES: floating animal names over home-city wildlife (display
+   *  only). Swept per frame — a dead or despawned beast drops its label. */
+  private faunaLabels: { t: Townsfolk; label: Phaser.GameObjects.Text }[] = [];
   private beatMarker?: { beatId: string; pos: { x: number; y: number }; objs: Phaser.GameObjects.GameObject[] };
   private beatPickups?: { beatId: string; taken: number; items: { obj: Phaser.GameObjects.Arc; taken: boolean; x: number; y: number }[] };
   private beatElite?: { beatId: string; zoneId: string; kind: 'demon' | 'angel'; entity: Demon | AngelEnemy; label: Phaser.GameObjects.Text };
@@ -9276,10 +9279,12 @@ export class MainScene extends Phaser.Scene {
     this.spawnCairoBoss(bossPost);
   }
 
-  /** One red delta wolf at its post (canon: corrupted-wildlife = Physical). */
+  /** One red delta beast at its post (canon: corrupted-wildlife = Physical).
+   *  Display name per FAUNA CANON: Cairo's wildlife reads 'sacred ibis'. */
   private spawnCairoWolf(post: { x: number; y: number }): void {
     const t = this.spawnTownsfolk(post.x, post.y, null, 'wolf');
     t.sprite.setTint(DOMAIN_TINT.physical);
+    if (FAUNA_CANON['cairo-nile-crown']) this.addFaunaLabel(t, FAUNA_CANON['cairo-nile-crown']);
     this.cairoLive.push({ family: 'corrupted-wildlife', entity: t, post: { ...post }, counted: false });
   }
 
@@ -9294,13 +9299,15 @@ export class MainScene extends Phaser.Scene {
   }
 
   /** The Keeper's talk action: ACCEPTS the manual-start opener (Wizard only —
-   *  class gating decides) and completes it. All prose is a TODO placeholder. */
+   *  class gating decides) and completes it. The opening line is canon
+   *  (beatProse → narrative-canon); the idle line stays a TODO placeholder. */
   private cairoMentorTalk(): void {
     const id = 'cai-01-mentor';
     const st = this.chain.status(id);
     if (st === 'available' || st === 'active') {
       if (st === 'available') this.chain.accept(id);
-      this.showBanner('HAND_AUTHORED_TODO: cai-01-mentor — designer prose goes here.', 2800);
+      const hit = this.regionBeatForQuest(id);
+      this.proseBanner(hit ? this.beatProse(hit.zone, hit.beat) : 'HAND_AUTHORED_TODO: cai-01-mentor — designer prose goes here.');
       this.notifyQuest('cai-01-mentor-story-complete' as ObjectiveTrigger);
     } else {
       this.showBanner('HAND_AUTHORED_TODO: cai-01-mentor (idle line) — designer prose goes here.', 2200);
@@ -9407,13 +9414,23 @@ export class MainScene extends Phaser.Scene {
    *  entry. The dev override maps by lowercase name, matching the callback
    *  keys (classIds); an unmatched override falls through to the shared line. */
   private beatProse(zone: ManifestZone, beat: QuestBeat): string {
-    const def = this.chain.get(beat.id);
+    // CANON FIRST: an inserted verbatim text owns its slot outright (mentor
+    // openings, Azazel arrivals/drops, discovery flavor, class callbacks).
     const cls = this.devClassOverride?.toLowerCase() ?? this.classId;
+    const canon = narrativeBannerFor(beat.id, cls);
+    if (canon) return canon;
+    const def = this.chain.get(beat.id);
     const variant = def?.classVariants?.[cls]?.[0];
     if (variant) return variant;
     return beat.handAuthored === true || zone.handAuthored === true
       ? `HAND_AUTHORED_TODO: ${beat.id} — designer prose goes here.`
       : `${beat.title} — ${beat.summary}`;
+  }
+
+  /** Show beat prose for as long as it takes to read (canon openings run
+   *  long) — the short-line behavior is exactly the old 2800ms. */
+  private proseBanner(text: string): void {
+    this.showBanner(text, Math.min(14000, Math.max(2800, text.length * 42)));
   }
 
   /** The mentor's talk action (generic Cairo Keeper): ACCEPT the manual-start
@@ -9429,7 +9446,7 @@ export class MainScene extends Phaser.Scene {
       // Trigger FIRST, prose banner AFTER — the placeholder line outlives the
       // completion's reward banner (which fires synchronously in between).
       this.notifyQuest(triggerForBeat(hit.beat) as ObjectiveTrigger);
-      this.showBanner(this.beatProse(hit.zone, hit.beat), 2800);
+      this.proseBanner(this.beatProse(hit.zone, hit.beat));
     } else {
       this.showBanner(`HAND_AUTHORED_TODO: ${m.beatId} (idle line) — designer prose goes here.`, 2200);
     }
@@ -9473,7 +9490,7 @@ export class MainScene extends Phaser.Scene {
       if (from && dest) {
         this.beginBeatDelivery(q.id, from, dest.pos, dest.name, () => {
           this.notifyQuest(triggerForBeat(hit.beat) as ObjectiveTrigger);
-          this.showBanner(this.beatProse(hit.zone, hit.beat), 2800);
+          this.proseBanner(this.beatProse(hit.zone, hit.beat));
         });
       }
     }
@@ -9582,6 +9599,8 @@ export class MainScene extends Phaser.Scene {
     this.campfireNear = near;
     const free = !this.transitioning && !this.dialogue.isOpen() && !this.talkButton.isVisible && !this.cityGateButton.isVisible && !this.mentorButton.isVisible && !this.neighborButton.isVisible && !this.playerDead;
     this.campfireButton.setVisible(!!near && free);
+
+    this.updateFaunaLabels();
   }
 
   /** The luminous far-off figure: pure display shapes, no body, no combat list. */
@@ -9624,6 +9643,31 @@ export class MainScene extends Phaser.Scene {
     this.despawnWatcher();
   }
 
+  /** Attach a fauna nameplate to a home-city beast (display only). */
+  private addFaunaLabel(t: Townsfolk, name: string): void {
+    const label = this.add
+      .text(t.sprite.x, t.sprite.y - 26, name, { fontFamily: 'system-ui, sans-serif', fontSize: '11px', color: '#e8d8c0' })
+      .setOrigin(0.5)
+      .setStroke('#101830', 3)
+      .setDepth(9);
+    this.faunaLabels.push({ t, label });
+  }
+
+  /** Per-frame: nameplates follow their beasts; the dead drop theirs. */
+  private updateFaunaLabels(): void {
+    if (!this.faunaLabels.length) return;
+    let prune = false;
+    for (const f of this.faunaLabels) {
+      if (!f.t.isAlive || !f.t.sprite.active) {
+        f.label.destroy();
+        prune = true;
+      } else {
+        f.label.setPosition(f.t.sprite.x, f.t.sprite.y - 26).setVisible(f.t.sprite.visible);
+      }
+    }
+    if (prune) this.faunaLabels = this.faunaLabels.filter((f) => f.t.isAlive && f.t.sprite.active);
+  }
+
   /** Azazel's campfire rotation: the fixed line list, in order, looping. */
   private campfireTalk(): void {
     if (!this.campfireNear) return;
@@ -9662,7 +9706,15 @@ export class MainScene extends Phaser.Scene {
       if (d <= BEAT_MARKER_RADIUS) {
         this.clearBeatMarker();
         this.notifyQuest(triggerForBeat(hit.beat) as ObjectiveTrigger);
-        this.showBanner(this.beatProse(hit.zone, hit.beat), 2800); // prose outlives the reward banner
+        // HERALD DUELS render as a two-voice exchange: the herald's truth,
+        // then Azazel's inversion a beat later. Everything else is one banner.
+        const duel = HERALD_DUELS[hit.beat.id];
+        if (duel) {
+          this.proseBanner(`Herald: "${duel.herald}"`);
+          this.time.delayedCall(3600, () => this.proseBanner(`Azazel: "${duel.azazel}"`));
+        } else {
+          this.proseBanner(this.beatProse(hit.zone, hit.beat)); // prose outlives the reward banner
+        }
       }
     }
 
@@ -9683,7 +9735,7 @@ export class MainScene extends Phaser.Scene {
         if (q && hit && this.beatElite.beatId === q.id) {
           this.onEvilKilled(hit.beat.enemyFamily ?? 'lesser-evil-scouts'); // the Watcher hook fires BEFORE the beat prose
           this.notifyQuest(triggerForBeat(hit.beat) as ObjectiveTrigger);
-          this.showBanner(this.beatProse(hit.zone, hit.beat), 2800); // prose outlives the reward banner
+          this.proseBanner(this.beatProse(hit.zone, hit.beat)); // prose outlives the reward banner
         }
         this.beatElite.label.destroy();
         this.beatElite = undefined;
@@ -9746,7 +9798,7 @@ export class MainScene extends Phaser.Scene {
       if (this.beatPickups.taken >= BEAT_PICKUP_COUNT) {
         this.clearBeatPickups();
         this.notifyQuest(triggerForBeat(hit.beat) as ObjectiveTrigger);
-        this.showBanner(this.beatProse(hit.zone, hit.beat), 2800); // prose outlives the reward banner
+        this.proseBanner(this.beatProse(hit.zone, hit.beat)); // prose outlives the reward banner
       }
     }
   }
@@ -10083,6 +10135,9 @@ export class MainScene extends Phaser.Scene {
       const t = this.spawnTownsfolk(x, y, null, family === 'corrupted-wildlife' ? 'wolf' : 'raider');
       t.sprite.setTint(tint);
       this.regionLive.push({ zoneId, family, kind: 'townsfolk', entity: t, counted: false });
+      // FAUNA NAMEPLATE (display only): a home's wildlife wears its canonical
+      // animal name — mechanics, family, and spawner untouched.
+      if (family === 'corrupted-wildlife' && FAUNA_CANON[zoneId]) this.addFaunaLabel(t, FAUNA_CANON[zoneId]);
     } else if (family === 'dark-casters') {
       // Low HP + ranged + native kiting (backs off inside preferred range); its
       // tagged bolts apply the slow/weaken + stacking DoT in onProjectileHitPlayer.

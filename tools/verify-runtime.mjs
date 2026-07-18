@@ -3328,9 +3328,9 @@ try {
     );
   }
 
-  // 3q. HAND-AUTHORED MARCH BEAT: as-01 (Azazel's Asia arrival) completes via
-  // its marker with the HAND_AUTHORED_TODO placeholder intact — structure
-  // playable, prose still the designer's to write.
+  // 3q. HAND-AUTHORED MARCH BEAT + THE INSERTED ARRIVAL: as-01 (Azazel's Asia
+  // arrival) completes via its marker and the banner is Casey's VERBATIM cut —
+  // the writing is live in a real walk-in, not just present in data.
   const march = await page.evaluate(async () => {
     const ms = window.__ready();
     const wait = (t) => new Promise((r) => setTimeout(r, t));
@@ -3342,17 +3342,18 @@ try {
     ms.player.sprite.body.reset(mk.pos.x, mk.pos.y);
     await wait(600);
     const banner = ms.banner.text;
-    const def = ms.chain.get('as-01-azazel-welcome');
+    const CUT =
+      'They call Kunlun the pillar of heaven, and for once their poetry is honest: they built their floor upon your sky. Every prayer your ancestors sent up this slope arrived — was weighed, and was *filed*. Nothing in their house is lost; nothing is answered, either. A pillar is only a road stood on end, gate-knocker. Gather the light, climb with me, and we will set their floor down at last.';
     return {
       marker: true,
       status: ms.chain.status('as-01-azazel-welcome'),
-      bannerTodo: banner.includes('HAND_AUTHORED_TODO: as-01-azazel-welcome'),
-      defTodo: def.npcInactiveLines[0].includes('HAND_AUTHORED_TODO'),
+      bannerVerbatim: banner === CUT,
+      noTodo: !banner.includes('HAND_AUTHORED_TODO'),
     };
   });
   ok(
-    'march beat: as-01 completes via its marker with the TODO placeholder intact',
-    march.marker && march.status === 'complete' && march.bannerTodo && march.defTodo,
+    "march beat: as-01 completes via its marker and banners Azazel's Kunlun arrival VERBATIM (no TODO)",
+    march.marker && march.status === 'complete' && march.bannerVerbatim && march.noTodo,
     JSON.stringify(march),
   );
 
@@ -5468,11 +5469,19 @@ try {
     ms.devClassOverride = 'Priest';
     const b = ms.beatProse(hit.zone, hit.beat);
     ms.devClassOverride = prev;
-    return { setup: 'ok', differ: a !== b, aIsBard: a.includes('(bard)'), bIsPriest: b.includes('(priest)') };
+    // The CANON callbacks (verbatim): the Bard hears Wren's lamp; the Priest
+    // hears Lucia's bread — the same beat, each class its own text.
+    return {
+      setup: 'ok',
+      differ: a !== b,
+      aIsBard: a.startsWith("Wren keeps a lamp lit past its hour — for you, though she'd deny it."),
+      bIsPriest: b.startsWith('Lucia leaves bread on your old stoop still — faith, she would say, and she would be right.'),
+      noTodo: !a.includes('HAND_AUTHORED_TODO') && !b.includes('HAND_AUTHORED_TODO'),
+    };
   });
   ok(
-    'narrative — class-variant text: the same beat renders per-class entries (Bard vs Priest differ, each picks its own)',
-    variantText.setup === 'ok' && variantText.differ && variantText.aIsBard && variantText.bIsPriest,
+    'narrative — class callback: the same beat renders each class its own CANON text (Bard: Wren; Priest: Lucia; no TODO)',
+    variantText.setup === 'ok' && variantText.differ && variantText.aIsBard && variantText.bIsPriest && variantText.noTodo,
     JSON.stringify(variantText),
   );
 
