@@ -238,8 +238,8 @@ function paint(family, cfg, rand) {
     }
     case 'herald-angels': {
       // Tall herald: narrow high wings, raised trumpet arm.
-      r.tri(cx - w * 0.14, h * 0.5, cx - w * 0.3, bodyTop, cx - w * 0.08, h * 0.28, GRAY.dark); // wing L (high, narrow)
-      r.tri(cx + w * 0.14, h * 0.5, cx + w * 0.3, bodyTop, cx + w * 0.08, h * 0.28, GRAY.dark); // wing R
+      r.tri(cx - w * 0.18, h * 0.52, cx - w * 0.32, bodyTop, cx - w * 0.02, h * 0.34, GRAY.dark); // wing L (high, narrow)
+      r.tri(cx + w * 0.18, h * 0.52, cx + w * 0.32, bodyTop, cx + w * 0.02, h * 0.34, GRAY.dark); // wing R
       r.tri(cx, h * 0.3, cx - w * 0.16, groundY - 3, cx + w * 0.16, groundY - 3, GRAY.mid); // long robe
       r.ellipse(cx, h * 0.2, w * 0.09, h * 0.08, GRAY.light); // head
       r.line(cx + w * 0.08, h * 0.3, cx + w * 0.3, h * 0.12, GRAY.light, 2); // raised arm
@@ -260,9 +260,9 @@ function paint(family, cfg, rand) {
     }
     case 'lesser-angels': {
       // Slight figure, drooping wingtips, empty hands.
-      r.tri(cx - w * 0.1, h * 0.42, cx - w * 0.3, h * 0.7, cx - w * 0.06, h * 0.6, GRAY.dark); // droop wing L
-      r.tri(cx + w * 0.1, h * 0.42, cx + w * 0.3, h * 0.7, cx + w * 0.06, h * 0.6, GRAY.dark); // droop wing R
-      r.tri(cx, h * 0.32, cx - w * 0.11, groundY - 4, cx + w * 0.11, groundY - 4, GRAY.mid); // slim robe
+      r.tri(cx - w * 0.12, h * 0.38, cx - w * 0.34, h * 0.72, cx - w * 0.04, h * 0.6, GRAY.dark); // droop wing L
+      r.tri(cx + w * 0.12, h * 0.38, cx + w * 0.34, h * 0.72, cx + w * 0.04, h * 0.6, GRAY.dark); // droop wing R
+      r.tri(cx, h * 0.26, cx - w * 0.14, groundY - 4, cx + w * 0.14, groundY - 4, GRAY.mid); // slim robe (apex meets the head)
       r.ellipse(cx, h * 0.22, w * 0.08, h * 0.07, GRAY.light); // head
       r.line(cx - w * 0.08, h * 0.4, cx - w * 0.14, h * 0.58, GRAY.mid, 1); // empty arm L
       r.line(cx + w * 0.08, h * 0.4, cx + w * 0.14, h * 0.58, GRAY.mid, 1); // empty arm R
@@ -270,7 +270,7 @@ function paint(family, cfg, rand) {
     }
     case 'dark-casters': {
       // Hooded robe, orb held high on a staff, NO wings.
-      r.tri(cx, h * 0.18, cx - w * 0.2, groundY - 3, cx + w * 0.2, groundY - 3, GRAY.mid); // robe
+      r.tri(cx, h * 0.24, cx - w * 0.22, groundY - 3, cx + w * 0.22, groundY - 3, GRAY.mid); // robe (shoulders under the hood)
       r.ellipse(cx, h * 0.2, w * 0.11, h * 0.09, GRAY.dark); // deep hood
       r.ellipse(cx, h * 0.22, w * 0.05, h * 0.04, GRAY.outline, 255); // face void
       r.line(cx + w * 0.12, h * 0.34, cx + w * 0.3, h * 0.1, GRAY.dark, 2); // staff

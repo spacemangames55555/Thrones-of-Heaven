@@ -42,6 +42,17 @@ import Phaser from 'phaser';
 export const SPRITE_OVERRIDES: { key: string; w: number; h: number; rotations?: boolean }[] = [
   // Necromancer — real 8-way pixel art (128px masters in public/sprites/necro-figure/).
   { key: 'necro-figure', w: 32, h: 48, rotations: true },
+  // Enemy roster families — generated grayscale art (scripts/gen-sprites.mjs),
+  // each at the canonical size of the shared key it replaces (tinted at runtime).
+  { key: 'enemy-corrupted-wildlife', w: 24, h: 34 },
+  { key: 'enemy-evil-raiders', w: 24, h: 34 },
+  { key: 'enemy-veil-ambushers', w: 24, h: 34 },
+  { key: 'enemy-hollowed-brutes', w: 24, h: 34 },
+  { key: 'enemy-lesser-evil-scouts', w: 30, h: 38 },
+  { key: 'enemy-herald-angels', w: 48, h: 56 },
+  { key: 'enemy-radiant-guardians', w: 48, h: 56 },
+  { key: 'enemy-lesser-angels', w: 48, h: 56 },
+  { key: 'enemy-dark-casters', w: 48, h: 56 },
 ];
 
 /** The eight rotation frame names (file + key suffixes), compass-fixed. */
