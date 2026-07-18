@@ -223,6 +223,7 @@ try {
             ms.regionMentorTalk(); // the button's real handler (accept + complete)
             await wait(300);
             out.openerAfter = ms.chain.status(home.opener);
+            out.mentorBanner = ms.banner.text; // read before c1's delayed start narration lands
           }
         } else if (home.kind === 'cairo') {
           out.mentorDist = Math.hypot(ms.cairoMentorPos.x - ms.player.x, ms.cairoMentorPos.y - ms.player.y);
@@ -272,6 +273,25 @@ try {
       s.world === home.world && atHome && s.mentorDist >= 0 && s.mentorDist < 400 && guided && s.button === true && openerDone,
       JSON.stringify(s),
     );
+
+    // 2h. MENTOR OPENINGS (the insertion run, permanent): three different
+    // homes hear their mentor's REAL opening through the real talk button —
+    // Casey's text VERBATIM, no TODO left on the inserted slot.
+    const OPENINGS = {
+      blacksmith:
+        "So you're awake. Good — the forge doesn't wait and neither does trouble. The deer have come down from the wood wrong this season. Standing in rings among the trees. Not grazing. Gray. Before you go looking at that, take these hinges to Greta at the Anvil's Rest — a town that eats together holds together. Go on. Then we talk about the wood.",
+      witchdoctor:
+        'The river talks, little one. Always has. Lately it stammers — and the bonobos upriver have gone silent. The gentle ones. Silent. Mama Nsimba\'s pot knows trouble before my drum does, so take her these herbs and keep your ears open in the market. We are going to listen properly, you and I. Then we are going to answer.',
+      monk:
+        'You wake at the roof of the world — breathe first; the mountain insists. Yesterday the pikas covered the eastern slope, a whole hillside of them, and every one faced the citadel. The wind announced nothing. Take Pemba his tea bricks, turn the wheels as you pass, and watch the slopes. Clear eyes and full cups, I think, before this is done.',
+    };
+    if (OPENINGS[cls]) {
+      ok(
+        `mentor opening (${cls}): the real talk banner is Casey's text VERBATIM (no TODO)`,
+        s.mentorBanner === OPENINGS[cls] && !String(s.mentorBanner).includes('HAND_AUTHORED_TODO'),
+        JSON.stringify({ got: String(s.mentorBanner ?? '').slice(0, 90) }),
+      );
+    }
 
     // 2g. GUIDANCE RETARGETING (permanent, the real playtest gap): as the
     // Monk, the arrow retargets through the first three beats by REAL play —
@@ -3156,6 +3176,11 @@ try {
     // cai-c1 — the CIVIC errand: walk the water jars from the Keeper to Amara.
     for (let i = 0; i < 30 && !ms.beatDelivery; i++) await wait(100);
     if (ms.beatDelivery) {
+      // Step OUT of the parcel's radius first (the pickup is edge-triggered so
+      // the Keeper's opening is readable), then walk back in for real.
+      const away = ms.egyptMap.nearestWalkableWorld(ms.beatDelivery.from.x + 180, ms.beatDelivery.from.y + 120);
+      ms.player.sprite.body.reset(away.x, away.y);
+      await wait(300);
       ms.player.sprite.body.reset(ms.beatDelivery.from.x, ms.beatDelivery.from.y);
       await wait(350);
       if (ms.beatDelivery) ms.player.sprite.body.reset(ms.beatDelivery.to.x, ms.beatDelivery.to.y);
@@ -3245,9 +3270,13 @@ try {
       await wait(300);
       const s1 = st(ids[0]);
       // 2) the errand: the delivery walked from the mentor's parcel to the
-      // neighbor's door.
+      // neighbor's door. Step OUT of the parcel's radius first (edge-triggered
+      // pickup — the mentor's opening stays readable), then walk back in.
       for (let i = 0; i < 30 && !ms.beatDelivery; i++) await wait(100);
       if (ms.beatDelivery) {
+        const away = ms.activeMap().nearestWalkableWorld(ms.beatDelivery.from.x + 180, ms.beatDelivery.from.y + 120);
+        ms.player.sprite.body.reset(away.x, away.y);
+        await wait(300);
         ms.player.sprite.body.reset(ms.beatDelivery.from.x, ms.beatDelivery.from.y);
         await wait(350);
         if (ms.beatDelivery) ms.player.sprite.body.reset(ms.beatDelivery.to.x, ms.beatDelivery.to.y);
@@ -4578,6 +4607,7 @@ try {
     const decoy = ms.spawnSpiritDecoy(20000);
     await wait(150);
     decoy.health.current -= 20;
+    ms.playerHealth.shield = 1e9; // ambient chip eats shield, never the HP this check reads
     ms.playerHealth.current = ms.playerHealth.max - 30;
     const dHp0 = decoy.health.current;
     const pHp0 = ms.playerHealth.current;
@@ -4587,8 +4617,10 @@ try {
       { p: 'strike', at: 'self', radius: 120, damageRaw: 15, tint: 0xffd8a0 },
       { p: 'heal', amount: 12, radius: 120 },
     ]);
-    await wait(120);
+    // Composed steps apply synchronously — read NOW, before any ambient tick
+    // can touch the numbers (the synchronous-read hardening precedent).
     const dual = { foe: aHp1 - a.health.current, self: ms.playerHealth.current - pHp0, decoy: decoy.health.current - dHp0 };
+    await wait(120);
     // MOBILE PULSE RING: ticks here, then FOLLOWS to a second foe far away.
     ms.startPulseRing(2600, 350, 130, 10);
     const aHp2 = a.health.current;
@@ -5514,6 +5546,95 @@ try {
     'narrative — campfire rotation: all six outposts carry a fire; the lines play in fixed order and loop',
     campfire.setup === 'ok' && campfire.button === true && campfire.outposts === 6 && cfCycles,
     JSON.stringify(campfire),
+  );
+
+  // 3ap. HERALD DUEL (the insertion run, permanent): eu-03 walks in and
+  // renders BOTH voices verbatim — the herald's truth, then Azazel's
+  // inversion a beat later.
+  const duelRun = await page.evaluate(async () => {
+    const ms = window.__ready();
+    const wait = (t) => new Promise((r) => setTimeout(r, t));
+    ms.devJumpToQuest('eu-03-herald-truth-1');
+    ms.playerHealth.shield = 1e9;
+    await wait(2600); // travel + chunk activation + the marker
+    const mk = ms.beatMarker;
+    if (!mk || mk.beatId !== 'eu-03-herald-truth-1') return { marker: false };
+    ms.player.sprite.body.reset(mk.pos.x, mk.pos.y);
+    await wait(600);
+    const v1 = ms.banner.text;
+    await wait(3600); // Azazel replies 3.6s after the walk-in
+    const v2 = ms.banner.text;
+    return { marker: true, status: ms.chain.status('eu-03-herald-truth-1'), v1, v2 };
+  });
+  ok(
+    'narrative — herald duel: eu-03 renders both voices verbatim (the herald, then Azazel)',
+    duelRun.marker &&
+      duelRun.status === 'complete' &&
+      duelRun.v1 === 'Herald: "He was cast down for what he gave them."' &&
+      duelRun.v2 ===
+        'Azazel: "Cast down — hear how proudly it is confessed. Yes: I gave, and giving was answered with a cliff. Keep that arithmetic close, road-breaker, for the day they offer you mercy."',
+    JSON.stringify({ ...duelRun, v1: String(duelRun.v1 ?? '').slice(0, 60), v2: String(duelRun.v2 ?? '').slice(0, 60) }),
+  );
+
+  // 3aq. FAUNA CANON (the insertion run, permanent): four homes wear their
+  // canonical animal — a LIVE nameplate on the wildlife and the cull-quest
+  // text naming the animal — and Seattle stays outside the pipeline (its
+  // hand-authored opener keeps its designer placeholder untouched).
+  const fauna = await page.evaluate(async () => {
+    const ms = window.__ready();
+    const wait = (t) => new Promise((r) => setTimeout(r, t));
+    const CASES = [
+      { zone: 'munich-anvil-hold', beat: 'mun-02-foothill-wolves', animal: 'roe deer' },
+      { zone: 'lhasa-prayer-citadel', beat: 'lha-02-first-blood', animal: 'pikas' },
+      { zone: 'rome-eternal-seat', beat: 'rom-02-catacomb-vermin', animal: 'ruin cats' },
+      { zone: 'bali-drowned-crown', beat: 'bal-02-first-blood', animal: 'macaques' },
+    ];
+    const homes = [];
+    for (const c of CASES) {
+      const dest = ms.regionZoneArrivals[c.zone];
+      if (!dest) return { setup: `no arrival for ${c.zone}` };
+      if (ms.activeWorld !== 'globe') ms.applyWorldSwap('globe', dest);
+      else ms.player.sprite.body.reset(dest.x, dest.y);
+      ms.playerHealth.shield = 1e9;
+      await wait(2400); // chunk activation + pack spawns + a label sweep
+      const plate = ms.faunaLabels.some((f) => f.t.isAlive && f.label.text === c.animal);
+      const hit = ms.regionBeatForQuest(c.beat);
+      homes.push({ zone: c.zone, plate, cullNames: !!hit && hit.beat.summary.includes(c.animal) });
+    }
+    const sea = ms.regionBeatForQuest('s1-meet-mentor');
+    const seattleUntouched = !!sea && ms.beatProse(sea.zone, sea.beat).includes('HAND_AUTHORED_TODO: s1-meet-mentor');
+    return { setup: 'ok', homes, seattleUntouched };
+  });
+  ok(
+    'narrative — fauna canon: four homes show live animal nameplates + animal-named cull text; Seattle stays hand-built (placeholder intact)',
+    fauna.setup === 'ok' && fauna.homes.every((h) => h.plate && h.cullNames) && fauna.seattleUntouched,
+    JSON.stringify(fauna),
+  );
+
+  // 3ar. MASK DROPS (the insertion run, permanent): all six X-11 drop banners
+  // are wired verbatim through the live renderer (the walk-in path is proven
+  // by the as-01 arrival check; this pins every region's cut).
+  const drops = await page.evaluate(() => {
+    const ms = window.__ready();
+    const EXPECT = {
+      'eu-11-mask-drops': 'Good. Bring the rest in.',
+      'af-11-mask-drops': 'At last. — Begin the count.',
+      'as-11-mask-drops': 'Hold the door. The rest are coming.',
+      'bb-11-mask-drops': 'As I said. Not this time.',
+      'ul-11-mask-drops': 'Take it all.',
+      'te-11-mask-drops': 'The avenue remembers its purpose.',
+    };
+    const out = {};
+    for (const [id, want] of Object.entries(EXPECT)) {
+      const hit = ms.regionBeatForQuest(id);
+      out[id] = !!hit && ms.beatProse(hit.zone, hit.beat) === want;
+    }
+    return out;
+  });
+  ok(
+    'narrative — mask drops: all six X-11 banners render their cut verbatim',
+    Object.values(drops).length === 6 && Object.values(drops).every(Boolean),
+    JSON.stringify(drops),
   );
 
   // 3aa. SKILL TREE UX (Casey's spec, permanent) — driven by REAL taps on the real

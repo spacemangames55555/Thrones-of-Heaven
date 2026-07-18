@@ -1086,7 +1086,7 @@ export class MainScene extends Phaser.Scene {
    *  hand-off at the neighbor. One live run at a time, keyed to the active
    *  'deliver' beat (synthetic = the framework gate check's direct drive).
    *  Public-readable for the runtime gate. */
-  beatDelivery?: { beatId: string; from: { x: number; y: number }; to: { x: number; y: number }; toName: string; carrying: boolean; fx: Phaser.GameObjects.GameObject[]; synthetic?: boolean; onDone: () => void };
+  beatDelivery?: { beatId: string; from: { x: number; y: number }; to: { x: number; y: number }; toName: string; carrying: boolean; armed: boolean; fx: Phaser.GameObjects.GameObject[]; synthetic?: boolean; onDone: () => void };
   /** THE WATCHER: a distant, luminous, non-hostile angel present in a home
    *  city during its discovery / first-evil beats. Pure display objects — no
    *  physics body, never in a combat array — so it cannot aggro or block. */
@@ -9497,7 +9497,10 @@ export class MainScene extends Phaser.Scene {
     const d = this.beatDelivery;
     if (d && !this.playerDead) {
       if (!d.carrying) {
-        if (Phaser.Math.Distance.Between(this.player.x, this.player.y, d.from.x, d.from.y) <= BEAT_PICKUP_RADIUS) {
+        const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, d.from.x, d.from.y);
+        if (!d.armed) {
+          if (dist > BEAT_PICKUP_RADIUS) d.armed = true; // stepped out once — the walk-in now counts
+        } else if (dist <= BEAT_PICKUP_RADIUS) {
           d.carrying = true;
           for (const o of d.fx) {
             this.tweens.killTweensOf(o);
@@ -9520,7 +9523,12 @@ export class MainScene extends Phaser.Scene {
   beginBeatDelivery(beatId: string, from: { x: number; y: number }, to: { x: number; y: number }, toName: string, onDone: () => void, synthetic = false): void {
     this.clearBeatDelivery();
     const fx = this.spawnDeliveryFx(from.x, from.y, 'Pick up the delivery');
-    this.beatDelivery = { beatId, from: { ...from }, to: { ...to }, toName, carrying: false, fx, ...(synthetic ? { synthetic } : {}), onDone };
+    // EDGE-TRIGGERED pickup: a run that begins with the player already at the
+    // source (talking to the mentor as c1 activates) arms only after they
+    // step out once — the parcel never leaps into their hands mid-speech and
+    // the mentor's opening banner survives to be read.
+    const armed = Phaser.Math.Distance.Between(this.player.x, this.player.y, from.x, from.y) > BEAT_PICKUP_RADIUS;
+    this.beatDelivery = { beatId, from: { ...from }, to: { ...to }, toName, carrying: false, armed, fx, ...(synthetic ? { synthetic } : {}), onDone };
   }
 
   /** A pulsing parcel ring + label (the beat-marker look, parcel-gold). */
