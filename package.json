@@ -3,14 +3,15 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Thrones of Heaven — Washington State map prototype",
+  "description": "Thrones of Heaven \u2014 Washington State map prototype",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "smoke": "esbuild src/world/world-smoke.ts --bundle --format=esm --platform=node --outfile=node_modules/.cache/toh-smoke.mjs --log-level=warning && node node_modules/.cache/toh-smoke.mjs",
     "verify:runtime": "node tools/verify-runtime.mjs",
-    "verify": "npm run build && npm run smoke && npm run verify:runtime"
+    "verify": "npm run build && npm run smoke && npm run verify:runtime",
+    "gen:sprites": "node scripts/gen-sprites.mjs"
   },
   "dependencies": {
     "phaser": "^4.2.0"
