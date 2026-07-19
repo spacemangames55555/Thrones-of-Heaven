@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import { GameMap } from '../map/GameMap';
 import { preloadTerrainTiles, drawIntoAtlasCell } from '../render/tileAtlas';
-import { preloadSpriteOverrides, applySpriteOverrides, applySpriteOverride } from '../render/spriteOverrides';
+import { preloadSpriteOverrides, applySpriteOverrides, applySpriteOverride, SPRITE_OVERRIDES } from '../render/spriteOverrides';
 import { Player } from '../entities/Player';
 import { Npc } from '../entities/Npc';
 import { Controls } from '../input/Controls';
@@ -774,6 +774,8 @@ export class MainScene extends Phaser.Scene {
   empoweredStrikes: { remaining: number; mult: number } | null = null;
   /** How many sprite drop-in overrides applied at create() (gate-observable). */
   spriteOverridesApplied = 0;
+  /** How many are DECLARED — the art census (applied must equal listed). */
+  readonly spriteOverridesListed = SPRITE_OVERRIDES.length;
   // --- Assassin framework primitives (composable/bespoke; class-agnostic) ---
   /** ARMED DEVICES (the trap system): place → arm after a delay → the first enemy
    *  inside the radius triggers the PAYLOAD → the device is consumed. Untriggered

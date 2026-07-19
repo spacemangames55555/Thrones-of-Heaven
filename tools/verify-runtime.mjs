@@ -3576,6 +3576,28 @@ try {
     `applied=${artPath.sprOk} size=${JSON.stringify(artPath.sprSize)}`,
   );
 
+  // 3u0. ART CENSUS (permanent): EVERY declared sprite override actually loaded
+  // and applied at boot — a typo'd filename, missing PNG, or corrupt file can
+  // never ship silently behind the code-drawn fallback. Spot-checks the two
+  // divine stills (cherub-enemy / angel-divine) at their canonical sizes.
+  const census = await page.evaluate(() => {
+    const ms = window.__game.scene.getScene('MainScene');
+    const dims = (k) => {
+      if (!ms.textures.exists(k)) return null;
+      const img = ms.textures.get(k).getSourceImage();
+      return [img.width, img.height];
+    };
+    return { applied: ms.spriteOverridesApplied, listed: ms.spriteOverridesListed, cherub: dims('cherub-enemy'), divine: dims('angel-divine') };
+  });
+  ok(
+    'art census: every declared sprite override loaded + applied; divine stills minted at canonical size',
+    census.listed >= 17 &&
+      census.applied === census.listed &&
+      JSON.stringify(census.cherub) === '[54,58]' &&
+      JSON.stringify(census.divine) === '[44,56]',
+    JSON.stringify(census),
+  );
+
   // 3u. SKILL FRAMEWORK (composed-action schema): EVERY skill in every tree of
   // every class executes without error through its real runtime seam, and each
   // COMPOSED action produces exactly its declared primitives. Direct calls
