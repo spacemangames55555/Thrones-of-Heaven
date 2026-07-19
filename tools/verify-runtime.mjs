@@ -158,7 +158,9 @@ try {
       return false;
     };
   });
-  page.on('pageerror', (e) => pageErrors.push(e.message));
+  // Tag each page error with how many checks had completed when it fired, so a
+  // failure names its neighborhood instead of just its message.
+  page.on('pageerror', (e) => pageErrors.push(`[after check ${results.length}] ${e.message}`));
 
   async function newGame(classId) {
     await page.goto(`http://localhost:${PORT}/`, { waitUntil: 'load' });
@@ -768,21 +770,38 @@ try {
       );
     }
 
-    // A class WITHOUT rotation art keeps its single code-drawn texture no
-    // matter how it moves (the fallback half of the 8-way contract).
+    // A figure WITHOUT rotation art keeps its single texture no matter how it
+    // moves (the fallback half of the 8-way contract). SYNTHETIC PROBE key —
+    // deliberately NOT a real class figure, so shipping art for any class
+    // (including Blacksmith) can never flip this check.
     if (cls === 'blacksmith') {
       const singleTex = await page.evaluate(() => {
         const ms = window.__ready();
-        ms.player.setDirection(1, 0);
-        const k1 = ms.player.sprite.texture.key;
-        ms.player.setDirection(0, -1);
-        const k2 = ms.player.sprite.texture.key;
-        ms.player.setDirection(0, 0);
-        return { k1, k2 };
+        const key = 'probe-noart-figure';
+        if (!ms.textures.exists(key)) {
+          const cv = ms.textures.createCanvas(key, 32, 48);
+          cv.context.fillStyle = '#808080';
+          cv.context.fillRect(0, 0, 32, 48);
+          cv.refresh();
+        }
+        const p = ms.player;
+        const realKey = p.baseKey;
+        p.baseKey = key;
+        p.sprite.setTexture(key);
+        const keys = [];
+        for (const [x, y] of [[1, 0], [0, -1], [1, 1], [0, 1]]) {
+          p.setDirection(x, y);
+          keys.push(p.sprite.texture.key);
+        }
+        p.setDirection(0, 0);
+        p.baseKey = realKey; // restore the real figure exactly as it was
+        p.sprite.setTexture(realKey);
+        ms.textures.remove(key);
+        return { keys, restored: p.sprite.texture.key === realKey };
       });
       ok(
-        'sprite fallback: a class without rotation art keeps its single texture while moving',
-        singleTex.k1 === 'player-figure' && singleTex.k2 === 'player-figure',
+        'sprite fallback: a figure without rotation art keeps its single texture while moving (synthetic probe key)',
+        singleTex.keys.length === 4 && singleTex.keys.every((k) => k === 'probe-noart-figure') && singleTex.restored,
         JSON.stringify(singleTex),
       );
     }
@@ -6029,14 +6048,44 @@ try {
     cv.refresh();
     ms.applyFamilyTexture(last.sprite, 'probe-art');
     const hitWorn = last.sprite.texture.key === fakeKey;
+    // Cull the wave FIRST: no live sprite may wear a texture we remove below.
     ms.deactivateRegionZone(Z);
     await wait(150);
+    // LIVE ABSENT-ART BRANCH, forever: remove one REAL per-family texture, a
+    // fresh spawn of that family falls all the way back to its SHARED texture,
+    // then the art is re-minted through the real drop-in seam — so this branch
+    // stays exercised even with every PNG shipped. The family is picked
+    // DYNAMICALLY: ambient fauna and live beat elites elsewhere in the world
+    // wear these textures through the same funnel, and removing a texture a
+    // live sprite wears crashes the renderer — so take the first family with
+    // zero live wearers (loud setup fail if none).
+    const SIZES = { townsfolk: [24, 34], 'demon-enemy': [30, 38], 'angel-enemy': [48, 56] };
+    const wornByLive = (key) => ms.children.list.some((o) => o.texture && o.texture.key === key);
+    const freeFam = fams.find((f) => ms.textures.exists(`enemy-${f}`) && !wornByLive(`enemy-${f}`));
+    if (!freeFam) return { setup: 'no wearer-free family for the absent-art branch' };
+    const freeKey = `enemy-${freeFam}`;
+    ms.textures.remove(freeKey);
+    const w2 = ms.activeMap().nearestWalkableWorld(ms.player.x + 90, ms.player.y - 60);
+    ms.spawnRegionEnemy(Z, freeFam, w2.x, w2.y, ms.feel.domainTint.physical);
+    const rec2 = ms.regionLive[ms.regionLive.length - 1];
+    const absentFellBack = rec2.entity.sprite.texture.key === SHARED[freeFam];
+    ms.deactivateRegionZone(Z);
+    await wait(150);
+    const [rw, rh] = SIZES[SHARED[freeFam]];
+    const reminted = ms.artOverrides.applySpriteOverride(ms, freeKey, rw, rh) === true && ms.textures.exists(freeKey);
     ms.textures.remove(fakeKey);
-    return { setup: 'ok', grayBoxes, worn, missInert, hitWorn };
+    return { setup: 'ok', grayBoxes, worn, missInert, hitWorn, freeFam, absentFellBack, reminted };
   });
   ok(
-    'sprite-gen — fallback chain: every family wears per-family art when shipped else its shared texture (gray box intact); miss inert, hit worn',
-    chain9.setup === 'ok' && chain9.grayBoxes && Object.values(chain9.worn).length === 9 && Object.values(chain9.worn).every(Boolean) && chain9.missInert && chain9.hitWorn,
+    'sprite-gen — fallback chain: every family wears per-family art when shipped else its shared texture (gray box intact); miss inert, hit worn; absent-art branch live (remove → shared → re-mint)',
+    chain9.setup === 'ok' &&
+      chain9.grayBoxes &&
+      Object.values(chain9.worn).length === 9 &&
+      Object.values(chain9.worn).every(Boolean) &&
+      chain9.missInert &&
+      chain9.hitWorn &&
+      chain9.absentFellBack &&
+      chain9.reminted,
     JSON.stringify(chain9),
   );
 
