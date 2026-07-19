@@ -30,6 +30,17 @@ import { chromium } from 'playwright-core';
 
 const PORT = 4174;
 const EXE = '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
+
+// Class figures with shipped 8-way rotation art (classId → base texture key).
+// Grows one entry per art drop, in the same commit as the files.
+const ROTATED_FIGURES = { necromancer: 'necro-figure', bard: 'bard-figure', hunter: 'hunter-figure' };
+// FIGURE-SET LINT thresholds, calibrated against the three shipped sets: each
+// frame's opaque-content box vs the set's union box. Width varies legitimately
+// with facing (profile views are narrow — observed floor 0.653), height barely
+// varies (observed floor 0.951). A frame below these floors would visibly
+// shrink the whole set through the union-box fitter.
+const FIGURE_MIN_WIDTH_RATIO = 0.5;
+const FIGURE_MIN_HEIGHT_RATIO = 0.85;
 const results = [];
 const pageErrors = [];
 const ok = (name, pass, detail = '') => {
@@ -158,7 +169,9 @@ try {
       return false;
     };
   });
-  page.on('pageerror', (e) => pageErrors.push(e.message));
+  // Tag each page error with how many checks had completed when it fired, so a
+  // failure names its neighborhood instead of just its message.
+  page.on('pageerror', (e) => pageErrors.push(`[after check ${results.length}] ${e.message}`));
 
   async function newGame(classId) {
     await page.goto(`http://localhost:${PORT}/`, { waitUntil: 'load' });
@@ -693,7 +706,6 @@ try {
     // frames + the canonical key minted at the canonical 32×48, and the avatar
     // TURNS with its real movement facing (east / north / a diagonal / south
     // each select their frame through setDirection).
-    const ROTATED_FIGURES = { necromancer: 'necro-figure', bard: 'bard-figure', hunter: 'hunter-figure' };
     if (ROTATED_FIGURES[cls]) {
       const fig = ROTATED_FIGURES[cls];
       const figArt = await page.evaluate((fig) => {
@@ -768,21 +780,38 @@ try {
       );
     }
 
-    // A class WITHOUT rotation art keeps its single code-drawn texture no
-    // matter how it moves (the fallback half of the 8-way contract).
+    // A figure WITHOUT rotation art keeps its single texture no matter how it
+    // moves (the fallback half of the 8-way contract). SYNTHETIC PROBE key —
+    // deliberately NOT a real class figure, so shipping art for any class
+    // (including Blacksmith) can never flip this check.
     if (cls === 'blacksmith') {
       const singleTex = await page.evaluate(() => {
         const ms = window.__ready();
-        ms.player.setDirection(1, 0);
-        const k1 = ms.player.sprite.texture.key;
-        ms.player.setDirection(0, -1);
-        const k2 = ms.player.sprite.texture.key;
-        ms.player.setDirection(0, 0);
-        return { k1, k2 };
+        const key = 'probe-noart-figure';
+        if (!ms.textures.exists(key)) {
+          const cv = ms.textures.createCanvas(key, 32, 48);
+          cv.context.fillStyle = '#808080';
+          cv.context.fillRect(0, 0, 32, 48);
+          cv.refresh();
+        }
+        const p = ms.player;
+        const realKey = p.baseKey;
+        p.baseKey = key;
+        p.sprite.setTexture(key);
+        const keys = [];
+        for (const [x, y] of [[1, 0], [0, -1], [1, 1], [0, 1]]) {
+          p.setDirection(x, y);
+          keys.push(p.sprite.texture.key);
+        }
+        p.setDirection(0, 0);
+        p.baseKey = realKey; // restore the real figure exactly as it was
+        p.sprite.setTexture(realKey);
+        ms.textures.remove(key);
+        return { keys, restored: p.sprite.texture.key === realKey };
       });
       ok(
-        'sprite fallback: a class without rotation art keeps its single texture while moving',
-        singleTex.k1 === 'player-figure' && singleTex.k2 === 'player-figure',
+        'sprite fallback: a figure without rotation art keeps its single texture while moving (synthetic probe key)',
+        singleTex.keys.length === 4 && singleTex.keys.every((k) => k === 'probe-noart-figure') && singleTex.restored,
         JSON.stringify(singleTex),
       );
     }
@@ -3598,6 +3627,80 @@ try {
     JSON.stringify(census),
   );
 
+  // 3u0b. FIGURE-SET LINT (permanent, one per shipped 8-way set): all 8 frames
+  // exist at the contract paths and decode; every frame has opaque content; no
+  // frame's content box falls below the similarity floors against the set's
+  // union box (the union-box fitter would silently shrink the whole set); and
+  // the minted base key IS the south frame.
+  for (const [lintCls, lintFig] of Object.entries(ROTATED_FIGURES)) {
+    const lint = await page.evaluate(
+      async ({ fig, minRw, minRh }) => {
+        const ms = window.__game.scene.getScene('MainScene');
+        const DIRS = ['south', 'south-east', 'east', 'north-east', 'north', 'north-west', 'west', 'south-west'];
+        const frames = {};
+        let uw = 0;
+        let uh = 0;
+        for (const dir of DIRS) {
+          const res = await fetch(`/sprites/${fig}/${dir}.png`);
+          if (!res.ok) {
+            frames[dir] = { missing: true };
+            continue;
+          }
+          const bmp = await createImageBitmap(await res.blob());
+          const cvs = document.createElement('canvas');
+          cvs.width = bmp.width;
+          cvs.height = bmp.height;
+          const ctx = cvs.getContext('2d', { willReadFrequently: true });
+          ctx.drawImage(bmp, 0, 0);
+          const d = ctx.getImageData(0, 0, cvs.width, cvs.height).data;
+          let minX = cvs.width;
+          let minY = cvs.height;
+          let maxX = -1;
+          let maxY = -1;
+          for (let y = 0; y < cvs.height; y++) {
+            for (let x = 0; x < cvs.width; x++) {
+              if (d[(y * cvs.width + x) * 4 + 3] > 8) {
+                if (x < minX) minX = x;
+                if (x > maxX) maxX = x;
+                if (y < minY) minY = y;
+                if (y > maxY) maxY = y;
+              }
+            }
+          }
+          if (maxX < 0) {
+            frames[dir] = { empty: true };
+            continue;
+          }
+          frames[dir] = { w: maxX - minX + 1, h: maxY - minY + 1 };
+          uw = Math.max(uw, frames[dir].w);
+          uh = Math.max(uh, frames[dir].h);
+        }
+        const bad = [];
+        for (const dir of DIRS) {
+          const f = frames[dir];
+          if (f.missing || f.empty) bad.push(`${dir}:${f.missing ? 'missing' : 'empty'}`);
+          else {
+            f.rw = +(f.w / uw).toFixed(3);
+            f.rh = +(f.h / uh).toFixed(3);
+            if (f.rw < minRw || f.rh < minRh) bad.push(`${dir}:rw=${f.rw},rh=${f.rh}`);
+          }
+        }
+        // The minted base key IS the south frame (same source, same union crop).
+        const img = (k) => (ms.textures.exists(k) ? ms.textures.get(k).getSourceImage() : null);
+        const base = img(fig);
+        const south = img(`${fig}-south`);
+        const baseIsSouth = !!base && !!south && typeof base.toDataURL === 'function' && typeof south.toDataURL === 'function' && base.toDataURL() === south.toDataURL();
+        return { bad, baseIsSouth, ratios: DIRS.map((d2) => `${d2}=${frames[d2].rw ?? 'x'}/${frames[d2].rh ?? 'x'}`) };
+      },
+      { fig: lintFig, minRw: FIGURE_MIN_WIDTH_RATIO, minRh: FIGURE_MIN_HEIGHT_RATIO },
+    );
+    ok(
+      `figure lint (${lintCls}): 8 frames at contract paths, all opaque, bounds within band (rw>=${FIGURE_MIN_WIDTH_RATIO}, rh>=${FIGURE_MIN_HEIGHT_RATIO}), base minted from south`,
+      lint.bad.length === 0 && lint.baseIsSouth,
+      JSON.stringify(lint),
+    );
+  }
+
   // 3u. SKILL FRAMEWORK (composed-action schema): EVERY skill in every tree of
   // every class executes without error through its real runtime seam, and each
   // COMPOSED action produces exactly its declared primitives. Direct calls
@@ -6029,14 +6132,44 @@ try {
     cv.refresh();
     ms.applyFamilyTexture(last.sprite, 'probe-art');
     const hitWorn = last.sprite.texture.key === fakeKey;
+    // Cull the wave FIRST: no live sprite may wear a texture we remove below.
     ms.deactivateRegionZone(Z);
     await wait(150);
+    // LIVE ABSENT-ART BRANCH, forever: remove one REAL per-family texture, a
+    // fresh spawn of that family falls all the way back to its SHARED texture,
+    // then the art is re-minted through the real drop-in seam — so this branch
+    // stays exercised even with every PNG shipped. The family is picked
+    // DYNAMICALLY: ambient fauna and live beat elites elsewhere in the world
+    // wear these textures through the same funnel, and removing a texture a
+    // live sprite wears crashes the renderer — so take the first family with
+    // zero live wearers (loud setup fail if none).
+    const SIZES = { townsfolk: [24, 34], 'demon-enemy': [30, 38], 'angel-enemy': [48, 56] };
+    const wornByLive = (key) => ms.children.list.some((o) => o.texture && o.texture.key === key);
+    const freeFam = fams.find((f) => ms.textures.exists(`enemy-${f}`) && !wornByLive(`enemy-${f}`));
+    if (!freeFam) return { setup: 'no wearer-free family for the absent-art branch' };
+    const freeKey = `enemy-${freeFam}`;
+    ms.textures.remove(freeKey);
+    const w2 = ms.activeMap().nearestWalkableWorld(ms.player.x + 90, ms.player.y - 60);
+    ms.spawnRegionEnemy(Z, freeFam, w2.x, w2.y, ms.feel.domainTint.physical);
+    const rec2 = ms.regionLive[ms.regionLive.length - 1];
+    const absentFellBack = rec2.entity.sprite.texture.key === SHARED[freeFam];
+    ms.deactivateRegionZone(Z);
+    await wait(150);
+    const [rw, rh] = SIZES[SHARED[freeFam]];
+    const reminted = ms.artOverrides.applySpriteOverride(ms, freeKey, rw, rh) === true && ms.textures.exists(freeKey);
     ms.textures.remove(fakeKey);
-    return { setup: 'ok', grayBoxes, worn, missInert, hitWorn };
+    return { setup: 'ok', grayBoxes, worn, missInert, hitWorn, freeFam, absentFellBack, reminted };
   });
   ok(
-    'sprite-gen — fallback chain: every family wears per-family art when shipped else its shared texture (gray box intact); miss inert, hit worn',
-    chain9.setup === 'ok' && chain9.grayBoxes && Object.values(chain9.worn).length === 9 && Object.values(chain9.worn).every(Boolean) && chain9.missInert && chain9.hitWorn,
+    'sprite-gen — fallback chain: every family wears per-family art when shipped else its shared texture (gray box intact); miss inert, hit worn; absent-art branch live (remove → shared → re-mint)',
+    chain9.setup === 'ok' &&
+      chain9.grayBoxes &&
+      Object.values(chain9.worn).length === 9 &&
+      Object.values(chain9.worn).every(Boolean) &&
+      chain9.missInert &&
+      chain9.hitWorn &&
+      chain9.absentFellBack &&
+      chain9.reminted,
     JSON.stringify(chain9),
   );
 
