@@ -42,6 +42,14 @@ import Phaser from 'phaser';
 export const SPRITE_OVERRIDES: { key: string; w: number; h: number; rotations?: boolean }[] = [
   // Necromancer — real 8-way pixel art (128px masters in public/sprites/necro-figure/).
   { key: 'necro-figure', w: 32, h: 48, rotations: true },
+  // Bard + Hunter — real 8-way pixel art (244px masters in their folders).
+  { key: 'bard-figure', w: 32, h: 48, rotations: true },
+  { key: 'hunter-figure', w: 32, h: 48, rotations: true },
+  // The Hunter bond's three expressions all wear the armored-bear art (a single
+  // still — summons don't turn). The wild pack is NOT the bond and keeps its own look.
+  { key: 'summon-hunter_companion', w: 46, h: 56 },
+  { key: 'summon-hunter_great', w: 46, h: 56 },
+  { key: 'summon-hunter_horde', w: 46, h: 56 },
   // Enemy roster families — generated grayscale art (scripts/gen-sprites.mjs),
   // each at the canonical size of the shared key it replaces (tinted at runtime).
   { key: 'enemy-corrupted-wildlife', w: 24, h: 34 },
@@ -83,6 +91,16 @@ const rotatedKeys = new Set<string>();
 /** True when 8-way art shipped for this base texture key. */
 export function hasRotationArt(key: string): boolean {
   return rotatedKeys.has(key);
+}
+
+/** Single-frame keys whose drop-in art actually loaded + applied at boot. */
+const artKeys = new Set<string>();
+
+/** True when real drop-in art shipped for this texture key — call sites that
+ *  layer a stylizing tint over their code-drawn placeholder (e.g. the summon
+ *  hit-flash restore) skip it for full-color art. */
+export function hasOverrideArt(key: string): boolean {
+  return artKeys.has(key);
 }
 
 /** Map a facing vector to this base key's rotation texture (screen-space:
@@ -195,7 +213,10 @@ function applyRotationOverride(scene: Phaser.Scene, key: string, w: number, h: n
 export function applySpriteOverrides(scene: Phaser.Scene): number {
   let applied = 0;
   for (const { key, w, h, rotations } of SPRITE_OVERRIDES) {
-    if (rotations ? applyRotationOverride(scene, key, w, h) : applySpriteOverride(scene, key, w, h)) applied++;
+    if (rotations ? applyRotationOverride(scene, key, w, h) : applySpriteOverride(scene, key, w, h)) {
+      if (!rotations) artKeys.add(key);
+      applied++;
+    }
   }
   return applied;
 }
