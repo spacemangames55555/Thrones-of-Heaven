@@ -50,6 +50,10 @@ export const SPRITE_OVERRIDES: { key: string; w: number; h: number; rotations?: 
   { key: 'summon-hunter_companion', w: 46, h: 56 },
   { key: 'summon-hunter_great', w: 46, h: 56 },
   { key: 'summon-hunter_horde', w: 46, h: 56 },
+  // Heaven's divine forms — biblically-accurate stills. The Cherub's variant
+  // tints are near-white (MULTIPLY-neutral), so both wear the art unmodified.
+  { key: 'cherub-enemy', w: 54, h: 58 },
+  { key: 'angel-divine', w: 44, h: 56 },
   // Enemy roster families — generated grayscale art (scripts/gen-sprites.mjs),
   // each at the canonical size of the shared key it replaces (tinted at runtime).
   { key: 'enemy-corrupted-wildlife', w: 24, h: 34 },
