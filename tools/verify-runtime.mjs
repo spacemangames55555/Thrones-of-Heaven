@@ -689,16 +689,18 @@ try {
       );
     }
 
-    // 2n. REAL NECROMANCER ART (the first shipped 8-way sprite drop-in): all
-    // eight rotation frames + the canonical key minted at the canonical 32×48,
-    // and the avatar TURNS with its real movement facing (east / north / a
-    // diagonal / south each select their frame through setDirection).
-    if (cls === 'necromancer') {
-      const necroArt = await page.evaluate(() => {
+    // 2n. REAL 8-WAY CLASS ART (shipped sprite drop-ins): all eight rotation
+    // frames + the canonical key minted at the canonical 32×48, and the avatar
+    // TURNS with its real movement facing (east / north / a diagonal / south
+    // each select their frame through setDirection).
+    const ROTATED_FIGURES = { necromancer: 'necro-figure', bard: 'bard-figure', hunter: 'hunter-figure' };
+    if (ROTATED_FIGURES[cls]) {
+      const fig = ROTATED_FIGURES[cls];
+      const figArt = await page.evaluate((fig) => {
         const ms = window.__ready();
         const dirs = ['south', 'south-east', 'east', 'north-east', 'north', 'north-west', 'west', 'south-west'];
-        const frames = dirs.every((d) => ms.textures.exists(`necro-figure-${d}`));
-        const base = ms.textures.get('necro-figure').getSourceImage();
+        const frames = dirs.every((d) => ms.textures.exists(`${fig}-${d}`));
+        const base = ms.textures.get(fig).getSourceImage();
         const keyAt = (x, y) => {
           ms.player.setDirection(x, y);
           return ms.player.sprite.texture.key;
@@ -709,18 +711,60 @@ try {
         const south = keyAt(0, 1);
         ms.player.setDirection(0, 0); // stop — facing (and the frame) stay put
         return { applied: ms.spriteOverridesApplied, frames, size: [base.width, base.height], east, north, diag, south };
-      });
+      }, fig);
       ok(
-        'necromancer art: the 8-way sprite drop-in applied at canonical size and the avatar turns with its facing',
-        necroArt.applied >= 1 &&
-          necroArt.frames &&
-          necroArt.size[0] === 32 &&
-          necroArt.size[1] === 48 &&
-          necroArt.east === 'necro-figure-east' &&
-          necroArt.north === 'necro-figure-north' &&
-          necroArt.diag === 'necro-figure-south-east' &&
-          necroArt.south === 'necro-figure-south',
-        JSON.stringify(necroArt),
+        `${cls} art: the 8-way sprite drop-in applied at canonical size and the avatar turns with its facing`,
+        figArt.applied >= 1 &&
+          figArt.frames &&
+          figArt.size[0] === 32 &&
+          figArt.size[1] === 48 &&
+          figArt.east === `${fig}-east` &&
+          figArt.north === `${fig}-north` &&
+          figArt.diag === `${fig}-south-east` &&
+          figArt.south === `${fig}-south`,
+        JSON.stringify(figArt),
+      );
+    }
+
+    // 2n2. HUNTER PET ART: every expression of the bond (companion / great /
+    // horde) manifests wearing the armored-bear drop-in at the canonical 46×56,
+    // and the hit-flash restore leaves full-color art UNTINTED (the cleansed-
+    // green stylizing tint belongs to the code-drawn placeholders only).
+    if (cls === 'hunter') {
+      const petArt = await page.evaluate(async () => {
+        const ms = window.__ready();
+        const wait = (t) => new Promise((r) => setTimeout(r, t));
+        const before = { bond: ms.hunterBond, mode: ms.hunterPetMode };
+        ms.hunterBond = { deathUntil: 0 };
+        const worn = {};
+        for (const mode of ['companion', 'great', 'horde']) {
+          ms.hunterPetMode = mode;
+          ms.clearHunterPets();
+          ms.manifestHunterPet();
+          const pets = ms.hunterPets();
+          const pet = pets[pets.length - 1];
+          if (!pet) {
+            worn[mode] = { spawned: false };
+            continue;
+          }
+          const img = ms.textures.get(pet.sprite.texture.key).getSourceImage();
+          pet.takeHit(1); // white flash, then the restore path 70ms later
+          await wait(160);
+          worn[mode] = { spawned: true, key: pet.sprite.texture.key, size: [img.width, img.height], tint: pet.sprite.tintTopLeft, fill: pet.sprite.tintFill };
+        }
+        ms.clearHunterPets();
+        ms.hunterBond = before.bond;
+        ms.hunterPetMode = before.mode;
+        return worn;
+      });
+      const petKey = { companion: 'summon-hunter_companion', great: 'summon-hunter_great', horde: 'summon-hunter_horde' };
+      ok(
+        'hunter pet art: all three bond expressions wear the bear drop-in at 46×56 and stay untinted through the hit-flash restore',
+        ['companion', 'great', 'horde'].every((m) => {
+          const w = petArt[m];
+          return w && w.spawned && w.key === petKey[m] && w.size[0] === 46 && w.size[1] === 56 && w.tint === 0xffffff && !w.fill;
+        }),
+        JSON.stringify(petArt),
       );
     }
 

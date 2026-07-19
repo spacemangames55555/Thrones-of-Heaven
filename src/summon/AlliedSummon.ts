@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { Health } from '../combat/Health';
 import { HealthBar } from '../combat/HealthBar';
 import { TILE_SIZE } from '../render/tileAtlas';
+import { hasOverrideArt } from '../render/spriteOverrides';
 import type { AlliedSummonConfig } from './summonData';
 
 /**
@@ -134,7 +135,11 @@ export class AlliedSummon {
     this.bar.setRatio(this.health.ratio);
     this.sprite.setTint(0xffffff).setTintMode(Phaser.TintModes.FILL);
     this.sprite.scene.time.delayedCall(70, () => {
-      if (!this.dead) this.sprite.setTint(this.config.tint).setTintMode(Phaser.TintModes.MULTIPLY);
+      if (this.dead) return;
+      // Full-color drop-in art is shown as-is; the stylizing tint belongs to
+      // the code-drawn placeholders only.
+      if (hasOverrideArt(AlliedSummon.textureKey(this.config))) this.sprite.clearTint();
+      else this.sprite.setTint(this.config.tint).setTintMode(Phaser.TintModes.MULTIPLY);
     });
     if (this.health.isDead) this.die();
     return dealt;
