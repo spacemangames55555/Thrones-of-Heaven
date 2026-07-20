@@ -89,6 +89,17 @@ export const FEEL = {
     tileFadeOutZoom: 0.15,
     tileFadeInZoom: 0.18,
     fadeMs: 260,
+    /** LABEL TIERS, by category at each label's creation funnel (never
+     *  hand-tagged): near = road signs / spawn / boss markers (unreadable
+     *  once 12px text shrinks past ~4px on screen), mid = settlement names,
+     *  far = zone/region names (never hidden — they ARE the far view's
+     *  wayfinding). The DEV zone-name overlay is exempt: it keeps its own
+     *  low-zoom rule and counter-scaling. */
+    labels: {
+      nearMinZoom: 0.35, // near-tier labels hide below this camera zoom
+      midMinZoom: 0.05, // mid-tier labels hide below this camera zoom
+      farBudget: 120, // gate ceiling: visible world labels at planet zoom (DEV overlay excluded)
+    },
   },
 } as const;
 

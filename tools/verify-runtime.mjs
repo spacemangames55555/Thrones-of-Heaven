@@ -2590,6 +2590,43 @@ try {
     JSON.stringify(lodFlap),
   );
 
+  // 2c3. LABEL TIERS (far-zoom pass): at planet zoom the near tier (road
+  // signs / spawn / boss markers) and mid tier (settlement names) are shed —
+  // the visible world-label count, DEV zone overlay excluded, stays within
+  // the FEEL.lod.labels budget. The DEV overlay itself is EXEMPT (its own
+  // low-zoom rule: hidden near, all shown at planet zoom). Near zoom restores
+  // every tiered label.
+  const labelTiers = await page.evaluate(async () => {
+    const ms = window.__ready();
+    const wait = (t) => new Promise((r) => setTimeout(r, t));
+    const zoomTo = (z) => {
+      ms.zoomControls.target = z;
+      ms.cameras.main.setZoom(z);
+    };
+    const devVisible = () => ms.regionZoneLabels.filter((l) => l.visible).length;
+    zoomTo(1.1);
+    await wait(150);
+    const near0 = ms.lodCounts().labelsVisible;
+    const devNear = devVisible();
+    zoomTo(0.0005); // planet view
+    await wait(150);
+    const far = ms.lodCounts().labelsVisible;
+    const devFar = devVisible();
+    zoomTo(1.1);
+    await wait(150);
+    const near1 = ms.lodCounts().labelsVisible;
+    return { near0, devNear, far, devFar, devTotal: ms.regionZoneLabels.length, near1, budget: ms.feel.lod.labels.farBudget };
+  });
+  ok(
+    'label tiers: planet zoom sheds the near + mid tiers to within the FEEL budget; DEV zone overlay exempt; near zoom restores all',
+    labelTiers.far - labelTiers.devFar <= labelTiers.budget &&
+      labelTiers.far - labelTiers.devFar < labelTiers.near0 && // tiers actually shed labels
+      labelTiers.devNear === 0 &&
+      labelTiers.devFar === labelTiers.devTotal && // the DEV overlay keeps its own rule, unaffected
+      labelTiers.near1 === labelTiers.near0,
+    JSON.stringify(labelTiers),
+  );
+
   // 2c. EVERY COMMIT-1 EXTENSION THROUGH A REAL DRUID SKILL: stealth (Snow Leopard),
   // the dual-use bolt (Lye, heal path), both friendly zones (Sage Burn mobile +
   // Healing Spores static), chain (Lightning Strike across two foes), the pair
