@@ -235,9 +235,9 @@ try {
     const staged = await page.evaluate(() => {
       const ms = window.__game.scene.getScene('MainScene');
       // Stand mid-WA on Earth (the pre-ruling life), then write a REAL save.
-      const spawn = ms.worlds['earth'].defaultArrival;
-      const spot = ms.worlds['earth'].map.nearestWalkableWorld(spawn.x + 400, spawn.y + 120);
-      ms.applyWorldSwap('earth', spot);
+      const spawn = ms.town.spawn;
+      const spot = ms.map.nearestWalkableWorld(spawn.x + 400, spawn.y + 120);
+      ms.applyWorldSwap('globe', spot);
       ms.writeSave();
       const raw = JSON.parse(localStorage.getItem('toh_save'));
       raw.saveVersion = 12; // wind back: this save predates the ruling
@@ -256,7 +256,7 @@ try {
   })();
   ok(
     'pre-ruling save: a v12 Necromancer mid-WA loads exactly where it was (never relocated)',
-    preRuling.world === 'earth' && preRuling.classId === 'necromancer' && preRuling.d < 8,
+    preRuling.world === 'globe' && preRuling.classId === 'necromancer' && preRuling.d < 8,
     JSON.stringify(preRuling),
   );
 
@@ -281,7 +281,7 @@ try {
     savage: { world: 'globe', zone: 'mexico-lake-crown', opener: 'mex-01-mentor', kind: 'region' },
     hunter: { world: 'globe', zone: 'sydney-harbour-watch', opener: 'syd-01-mentor', kind: 'region' },
     atlantean: { world: 'globe', zone: 'bali-drowned-crown', opener: 'bal-01-mentor', kind: 'region' }, // the SUNDIAN (canon rename; save-safe classId)
-    druid: { world: 'earth', zone: null, opener: 'honest-days-work', kind: 'earth' },
+    druid: { world: 'globe', zone: null, opener: 'honest-days-work', kind: 'earth' },
   };
   for (const cls of ['blacksmith', 'wizard', 'necromancer', 'mage', 'bard', 'witchdoctor', 'samurai', 'monk', 'assassin', 'priest', 'savage', 'hunter', 'atlantean', 'druid']) {
     await newGame(cls);
@@ -2819,6 +2819,10 @@ try {
           foreignTicking: live.filter((e) => updated.has(e) && homeOf(e.sprite.x) !== ms.activeWorld).length,
           foreignBodies: live.filter((e) => e.sprite?.body?.enable && homeOf(e.sprite.x) !== ms.activeWorld).length,
           localTicking: live.filter((e) => updated.has(e) && homeOf(e.sprite.x) === ms.activeWorld).length,
+          offenders: live
+            .filter((e) => updated.has(e) && homeOf(e.sprite.x) !== ms.activeWorld)
+            .slice(0, 6)
+            .map((e) => `${e.constructor?.name}@${Math.round(e.sprite.x)},${Math.round(e.sprite.y)}->${homeOf(e.sprite.x)}`),
         };
       };
       const inGlobe = await sample();
@@ -2876,7 +2880,7 @@ try {
         weakened: ms.time.now < ms.casterWeakenUntil,
       };
     });
-    ok('globe → Earth return works (and despawns all packs)', afterEarth.world === 'earth' && afterEarth.live === 0, `live=${afterEarth.live}`);
+    ok('globe → Enumclaw return works (one world now; distance culls all packs)', afterEarth.world === 'globe' && afterEarth.live === 0, `live=${afterEarth.live}`);
     ok(
       'world travel clears player debuffs: an active DoT does not cross to Earth',
       seeded.stacks > 0 && seeded.slow < 1 && seeded.weakened && afterEarth.stacks === 0 && afterEarth.slow === 1 && !afterEarth.weakened,
@@ -2935,15 +2939,21 @@ try {
       proto.update = orig;
       return ticked;
     };
-    const tickedFromEarth = await sample();
+    // The away-world is HEAVEN now — the PNW is the same world as the globe,
+    // so 'standing at Enumclaw' no longer makes a Rome resident foreign.
+    ms.applyWorldSwap('heaven', ms.worlds['heaven'].defaultArrival);
+    await new Promise((res) => setTimeout(res, 300));
+    const tickedFromEarth = await sample(); // (name kept: ticked-from-AWAY)
     ms.applyWorldSwap('globe', dest);
     await new Promise((res) => setTimeout(res, 300));
     const tickedInGlobe = await sample();
     const bodyInGlobe = a.sprite.body.enable;
-    ms.applyWorldSwap('earth', ms.worlds['earth'].defaultArrival);
+    ms.applyWorldSwap('heaven', ms.worlds['heaven'].defaultArrival);
     await new Promise((res) => setTimeout(res, 300));
     const tickedAfterLeave = await sample();
     const bodyAfterLeave = a.sprite.body.enable;
+    ms.applyWorldSwap('globe', ms.town.spawn);
+    await new Promise((res) => setTimeout(res, 300));
     a.destroy();
     return { registered: true, tickedFromEarth, tickedInGlobe, bodyInGlobe, tickedAfterLeave, bodyAfterLeave };
   });
@@ -3032,6 +3042,52 @@ try {
     JSON.stringify(med),
   );
 
+  // 3m4. WORLD UNIFICATION (the PNW): Casey's original — the whole WA corridor
+  // lives in the globe at its true position. The towns stand on hand-built
+  // tiles, the Enumclaw→Olympia road is contiguously walkable, the raster
+  // shows the Pacific west of the coast and land under Enumclaw, and a v14
+  // 'earth' save lands within a tile of its old spot.
+  const pnw = await page.evaluate(async () => {
+    const ms = window.__ready();
+    const eb = ms.map.bounds;
+    const towns = !!ms.town && !!ms.portland && !!ms.seattle;
+    const enumclawTiles = ms.map.terrainAtWorld(ms.town.spawn.x, ms.town.spawn.y) !== null;
+    const inRect = (p2) => p2.x >= eb.x && p2.x <= eb.x + eb.width;
+    const townsInRect = inRect(ms.town.spawn) && inRect(ms.seattle.label) && inRect(ms.portland.label);
+    // Road sample: Enumclaw → Olympia (the shipped corridor).
+    const oly = { x: eb.x + 8128, y: eb.y + 8928 };
+    let walkable = 0;
+    const N = 12;
+    for (let i = 0; i <= N; i++) {
+      const x = ms.town.spawn.x + ((oly.x - ms.town.spawn.x) * i) / N;
+      const y = ms.town.spawn.y + ((oly.y - ms.town.spawn.y) * i) / N;
+      const w = ms.map.nearestWalkableWorld(x, y, 10);
+      if (Math.hypot(w.x - x, w.y - y) <= 10 * 32) walkable++;
+    }
+    const g = ms.groundLayers.get('globe');
+    const pacific = g.isWaterAtWorld(eb.x - 2400, ms.town.spawn.y); // west of the coast
+    const landHome = !g.isWaterAtWorld(eb.x + 20000, eb.y + 8000); // inland WA on the raster
+    // Migrated 'earth' save: same spot, new coordinates (old origin was 0,0).
+    const pos = ms.map.nearestWalkableWorld(ms.town.spawn.x + 500, ms.town.spawn.y + 300);
+    ms.applyWorldSwap('globe', pos);
+    await new Promise((res) => setTimeout(res, 400));
+    ms.autosave();
+    const raw = JSON.parse(localStorage.getItem('toh_save'));
+    raw.saveVersion = 14;
+    raw.world.active = 'earth';
+    raw.world.x = pos.x - eb.x;
+    raw.world.y = pos.y - eb.y;
+    ms.applySave(raw);
+    await new Promise((res) => setTimeout(res, 400));
+    const d = Math.hypot(ms.player.x - pos.x, ms.player.y - pos.y);
+    return { towns, enumclawTiles, townsInRect, walkable, of: N + 1, pacific, landHome, world: ms.activeWorld, d: +d.toFixed(1) };
+  });
+  ok(
+    "unification (pnw): towns on hand-built tiles in the globe, the WA road contiguous, Pacific west / land inland, a v14 'earth' save lands within a tile",
+    pnw.towns && pnw.enumclawTiles && pnw.townsInRect && pnw.walkable === pnw.of && pnw.pacific && pnw.landHome && pnw.world === 'globe' && pnw.d <= 32,
+    JSON.stringify(pnw),
+  );
+
   // 3n. GROUND LAYER (sparse worlds): the continents are real — biome ground
   // renders under Rome AND mid-void, the cell cap holds at every zoom, water
   // blocks the void where land ends, FPS at ground zoom stays within tolerance
@@ -3102,7 +3158,7 @@ try {
     gl.setVisible(true);
     await new Promise((res) => setTimeout(res, 800));
     const fpsGround = await fpsOver(2500);
-    const denseClean = ['earth', 'heaven', 'hell', 'city-faiyum'].every((id) => !ms.groundLayers.has(id));
+    const denseClean = ['heaven', 'hell', 'city-faiyum'].every((id) => !ms.groundLayers.has(id));
     return { has: true, rome, midVoid, coastFound: waterX !== null, waterBlocks, groundCells: gl.cellsDrawn, zoomedOutCells, fpsBaseline, fpsGround, fpsContinentBase, fpsContinentGround, denseClean };
   });
   ok('ground: biome land renders under Rome', groundRun.has && groundRun.rome.cells > 0 && groundRun.rome.cls > 0, groundRun.has ? `cells=${groundRun.rome.cells} class=${groundRun.rome.cls}` : 'no globe ground layer');
@@ -3118,7 +3174,7 @@ try {
     groundRun.has && groundRun.fpsGround >= groundRun.fpsBaseline * 0.8,
     `ground=${groundRun.fpsGround} baseline=${groundRun.fpsBaseline} (tolerance ≥ 80%)`,
   );
-  ok('ground: dense hand-built worlds have NO ground layer', groundRun.has && groundRun.denseClean, 'earth/heaven/hell/faiyum clean (egypt is a globe chunk now)');
+  ok('ground: dense hand-built PLANES have NO ground layer', groundRun.has && groundRun.denseClean, 'heaven/hell/faiyum clean (earth + egypt are globe chunks now)');
   ok(
     'ground: FPS at CONTINENT zoom within tolerance of the no-ground baseline',
     groundRun.has && groundRun.fpsContinentGround >= groundRun.fpsContinentBase * 0.8,
@@ -3216,22 +3272,22 @@ try {
   const earthDeath = await (async () => {
     await page.evaluate(() => {
       const ms = window.__ready();
-      const spot = ms.worlds['earth'].map.nearestWalkableWorld(ms.town.spawn.x + 2400, ms.town.spawn.y + 900);
-      ms.applyWorldSwap('earth', spot);
+      const spot = ms.map.nearestWalkableWorld(ms.town.spawn.x + 2400, ms.town.spawn.y + 900);
+      ms.applyWorldSwap('globe', spot);
     });
     await page.waitForTimeout(900);
     const d = await dieHere();
     return page.evaluate(
       ({ d }) => {
         const ms = window.__game.scene.getScene('MainScene');
-        const cands = [ms.worlds['earth'].defaultArrival, ms.town.spawn];
+        const cands = [ms.town.spawn, ...Object.values(ms.regionZoneArrivals), ms.egyptArrivalPos];
         const nearest = cands.reduce((a, b) => (Math.hypot(a.x - d.from.x, a.y - d.from.y) <= Math.hypot(b.x - d.from.x, b.y - d.from.y) ? a : b));
         return { ...d, atNearest: Math.hypot(d.x - nearest.x, d.y - nearest.y) < 10 };
       },
       { d },
     );
   })();
-  ok('death respawn (earth): a sensible local point — the nearest of town spawn / world entry', earthDeath.world === 'earth' && earthDeath.alive && earthDeath.atNearest, JSON.stringify(earthDeath));
+  ok('death respawn (pnw-in-globe): a sensible local point — the nearest settlement (town spawn)', earthDeath.world === 'globe' && earthDeath.alive && earthDeath.atNearest, JSON.stringify(earthDeath));
   // (3) EGYPT: die away from the entry → back at the world entry.
   const egyptDeath = await (async () => {
     await page.evaluate(() => {

@@ -173,6 +173,9 @@ function migrate(data: SaveData): SaveData {
   // the coordinate translation itself happens in MainScene.applySave (it needs
   // the LIVE map origins), keyed off world.active === 'egypt' — idempotent,
   // because the first post-load autosave writes back as 'globe'.
+  // v14→v15 — WORLD UNIFICATION (the PNW): the 'earth' world merged the same
+  // way (its old origin was 0,0 — the translation is the map's new origin).
+  // Same apply-time pattern in MainScene.applySave, keyed off 'earth'.
   if (data.quests) data.quests.completed = [...completed];
   data.saveVersion = SAVE_VERSION;
   return data;
