@@ -29,7 +29,10 @@ export const AFRICA_BUILT_ZONES: string[] = [
 /** Zones whose CONTENT lives in a pre-existing hand-built world (never stamped):
  *  dev jumps / travel for their beats target that world, not the region world. */
 export const PREBUILT_ZONE_WORLD: Record<string, string> = {
-  'cairo-nile-crown': 'egypt',
+  // WORLD UNIFICATION: the hand-built Nile map is a chunk of the globe now —
+  // Cairo's content still never stamps (the hand-built map IS its content),
+  // but the world that hosts it is the globe.
+  'cairo-nile-crown': 'globe',
 };
 
 /** Generated QuestDefs for every BUILT Africa zone (same factory as Europe). */

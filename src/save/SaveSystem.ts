@@ -168,6 +168,11 @@ function migrate(data: SaveData): SaveData {
       delete data.world.remembered.africa;
     }
   }
+  // v13→v14 — WORLD UNIFICATION (Egypt): the 'egypt' world merged into the
+  // globe at its true planet position. The version bump records the change;
+  // the coordinate translation itself happens in MainScene.applySave (it needs
+  // the LIVE map origins), keyed off world.active === 'egypt' — idempotent,
+  // because the first post-load autosave writes back as 'globe'.
   if (data.quests) data.quests.completed = [...completed];
   data.saveVersion = SAVE_VERSION;
   return data;

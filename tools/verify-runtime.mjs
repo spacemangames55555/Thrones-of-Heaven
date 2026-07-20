@@ -269,7 +269,7 @@ try {
   //    WA-opening check below plays on in ITS session.
   const HOMES = {
     blacksmith: { world: 'globe', zone: 'munich-anvil-hold', opener: 'mun-01-mentor', kind: 'region' },
-    wizard: { world: 'egypt', zone: 'cairo-nile-crown', opener: 'cai-01-mentor', kind: 'cairo' },
+    wizard: { world: 'globe', zone: 'cairo-nile-crown', opener: 'cai-01-mentor', kind: 'cairo' },
     necromancer: { world: 'globe', zone: 'murmansk-bone-harbor', opener: 'mur-01-mentor', kind: 'region' },
     mage: { world: 'globe', zone: 'moscow-crystal-court', opener: 'mos-01-mentor', kind: 'region' },
     bard: { world: 'globe', zone: 'london-grey-chorus', opener: 'lon-01-mentor', kind: 'region' },
@@ -2953,41 +2953,83 @@ try {
     JSON.stringify(africaPause),
   );
 
-  // 3m. CROSS-WORLD GATE (Egypt ↔ Luxor): the manifest-driven gate pair — the
-  // Nile-exit pad on the Egypt map crosses to Luxor's TRUE globe position and
-  // back, landing ~0 px from each dest.
-  const xgate = await page.evaluate(async () => {
+  // 3m. WORLD UNIFICATION (Egypt): the old egypt↔luxor cross-world gate pair
+  // is RETIRED — the Nile is one ground. No gate targets a retired world key;
+  // Luxor's absorbed content (arrival, spawn zone, boss anchor) re-hosts on
+  // the hand-built egypt map's tiles; and a sampled corridor from the Egypt
+  // map's south pad to the Luxor arrival is contiguously walkable — travel is
+  // now literally a walk.
+  const seam = await page.evaluate(() => {
     const ms = window.__ready();
-    // The CROSS-WORLD pair specifically: the pad that SITS in Egypt and leads
-    // to the globe, and the pad that SITS in the globe and leads to Egypt.
-    // (Internal globe gates also carry destWorld 'globe' — position picks.)
-    const inWorld = (g, id) => {
-      const b = ms.worlds[id].map.bounds;
-      return g.x >= b.x && g.x <= b.x + b.width;
-    };
-    const toGlobe = ms.regionGates.find((g) => g.destWorld === 'globe' && inWorld(g, 'egypt'));
-    const toEgypt = ms.regionGates.find((g) => g.destWorld === 'egypt' && inWorld(g, 'globe'));
-    if (!toGlobe || !toEgypt) return { found: false };
-    ms.applyWorldSwap('egypt', { x: toGlobe.x, y: toGlobe.y + 10 }); // stand on the Egypt pad
-    await new Promise((res) => setTimeout(res, 1600)); // past the world-transition cooldown
-    if (!ms.cityGateButton.isVisible) return { found: true, shown: false, step: 'egypt pad button never appeared' };
-    ms.cityGateAction?.();
-    await new Promise((res) => setTimeout(res, 1800)); // fade travel
-    const inGlobe = ms.activeWorld === 'globe';
-    const dA = Math.hypot(ms.player.x - toGlobe.dest.x, ms.player.y - toGlobe.dest.y);
-    ms.player.sprite.body.reset(toEgypt.x, toEgypt.y + 10); // stand on the globe-side gate
-    await new Promise((res) => setTimeout(res, 1600));
-    if (!ms.cityGateButton.isVisible) return { found: true, shown: false, step: 'globe gate button never appeared', inGlobe, dA };
-    ms.cityGateAction?.();
-    await new Promise((res) => setTimeout(res, 1800));
-    const backEgypt = ms.activeWorld === 'egypt';
-    const dE = Math.hypot(ms.player.x - toEgypt.dest.x, ms.player.y - toEgypt.dest.y);
-    return { found: true, shown: true, inGlobe, dA: +dA.toFixed(1), backEgypt, dE: +dE.toFixed(1) };
+    const noEgyptGates = !ms.regionGates.some((g) => g.destWorld === 'egypt');
+    const lux = ms.regionZoneArrivals['luxor-valley-of-kings'];
+    const hosted = !!lux && ms.egyptMap.terrainAtWorld(lux.x, lux.y) !== null;
+    const spawnZone = ms.regionSpawnZones.some((z) => z.zoneId === 'luxor-valley-of-kings');
+    const bossAnchor = 'luxor-valley-of-kings' in ms.regionBossAnchors;
+    const eb = ms.egyptMap.bounds;
+    const pad = ms.egyptMap.nearestWalkableWorld(eb.x + eb.width * 0.5, eb.y + eb.height - 96, 60);
+    let walkable = 0;
+    const SAMPLES = 12;
+    for (let i = 0; i <= SAMPLES; i++) {
+      const x = pad.x + ((lux.x - pad.x) * i) / SAMPLES;
+      const y = pad.y + ((lux.y - pad.y) * i) / SAMPLES;
+      const w = ms.globeMap.nearestWalkableWorld(x, y, 10);
+      if (Math.hypot(w.x - x, w.y - y) <= 10 * 32) walkable++;
+    }
+    return { noEgyptGates, hosted, spawnZone, bossAnchor, walkable, of: SAMPLES + 1 };
   });
   ok(
-    'cross-world gate: the Egypt ↔ Luxor crossing lands both ways at ~0 px',
-    xgate.found && xgate.shown && xgate.inGlobe && xgate.dA < 8 && xgate.backEgypt && xgate.dE < 8,
-    JSON.stringify(xgate),
+    'unification (egypt): luxor absorbed onto the Nile (arrival/spawns/boss on hand-built tiles), zero gates to the retired world, the upriver walk contiguous',
+    seam.noEgyptGates && seam.hosted && seam.spawnZone && seam.bossAnchor && seam.walkable === seam.of,
+    JSON.stringify(seam),
+  );
+
+  // 3m2. MIGRATED SAVE (v13 'egypt'): a save written in the retired world
+  // loads at the SAME SPOT on the migrated map — within a tile.
+  const migSave = await page.evaluate(async () => {
+    const ms = window.__ready();
+    const pos = ms.egyptMap.nearestWalkableWorld(ms.egyptArrivalPos.x + 400, ms.egyptArrivalPos.y + 260);
+    ms.applyWorldSwap('globe', pos);
+    await new Promise((res) => setTimeout(res, 400));
+    ms.autosave();
+    const raw = JSON.parse(localStorage.getItem('toh_save'));
+    if (!raw) return { setup: 'no save written' };
+    // Rewind the save to the PRE-UNIFICATION shape: v13, world 'egypt', with
+    // the position expressed against the OLD chain origin.
+    raw.saveVersion = 13;
+    raw.world.active = 'egypt';
+    raw.world.x = pos.x - ms.egyptMap.bounds.x + ms.egyptOldOriginX;
+    raw.world.y = pos.y - ms.egyptMap.bounds.y;
+    ms.applySave(raw);
+    await new Promise((res) => setTimeout(res, 400));
+    const d = Math.hypot(ms.player.x - pos.x, ms.player.y - pos.y);
+    return { setup: 'ok', world: ms.activeWorld, d: +d.toFixed(1) };
+  });
+  ok(
+    "migrated save: a v13 'egypt' save lands within a tile of its old relative spot in the globe",
+    migSave.setup === 'ok' && migSave.world === 'globe' && migSave.d <= 32,
+    JSON.stringify(migSave),
+  );
+
+  // 3m3. THE PLANET AROUND CAIRO: the egypt chunk sits at its true position —
+  // the raster shows the Mediterranean north of the Delta and Sahara land west
+  // of the Nile, and Cairo's own tiles override the raster where they stand.
+  const med = await page.evaluate(() => {
+    const ms = window.__ready();
+    const g = ms.groundLayers.get('globe');
+    const eb = ms.egyptMap.bounds;
+    const alexandria = ms.egyptMap.cities.find((c) => c.name === 'Alexandria');
+    const ax = eb.x + alexandria.tx * 32;
+    const medWater = g.isWaterAtWorld(ax, eb.y - 2400); // ~1° north of the map top
+    const saharaLand = !g.isWaterAtWorld(eb.x - 2400, eb.y + eb.height * 0.5); // west of the rect
+    const cairo = ms.egyptMap.cities.find((c) => c.name === 'Cairo');
+    const cairoTiles = ms.egyptMap.terrainAtWorld(eb.x + cairo.tx * 32, eb.y + cairo.ty * 32) !== null;
+    return { medWater, saharaLand, cairoTiles };
+  });
+  ok(
+    'unification (egypt): zoom-out geography — Mediterranean water north of the Delta, Sahara land west, Cairo on hand-built tiles',
+    med.medWater && med.saharaLand && med.cairoTiles,
+    JSON.stringify(med),
   );
 
   // 3n. GROUND LAYER (sparse worlds): the continents are real — biome ground
@@ -3060,7 +3102,7 @@ try {
     gl.setVisible(true);
     await new Promise((res) => setTimeout(res, 800));
     const fpsGround = await fpsOver(2500);
-    const denseClean = ['earth', 'egypt', 'heaven', 'hell', 'city-faiyum'].every((id) => !ms.groundLayers.has(id));
+    const denseClean = ['earth', 'heaven', 'hell', 'city-faiyum'].every((id) => !ms.groundLayers.has(id));
     return { has: true, rome, midVoid, coastFound: waterX !== null, waterBlocks, groundCells: gl.cellsDrawn, zoomedOutCells, fpsBaseline, fpsGround, fpsContinentBase, fpsContinentGround, denseClean };
   });
   ok('ground: biome land renders under Rome', groundRun.has && groundRun.rome.cells > 0 && groundRun.rome.cls > 0, groundRun.has ? `cells=${groundRun.rome.cells} class=${groundRun.rome.cls}` : 'no globe ground layer');
@@ -3076,7 +3118,7 @@ try {
     groundRun.has && groundRun.fpsGround >= groundRun.fpsBaseline * 0.8,
     `ground=${groundRun.fpsGround} baseline=${groundRun.fpsBaseline} (tolerance ≥ 80%)`,
   );
-  ok('ground: dense hand-built worlds have NO ground layer', groundRun.has && groundRun.denseClean, 'earth/egypt/heaven/hell/faiyum clean');
+  ok('ground: dense hand-built worlds have NO ground layer', groundRun.has && groundRun.denseClean, 'earth/heaven/hell/faiyum clean (egypt is a globe chunk now)');
   ok(
     'ground: FPS at CONTINENT zoom within tolerance of the no-ground baseline',
     groundRun.has && groundRun.fpsContinentGround >= groundRun.fpsContinentBase * 0.8,
@@ -3194,22 +3236,22 @@ try {
   const egyptDeath = await (async () => {
     await page.evaluate(() => {
       const ms = window.__ready();
-      const entry = ms.worlds['egypt'].defaultArrival;
-      const spot = ms.worlds['egypt'].map.nearestWalkableWorld(entry.x + 1800, entry.y + 700);
-      ms.applyWorldSwap('egypt', spot);
+      const entry = ms.egyptArrivalPos;
+      const spot = ms.egyptMap.nearestWalkableWorld(entry.x + 1800, entry.y + 700);
+      ms.applyWorldSwap('globe', spot);
     });
     await page.waitForTimeout(900);
     const d = await dieHere();
     return page.evaluate(
       ({ d }) => {
         const ms = window.__game.scene.getScene('MainScene');
-        const entry = ms.worlds['egypt'].defaultArrival;
+        const entry = ms.egyptArrivalPos;
         return { ...d, atEntry: Math.hypot(d.x - entry.x, d.y - entry.y) < 10 };
       },
       { d },
     );
   })();
-  ok('death respawn (egypt): a sensible local point — the world entry', egyptDeath.world === 'egypt' && egyptDeath.alive && egyptDeath.atEntry, JSON.stringify(egyptDeath));
+  ok('death respawn (egypt-in-globe): a sensible local point — the Faiyum entry', egyptDeath.world === 'globe' && egyptDeath.alive && egyptDeath.atEntry, JSON.stringify(egyptDeath));
   // Back to the globe at Rome for whatever follows (the pre-check state).
   await page.evaluate(async () => {
     const ms = window.__ready();
@@ -3311,7 +3353,7 @@ try {
     // and accept() refuses while ANY quest is active. A wiped chain is exactly
     // the fresh-start state; nothing auto-starts from it (cai-01 is manual).
     ms.chain.load({ completed: [], activeId: null, activeObjective: 0 });
-    ms.applyWorldSwap('egypt', ms.worlds['egypt'].defaultArrival);
+    ms.applyWorldSwap('globe', ms.egyptArrivalPos);
     await wait(1700);
     // cai-01 — stand before the Keeper; the talk button must offer itself.
     ms.player.sprite.body.reset(ms.cairoMentorPos.x + 50, ms.cairoMentorPos.y);

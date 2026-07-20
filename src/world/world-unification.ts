@@ -89,3 +89,14 @@ export function egyptLocalToGlobeLocal(x: number, y: number): { x: number; y: nu
   const d = egyptUnificationDelta();
   return { x: x + d.dx, y: y + d.dy };
 }
+
+/**
+ * ABSORBED ZONES (the dry run's one real collision): generated globe zones
+ * whose TRUE position now lies under a migrated hand-built map. Their zone id,
+ * quests, spawns, arrival, and champion are untouched — only their GENERATED
+ * terrain chunk is retired; the content re-hosts on the hand-built tiles
+ * (hand-built is authoritative). Value names the host map for readability.
+ */
+export const ABSORBED_ZONE_HOSTS: Record<string, 'egypt-map'> = {
+  'luxor-valley-of-kings': 'egypt-map',
+};
