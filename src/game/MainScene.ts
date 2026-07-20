@@ -38,7 +38,7 @@ import { encodeSaveCode, decodeSaveCode } from './saveCode';
 import { PortalDefense } from '../encounter/PortalDefense';
 import { buildHeavenMapData, HEAVEN_WIDTH, HEAVEN_HEIGHT, HEAVEN_CHERUB_SPAWNS, THRONE_POSITION } from '../map/heavenWorld';
 import { buildHellMapData, HELL_WIDTH, HELL_HEIGHT, HELL_DEMON_SPAWNS, SATAN_LAIR } from '../map/hellWorld';
-import { WORLD_EARTH, WORLD_HEAVEN, WORLD_HELL, WORLD_EGYPT, WORLD_GLOBE, type WorldId, type WorldRuntime, type WorldMapLike } from '../world/worlds';
+import { WORLD_EARTH, WORLD_HEAVEN, WORLD_HELL, type WorldId, type WorldRuntime, type WorldMapLike } from '../world/worlds';
 import { AFRICA_BUILT_ZONES, buildAfricaQuestDefs, PREBUILT_ZONE_WORLD } from '../world/africa-built';
 import { ASIA_BUILT_ZONES, buildAsiaQuestDefs } from '../world/asia-built';
 import { FINAL_REGIONS_BUILT_ZONES, buildFinalRegionsQuestDefs } from '../world/final-regions-built';
@@ -941,7 +941,7 @@ export class MainScene extends Phaser.Scene {
   // Multi-world (Earth <-> Heaven). The active world is centralized, serializable
   // state; each world's map lives in its own coordinate region (one rendered at a
   // time). The same player carries across. See setupHeaven + travelToWorld.
-  private activeWorld: WorldId = WORLD_GLOBE; // the PNW is a globe chunk now — the session starts there
+  private activeWorld: WorldId = WORLD_EARTH; // the PNW is a globe chunk now — the session starts there
   private worlds: Record<WorldId, WorldRuntime> = {};
   private worldPos: Record<WorldId, { x: number; y: number }> = {}; // remembered per-world player position
   // Heaven's Defenders: the hybrid Cherub / Cherubim enemies (placed in Heaven +
@@ -1421,7 +1421,7 @@ export class MainScene extends Phaser.Scene {
     // Spawn the player in the town square.
     this.player = new Player(this, this.town.spawn.x, this.town.spawn.y, this.classId);
     this.earthCollider = this.physics.add.collider(this.player.sprite, this.map.layer);
-    this.regionColliders.push({ c: this.earthCollider, worldId: WORLD_GLOBE });
+    this.regionColliders.push({ c: this.earthCollider, worldId: WORLD_EARTH });
 
     // A plain Enumclaw townsperson in the plaza (flavor only). The old opening
     // quest ('corruption-at-the-gates') is RETIRED — the corruption beat now lives
@@ -1982,8 +1982,8 @@ export class MainScene extends Phaser.Scene {
       this.updateTownsfolk(); // prune dead first so the wave manager sees the live count
       this.updateHomeCivics(); // neighbor NPCs + the delivery composite (globe + Egypt)
       this.updateNarrativePresence(); // the Watcher + Azazel's campfires
-      if (this.activeWorld === WORLD_GLOBE) this.updateCairoBinding(); // Wizard Act I ambient content (Cairo lives in the globe now)
-      if (this.activeWorld === WORLD_GLOBE) {
+      if (this.activeWorld === WORLD_EARTH) this.updateCairoBinding(); // Wizard Act I ambient content (Cairo lives in the globe now)
+      if (this.activeWorld === WORLD_EARTH) {
         this.checkUrielArrival(); // Act II finale: scripted Uriel scene back in the square
         this.checkSeattleIntro(); // first time in the Druid city: a one-shot intro narration
         this.checkRiftSceneStart(); // FINALE: reaching the N-Oregon rift begins the rift scene
@@ -6850,7 +6850,7 @@ export class MainScene extends Phaser.Scene {
       // Migrated dense chunks are settlements too (world unification): dying
       // on the Nile respawns at Faiyum's gate and dying in the PNW at the
       // Enumclaw square, not a distant generated zone.
-      if (this.activeWorld === WORLD_GLOBE) candidates.push(this.egyptArrivalPos, { x: this.town.spawn.x, y: this.town.spawn.y });
+      if (this.activeWorld === WORLD_EARTH) candidates.push(this.egyptArrivalPos, { x: this.town.spawn.x, y: this.town.spawn.y });
     } else {
       const w = this.worlds[this.activeWorld];
       if (w?.defaultArrival) candidates.push(w.defaultArrival);
@@ -8157,7 +8157,7 @@ export class MainScene extends Phaser.Scene {
     this.endingFx = [];
     // Reuse the world-transition system; the SAME character carries across (level,
     // HP, energy, holy power, Holy Bolt + holy reflavor are untouched by travel).
-    this.travelToWorld(WORLD_GLOBE, { x: this.town.spawn.x, y: this.town.spawn.y });
+    this.travelToWorld(WORLD_EARTH, { x: this.town.spawn.x, y: this.town.spawn.y });
     this.time.delayedCall(WORLD_TRANSITION_MS + 200, () => this.showBanner(ENDING_CLOSING_LINE, 4200));
 
     // ===================================================================
@@ -8463,28 +8463,28 @@ export class MainScene extends Phaser.Scene {
       // SAME SPOT on the migrated map — the whole map moved as one body, so
       // the translation is the difference of its origins. Idempotent: once
       // applied the save writes back as 'globe'.
-      if ((s.world.active as string) === WORLD_EARTH) {
+      if ((s.world.active as string) === 'earth-legacy') {
         const dx = this.map.bounds.x;
         const dy = this.map.bounds.y;
-        s.world.active = WORLD_GLOBE;
+        s.world.active = WORLD_EARTH;
         s.world.x += dx;
         s.world.y += dy;
-        const rem = s.world.remembered?.[WORLD_EARTH];
+        const rem = s.world.remembered?.['earth-legacy'];
         if (rem) {
-          if (!s.world.remembered[WORLD_GLOBE]) s.world.remembered[WORLD_GLOBE] = { x: rem.x + dx, y: rem.y + dy };
-          delete s.world.remembered[WORLD_EARTH];
+          if (!s.world.remembered[WORLD_EARTH]) s.world.remembered[WORLD_EARTH] = { x: rem.x + dx, y: rem.y + dy };
+          delete s.world.remembered['earth-legacy'];
         }
       }
-      if ((s.world.active as string) === WORLD_EGYPT) {
+      if ((s.world.active as string) === 'egypt') {
         const dx = this.egyptMap.bounds.x - this.egyptOldOriginX;
         const dy = this.egyptMap.bounds.y - 0;
-        s.world.active = WORLD_GLOBE;
+        s.world.active = WORLD_EARTH;
         s.world.x += dx;
         s.world.y += dy;
-        const rem = s.world.remembered?.[WORLD_EGYPT];
+        const rem = s.world.remembered?.['egypt'];
         if (rem) {
-          if (!s.world.remembered[WORLD_GLOBE]) s.world.remembered[WORLD_GLOBE] = { x: rem.x + dx, y: rem.y + dy };
-          delete s.world.remembered[WORLD_EGYPT];
+          if (!s.world.remembered[WORLD_EARTH]) s.world.remembered[WORLD_EARTH] = { x: rem.x + dx, y: rem.y + dy };
+          delete s.world.remembered['egypt'];
         }
       }
       this.applyWorldSwap(s.world.active as WorldId, { x: s.world.x, y: s.world.y });
@@ -8496,9 +8496,9 @@ export class MainScene extends Phaser.Scene {
       // Re-establish the ACTIVE arc objective's world state (spawned enemies / the
       // proximity action button) — a mid-arc load otherwise resumes with nothing to
       // fight or press. Arc quests are Earth-only, so guard on the loaded world.
-      if (this.activeWorld === WORLD_GLOBE && this.isArcActive()) this.beginArcObjective();
+      if (this.activeWorld === WORLD_EARTH && this.isArcActive()) this.beginArcObjective();
       // 4.9 mid-assault: the demon escort is transient (never serialized) — remuster it.
-      if (this.activeWorld === WORLD_GLOBE && this.chain.activeQuest?.id === ACT4_DOOR_HOME_ID) {
+      if (this.activeWorld === WORLD_EARTH && this.chain.activeQuest?.id === ACT4_DOOR_HOME_ID) {
         this.spawnDemonAllies(false);
       }
 
@@ -9092,16 +9092,16 @@ export class MainScene extends Phaser.Scene {
   private setupGlobe(): void {
     const zoneIds = [...EUROPE_BUILT_ZONES, ...AFRICA_BUILT_ZONES, ...ASIA_BUILT_ZONES, ...FINAL_REGIONS_BUILT_ZONES].filter((id) => !PREBUILT_ZONE_WORLD[id]);
     if (zoneIds.length === 0) return;
-    const cal = WORLD_CALIBRATION[WORLD_GLOBE];
-    const span = WORLD_SPAN_DEGREES[WORLD_GLOBE];
+    const cal = WORLD_CALIBRATION[WORLD_EARTH];
+    const span = WORLD_SPAN_DEGREES[WORLD_EARTH];
     const origin = { x: this.nextWorldOriginX, y: 0 };
     if (origin.x !== this.computeGlobeOriginX()) throw new Error(`setupGlobe: chain drift — ${origin.x} vs ${this.computeGlobeOriginX()}`);
-    const rw = createSparseWorld(WORLD_GLOBE, cal, span);
+    const rw = createSparseWorld(WORLD_EARTH, cal, span);
 
     // GROUND LAYER: the real planet (the whole-Earth Natural-Earth raster
     // through this world's calibration) drawn beneath every chunk.
     const ground = new GroundLayer(this, origin, cal, rw.sparse!.boundsPx);
-    this.groundLayers.set(WORLD_GLOBE, ground);
+    this.groundLayers.set(WORLD_EARTH, ground);
 
     // EGYPT JOINS THE PLANET (world unification): the hand-built Nile map is a
     // DENSE CHUNK of the globe at its true position — Cairo pinned at 30.04°N
@@ -9113,7 +9113,7 @@ export class MainScene extends Phaser.Scene {
     this.egyptArrivalPos = { ...this.egyptMap.spawnWorld }; // re-pointed to Faiyum's gate in setupEgypt
     const egyptCollider = this.physics.add.collider(this.player.sprite, this.egyptMap.layer);
     egyptCollider.active = false;
-    this.regionColliders.push({ c: egyptCollider, worldId: WORLD_GLOBE });
+    this.regionColliders.push({ c: egyptCollider, worldId: WORLD_EARTH });
 
     // Stamp every built zone; gates rebuild from the manifest in ONE shared
     // pass (all endpoints live in the same `built` map now). ABSORBED zones
@@ -9122,27 +9122,27 @@ export class MainScene extends Phaser.Scene {
     // only their generated terrain chunk is retired.
     const chunkMaps: GameMap[] = [this.map, this.egyptMap];
     const built = new Map<string, { chunk: BuiltChunk; map: GameMap }>();
-    for (const id of zoneIds) this.stampRegionZoneChunk(WORLD_GLOBE, rw, origin, id, chunkMaps, built, ABSORBED_ZONE_HOSTS[id] ? this.egyptMap : undefined);
-    this.buildRegionGates(WORLD_GLOBE, origin, built);
+    for (const id of zoneIds) this.stampRegionZoneChunk(WORLD_EARTH, rw, origin, id, chunkMaps, built, ABSORBED_ZONE_HOSTS[id] ? this.egyptMap : undefined);
+    this.buildRegionGates(WORLD_EARTH, origin, built);
 
     // Register the world: arrival at the FIRST built zone's settlement (Rome).
     const first = built.get(EUROPE_BUILT_ZONES[0])!;
     const arrival = first.map.nearestWalkableWorld(origin.x + first.chunk.arrivalLocalPx.x, origin.y + first.chunk.arrivalLocalPx.y);
     this.globeMap = new SparseWorldMap(origin, rw.sparse!.boundsPx, chunkMaps, () => ({ x: this.player.x, y: this.player.y }), (x, y) => ground.isWaterAtWorld(x, y));
-    this.worlds[WORLD_GLOBE] = {
-      id: WORLD_GLOBE,
+    this.worlds[WORLD_EARTH] = {
+      id: WORLD_EARTH,
       map: this.globeMap,
-      collider: this.regionColliders.find((rc) => rc.worldId === WORLD_GLOBE)?.c,
+      collider: this.regionColliders.find((rc) => rc.worldId === WORLD_EARTH)?.c,
       defaultArrival: arrival,
     };
-    this.worldPos[WORLD_GLOBE] = { x: this.town.spawn.x, y: this.town.spawn.y }; // the session starts at the town square
-    this.regionWorldIds.add(WORLD_GLOBE); // the globe runs the shared region pipeline
+    this.worldPos[WORLD_EARTH] = { x: this.town.spawn.x, y: this.town.spawn.y }; // the session starts at the town square
+    this.regionWorldIds.add(WORLD_EARTH); // the globe runs the shared region pipeline
     // The session STARTS in the globe (earth is a chunk): bounds + colliders
     // match the active world from the first frame, no swap needed.
     const gb = this.globeMap.bounds;
     this.physics.world.setBounds(gb.x, gb.y, gb.width, gb.height);
     this.cameras.main.setBounds(gb.x, gb.y, gb.width, gb.height);
-    for (const rc of this.regionColliders) rc.c.active = rc.worldId === WORLD_GLOBE;
+    for (const rc of this.regionColliders) rc.c.active = rc.worldId === WORLD_EARTH;
     this.nextWorldOriginX = origin.x + rw.sparse!.boundsPx.w + HEAVEN_WORLD_GAP;
 
     // THE OLD EGYPT ↔ LUXOR CROSS-WORLD GATE IS RETIRED (world unification):
@@ -9972,7 +9972,7 @@ export class MainScene extends Phaser.Scene {
       // Globe-parented cities live on a DENSE chunk of the globe (the egypt
       // map) — that chunk hosts the entrance stamp; travel still targets the
       // globe world itself.
-      const parent = def.parentWorld === WORLD_GLOBE ? this.egyptMap : this.worlds[def.parentWorld]?.map;
+      const parent = def.parentWorld === WORLD_EARTH ? this.egyptMap : this.worlds[def.parentWorld]?.map;
       if (!parent) throw new Error(`City '${def.id}' registered before its parent world '${def.parentWorld}'`);
       // Entrance stamps paint tiles — only DENSE (GameMap) parents support that.
       if (!(parent instanceof GameMap)) throw new Error(`City '${def.id}': parent world '${def.parentWorld}' is not a dense map`);
@@ -11402,7 +11402,7 @@ export class MainScene extends Phaser.Scene {
     const d = Phaser.Math.Distance.Between(this.player.x, this.player.y, this.heavenReturnPortalPos.x, this.heavenReturnPortalPos.y);
     if (d > PORTAL_CORRUPT_RANGE) return;
     this.returnEarthButton.setVisible(false);
-    this.travelToWorld(WORLD_GLOBE, this.earthReturnPos);
+    this.travelToWorld(WORLD_EARTH, this.earthReturnPos);
   }
 
   /** Heaven-side per-frame logic: the return gate crosses by BUTTON (same slot as
@@ -11563,7 +11563,10 @@ export class MainScene extends Phaser.Scene {
     const zone = homeZoneForClass(this.classId);
     if (!zone) return; // no canon home in the manifest → the default start
     const worldId = (PREBUILT_ZONE_WORLD[zone.id] ?? CONTINENT_WORLD[zone.continent]) as WorldId;
-    if (!worldId || worldId === WORLD_EARTH || !this.worlds[worldId]) return; // Earth homes = the shipped WA start, unchanged
+    // NA homes = the shipped WA start, unchanged. (Keyed on the CONTINENT —
+    // after the unification EVERY home resolves to the one 'earth' world, so
+    // the old world-key guard would skip every class.)
+    if (!worldId || zone.continent === 'North America' || !this.worlds[worldId]) return;
     const mentor = zone.id === 'cairo-nile-crown' ? this.cairoMentorPos : this.regionMentors.find((m) => m.zoneId === zone.id)?.pos;
     const base = mentor ?? this.regionZoneArrivals[zone.id] ?? this.worlds[worldId].defaultArrival;
     const dest = this.worlds[worldId].map.nearestWalkableWorld(base.x, base.y + 70); // beside the mentor, not on top
@@ -11666,26 +11669,26 @@ export class MainScene extends Phaser.Scene {
     this.travelToWorld(WORLD_HEAVEN, this.heavenArrivalPos);
   }
   private devReturnToEarth(): void {
-    this.travelToWorld(WORLD_GLOBE, this.earthReturnPos);
+    this.travelToWorld(WORLD_EARTH, this.earthReturnPos);
   }
   private devToggleWorld(): void {
-    this.travelToWorld(this.activeWorld === WORLD_GLOBE ? WORLD_HEAVEN : WORLD_GLOBE);
+    this.travelToWorld(this.activeWorld === WORLD_EARTH ? WORLD_HEAVEN : WORLD_EARTH);
   }
   /** DEV: travel to Egypt's Faiyum arrival (works from anywhere — including
    *  elsewhere IN Egypt; the same fade just repositions the player). */
   private devTravelEgypt(): void {
-    this.travelToWorld(WORLD_GLOBE, this.egyptArrivalPos);
+    this.travelToWorld(WORLD_EARTH, this.egyptArrivalPos);
   }
   /** DEV: travel to Earth, landing at Enumclaw (Earth's default arrival — distinct
    *  from devReturnToEarth, which lands at the Idaho Heaven-portal return spot). */
   private devTravelEarth(): void {
-    this.travelToWorld(WORLD_GLOBE, { x: this.town.spawn.x, y: this.town.spawn.y });
+    this.travelToWorld(WORLD_EARTH, { x: this.town.spawn.x, y: this.town.spawn.y });
   }
   /** DEV: travel to Rome — the globe world's default arrival (same entry as
    *  before the consolidation; Rome now sits at its true planet position). */
   private devTravelEurope(): void {
-    const w = this.worlds[WORLD_GLOBE];
-    if (w) this.travelToWorld(WORLD_GLOBE, w.defaultArrival);
+    const w = this.worlds[WORLD_EARTH];
+    if (w) this.travelToWorld(WORLD_EARTH, w.defaultArrival);
   }
 
   /** DEV: travel to the Mount Sinai approach valley (Egypt's south-east Sinai). */
@@ -11696,7 +11699,7 @@ export class MainScene extends Phaser.Scene {
     // IN passes the stone ring; snap to walkable in case of rock.
     const p = this.egyptMap.tileToWorldCenter(city.tx - 6, city.ty - 6);
     const dest = this.egyptMap.nearestWalkableWorld(p.x, p.y, 14);
-    this.travelToWorld(WORLD_GLOBE, dest);
+    this.travelToWorld(WORLD_EARTH, dest);
   }
   /** DEV "Test City Arrow": cycle the fake objective — OFF → the MILL inside the
    *  Faiyum village → a desert spot OUTSIDE it → OFF. Exercises the hierarchical
@@ -12327,7 +12330,7 @@ export class MainScene extends Phaser.Scene {
 
   /** DEV: jump to a world position on the active (Earth) map — testing the investigation arc. */
   private devTeleportTo(p: { x: number; y: number }): void {
-    if (this.activeWorld !== WORLD_GLOBE) return;
+    if (this.activeWorld !== WORLD_EARTH) return;
     this.cancelDash();
     this.player.sprite.setPosition(p.x, p.y);
     this.player.setDirection(0, 0);
@@ -12998,7 +13001,7 @@ export class MainScene extends Phaser.Scene {
     // Each enemy's own reset/respawn above already restored its body; discard the
     // stale paused-body list so the world swap doesn't touch destroyed bodies.
     this.pausedBodies = [];
-    if (this.activeWorld !== WORLD_GLOBE) this.applyWorldSwap(WORLD_GLOBE, this.earthReturnPos);
+    if (this.activeWorld !== WORLD_EARTH) this.applyWorldSwap(WORLD_EARTH, this.earthReturnPos);
     this.worldPos[WORLD_HEAVEN] = { ...this.heavenArrivalPos };
   }
 
@@ -13274,7 +13277,7 @@ export class MainScene extends Phaser.Scene {
 
     // --- World + position (synchronous swap; we may be paused) ----------------
     const obj0 = def.objectives[0];
-    const world: WorldId = obj0?.target ? TARGET_WORLD[obj0.target] : WORLD_GLOBE;
+    const world: WorldId = obj0?.target ? TARGET_WORLD[obj0.target] : WORLD_EARTH;
     const dest = this.jumpApproachPos(def, world, JUMP_APPROACH_OFFSET);
     if (this.activeWorld !== world) {
       this.applyWorldSwap(world, dest); // instant core swap (bounds/camera/zoom/bodies)
@@ -13499,7 +13502,7 @@ export class MainScene extends Phaser.Scene {
    *  update() — doors, interactions, arcs, angels, townsfolk. Nested CITIES are
    *  terrestrial too (their NPCs/doors work like any ground world). */
   private isTerrestrial(w: WorldId): boolean {
-    return w === WORLD_GLOBE || !!this.cityRuntimes[w];
+    return w === WORLD_EARTH || !!this.cityRuntimes[w];
   }
 
   /** Position the world marker on the current target and update the edge arrow. */
@@ -13553,7 +13556,7 @@ export class MainScene extends Phaser.Scene {
     // climax quests have no giver and need no pre-accept pointer.
     if (!this.isTerrestrial(this.activeWorld)) return null;
     // Act II finale: between Q7 and Uriel's arrival, point the player back to the square.
-    if (this.activeWorld === WORLD_GLOBE && this.urielPending && !this.urielArrived) {
+    if (this.activeWorld === WORLD_EARTH && this.urielPending && !this.urielArrived) {
       return { x: this.town.spawn.x, y: this.town.spawn.y, label: 'Return to Enumclaw' };
     }
     const b = this.activeMap().bounds;
@@ -13577,7 +13580,7 @@ export class MainScene extends Phaser.Scene {
     }
     const cairoZone = getZone('cairo-nile-crown');
     const cairoOpener = cairoZone?.questChain[0];
-    if (this.activeWorld === WORLD_GLOBE && cairoOpener && this.chain.status(cairoOpener.id) === 'available') {
+    if (this.activeWorld === WORLD_EARTH && cairoOpener && this.chain.status(cairoOpener.id) === 'available') {
       return { x: this.cairoMentorPos.x, y: this.cairoMentorPos.y, label: cairoOpener.title };
     }
     return null;

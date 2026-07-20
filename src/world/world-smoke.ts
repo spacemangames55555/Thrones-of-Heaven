@@ -78,7 +78,7 @@ for (const zone of WORLD) {
   }
 }
 {
-  const globe = regionWorlds.get('globe');
+  const globe = regionWorlds.get('earth');
   if (globe?.sparse) pass(`globe sparse world: ${globe.sparse.chunks.length} chunks planned inside ${globe.sparse.boundsPx.w.toFixed(0)}x${globe.sparse.boundsPx.h.toFixed(0)}px span (no dense allocation)`);
 }
 

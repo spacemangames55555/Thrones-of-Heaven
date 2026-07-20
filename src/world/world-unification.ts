@@ -44,7 +44,7 @@ export interface UnificationDelta {
 
 /** lat/lng → GLOBE-LOCAL px through the one shared globe calibration. */
 export function globeLocalFromLatLng(lat: number, lng: number): { x: number; y: number } {
-  const cal = WORLD_CALIBRATION.globe;
+  const cal = WORLD_CALIBRATION.earth;
   return {
     x: (lng - cal.origin.lng) * cal.pixelsPerDegree.x,
     y: (cal.origin.lat - lat) * cal.pixelsPerDegree.y,
@@ -53,7 +53,7 @@ export function globeLocalFromLatLng(lat: number, lng: number): { x: number; y: 
 
 /** GLOBE-LOCAL px → lat/lng (the inverse, for reports and dev readouts). */
 export function latLngFromGlobeLocal(x: number, y: number): { lat: number; lng: number } {
-  const cal = WORLD_CALIBRATION.globe;
+  const cal = WORLD_CALIBRATION.earth;
   return {
     lat: cal.origin.lat - y / cal.pixelsPerDegree.y,
     lng: cal.origin.lng + x / cal.pixelsPerDegree.x,
@@ -62,8 +62,8 @@ export function latLngFromGlobeLocal(x: number, y: number): { lat: number; lng: 
 
 /** EARTH → GLOBE: same px/deg on both calibrations ⇒ exact translation. */
 export function earthUnificationDelta(): UnificationDelta {
-  const e = WORLD_CALIBRATION.earth;
-  const g = WORLD_CALIBRATION.globe;
+  const e = WORLD_CALIBRATION['pnw-legacy'];
+  const g = WORLD_CALIBRATION.earth;
   // (lng shift, lat shift) of earth's local (0,0) inside the globe frame.
   return {
     dx: (e.origin.lng - g.origin.lng) * g.pixelsPerDegree.x,

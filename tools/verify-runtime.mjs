@@ -120,6 +120,35 @@ const ok = (name, pass, detail = '') => {
   );
 }
 
+// 0b. WORLD CENSUS (permanent, pure Node): the unified planet's contents,
+// printed and sanity-bounded — zones per continent, built/absorbed/prebuilt
+// counts, class homes (must be exactly 14), portal sites.
+{
+  const { WORLD } = await import('../src/world/world-manifest.ts').catch(() => ({ WORLD: null })) ?? {};
+  let manifest = WORLD;
+  if (!manifest) {
+    const m = await (async () => {
+      const { build } = await import('esbuild');
+      const { mkdirSync } = await import('node:fs');
+      const outfile = new URL('../node_modules/.cache/toh-census-manifest.mjs', import.meta.url).pathname;
+      mkdirSync(new URL('../node_modules/.cache', import.meta.url).pathname, { recursive: true });
+      await build({ entryPoints: [new URL('../src/world/world-manifest.ts', import.meta.url).pathname], bundle: true, format: 'esm', platform: 'node', outfile, logLevel: 'silent' });
+      return import(outfile);
+    })();
+    manifest = m.WORLD;
+  }
+  const byContinent = {};
+  for (const z of manifest) byContinent[z.continent] = (byContinent[z.continent] ?? 0) + 1;
+  const homes = manifest.filter((z) => z.homeClass).length;
+  const portals = manifest.filter((z) => z.portalSite).length;
+  const census = { totalZones: manifest.length, byContinent, homes, portals };
+  ok(
+    'world census: one planet — zones per continent, 14 class homes, portal sites (printed)',
+    manifest.length >= 60 && homes === 14 && portals >= 1,
+    JSON.stringify(census),
+  );
+}
+
 // 1) Preview server (killed on exit).
 const server = spawn('npx', ['vite', 'preview', '--port', String(PORT), '--strictPort'], { stdio: 'ignore' });
 const kill = () => {
@@ -237,10 +266,16 @@ try {
       // Stand mid-WA on Earth (the pre-ruling life), then write a REAL save.
       const spawn = ms.town.spawn;
       const spot = ms.map.nearestWalkableWorld(spawn.x + 400, spawn.y + 120);
-      ms.applyWorldSwap('globe', spot);
+      ms.applyWorldSwap('earth', spot);
       ms.writeSave();
       const raw = JSON.parse(localStorage.getItem('toh_save'));
       raw.saveVersion = 12; // wind back: this save predates the ruling
+      // A REAL v12 save could only hold OLD-frame PNW coordinates — express the
+      // spot in that frame; the v15 legacy marker + apply-time translation must
+      // land it back on the SAME relative point (never at the class home).
+      raw.world.active = 'earth';
+      raw.world.x = spot.x - ms.map.bounds.x;
+      raw.world.y = spot.y - ms.map.bounds.y;
       localStorage.setItem('toh_save', JSON.stringify(raw));
       return spot;
     });
@@ -256,7 +291,7 @@ try {
   })();
   ok(
     'pre-ruling save: a v12 Necromancer mid-WA loads exactly where it was (never relocated)',
-    preRuling.world === 'globe' && preRuling.classId === 'necromancer' && preRuling.d < 8,
+    preRuling.world === 'earth' && preRuling.classId === 'necromancer' && preRuling.d < 8,
     JSON.stringify(preRuling),
   );
 
@@ -268,20 +303,20 @@ try {
   //    start (NPC-given opener, pre-accept giver arrow). Druid runs LAST: the
   //    WA-opening check below plays on in ITS session.
   const HOMES = {
-    blacksmith: { world: 'globe', zone: 'munich-anvil-hold', opener: 'mun-01-mentor', kind: 'region' },
-    wizard: { world: 'globe', zone: 'cairo-nile-crown', opener: 'cai-01-mentor', kind: 'cairo' },
-    necromancer: { world: 'globe', zone: 'murmansk-bone-harbor', opener: 'mur-01-mentor', kind: 'region' },
-    mage: { world: 'globe', zone: 'moscow-crystal-court', opener: 'mos-01-mentor', kind: 'region' },
-    bard: { world: 'globe', zone: 'london-grey-chorus', opener: 'lon-01-mentor', kind: 'region' },
-    witchdoctor: { world: 'globe', zone: 'kinshasa-river-drum', opener: 'kin-01-mentor', kind: 'region' },
-    samurai: { world: 'globe', zone: 'kyoto-thousand-gates', opener: 'kyo-01-mentor', kind: 'region' },
-    monk: { world: 'globe', zone: 'lhasa-prayer-citadel', opener: 'lha-01-mentor', kind: 'region' },
-    assassin: { world: 'globe', zone: 'dubai-glass-souk', opener: 'dub-01-mentor', kind: 'region' },
-    priest: { world: 'globe', zone: 'rome-eternal-seat', opener: 'rom-01-mentor', kind: 'region' },
-    savage: { world: 'globe', zone: 'mexico-lake-crown', opener: 'mex-01-mentor', kind: 'region' },
-    hunter: { world: 'globe', zone: 'sydney-harbour-watch', opener: 'syd-01-mentor', kind: 'region' },
-    atlantean: { world: 'globe', zone: 'bali-drowned-crown', opener: 'bal-01-mentor', kind: 'region' }, // the SUNDIAN (canon rename; save-safe classId)
-    druid: { world: 'globe', zone: null, opener: 'honest-days-work', kind: 'earth' },
+    blacksmith: { world: 'earth', zone: 'munich-anvil-hold', opener: 'mun-01-mentor', kind: 'region' },
+    wizard: { world: 'earth', zone: 'cairo-nile-crown', opener: 'cai-01-mentor', kind: 'cairo' },
+    necromancer: { world: 'earth', zone: 'murmansk-bone-harbor', opener: 'mur-01-mentor', kind: 'region' },
+    mage: { world: 'earth', zone: 'moscow-crystal-court', opener: 'mos-01-mentor', kind: 'region' },
+    bard: { world: 'earth', zone: 'london-grey-chorus', opener: 'lon-01-mentor', kind: 'region' },
+    witchdoctor: { world: 'earth', zone: 'kinshasa-river-drum', opener: 'kin-01-mentor', kind: 'region' },
+    samurai: { world: 'earth', zone: 'kyoto-thousand-gates', opener: 'kyo-01-mentor', kind: 'region' },
+    monk: { world: 'earth', zone: 'lhasa-prayer-citadel', opener: 'lha-01-mentor', kind: 'region' },
+    assassin: { world: 'earth', zone: 'dubai-glass-souk', opener: 'dub-01-mentor', kind: 'region' },
+    priest: { world: 'earth', zone: 'rome-eternal-seat', opener: 'rom-01-mentor', kind: 'region' },
+    savage: { world: 'earth', zone: 'mexico-lake-crown', opener: 'mex-01-mentor', kind: 'region' },
+    hunter: { world: 'earth', zone: 'sydney-harbour-watch', opener: 'syd-01-mentor', kind: 'region' },
+    atlantean: { world: 'earth', zone: 'bali-drowned-crown', opener: 'bal-01-mentor', kind: 'region' }, // the SUNDIAN (canon rename; save-safe classId)
+    druid: { world: 'earth', zone: null, opener: 'honest-days-work', kind: 'earth' },
   };
   for (const cls of ['blacksmith', 'wizard', 'necromancer', 'mage', 'bard', 'witchdoctor', 'samurai', 'monk', 'assassin', 'priest', 'savage', 'hunter', 'atlantean', 'druid']) {
     await newGame(cls);
@@ -2541,7 +2576,7 @@ try {
   // 3) The GLOBE sparse world (Europe + Africa consolidated at true Earth
   // positions): travel, chunks, gates. The region SHIPPED — if the world
   // failed to register, that is a loud FAIL, never a silent skip.
-  const hasGlobe = await page.evaluate(() => !!window.__game.scene.getScene('MainScene').worlds['globe']);
+  const hasGlobe = await page.evaluate(() => !!window.__game.scene.getScene('MainScene').worlds['earth']);
   ok('globe: sparse world registered (permanent since the consolidation)', hasGlobe, hasGlobe ? '37 built zones expected' : 'setupGlobe registered no world — every globe check below is unrunnable');
   if (hasGlobe) {
     await page.evaluate(() => window.__game.scene.getScene('MainScene').devTravelEurope());
@@ -2555,7 +2590,7 @@ try {
         gates: ms.regionGates.length,
       };
     });
-    ok('globe: travel lands on a rendered chunk (Rome)', r.world === 'globe' && r.chunks >= 1 && r.onChunk, `chunks=${r.chunks}`);
+    ok('globe: travel lands on a rendered chunk (Rome)', r.world === 'earth' && r.chunks >= 1 && r.onChunk, `chunks=${r.chunks}`);
     ok('globe: gates exist and come in pairs (both directions)', r.gates >= 2 && r.gates % 2 === 0, `${r.gates} gates`);
     // A real gate crossing — runs UNCONDITIONALLY (no gates = a loud fail here too).
     const crossed = await page.evaluate(async () => {
@@ -2832,14 +2867,14 @@ try {
       ms.applyWorldSwap('hell', ms.worlds['hell'].defaultArrival);
       await new Promise((r) => setTimeout(r, 400));
       const inHell = await sample();
-      ms.applyWorldSwap('globe', ms.worlds['globe'].defaultArrival);
+      ms.applyWorldSwap('earth', ms.worlds['earth'].defaultArrival);
       await new Promise((r) => setTimeout(r, 400));
       const backGlobe = await sample();
       return { inGlobe, inHeaven, inHell, backGlobe };
     });
     ok(
       'world-resident pause: in the globe world, zero foreign residents tick + zero foreign bodies enabled',
-      pause.inGlobe.world === 'globe' && pause.inGlobe.foreignTicking === 0 && pause.inGlobe.foreignBodies === 0,
+      pause.inGlobe.world === 'earth' && pause.inGlobe.foreignTicking === 0 && pause.inGlobe.foreignBodies === 0,
       JSON.stringify(pause.inGlobe),
     );
     ok(
@@ -2854,7 +2889,7 @@ try {
     );
     ok(
       'world-resident pause: returning to the globe world re-pauses everyone else',
-      pause.backGlobe.world === 'globe' && pause.backGlobe.foreignTicking === 0 && pause.backGlobe.foreignBodies === 0,
+      pause.backGlobe.world === 'earth' && pause.backGlobe.foreignTicking === 0 && pause.backGlobe.foreignBodies === 0,
       JSON.stringify(pause.backGlobe),
     );
 
@@ -2880,7 +2915,7 @@ try {
         weakened: ms.time.now < ms.casterWeakenUntil,
       };
     });
-    ok('globe → Enumclaw return works (one world now; distance culls all packs)', afterEarth.world === 'globe' && afterEarth.live === 0, `live=${afterEarth.live}`);
+    ok('globe → Enumclaw return works (one world now; distance culls all packs)', afterEarth.world === 'earth' && afterEarth.live === 0, `live=${afterEarth.live}`);
     ok(
       'world travel clears player debuffs: an active DoT does not cross to Earth',
       seeded.stacks > 0 && seeded.slow < 1 && seeded.weakened && afterEarth.stacks === 0 && afterEarth.slow === 1 && !afterEarth.weakened,
@@ -2919,10 +2954,10 @@ try {
   // is fully re-paused (tick + body) on leaving.
   const africaPause = await page.evaluate(async () => {
     const ms = window.__ready();
-    if (!ms.worlds['globe']) return { registered: false };
+    if (!ms.worlds['earth']) return { registered: false };
     const spot = ms.activeMap().nearestWalkableWorld(ms.player.x + 260, ms.player.y);
     const a = ms.spawnAngel('darkcaster', spot.x, spot.y); // born on Earth (spawn needs a dense layer)
-    const dest = ms.worlds['globe'].defaultArrival;
+    const dest = ms.worlds['earth'].defaultArrival;
     // Release the world-bounds clamp first — Earth's physics bounds would snap
     // the body back to Earth's edge on the next step, keeping it an Earth resident.
     a.sprite.setCollideWorldBounds(false);
@@ -2944,7 +2979,7 @@ try {
     ms.applyWorldSwap('heaven', ms.worlds['heaven'].defaultArrival);
     await new Promise((res) => setTimeout(res, 300));
     const tickedFromEarth = await sample(); // (name kept: ticked-from-AWAY)
-    ms.applyWorldSwap('globe', dest);
+    ms.applyWorldSwap('earth', dest);
     await new Promise((res) => setTimeout(res, 300));
     const tickedInGlobe = await sample();
     const bodyInGlobe = a.sprite.body.enable;
@@ -2952,7 +2987,7 @@ try {
     await new Promise((res) => setTimeout(res, 300));
     const tickedAfterLeave = await sample();
     const bodyAfterLeave = a.sprite.body.enable;
-    ms.applyWorldSwap('globe', ms.town.spawn);
+    ms.applyWorldSwap('earth', ms.town.spawn);
     await new Promise((res) => setTimeout(res, 300));
     a.destroy();
     return { registered: true, tickedFromEarth, tickedInGlobe, bodyInGlobe, tickedAfterLeave, bodyAfterLeave };
@@ -2999,25 +3034,27 @@ try {
   const migSave = await page.evaluate(async () => {
     const ms = window.__ready();
     const pos = ms.egyptMap.nearestWalkableWorld(ms.egyptArrivalPos.x + 400, ms.egyptArrivalPos.y + 260);
-    ms.applyWorldSwap('globe', pos);
+    ms.applyWorldSwap('earth', pos);
     await new Promise((res) => setTimeout(res, 400));
-    ms.autosave();
+    const wrote = ms.requestSave(); // the always-writes path (autosave throttles)
+    if (!wrote) return { setup: 'save write refused' };
     const raw = JSON.parse(localStorage.getItem('toh_save'));
     if (!raw) return { setup: 'no save written' };
     // Rewind the save to the PRE-UNIFICATION shape: v13, world 'egypt', with
     // the position expressed against the OLD chain origin.
     raw.saveVersion = 13;
-    raw.world.active = 'egypt';
+    raw.world.active = 'egypt'; // the RETIRED key — the migration renames it
     raw.world.x = pos.x - ms.egyptMap.bounds.x + ms.egyptOldOriginX;
     raw.world.y = pos.y - ms.egyptMap.bounds.y;
-    ms.applySave(raw);
+    localStorage.setItem('toh_save', JSON.stringify(raw));
+    ms.devLoadSave(); // the REAL path: read → migrate → apply
     await new Promise((res) => setTimeout(res, 400));
     const d = Math.hypot(ms.player.x - pos.x, ms.player.y - pos.y);
     return { setup: 'ok', world: ms.activeWorld, d: +d.toFixed(1) };
   });
   ok(
     "migrated save: a v13 'egypt' save lands within a tile of its old relative spot in the globe",
-    migSave.setup === 'ok' && migSave.world === 'globe' && migSave.d <= 32,
+    migSave.setup === 'ok' && migSave.world === 'earth' && migSave.d <= 32,
     JSON.stringify(migSave),
   );
 
@@ -3026,7 +3063,7 @@ try {
   // of the Nile, and Cairo's own tiles override the raster where they stand.
   const med = await page.evaluate(() => {
     const ms = window.__ready();
-    const g = ms.groundLayers.get('globe');
+    const g = ms.groundLayers.get('earth');
     const eb = ms.egyptMap.bounds;
     const alexandria = ms.egyptMap.cities.find((c) => c.name === 'Alexandria');
     const ax = eb.x + alexandria.tx * 32;
@@ -3064,28 +3101,56 @@ try {
       const w = ms.map.nearestWalkableWorld(x, y, 10);
       if (Math.hypot(w.x - x, w.y - y) <= 10 * 32) walkable++;
     }
-    const g = ms.groundLayers.get('globe');
+    const g = ms.groundLayers.get('earth');
     const pacific = g.isWaterAtWorld(eb.x - 2400, ms.town.spawn.y); // west of the coast
     const landHome = !g.isWaterAtWorld(eb.x + 20000, eb.y + 8000); // inland WA on the raster
     // Migrated 'earth' save: same spot, new coordinates (old origin was 0,0).
     const pos = ms.map.nearestWalkableWorld(ms.town.spawn.x + 500, ms.town.spawn.y + 300);
-    ms.applyWorldSwap('globe', pos);
+    ms.applyWorldSwap('earth', pos);
     await new Promise((res) => setTimeout(res, 400));
-    ms.autosave();
+    const wrote = ms.requestSave(); // the always-writes path (autosave throttles)
+    if (!wrote) return { setup: 'save write refused' };
     const raw = JSON.parse(localStorage.getItem('toh_save'));
     raw.saveVersion = 14;
-    raw.world.active = 'earth';
+    raw.world.active = 'earth'; // pre-v15 'earth' = the RETIRED PNW-only key
     raw.world.x = pos.x - eb.x;
     raw.world.y = pos.y - eb.y;
-    ms.applySave(raw);
+    localStorage.setItem('toh_save', JSON.stringify(raw));
+    ms.devLoadSave(); // the REAL path: read → migrate → apply
     await new Promise((res) => setTimeout(res, 400));
     const d = Math.hypot(ms.player.x - pos.x, ms.player.y - pos.y);
     return { towns, enumclawTiles, townsInRect, walkable, of: N + 1, pacific, landHome, world: ms.activeWorld, d: +d.toFixed(1) };
   });
   ok(
     "unification (pnw): towns on hand-built tiles in the globe, the WA road contiguous, Pacific west / land inland, a v14 'earth' save lands within a tile",
-    pnw.towns && pnw.enumclawTiles && pnw.townsInRect && pnw.walkable === pnw.of && pnw.pacific && pnw.landHome && pnw.world === 'globe' && pnw.d <= 32,
+    pnw.towns && pnw.enumclawTiles && pnw.townsInRect && pnw.walkable === pnw.of && pnw.pacific && pnw.landHome && pnw.world === 'earth' && pnw.d <= 32,
     JSON.stringify(pnw),
+  );
+
+  // 3m5. ONE EARTH: the unified world is NAMED 'earth' — a v15 'globe' save
+  // renames in place (same coordinates, d=0), no world under a retired key is
+  // registered, and the worlds registry is exactly the planet + the planes +
+  // the city sub-maps.
+  const oneEarth = await page.evaluate(async () => {
+    const ms = window.__ready();
+    const pos = { x: ms.player.x, y: ms.player.y };
+    const wrote = ms.requestSave(); // the always-writes path (autosave throttles)
+    if (!wrote) return { setup: 'save write refused' };
+    const raw = JSON.parse(localStorage.getItem('toh_save'));
+    raw.saveVersion = 15;
+    raw.world.active = 'globe'; // the RETIRED planet key — v16 renames it
+    localStorage.setItem('toh_save', JSON.stringify(raw));
+    ms.devLoadSave();
+    await new Promise((res) => setTimeout(res, 400));
+    const d = Math.hypot(ms.player.x - pos.x, ms.player.y - pos.y);
+    const keys = Object.keys(ms.worlds).sort();
+    const noRetired = !keys.includes('globe') && !keys.includes('egypt') && !ms.groundLayers.has('globe');
+    return { world: ms.activeWorld, d: +d.toFixed(1), keys, noRetired };
+  });
+  ok(
+    "one earth: a v15 'globe' save renames to 'earth' at the same spot; no retired world keys registered",
+    oneEarth.world === 'earth' && oneEarth.d <= 1 && oneEarth.noRetired && oneEarth.keys.includes('earth') && oneEarth.keys.includes('heaven') && oneEarth.keys.includes('hell'),
+    JSON.stringify(oneEarth),
   );
 
   // 3n. GROUND LAYER (sparse worlds): the continents are real — biome ground
@@ -3098,7 +3163,7 @@ try {
     const game = window.__game;
     ms.devTravelEurope(); // → the globe world, landing at Rome
     await new Promise((res) => setTimeout(res, 2400));
-    const gl = ms.groundLayers.get('globe');
+    const gl = ms.groundLayers.get('earth');
     if (!gl) return { has: false };
     const rome = { cells: gl.cellsDrawn, cls: gl.classAtWorld(ms.player.x, ms.player.y) };
     // Mid-void: hop inland NE of Rome (land void, no chunk beneath).
@@ -3190,7 +3255,7 @@ try {
   const orientFps = () =>
     page.evaluate(async () => {
       const ms = window.__ready();
-      const gl = ms.groundLayers.get('globe');
+      const gl = ms.groundLayers.get('earth');
       await new Promise((r) => setTimeout(r, 900)); // settle after the resize
       const fps = await new Promise((resolve) => {
         let frames = 0;
@@ -3265,7 +3330,7 @@ try {
   })();
   ok(
     'death respawn (globe): a mid-spine death respawns at the NEAREST settlement arrival, never across the world',
-    globeDeath.world === 'globe' && globeDeath.alive && globeDeath.atNearest && !globeDeath.movedAcrossWorld,
+    globeDeath.world === 'earth' && globeDeath.alive && globeDeath.atNearest && !globeDeath.movedAcrossWorld,
     JSON.stringify(globeDeath),
   );
   // (2) EARTH: die away from town → the nearest of town spawn / world entry.
@@ -3273,7 +3338,7 @@ try {
     await page.evaluate(() => {
       const ms = window.__ready();
       const spot = ms.map.nearestWalkableWorld(ms.town.spawn.x + 2400, ms.town.spawn.y + 900);
-      ms.applyWorldSwap('globe', spot);
+      ms.applyWorldSwap('earth', spot);
     });
     await page.waitForTimeout(900);
     const d = await dieHere();
@@ -3287,14 +3352,14 @@ try {
       { d },
     );
   })();
-  ok('death respawn (pnw-in-globe): a sensible local point — the nearest settlement (town spawn)', earthDeath.world === 'globe' && earthDeath.alive && earthDeath.atNearest, JSON.stringify(earthDeath));
+  ok('death respawn (pnw-in-globe): a sensible local point — the nearest settlement (town spawn)', earthDeath.world === 'earth' && earthDeath.alive && earthDeath.atNearest, JSON.stringify(earthDeath));
   // (3) EGYPT: die away from the entry → back at the world entry.
   const egyptDeath = await (async () => {
     await page.evaluate(() => {
       const ms = window.__ready();
       const entry = ms.egyptArrivalPos;
       const spot = ms.egyptMap.nearestWalkableWorld(entry.x + 1800, entry.y + 700);
-      ms.applyWorldSwap('globe', spot);
+      ms.applyWorldSwap('earth', spot);
     });
     await page.waitForTimeout(900);
     const d = await dieHere();
@@ -3307,7 +3372,7 @@ try {
       { d },
     );
   })();
-  ok('death respawn (egypt-in-globe): a sensible local point — the Faiyum entry', egyptDeath.world === 'globe' && egyptDeath.alive && egyptDeath.atEntry, JSON.stringify(egyptDeath));
+  ok('death respawn (egypt-in-globe): a sensible local point — the Faiyum entry', egyptDeath.world === 'earth' && egyptDeath.alive && egyptDeath.atEntry, JSON.stringify(egyptDeath));
   // Back to the globe at Rome for whatever follows (the pre-check state).
   await page.evaluate(async () => {
     const ms = window.__ready();
@@ -3321,9 +3386,9 @@ try {
   // ground joins the two regions — ground continuity, no gate needed.
   const globePos = await page.evaluate(() => {
     const ms = window.__ready();
-    const o = ms.worlds['globe'].map.bounds;
+    const o = ms.worlds['earth'].map.bounds;
     const px = (lat, lng) => ({ x: o.x + (lng + 180) * 2426, y: o.y + (85 - lat) * 2453 }); // the globe calibration
-    const gl = ms.groundLayers.get('globe');
+    const gl = ms.groundLayers.get('earth');
     const at = (zoneId, lat, lng) => {
       const z = ms.regionSpawnZones.find((s) => s.zoneId === zoneId);
       if (!z) return { d: -1, cls: -1 };
@@ -3339,7 +3404,7 @@ try {
       [31.95, 35.93],
     ].map(([lat, lng]) => {
       const p = px(lat, lng);
-      return { cls: gl.classAtWorld(p.x, p.y), blocked: ms.worlds['globe'].map.isBlockedAtWorld(p.x, p.y), offChunk: ms.worlds['globe'].map.terrainAtWorld(p.x, p.y) === null };
+      return { cls: gl.classAtWorld(p.x, p.y), blocked: ms.worlds['earth'].map.isBlockedAtWorld(p.x, p.y), offChunk: ms.worlds['earth'].map.terrainAtWorld(p.x, p.y) === null };
     });
     return { rome, luxor, bridge };
   });
@@ -3409,7 +3474,7 @@ try {
     // and accept() refuses while ANY quest is active. A wiped chain is exactly
     // the fresh-start state; nothing auto-starts from it (cai-01 is manual).
     ms.chain.load({ completed: [], activeId: null, activeObjective: 0 });
-    ms.applyWorldSwap('globe', ms.egyptArrivalPos);
+    ms.applyWorldSwap('earth', ms.egyptArrivalPos);
     await wait(1700);
     // cai-01 — stand before the Keeper; the talk button must offer itself.
     ms.player.sprite.body.reset(ms.cairoMentorPos.x + 50, ms.cairoMentorPos.y);
@@ -3502,7 +3567,7 @@ try {
       ms.announcePlayerClass();
       ms.chain.load({ completed: [], activeId: null, activeObjective: 0 }); // the verified-clean fresh-start state
       ms.regionKillCounts = {}; // kill counters persist across chain.load — start the cull from zero
-      ms.applyWorldSwap('globe', ms.regionZoneArrivals[zoneId]);
+      ms.applyWorldSwap('earth', ms.regionZoneArrivals[zoneId]);
       ms.playerHealth.shield = 1e9; // re-arm past the swap's debuff clear
       await wait(1700); // transition + chunk activation + packs
       // 1) the mentor: stand beside the elder; the button must offer itself.
@@ -5863,7 +5928,7 @@ try {
     const wait = (t) => new Promise((r) => setTimeout(r, t));
     const fire = ms.regionCampfires.find((c) => c.zoneId === 'thessaloniki-outpost');
     if (!fire) return { setup: 'no thessaloniki campfire' };
-    if (ms.activeWorld !== 'globe') ms.applyWorldSwap('globe', fire.pos);
+    if (ms.activeWorld !== 'earth') ms.applyWorldSwap('earth', fire.pos);
     ms.playerHealth.shield = 1e9;
     ms.player.sprite.body.reset(fire.pos.x, fire.pos.y + 20);
     await wait(500);
@@ -5934,7 +5999,7 @@ try {
     for (const c of CASES) {
       const dest = ms.regionZoneArrivals[c.zone];
       if (!dest) return { setup: `no arrival for ${c.zone}` };
-      if (ms.activeWorld !== 'globe') ms.applyWorldSwap('globe', dest);
+      if (ms.activeWorld !== 'earth') ms.applyWorldSwap('earth', dest);
       else ms.player.sprite.body.reset(dest.x, dest.y);
       ms.playerHealth.shield = 1e9;
       await wait(2400); // chunk activation + pack spawns + a label sweep

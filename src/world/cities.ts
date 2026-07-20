@@ -1,6 +1,6 @@
 import type { WashingtonMap } from '../map/mapTypes';
 import type { WorldId } from './worlds';
-import { WORLD_GLOBE } from './worlds';
+import { WORLD_EARTH } from './worlds';
 import {
   buildFaiyumVillageMapData,
   VILLAGE_GATE_TILE,
@@ -59,7 +59,7 @@ export const CITY_DEFS: CityDef[] = [
     // WORLD UNIFICATION: the egypt map is a dense chunk of the globe now, so
     // the village's parent world is the globe (its dense HOST map is still the
     // egypt map — setupCities resolves that for the entrance stamp).
-    parentWorld: WORLD_GLOBE,
+    parentWorld: WORLD_EARTH,
     // A 9x5 walled settlement whose gate 'D' lands exactly on the old Faiyum
     // Village marker/road-junction tile (190,268) on the Egypt map.
     entranceStamp: [

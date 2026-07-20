@@ -9,14 +9,14 @@ import type { TerrainType, CityMarker } from '../map/mapTypes';
  */
 export type WorldId = string;
 
+/** THE ONE EARTH — the whole terrestrial planet as a single sparse world:
+ *  every generated zone AND the hand-built PNW + Nile maps (dense chunks) at
+ *  their true positions. The old 'earth'(PNW-only)/'egypt'/'globe' keys are
+ *  RETIRED; saves carrying them migrate (v14-v16). Heaven/Hell stay separate
+ *  planes forever. */
 export const WORLD_EARTH: WorldId = 'earth';
 export const WORLD_HEAVEN: WorldId = 'heaven';
 export const WORLD_HELL: WorldId = 'hell';
-export const WORLD_EGYPT: WorldId = 'egypt';
-/** The ONE whole-planet sparse region world (the former 'europe' and 'africa'
- *  worlds, consolidated at true Earth positions; later continents stamp into
- *  it too). Saves referencing the removed ids migrate in SaveSystem (v12). */
-export const WORLD_GLOBE: WorldId = 'globe';
 
 /**
  * The map surface a registered world must provide — everything world-agnostic

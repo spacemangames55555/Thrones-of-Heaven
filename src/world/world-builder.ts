@@ -46,14 +46,14 @@ export const CONTINENT_WORLD: Record<string, string> = {
   // between them). The hand-built EGYPT world remains a separate dense map —
   // the manifest's Cairo zone is PRE-EXISTING there (never stamped) and
   // linked by a cross-world gate at the Nile's southern exit.
-  Africa: 'globe',
-  Europe: 'globe',
+  Africa: 'earth',
+  Europe: 'earth',
   // ASIA stamps into the SAME whole-planet world (no new world/calibration/band).
-  Asia: 'globe',
+  Asia: 'earth',
   // FINAL THREE march regions — same whole-planet world.
-  'Near East': 'globe',
-  Oceania: 'globe',
-  Mesoamerica: 'globe',
+  'Near East': 'earth',
+  Oceania: 'earth',
+  Mesoamerica: 'earth',
 };
 
 /** The region world id a zone stamps into (throws on an unmapped continent). */

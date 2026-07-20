@@ -35,7 +35,7 @@ export interface WorldCalibration {
 
 export const WORLD_CALIBRATION: Record<string, WorldCalibration> = {
   // The existing Washington/Oregon/Idaho map — the NORTH AMERICA region world.
-  earth: {
+  'pnw-legacy': {
     origin: { lat: 50.12, lng: -126.96 },
     pixelsPerDegree: { x: 2426, y: 2453 },
   },
@@ -47,7 +47,7 @@ export const WORLD_CALIBRATION: Record<string, WorldCalibration> = {
   // their own small chunk layers (createSparseWorld in world-builder.ts); the
   // span between renders as the whole-planet Natural-Earth ground raster —
   // already global, so no new ground data was needed.
-  globe: {
+  earth: {
     origin: { lat: 85.0, lng: -180.0 },
     pixelsPerDegree: { x: 2426, y: 2453 },
   },
@@ -57,8 +57,8 @@ export const WORLD_CALIBRATION: Record<string, WorldCalibration> = {
 
 /** Logical spans (degrees east / south of origin) for SPARSE region worlds. */
 export const WORLD_SPAN_DEGREES: Record<string, { lng: number; lat: number }> = {
-  // Globe: the whole planet (85°N..85°S, 180°W..180°E) — every future zone fits.
-  globe: { lng: 360, lat: 170 },
+  // Earth: the whole planet (85°N..85°S, 180°W..180°E) — every future zone fits.
+  earth: { lng: 360, lat: 170 },
 };
 
 /** Convert a real-world anchor to LOCAL pixels on its region world's map. */

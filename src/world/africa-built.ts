@@ -32,7 +32,7 @@ export const PREBUILT_ZONE_WORLD: Record<string, string> = {
   // WORLD UNIFICATION: the hand-built Nile map is a chunk of the globe now —
   // Cairo's content still never stamps (the hand-built map IS its content),
   // but the world that hosts it is the globe.
-  'cairo-nile-crown': 'globe',
+  'cairo-nile-crown': 'earth',
 };
 
 /** Generated QuestDefs for every BUILT Africa zone (same factory as Europe). */
