@@ -1783,7 +1783,13 @@ export class MainScene extends Phaser.Scene {
     // NEIGHBOR NPCs (home civics): the second named interactable per home city.
     this.neighborButton = new TouchButton(this, 'Speak with the Neighbor', () => this.neighborTalk());
     this.campfireButton = new TouchButton(this, "Sit at Azazel's Fire", () => this.campfireTalk());
-    this.zoomControls = new ZoomControls(this, cam, this.map.pixelWidth, this.map.pixelHeight);
+    // The zoom-out limit fits the PLANET from the first frame. (It used to seed
+    // from this.map — the PNW chunk — capping a never-swapped session at chunk
+    // fit while any world swap re-derived planet fit: the far-zoom recon's
+    // inconsistent-cap observation. Pure size arithmetic; no map object needed.)
+    const planetCal = WORLD_CALIBRATION[WORLD_EARTH];
+    const planetSpan = WORLD_SPAN_DEGREES[WORLD_EARTH];
+    this.zoomControls = new ZoomControls(this, cam, planetSpan.lng * planetCal.pixelsPerDegree.x, planetSpan.lat * planetCal.pixelsPerDegree.y);
     this.readout = new DebugReadout(this, () => this.activeMap(), this.player);
     // DEV-only live perf readout (FPS / frame-time + entity, effect + pool counts) so
     // the under-load behaviour is observable on a phone. Gated by DEV_MODE.

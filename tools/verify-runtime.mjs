@@ -2509,6 +2509,23 @@ try {
     JSON.stringify(druidOpening),
   );
 
+  // 2c0. ZOOM SEED (far-zoom pass): this live Druid session has NEVER swapped
+  // worlds (NA homes keep the shipped WA start) — its zoom-out limit must
+  // already fit the WHOLE PLANET, not the PNW chunk it used to seed from.
+  const zoomSeed = await page.evaluate(() => {
+    const ms = window.__ready();
+    const zc = ms.zoomControls;
+    const w = ms.scale.width;
+    const h = ms.scale.height;
+    const expected = Math.min(w / (zc.mapW * 1.08), h / (zc.mapH * 1.08));
+    return { mapW: zc.mapW, mapH: zc.mapH, outLimit: zc.outLimit, expected };
+  });
+  ok(
+    'zoom seed: a no-swap session (Druid at Enumclaw) fits the whole planet at max zoom-out',
+    zoomSeed.mapW === 873360 && zoomSeed.mapH === 417010 && Math.abs(zoomSeed.outLimit - zoomSeed.expected) < 1e-9 && zoomSeed.outLimit < 0.001,
+    JSON.stringify(zoomSeed),
+  );
+
   // 2c. EVERY COMMIT-1 EXTENSION THROUGH A REAL DRUID SKILL: stealth (Snow Leopard),
   // the dual-use bolt (Lye, heal path), both friendly zones (Sage Burn mobile +
   // Healing Spores static), chain (Lightning Strike across two foes), the pair
