@@ -11,3 +11,8 @@ ruling lands, strike the entry with a pointer to the commit that resolved it.
 - ~~World naming debt: 'earth' meant only the PNW map while the planet grew
   under 'globe'.~~ CLOSED by the world unification — the PNW and the Nile are
   chunks of the one planet, and that world is named 'earth'.
+- Far-view ground truth for hand-built maps: Egypt/PNW stylized coastlines
+  disagree with the Natural-Earth raster (36/40 seam samples). Bake option (b)
+  parked pending Casey ruling after a trailer-quality capture.
+- Tiles-vs-labels device cost apportionment: superseded if this pass lifts
+  far-zoom FPS; dev overlay now exposes both counts live.

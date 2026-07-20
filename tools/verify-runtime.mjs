@@ -2627,6 +2627,37 @@ try {
     JSON.stringify(labelTiers),
   );
 
+  // 2c4. CHUNK-EDGE FEATHER (far-zoom pass): EVERY stamped chunk's tile layer
+  // must carry the one-time border alpha ramp at the configured width — the
+  // corner and mid-edge tiles sit at the outermost ramp value, the interior
+  // at full alpha. Cosmetic only, but a missing feather on any chunk means a
+  // hard rectangle floating on the planet raster.
+  const featherCheck = await page.evaluate(() => {
+    const ms = window.__ready();
+    const f = ms.feel.lod.featherPx;
+    let checked = 0;
+    const bad = [];
+    for (const layer of ms.lodTileLayers) {
+      const ld = layer.layer; // LayerData: width/height in tiles + the tile grid
+      const w = ld.width;
+      const h = ld.height;
+      const expEdge = ld.tileWidth / 2 / f; // the outermost ramp step (tile-center distance / feather)
+      const corner = ld.data[0][0];
+      const midEdge = ld.data[0][w >> 1];
+      const inner = ld.data[h >> 1][w >> 1];
+      const okOne =
+        corner && Math.abs(corner.alpha - expEdge) < 1e-6 && midEdge && Math.abs(midEdge.alpha - expEdge) < 1e-6 && inner && inner.alpha === 1;
+      if (!okOne) bad.push({ i: checked, w, h, corner: corner && corner.alpha, edge: midEdge && midEdge.alpha, inner: inner && inner.alpha });
+      checked++;
+    }
+    return { checked, badCount: bad.length, bad: bad.slice(0, 4), featherPx: f };
+  });
+  ok(
+    'chunk-edge feather: every stamped chunk border carries the FEEL.lod.featherPx alpha ramp; interiors stay at full alpha',
+    featherCheck.checked >= 60 && featherCheck.badCount === 0 && featherCheck.featherPx > 0,
+    JSON.stringify(featherCheck),
+  );
+
   // 2c. EVERY COMMIT-1 EXTENSION THROUGH A REAL DRUID SKILL: stealth (Snow Leopard),
   // the dual-use bolt (Lye, heal path), both friendly zones (Sage Burn mobile +
   // Healing Spores static), chain (Lightning Strike across two foes), the pair

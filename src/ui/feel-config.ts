@@ -89,6 +89,10 @@ export const FEEL = {
     tileFadeOutZoom: 0.15,
     tileFadeInZoom: 0.18,
     fadeMs: 260,
+    /** Chunk-edge feather: per-tile alpha ramp this many px wide at every
+     *  stamped chunk border, dissolving hand-built maps into the planet
+     *  raster instead of ending on a hard rectangle. Cosmetic only. */
+    featherPx: 96,
     /** LABEL TIERS, by category at each label's creation funnel (never
      *  hand-tagged): near = road signs / spawn / boss markers (unreadable
      *  once 12px text shrinks past ~4px on screen), mid = settlement names,

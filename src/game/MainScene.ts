@@ -9154,6 +9154,7 @@ export class MainScene extends Phaser.Scene {
     const arrival = first.map.nearestWalkableWorld(origin.x + first.chunk.arrivalLocalPx.x, origin.y + first.chunk.arrivalLocalPx.y);
     this.globeMap = new SparseWorldMap(origin, rw.sparse!.boundsPx, chunkMaps, () => ({ x: this.player.x, y: this.player.y }), (x, y) => ground.isWaterAtWorld(x, y));
     this.lodTileLayers = chunkMaps.map((m) => m.layer); // the far-zoom LOD set (render visibility only)
+    for (const m of chunkMaps) this.featherChunkEdges(m); // dissolve every stamped border into the raster
     this.worlds[WORLD_EARTH] = {
       id: WORLD_EARTH,
       map: this.globeMap,
@@ -9822,6 +9823,28 @@ export class MainScene extends Phaser.Scene {
     this.lodTransitions++;
     this.lodFadeStart = this.time.now - (1 - prevT) * FEEL.lod.fadeMs;
     if (state === 'near') for (const l of this.lodTileLayers) l.setVisible(true); // restore render before fading in
+  }
+
+  /** CHUNK-EDGE FEATHER (far-zoom pass, cosmetic only): a one-time per-tile
+   *  alpha ramp FEEL.lod.featherPx wide at every stamped chunk border, so a
+   *  hand-built map dissolves into the planet raster instead of ending on a
+   *  hard rectangle. Runs after all setup-time tile stamps (a stamped tile is
+   *  a fresh Tile at alpha 1); multiplies with the layer-level LOD fade. */
+  private featherChunkEdges(map: GameMap): void {
+    const feather = FEEL.lod.featherPx;
+    const ts = map.tileSize;
+    const w = map.pixelWidth / ts;
+    const h = map.pixelHeight / ts;
+    const band = Math.ceil(feather / ts);
+    for (let ty = 0; ty < h; ty++) {
+      const rowEdge = ty < band || ty >= h - band;
+      for (let tx = 0; tx < w; tx++) {
+        if (!rowEdge && tx === band) tx = w - band; // hop the full-alpha interior run
+        const d = Math.min(tx, ty, w - 1 - tx, h - 1 - ty) * ts + ts / 2;
+        if (d >= feather) continue;
+        map.layer.getTileAt(tx, ty)?.setAlpha(d / feather);
+      }
+    }
   }
 
   /** Register a world label with its LOD tier ('far' never hides, so it never
