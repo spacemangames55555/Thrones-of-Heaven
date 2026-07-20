@@ -1126,6 +1126,21 @@ export class MainScene extends Phaser.Scene {
   private beatElite?: { beatId: string; zoneId: string; kind: 'demon' | 'angel'; entity: Demon | AngelEnemy; label: Phaser.GameObjects.Text };
   /** Per-chunk terrain colliders, each bound to its OWN region world. */
   private regionColliders: { c: Phaser.Physics.Arcade.Collider; worldId: WorldId }[] = [];
+  /** FAR-ZOOM LOD (render visibility only): every stamped earth chunk's tile
+   *  layer, faded out below FEEL.lod.tileFadeOutZoom (the planet raster is the
+   *  sole far-view ground) and restored at/above tileFadeInZoom. */
+  private lodTileLayers: Phaser.Tilemaps.TilemapLayerBase[] = [];
+  lodState: 'near' | 'far' = 'near';
+  /** Clock time the current fade began (-1 = idle); stepped in updateLod. */
+  private lodFadeStart = -1;
+  /** How many times the LOD state has flipped (gate-observable flap guard). */
+  lodTransitions = 0;
+  /** LABEL TIERS (far-zoom pass): world labels registered by CATEGORY at
+   *  their creation funnels — near (signs/spawn/boss markers) and mid
+   *  (settlement names) hide below their FEEL.lod.labels zoom; far
+   *  (zone/region names) never registers, so it never hides. */
+  private lodLabels: { obj: { setVisible(v: boolean): unknown }; tier: 'near' | 'mid' }[] = [];
+  private lodLabelBand: 'near' | 'mid' | 'far' = 'near';
   /** Proximity travel gates. destWorld makes a gate CROSS-WORLD (Egypt↔Africa). */
   private regionGates: { x: number; y: number; label: string; dest: { x: number; y: number }; destWorld: WorldId }[] = [];
   /** Per-zone arrival points (the spot south of each chunk's settlement). */
@@ -1402,7 +1417,7 @@ export class MainScene extends Phaser.Scene {
     // City labels for everywhere except the real walkable towns. Exclude the cities
     // that have a real stamped town (Enumclaw = home, Portland, and now Seattle =
     // the Druid tree-house city); everywhere else gets a generic labeled marker.
-    new CityMarkers(this, this.map, ['Enumclaw', 'Portland', 'Seattle']);
+    new CityMarkers(this, this.map, ['Enumclaw', 'Portland', 'Seattle'], 'mid'); // settlement names — the mid LOD tier
 
     // Stamp the town onto the overworld and read back its feature positions.
     this.town = buildTown(this.map);
@@ -1783,7 +1798,13 @@ export class MainScene extends Phaser.Scene {
     // NEIGHBOR NPCs (home civics): the second named interactable per home city.
     this.neighborButton = new TouchButton(this, 'Speak with the Neighbor', () => this.neighborTalk());
     this.campfireButton = new TouchButton(this, "Sit at Azazel's Fire", () => this.campfireTalk());
-    this.zoomControls = new ZoomControls(this, cam, this.map.pixelWidth, this.map.pixelHeight);
+    // The zoom-out limit fits the PLANET from the first frame. (It used to seed
+    // from this.map — the PNW chunk — capping a never-swapped session at chunk
+    // fit while any world swap re-derived planet fit: the far-zoom recon's
+    // inconsistent-cap observation. Pure size arithmetic; no map object needed.)
+    const planetCal = WORLD_CALIBRATION[WORLD_EARTH];
+    const planetSpan = WORLD_SPAN_DEGREES[WORLD_EARTH];
+    this.zoomControls = new ZoomControls(this, cam, planetSpan.lng * planetCal.pixelsPerDegree.x, planetSpan.lat * planetCal.pixelsPerDegree.y);
     this.readout = new DebugReadout(this, () => this.activeMap(), this.player);
     // DEV-only live perf readout (FPS / frame-time + entity, effect + pool counts) so
     // the under-load behaviour is observable on a phone. Gated by DEV_MODE.
@@ -1978,6 +1999,7 @@ export class MainScene extends Phaser.Scene {
         this.groundLayers.get(this.activeWorld)?.update(this.cameras.main); // continents under the camera
         this.blockVoidWater(); // water is impassable ground; gates are the travel
       }
+      this.updateLod(); // far-zoom tile + label LOD (render visibility only) — every world, so a zoom carried through a portal still resolves
       this.updateAngels();
       this.updateTownsfolk(); // prune dead first so the wave manager sees the live count
       this.updateHomeCivics(); // neighbor NPCs + the delivery composite (globe + Egypt)
@@ -6419,6 +6441,8 @@ export class MainScene extends Phaser.Scene {
       // live = actually visible FX; pooled = hidden recycled pool members (the
       // old single number over-read as "active" — see the Rome diagnostic).
       `worldFx live ${this.worldFx.list.filter((o) => (o as Phaser.GameObjects.Sprite).visible !== false).length} + pooled ${this.worldFx.list.filter((o) => (o as Phaser.GameObjects.Sprite).visible === false).length}`,
+      // FAR-ZOOM LOD observability: current tier + live tile layers + labels.
+      `lod ${this.lodState}  tileLayers ${this.lodCounts().tileLayersVisible}/${this.lodCounts().tileLayersTotal}  labels ${this.lodCounts().labelsVisible}`,
     ];
   }
 
@@ -9109,7 +9133,7 @@ export class MainScene extends Phaser.Scene {
     // so city-entrance stamps can be painted onto it, exactly as before.
     const ed = egyptUnificationDelta();
     this.egyptMap = new GameMap(this, egyptMapJson as unknown as WashingtonMap, TOWN_TILES, { x: origin.x + ed.dx, y: origin.y + ed.dy }, { forceCpuLayer: true });
-    new CityMarkers(this, this.egyptMap); // Alexandria, Cairo, Suez, the Sinai towns, …
+    new CityMarkers(this, this.egyptMap, [], 'mid'); // Alexandria, Cairo, Suez, the Sinai towns, … — settlement names, mid tier
     this.egyptArrivalPos = { ...this.egyptMap.spawnWorld }; // re-pointed to Faiyum's gate in setupEgypt
     const egyptCollider = this.physics.add.collider(this.player.sprite, this.egyptMap.layer);
     egyptCollider.active = false;
@@ -9129,6 +9153,8 @@ export class MainScene extends Phaser.Scene {
     const first = built.get(EUROPE_BUILT_ZONES[0])!;
     const arrival = first.map.nearestWalkableWorld(origin.x + first.chunk.arrivalLocalPx.x, origin.y + first.chunk.arrivalLocalPx.y);
     this.globeMap = new SparseWorldMap(origin, rw.sparse!.boundsPx, chunkMaps, () => ({ x: this.player.x, y: this.player.y }), (x, y) => ground.isWaterAtWorld(x, y));
+    this.lodTileLayers = chunkMaps.map((m) => m.layer); // the far-zoom LOD set (render visibility only)
+    for (const m of chunkMaps) this.featherChunkEdges(m); // dissolve every stamped border into the raster
     this.worlds[WORLD_EARTH] = {
       id: WORLD_EARTH,
       map: this.globeMap,
@@ -9185,7 +9211,7 @@ export class MainScene extends Phaser.Scene {
       map = absorbedHost;
     } else {
       map = new GameMap(this, chunk.data, [], { x: origin.x + chunk.originLocalPx.x, y: origin.y + chunk.originLocalPx.y }, { forceCpuLayer: true });
-      new CityMarkers(this, map); // the zone nameplate at its center
+      new CityMarkers(this, map, [], 'far'); // the zone nameplate at its center — far tier, never hidden
       const collider = this.physics.add.collider(this.player.sprite, map.layer);
       collider.active = false;
       this.regionColliders.push({ c: collider, worldId });
@@ -9762,6 +9788,84 @@ export class MainScene extends Phaser.Scene {
 
   /** Per-frame (region worlds): mentors' proximity button + the ACTIVE beat's
    *  marker / pickups / elite, spawned and cleaned by archetype. */
+  /** FAR-ZOOM LOD: fade the stamped tile layers out below the FEEL.lod
+   *  threshold (planet raster becomes the sole ground) and back in above the
+   *  fade-in threshold. Hysteresis gap prevents flapping; fade, not pop. */
+  private updateLod(): void {
+    const z = this.cameras.main.zoom;
+    if (this.lodState === 'near' && z < FEEL.lod.tileFadeOutZoom) this.setLodState('far');
+    else if (this.lodState === 'far' && z >= FEEL.lod.tileFadeInZoom) this.setLodState('near');
+    // LABEL TIERS: sweep the registry only when the zoom band changes.
+    const band: 'near' | 'mid' | 'far' = z >= FEEL.lod.labels.nearMinZoom ? 'near' : z >= FEEL.lod.labels.midMinZoom ? 'mid' : 'far';
+    if (band !== this.lodLabelBand) {
+      this.lodLabelBand = band;
+      for (const { obj, tier } of this.lodLabels) obj.setVisible(band === 'near' || (band === 'mid' && tier === 'mid'));
+    }
+    // The fade runs on elapsed clock time, stepped right here — no tween, no
+    // completion callback. A stalled frame just lands further along the curve,
+    // so the fade always finishes once fadeMs has passed, at ANY frame rate.
+    if (this.lodFadeStart < 0) return;
+    const t = Math.min(1, (this.time.now - this.lodFadeStart) / FEEL.lod.fadeMs);
+    const a = this.lodState === 'far' ? 1 - t : t;
+    for (const l of this.lodTileLayers) l.setAlpha(a);
+    if (t >= 1) {
+      this.lodFadeStart = -1;
+      // Skip render entirely at world zoom — the planet raster is the ground.
+      if (this.lodState === 'far') for (const l of this.lodTileLayers) l.setVisible(false);
+    }
+  }
+
+  private setLodState(state: 'near' | 'far'): void {
+    if (this.lodState === state) return;
+    // A mid-fade reversal mirrors progress so alpha stays continuous.
+    const prevT = this.lodFadeStart >= 0 ? Math.min(1, (this.time.now - this.lodFadeStart) / FEEL.lod.fadeMs) : 1;
+    this.lodState = state;
+    this.lodTransitions++;
+    this.lodFadeStart = this.time.now - (1 - prevT) * FEEL.lod.fadeMs;
+    if (state === 'near') for (const l of this.lodTileLayers) l.setVisible(true); // restore render before fading in
+  }
+
+  /** CHUNK-EDGE FEATHER (far-zoom pass, cosmetic only): a one-time per-tile
+   *  alpha ramp FEEL.lod.featherPx wide at every stamped chunk border, so a
+   *  hand-built map dissolves into the planet raster instead of ending on a
+   *  hard rectangle. Runs after all setup-time tile stamps (a stamped tile is
+   *  a fresh Tile at alpha 1); multiplies with the layer-level LOD fade. */
+  private featherChunkEdges(map: GameMap): void {
+    const feather = FEEL.lod.featherPx;
+    const ts = map.tileSize;
+    const w = map.pixelWidth / ts;
+    const h = map.pixelHeight / ts;
+    const band = Math.ceil(feather / ts);
+    for (let ty = 0; ty < h; ty++) {
+      const rowEdge = ty < band || ty >= h - band;
+      for (let tx = 0; tx < w; tx++) {
+        if (!rowEdge && tx === band) tx = w - band; // hop the full-alpha interior run
+        const d = Math.min(tx, ty, w - 1 - tx, h - 1 - ty) * ts + ts / 2;
+        if (d >= feather) continue;
+        map.layer.getTileAt(tx, ty)?.setAlpha(d / feather);
+      }
+    }
+  }
+
+  /** Register a world label with its LOD tier ('far' never hides, so it never
+   *  registers). Labels created mid-session inherit the current band at once. */
+  registerLodLabel(obj: { setVisible(v: boolean): unknown }, tier: 'near' | 'mid' | 'far'): void {
+    if (tier === 'far') return;
+    this.lodLabels.push({ obj, tier });
+    obj.setVisible(this.lodLabelBand === 'near' || (this.lodLabelBand === 'mid' && tier === 'mid'));
+  }
+
+  /** Dev-overlay counts: visible tile layers + visible world label texts. */
+  lodCounts(): { tileLayersVisible: number; tileLayersTotal: number; labelsVisible: number } {
+    let labelsVisible = 0;
+    for (const o of this.children.list) if (o instanceof Phaser.GameObjects.Text && o.visible && o.scrollFactorX !== 0) labelsVisible++;
+    return {
+      tileLayersVisible: this.lodTileLayers.filter((l) => l.visible).length,
+      tileLayersTotal: this.lodTileLayers.length,
+      labelsVisible,
+    };
+  }
+
   private updateRegionBeatObjectives(): void {
     // MENTORS: persistent NPCs; the nearest within range owns the shared button.
     let near: (typeof this.regionMentors)[number] | undefined;
@@ -9979,7 +10083,7 @@ export class MainScene extends Phaser.Scene {
 
       const cityMap = new GameMap(this, def.buildMap(), [], { x: originX, y: 0 }, { forceCpuLayer: true });
       originX += cityMap.pixelWidth + HEAVEN_WORLD_GAP;
-      new CityMarkers(this, cityMap); // interior nameplates (The Mill / The Well / the gate)
+      new CityMarkers(this, cityMap, [], 'near'); // interior nameplates (The Mill / The Well / the gate) — close-range signage
 
       const collider = this.physics.add.collider(this.player.sprite, cityMap.layer);
       collider.active = false;
@@ -11355,13 +11459,16 @@ export class MainScene extends Phaser.Scene {
     g.destroy();
   }
 
-  /** A small Heaven world-space label. */
+  /** A small Heaven world-space label. Everything through this funnel is
+   *  close-range signage (road signs, spawn/boss markers, NPC names) — the
+   *  near LOD tier, hidden once the camera pulls too far out to read it. */
   private addHeavenLabel(x: number, y: number, text: string, color: string): void {
-    this.add
+    const label = this.add
       .text(x, y, text, { fontFamily: 'system-ui, sans-serif', fontSize: '12px', color, fontStyle: 'bold' })
       .setOrigin(0.5, 1)
       .setStroke('#101830', 4)
       .setDepth(8);
+    this.registerLodLabel(label, 'near');
   }
 
   /** Pillars + a shrine around the Heaven arrival, with static collision. */
@@ -13901,7 +14008,7 @@ export class MainScene extends Phaser.Scene {
 
   /** A town nameplate (reused for Seattle and Portland). */
   private addTownLabel(label: { x: number; y: number; text: string }): void {
-    this.add
+    const t = this.add
       .text(label.x, label.y, label.text, {
         fontFamily: 'system-ui, sans-serif',
         fontSize: '11px',
@@ -13910,6 +14017,7 @@ export class MainScene extends Phaser.Scene {
       .setOrigin(0.5, 1)
       .setStroke('#1a1410', 4)
       .setDepth(6);
+    this.registerLodLabel(t, 'mid'); // a settlement name, same tier as the CityMarkers ones
   }
 
   private addTownDecor(): void {

@@ -2509,6 +2509,155 @@ try {
     JSON.stringify(druidOpening),
   );
 
+  // 2c0. ZOOM SEED (far-zoom pass): this live Druid session has NEVER swapped
+  // worlds (NA homes keep the shipped WA start) — its zoom-out limit must
+  // already fit the WHOLE PLANET, not the PNW chunk it used to seed from.
+  const zoomSeed = await page.evaluate(() => {
+    const ms = window.__ready();
+    const zc = ms.zoomControls;
+    const w = ms.scale.width;
+    const h = ms.scale.height;
+    const expected = Math.min(w / (zc.mapW * 1.08), h / (zc.mapH * 1.08));
+    return { mapW: zc.mapW, mapH: zc.mapH, outLimit: zc.outLimit, expected };
+  });
+  ok(
+    'zoom seed: a no-swap session (Druid at Enumclaw) fits the whole planet at max zoom-out',
+    zoomSeed.mapW === 873360 && zoomSeed.mapH === 417010 && Math.abs(zoomSeed.outLimit - zoomSeed.expected) < 1e-9 && zoomSeed.outLimit < 0.001,
+    JSON.stringify(zoomSeed),
+  );
+
+  // 2c1. TILE LOD (far-zoom pass): at world zoom every stamped chunk tile
+  // layer fades out and SKIPS RENDER — the planet raster is the sole ground;
+  // back at near zoom the full detail restores (counts, not FPS).
+  const lodSwitch = await page.evaluate(async () => {
+    const ms = window.__ready();
+    const wait = (t) => new Promise((r) => setTimeout(r, t));
+    const counts = () => ms.lodCounts();
+    const zoomTo = (z) => {
+      ms.zoomControls.target = z; // the real funnel — a raw setZoom is pulled back to target next frame
+      ms.cameras.main.setZoom(z);
+    };
+    zoomTo(1.1);
+    await wait(120);
+    const near0 = { state: ms.lodState, ...counts() };
+    zoomTo(0.0005); // world view
+    await wait(ms.feel.lod.fadeMs + 350);
+    const far = { state: ms.lodState, ...counts() };
+    zoomTo(1.1);
+    await wait(ms.feel.lod.fadeMs + 350);
+    const near1 = { state: ms.lodState, ...counts() };
+    return { near0, far, near1 };
+  });
+  ok(
+    'tile LOD: world zoom = zero visible tile layers (raster-only ground); near zoom = full restore',
+    lodSwitch.near0.state === 'near' &&
+      lodSwitch.near0.tileLayersVisible === lodSwitch.near0.tileLayersTotal &&
+      lodSwitch.near0.tileLayersTotal >= 60 &&
+      lodSwitch.far.state === 'far' &&
+      lodSwitch.far.tileLayersVisible === 0 &&
+      lodSwitch.near1.state === 'near' &&
+      lodSwitch.near1.tileLayersVisible === lodSwitch.near1.tileLayersTotal,
+    JSON.stringify(lodSwitch),
+  );
+
+  // 2c2. LOD HYSTERESIS: a camera crossing the boundary band twice does not
+  // flap — inside the gap the state HOLDS whichever side it came from, and a
+  // full out-and-back costs exactly two transitions.
+  const lodFlap = await page.evaluate(async () => {
+    const ms = window.__ready();
+    const wait = (t) => new Promise((r) => setTimeout(r, t));
+    const zoomTo = (z) => {
+      ms.zoomControls.target = z;
+      ms.cameras.main.setZoom(z);
+    };
+    zoomTo(1.1);
+    await wait(120);
+    const t0 = ms.lodTransitions;
+    const step = async (z) => {
+      zoomTo(z);
+      await wait(80);
+      return ms.lodState;
+    };
+    const inGapFromNear = await step(0.16); // inside the hysteresis gap — holds near
+    const below = await step(0.14); // below fade-out — flips far
+    const inGapFromFar = await step(0.16); // back inside the gap — HOLDS far (no flap)
+    const above = await step(0.19); // above fade-in — flips near
+    return { inGapFromNear, below, inGapFromFar, above, transitions: ms.lodTransitions - t0 };
+  });
+  ok(
+    'tile LOD hysteresis: the gap holds state from both sides; out-and-back is exactly two transitions',
+    lodFlap.inGapFromNear === 'near' && lodFlap.below === 'far' && lodFlap.inGapFromFar === 'far' && lodFlap.above === 'near' && lodFlap.transitions === 2,
+    JSON.stringify(lodFlap),
+  );
+
+  // 2c3. LABEL TIERS (far-zoom pass): at planet zoom the near tier (road
+  // signs / spawn / boss markers) and mid tier (settlement names) are shed —
+  // the visible world-label count, DEV zone overlay excluded, stays within
+  // the FEEL.lod.labels budget. The DEV overlay itself is EXEMPT (its own
+  // low-zoom rule: hidden near, all shown at planet zoom). Near zoom restores
+  // every tiered label.
+  const labelTiers = await page.evaluate(async () => {
+    const ms = window.__ready();
+    const wait = (t) => new Promise((r) => setTimeout(r, t));
+    const zoomTo = (z) => {
+      ms.zoomControls.target = z;
+      ms.cameras.main.setZoom(z);
+    };
+    const devVisible = () => ms.regionZoneLabels.filter((l) => l.visible).length;
+    zoomTo(1.1);
+    await wait(150);
+    const near0 = ms.lodCounts().labelsVisible;
+    const devNear = devVisible();
+    zoomTo(0.0005); // planet view
+    await wait(150);
+    const far = ms.lodCounts().labelsVisible;
+    const devFar = devVisible();
+    zoomTo(1.1);
+    await wait(150);
+    const near1 = ms.lodCounts().labelsVisible;
+    return { near0, devNear, far, devFar, devTotal: ms.regionZoneLabels.length, near1, budget: ms.feel.lod.labels.farBudget };
+  });
+  ok(
+    'label tiers: planet zoom sheds the near + mid tiers to within the FEEL budget; DEV zone overlay exempt; near zoom restores all',
+    labelTiers.far - labelTiers.devFar <= labelTiers.budget &&
+      labelTiers.far - labelTiers.devFar < labelTiers.near0 && // tiers actually shed labels
+      labelTiers.devNear === 0 &&
+      labelTiers.devFar === labelTiers.devTotal && // the DEV overlay keeps its own rule, unaffected
+      labelTiers.near1 === labelTiers.near0,
+    JSON.stringify(labelTiers),
+  );
+
+  // 2c4. CHUNK-EDGE FEATHER (far-zoom pass): EVERY stamped chunk's tile layer
+  // must carry the one-time border alpha ramp at the configured width — the
+  // corner and mid-edge tiles sit at the outermost ramp value, the interior
+  // at full alpha. Cosmetic only, but a missing feather on any chunk means a
+  // hard rectangle floating on the planet raster.
+  const featherCheck = await page.evaluate(() => {
+    const ms = window.__ready();
+    const f = ms.feel.lod.featherPx;
+    let checked = 0;
+    const bad = [];
+    for (const layer of ms.lodTileLayers) {
+      const ld = layer.layer; // LayerData: width/height in tiles + the tile grid
+      const w = ld.width;
+      const h = ld.height;
+      const expEdge = ld.tileWidth / 2 / f; // the outermost ramp step (tile-center distance / feather)
+      const corner = ld.data[0][0];
+      const midEdge = ld.data[0][w >> 1];
+      const inner = ld.data[h >> 1][w >> 1];
+      const okOne =
+        corner && Math.abs(corner.alpha - expEdge) < 1e-6 && midEdge && Math.abs(midEdge.alpha - expEdge) < 1e-6 && inner && inner.alpha === 1;
+      if (!okOne) bad.push({ i: checked, w, h, corner: corner && corner.alpha, edge: midEdge && midEdge.alpha, inner: inner && inner.alpha });
+      checked++;
+    }
+    return { checked, badCount: bad.length, bad: bad.slice(0, 4), featherPx: f };
+  });
+  ok(
+    'chunk-edge feather: every stamped chunk border carries the FEEL.lod.featherPx alpha ramp; interiors stay at full alpha',
+    featherCheck.checked >= 60 && featherCheck.badCount === 0 && featherCheck.featherPx > 0,
+    JSON.stringify(featherCheck),
+  );
+
   // 2c. EVERY COMMIT-1 EXTENSION THROUGH A REAL DRUID SKILL: stealth (Snow Leopard),
   // the dual-use bolt (Lye, heal path), both friendly zones (Sage Burn mobile +
   // Healing Spores static), chain (Lightning Strike across two foes), the pair
@@ -6083,6 +6232,7 @@ try {
   // retires on schedule.
   const fct = await page.evaluate(async () => {
     const ms = window.__ready();
+    ms.cameras.main.setZoom(1.1); // PINNED near zoom — LOD tiers must never hide this check's objects
     const wait = (t) => new Promise((r) => setTimeout(r, t));
     if (!window.__quietSpot()) return { setup: 'no quiet spot' };
     const cap = ms.feel.text.poolSize;
@@ -6172,6 +6322,7 @@ try {
   // 'onAggroOrDamage' plate lights up when its owner is hit nearby.
   const plates = await page.evaluate(async () => {
     const ms = window.__ready();
+    ms.cameras.main.setZoom(1.1); // PINNED near zoom (its own minZoom sub-test sets lower zooms explicitly)
     const wait = (t) => new Promise((r) => setTimeout(r, t));
     if (!window.__quietSpot()) return { setup: 'no quiet spot' };
     const FAMILIES = ['corrupted-wildlife', 'evil-raiders', 'lesser-evil-scouts', 'herald-angels', 'radiant-guardians', 'lesser-angels', 'dark-casters', 'veil-ambushers', 'hollowed-brutes'];
@@ -6232,6 +6383,7 @@ try {
   // above nameplates and feel floating text, both above the world tile layer.
   const depths = await page.evaluate(() => {
     const ms = window.__ready();
+    ms.cameras.main.setZoom(1.1); // PINNED near zoom — the world tile layer must be a LIVE render target here
     ms.floatingText.show(ms.player.x, ms.player.y - 20, '-1', '#ffffff', { depth: ms.feel.depths.floatText });
     const liveText = ms.floatingText.items.find((it) => it.active);
     return {

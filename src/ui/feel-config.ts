@@ -80,6 +80,31 @@ export const FEEL = {
     floatText: 950,
     screenUi: 1350, // the existing UI band (LoadoutBar et al.) — reference, not a redefinition
   },
+  /** FAR-ZOOM LOD (render visibility only — never data): below tileFadeOutZoom
+   *  every stamped chunk tile layer fades out and skips render, leaving the
+   *  pre-baked planet raster as the sole ground; at/above tileFadeInZoom the
+   *  full tile detail restores. The gap is MANDATORY hysteresis — a camera
+   *  sitting on one threshold can never flap the whole tile stack. */
+  lod: {
+    tileFadeOutZoom: 0.15,
+    tileFadeInZoom: 0.18,
+    fadeMs: 260,
+    /** Chunk-edge feather: per-tile alpha ramp this many px wide at every
+     *  stamped chunk border, dissolving hand-built maps into the planet
+     *  raster instead of ending on a hard rectangle. Cosmetic only. */
+    featherPx: 96,
+    /** LABEL TIERS, by category at each label's creation funnel (never
+     *  hand-tagged): near = road signs / spawn / boss markers (unreadable
+     *  once 12px text shrinks past ~4px on screen), mid = settlement names,
+     *  far = zone/region names (never hidden — they ARE the far view's
+     *  wayfinding). The DEV zone-name overlay is exempt: it keeps its own
+     *  low-zoom rule and counter-scaling. */
+    labels: {
+      nearMinZoom: 0.35, // near-tier labels hide below this camera zoom
+      midMinZoom: 0.05, // mid-tier labels hide below this camera zoom
+      farBudget: 120, // gate ceiling: visible world labels at planet zoom (DEV overlay excluded)
+    },
+  },
 } as const;
 
 export type FeelConfig = typeof FEEL;
