@@ -168,6 +168,30 @@ function migrate(data: SaveData): SaveData {
       delete data.world.remembered.africa;
     }
   }
+  // v13→v14 — WORLD UNIFICATION (Egypt): the 'egypt' world merged into the
+  // globe at its true planet position. The version bump records the change;
+  // the coordinate translation itself happens in MainScene.applySave (it needs
+  // the LIVE map origins), keyed off world.active === 'egypt' — idempotent,
+  // because the first post-load autosave writes back as 'globe'.
+  // v14→v15 — WORLD UNIFICATION (the PNW): the 'earth' world merged the same
+  // way (its old origin was 0,0 — the translation is the map's new origin).
+  // v15→v16 — ONE EARTH: the unified world is NAMED 'earth' now. A pre-v15
+  // save whose active world was the OLD PNW-only 'earth' is re-marked
+  // 'earth-legacy' FIRST (so it cannot be mistaken for the new planet key);
+  // MainScene.applySave translates 'earth-legacy' and 'egypt' positions with
+  // the live map origins. A 'globe' save simply renames — same coordinates.
+  if (data.saveVersion < 15 && data.world?.active === 'earth') {
+    data.world.active = 'earth-legacy';
+    if (data.world.remembered?.earth) {
+      data.world.remembered['earth-legacy'] = data.world.remembered.earth;
+      delete data.world.remembered.earth;
+    }
+  }
+  if (data.saveVersion < 16 && data.world?.active === 'globe') data.world.active = 'earth';
+  if (data.saveVersion < 16 && data.world?.remembered?.globe) {
+    if (!data.world.remembered.earth) data.world.remembered.earth = data.world.remembered.globe;
+    delete data.world.remembered.globe;
+  }
   if (data.quests) data.quests.completed = [...completed];
   data.saveVersion = SAVE_VERSION;
   return data;
