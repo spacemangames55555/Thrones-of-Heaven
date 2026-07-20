@@ -6100,6 +6100,7 @@ try {
   // retires on schedule.
   const fct = await page.evaluate(async () => {
     const ms = window.__ready();
+    ms.cameras.main.setZoom(1.1); // PINNED near zoom — LOD tiers must never hide this check's objects
     const wait = (t) => new Promise((r) => setTimeout(r, t));
     if (!window.__quietSpot()) return { setup: 'no quiet spot' };
     const cap = ms.feel.text.poolSize;
@@ -6189,6 +6190,7 @@ try {
   // 'onAggroOrDamage' plate lights up when its owner is hit nearby.
   const plates = await page.evaluate(async () => {
     const ms = window.__ready();
+    ms.cameras.main.setZoom(1.1); // PINNED near zoom (its own minZoom sub-test sets lower zooms explicitly)
     const wait = (t) => new Promise((r) => setTimeout(r, t));
     if (!window.__quietSpot()) return { setup: 'no quiet spot' };
     const FAMILIES = ['corrupted-wildlife', 'evil-raiders', 'lesser-evil-scouts', 'herald-angels', 'radiant-guardians', 'lesser-angels', 'dark-casters', 'veil-ambushers', 'hollowed-brutes'];
@@ -6249,6 +6251,7 @@ try {
   // above nameplates and feel floating text, both above the world tile layer.
   const depths = await page.evaluate(() => {
     const ms = window.__ready();
+    ms.cameras.main.setZoom(1.1); // PINNED near zoom — the world tile layer must be a LIVE render target here
     ms.floatingText.show(ms.player.x, ms.player.y - 20, '-1', '#ffffff', { depth: ms.feel.depths.floatText });
     const liveText = ms.floatingText.items.find((it) => it.active);
     return {
