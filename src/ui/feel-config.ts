@@ -80,6 +80,16 @@ export const FEEL = {
     floatText: 950,
     screenUi: 1350, // the existing UI band (LoadoutBar et al.) — reference, not a redefinition
   },
+  /** FAR-ZOOM LOD (render visibility only — never data): below tileFadeOutZoom
+   *  every stamped chunk tile layer fades out and skips render, leaving the
+   *  pre-baked planet raster as the sole ground; at/above tileFadeInZoom the
+   *  full tile detail restores. The gap is MANDATORY hysteresis — a camera
+   *  sitting on one threshold can never flap the whole tile stack. */
+  lod: {
+    tileFadeOutZoom: 0.15,
+    tileFadeInZoom: 0.18,
+    fadeMs: 260,
+  },
 } as const;
 
 export type FeelConfig = typeof FEEL;

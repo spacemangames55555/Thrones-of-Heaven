@@ -1126,6 +1126,15 @@ export class MainScene extends Phaser.Scene {
   private beatElite?: { beatId: string; zoneId: string; kind: 'demon' | 'angel'; entity: Demon | AngelEnemy; label: Phaser.GameObjects.Text };
   /** Per-chunk terrain colliders, each bound to its OWN region world. */
   private regionColliders: { c: Phaser.Physics.Arcade.Collider; worldId: WorldId }[] = [];
+  /** FAR-ZOOM LOD (render visibility only): every stamped earth chunk's tile
+   *  layer, faded out below FEEL.lod.tileFadeOutZoom (the planet raster is the
+   *  sole far-view ground) and restored at/above tileFadeInZoom. */
+  private lodTileLayers: Phaser.Tilemaps.TilemapLayerBase[] = [];
+  lodState: 'near' | 'far' = 'near';
+  /** Clock time the current fade began (-1 = idle); stepped in updateLod. */
+  private lodFadeStart = -1;
+  /** How many times the LOD state has flipped (gate-observable flap guard). */
+  lodTransitions = 0;
   /** Proximity travel gates. destWorld makes a gate CROSS-WORLD (Egypt↔Africa). */
   private regionGates: { x: number; y: number; label: string; dest: { x: number; y: number }; destWorld: WorldId }[] = [];
   /** Per-zone arrival points (the spot south of each chunk's settlement). */
@@ -1981,6 +1990,7 @@ export class MainScene extends Phaser.Scene {
       this.updateCityGates(); // AFTER interactions: Talk keeps the shared slot
       if (this.regionWorldIds.has(this.activeWorld)) {
         this.updateRegionSpawns(); // per-chunk packs (any region world)
+        this.updateLod(); // far-zoom tile LOD (render visibility only)
         this.groundLayers.get(this.activeWorld)?.update(this.cameras.main); // continents under the camera
         this.blockVoidWater(); // water is impassable ground; gates are the travel
       }
@@ -6425,6 +6435,8 @@ export class MainScene extends Phaser.Scene {
       // live = actually visible FX; pooled = hidden recycled pool members (the
       // old single number over-read as "active" — see the Rome diagnostic).
       `worldFx live ${this.worldFx.list.filter((o) => (o as Phaser.GameObjects.Sprite).visible !== false).length} + pooled ${this.worldFx.list.filter((o) => (o as Phaser.GameObjects.Sprite).visible === false).length}`,
+      // FAR-ZOOM LOD observability: current tier + live tile layers + labels.
+      `lod ${this.lodState}  tileLayers ${this.lodCounts().tileLayersVisible}/${this.lodCounts().tileLayersTotal}  labels ${this.lodCounts().labelsVisible}`,
     ];
   }
 
@@ -9135,6 +9147,7 @@ export class MainScene extends Phaser.Scene {
     const first = built.get(EUROPE_BUILT_ZONES[0])!;
     const arrival = first.map.nearestWalkableWorld(origin.x + first.chunk.arrivalLocalPx.x, origin.y + first.chunk.arrivalLocalPx.y);
     this.globeMap = new SparseWorldMap(origin, rw.sparse!.boundsPx, chunkMaps, () => ({ x: this.player.x, y: this.player.y }), (x, y) => ground.isWaterAtWorld(x, y));
+    this.lodTileLayers = chunkMaps.map((m) => m.layer); // the far-zoom LOD set (render visibility only)
     this.worlds[WORLD_EARTH] = {
       id: WORLD_EARTH,
       map: this.globeMap,
@@ -9768,6 +9781,48 @@ export class MainScene extends Phaser.Scene {
 
   /** Per-frame (region worlds): mentors' proximity button + the ACTIVE beat's
    *  marker / pickups / elite, spawned and cleaned by archetype. */
+  /** FAR-ZOOM LOD: fade the stamped tile layers out below the FEEL.lod
+   *  threshold (planet raster becomes the sole ground) and back in above the
+   *  fade-in threshold. Hysteresis gap prevents flapping; fade, not pop. */
+  private updateLod(): void {
+    const z = this.cameras.main.zoom;
+    if (this.lodState === 'near' && z < FEEL.lod.tileFadeOutZoom) this.setLodState('far');
+    else if (this.lodState === 'far' && z >= FEEL.lod.tileFadeInZoom) this.setLodState('near');
+    // The fade runs on elapsed clock time, stepped right here — no tween, no
+    // completion callback. A stalled frame just lands further along the curve,
+    // so the fade always finishes once fadeMs has passed, at ANY frame rate.
+    if (this.lodFadeStart < 0) return;
+    const t = Math.min(1, (this.time.now - this.lodFadeStart) / FEEL.lod.fadeMs);
+    const a = this.lodState === 'far' ? 1 - t : t;
+    for (const l of this.lodTileLayers) l.setAlpha(a);
+    if (t >= 1) {
+      this.lodFadeStart = -1;
+      // Skip render entirely at world zoom — the planet raster is the ground.
+      if (this.lodState === 'far') for (const l of this.lodTileLayers) l.setVisible(false);
+    }
+  }
+
+  private setLodState(state: 'near' | 'far'): void {
+    if (this.lodState === state) return;
+    // A mid-fade reversal mirrors progress so alpha stays continuous.
+    const prevT = this.lodFadeStart >= 0 ? Math.min(1, (this.time.now - this.lodFadeStart) / FEEL.lod.fadeMs) : 1;
+    this.lodState = state;
+    this.lodTransitions++;
+    this.lodFadeStart = this.time.now - (1 - prevT) * FEEL.lod.fadeMs;
+    if (state === 'near') for (const l of this.lodTileLayers) l.setVisible(true); // restore render before fading in
+  }
+
+  /** Dev-overlay counts: visible tile layers + visible world label texts. */
+  lodCounts(): { tileLayersVisible: number; tileLayersTotal: number; labelsVisible: number } {
+    let labelsVisible = 0;
+    for (const o of this.children.list) if (o instanceof Phaser.GameObjects.Text && o.visible && o.scrollFactorX !== 0) labelsVisible++;
+    return {
+      tileLayersVisible: this.lodTileLayers.filter((l) => l.visible).length,
+      tileLayersTotal: this.lodTileLayers.length,
+      labelsVisible,
+    };
+  }
+
   private updateRegionBeatObjectives(): void {
     // MENTORS: persistent NPCs; the nearest within range owns the shared button.
     let near: (typeof this.regionMentors)[number] | undefined;
