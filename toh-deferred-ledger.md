@@ -16,3 +16,7 @@ ruling lands, strike the entry with a pointer to the commit that resolved it.
   parked pending Casey ruling after a trailer-quality capture.
 - Tiles-vs-labels device cost apportionment: superseded if this pass lifts
   far-zoom FPS; dev overlay now exposes both counts live.
+- World scale v2 (Pass 1 shipped flag-gated behind ?scale=v2): Pass 2 flips
+  the default to v2 and replaces the TEMP render window (the ~200-tile
+  zoom-out clamp) with real chunk streaming; mounts + the waypoint network
+  ship in a later pass.

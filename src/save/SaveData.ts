@@ -5,7 +5,7 @@ import type { PlayerPath } from '../story/playerPath';
 import type { SkillSaveState } from '../skills/SkillState';
 
 /** Bump when the SaveData shape changes; SaveSystem.read can then migrate old saves. */
-export const SAVE_VERSION = 16;
+export const SAVE_VERSION = 17;
 
 /**
  * Act I (Enumclaw opening) quest ids — inserted at the FRONT of the chain, with the
@@ -121,12 +121,21 @@ export interface SaveData {
   saveVersion: number;
   savedAt: number; // epoch ms (for "last saved" display / debugging)
 
-  /** Active world + the player's position, plus the remembered per-world positions. */
+  /** Active world + the player's position, plus the remembered per-world positions.
+   *
+   *  WORLD SCALE V2 (v17): lat/lng is the CANONICAL stored format for every
+   *  terrestrial ('earth') position — px are a runtime cache, re-derived from
+   *  latLng through the ACTIVE projection on load, so projections can change
+   *  without breaking saves. Heaven/Hell and the city interiors are separate
+   *  planes with their own local px frames (anchor-local layouts, never on the
+   *  planet) — their entries stay px-only by design. */
   world: {
     active: string; // WorldId: 'earth' | 'heaven' | 'hell'
     x: number;
     y: number;
-    remembered: Record<string, { x: number; y: number }>;
+    /** CANONICAL when active === 'earth' (v17+); absent on plane worlds. */
+    latLng?: { lat: number; lng: number };
+    remembered: Record<string, { x: number; y: number; latLng?: { lat: number; lng: number } }>;
   };
 
   /** The player: progression, vitals, alignment/power-state, sight, narrative path. */

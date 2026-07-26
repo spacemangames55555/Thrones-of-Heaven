@@ -46,7 +46,9 @@ import { GroundLayer } from '../map/GroundLayer';
 import { CITY_DEFS, CITY_FAIYUM, type CityDef } from '../world/cities';
 import { MANIFEST_CLASS_FOR, KNOWN_CLASS_NAMES, homeZoneForClass } from '../world/class-canon';
 import { SparseWorldMap } from '../map/SparseWorldMap';
-import { WORLD_CALIBRATION, WORLD_SPAN_DEGREES } from '../world/world-calibration';
+import { WORLD_CALIBRATION, WORLD_SPAN_DEGREES, latLngToPixels } from '../world/world-calibration';
+import { isScaleV2, V2_TEMP_WINDOW_PX } from '../world/world-scale';
+import { globeSceneOriginX } from '../world/scene-origin';
 import { createSparseWorld, stampZone, buildChunkMapData, CONTINENT_WORLD, type BuiltChunk } from '../world/world-builder';
 import { egyptUnificationDelta, earthUnificationDelta, ABSORBED_ZONE_HOSTS } from '../world/world-unification';
 import { getZone, WORLD } from '../world/world-manifest';
@@ -1231,6 +1233,9 @@ export class MainScene extends Phaser.Scene {
   private regionBeatIndex?: Map<string, { zone: ManifestZone; beat: QuestBeat }>;
   /** Where the NEXT world east goes (advanced by setupCities/setupEurope). */
   private nextWorldOriginX = 0;
+  /** The globe world's scene-frame origin (set in setupGlobe) — the bridge
+   *  between canonical lat/lng and scene px for the terrestrial helpers. */
+  private globeOriginPx = { x: 0, y: 0 };
   /** The egypt map's PRE-UNIFICATION chain origin (for 'egypt' save translation). */
   private egyptOldOriginX = 0;
   /** Where the city sub-map chain starts (pinned to the pre-unification value). */
@@ -1804,7 +1809,18 @@ export class MainScene extends Phaser.Scene {
     // inconsistent-cap observation. Pure size arithmetic; no map object needed.)
     const planetCal = WORLD_CALIBRATION[WORLD_EARTH];
     const planetSpan = WORLD_SPAN_DEGREES[WORLD_EARTH];
-    this.zoomControls = new ZoomControls(this, cam, planetSpan.lng * planetCal.pixelsPerDegree.x, planetSpan.lat * planetCal.pixelsPerDegree.y);
+    // TEMP (WORLD SCALE V2, Pass 2 replaces with real chunk streaming): under
+    // ?scale=v2 the zoom-out limit is clamped so the on-screen view never
+    // spans more than a ~200-tile-radius window — no render/update path may
+    // walk the v2 planet's full extents (~43.7M × 32.1M px). Default v1
+    // passes no window: shipped behavior, byte-identical.
+    this.zoomControls = new ZoomControls(
+      this,
+      cam,
+      planetSpan.lng * planetCal.pixelsPerDegree.x,
+      planetSpan.lat * planetCal.pixelsPerDegree.y,
+      isScaleV2() ? 2 * V2_TEMP_WINDOW_PX : undefined,
+    );
     this.readout = new DebugReadout(this, () => this.activeMap(), this.player);
     // DEV-only live perf readout (FPS / frame-time + entity, effect + pool counts) so
     // the under-load behaviour is observable on a phone. Gated by DEV_MODE.
@@ -8355,12 +8371,23 @@ export class MainScene extends Phaser.Scene {
 
   /** Gather the COMPLETE game state into one serializable {@link SaveData} object. */
   private serialize(): SaveData {
-    const remembered: Record<string, { x: number; y: number }> = { ...this.worldPos };
+    // WORLD SCALE V2: lat/lng is the CANONICAL stored format for terrestrial
+    // positions — px ride along as a runtime cache. Heaven/Hell + interiors
+    // are planes (local px frames); they never carry latLng.
+    const remembered: Record<string, { x: number; y: number; latLng?: { lat: number; lng: number } }> = { ...this.worldPos };
     remembered[this.activeWorld] = { x: this.player.x, y: this.player.y };
+    const re = remembered[WORLD_EARTH];
+    if (re) remembered[WORLD_EARTH] = { ...re, latLng: this.terrestrialLatLngFromPx(re.x, re.y) };
     return {
       saveVersion: SAVE_VERSION,
       savedAt: Date.now(),
-      world: { active: this.activeWorld, x: this.player.x, y: this.player.y, remembered },
+      world: {
+        active: this.activeWorld,
+        x: this.player.x,
+        y: this.player.y,
+        latLng: this.activeWorld === WORLD_EARTH ? this.terrestrialLatLngFromPx(this.player.x, this.player.y) : undefined,
+        remembered,
+      },
       player: {
         level: this.progression.level,
         currentXP: this.progression.currentXP,
@@ -8510,6 +8537,23 @@ export class MainScene extends Phaser.Scene {
           if (!s.world.remembered[WORLD_EARTH]) s.world.remembered[WORLD_EARTH] = { x: rem.x + dx, y: rem.y + dy };
           delete s.world.remembered['egypt'];
         }
+      }
+      // WORLD SCALE V2 — CANONICAL lat/lng: when the save carries a canonical
+      // terrestrial position (v17+), the px are just the writing session's
+      // cache — re-derive them through the ACTIVE projection, so the same
+      // save lands on the same geography under v1 and v2 alike. (The legacy
+      // 'earth-legacy'/'egypt' translations above produce px in the active
+      // frame already; those saves carry no latLng until their next write.)
+      if (s.world.latLng && s.world.active === WORLD_EARTH) {
+        const p = this.terrestrialPxFromLatLng(s.world.latLng);
+        s.world.x = p.x;
+        s.world.y = p.y;
+      }
+      const remEarth = s.world.remembered?.[WORLD_EARTH];
+      if (remEarth?.latLng) {
+        const p = this.terrestrialPxFromLatLng(remEarth.latLng);
+        remEarth.x = p.x;
+        remEarth.y = p.y;
       }
       this.applyWorldSwap(s.world.active as WorldId, { x: s.world.x, y: s.world.y });
       this.worldPos = { ...s.world.remembered }; // applyWorldSwap rewrote the leave-world entry
@@ -9058,12 +9102,25 @@ export class MainScene extends Phaser.Scene {
    *  followed by the shared gap. setupEgypt derives the same number step by
    *  step; setupGlobe asserts they agree. */
   private computeGlobeOriginX(): number {
-    const ts = this.map?.tileSize ?? 32;
-    const earthW = (washingtonMap as unknown as WashingtonMap).width * ts;
-    const egyptW = (egyptMapJson as unknown as WashingtonMap).width * ts;
-    let x = earthW + HEAVEN_WORLD_GAP + HEAVEN_WIDTH * ts + HEAVEN_WORLD_GAP + HELL_WIDTH * ts + HEAVEN_WORLD_GAP + egyptW + HEAVEN_WORLD_GAP;
-    for (const def of CITY_DEFS) x += def.buildMap().width * ts + HEAVEN_WORLD_GAP;
-    return x;
+    // Single source: the static chain in scene-origin.ts (save migration needs
+    // the same number before any scene exists). setupEgypt's step-by-step
+    // derivation and setupGlobe's assert still cross-check it.
+    return globeSceneOriginX();
+  }
+
+  /** Terrestrial scene px → canonical lat/lng through the ACTIVE projection. */
+  terrestrialLatLngFromPx(x: number, y: number): { lat: number; lng: number } {
+    const cal = WORLD_CALIBRATION.earth;
+    return {
+      lat: cal.origin.lat - (y - this.globeOriginPx.y) / cal.pixelsPerDegree.y,
+      lng: cal.origin.lng + (x - this.globeOriginPx.x) / cal.pixelsPerDegree.x,
+    };
+  }
+
+  /** Canonical lat/lng → terrestrial scene px through the ACTIVE projection. */
+  terrestrialPxFromLatLng(p: { lat: number; lng: number }): { x: number; y: number } {
+    const local = latLngToPixels(WORLD_CALIBRATION.earth, p);
+    return { x: this.globeOriginPx.x + local.x, y: this.globeOriginPx.y + local.y };
   }
 
   private setupEgypt(): void {
@@ -9120,6 +9177,7 @@ export class MainScene extends Phaser.Scene {
     const span = WORLD_SPAN_DEGREES[WORLD_EARTH];
     const origin = { x: this.nextWorldOriginX, y: 0 };
     if (origin.x !== this.computeGlobeOriginX()) throw new Error(`setupGlobe: chain drift — ${origin.x} vs ${this.computeGlobeOriginX()}`);
+    this.globeOriginPx = { ...origin }; // the canonical lat/lng ↔ scene px bridge
     const rw = createSparseWorld(WORLD_EARTH, cal, span);
 
     // GROUND LAYER: the real planet (the whole-Earth Natural-Earth raster

@@ -1,6 +1,9 @@
 import Phaser from 'phaser';
 import { gameConfig } from './game/config';
 import { viewportSize, type Insets } from './ui/uiLayout';
+import * as worldScale from './world/world-scale';
+import { WORLD } from './world/world-manifest';
+import { MANIFEST_CLASS_FOR, homeZoneForClass } from './world/class-canon';
 
 /**
  * Thrones of Heaven — entry point.
@@ -15,6 +18,18 @@ const game = new Phaser.Game(gameConfig);
 // `npm run verify:runtime`): headless checks boot the real game through this.
 // Invisible to players; no UI, no behavior — do not remove.
 (window as unknown as { __game: Phaser.Game }).__game = game;
+// WORLD SCALE V2 gate handle: the scale module's constants/projections plus
+// the manifest's real-geography anchors (home cities + every zone), so the
+// scale checks measure the projection against the same data the world builds
+// from. Invisible to players; no UI, no behavior — do not remove.
+(window as unknown as { __worldScale: unknown }).__worldScale = {
+  ...worldScale,
+  homeAnchors: Object.keys(MANIFEST_CLASS_FOR).map((classId) => {
+    const zone = homeZoneForClass(classId);
+    return { classId, zoneId: zone?.id ?? null, anchor: zone?.anchor ?? null };
+  }),
+  zoneAnchors: Object.fromEntries(WORLD.map((z) => [z.id, z.anchor])),
+};
 
 // Build identifier — console-only, no on-screen overlay. __BUILD_ID__ is injected
 // at build time by Vite (commit short-hash when the host provides it, else an ISO

@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { RUN_SPEED } from '../game/settings';
+import { devSpeedMultiplier } from '../world/world-scale';
 import { rotationTextureFor } from '../render/spriteOverrides';
 
 const TEXTURE_KEY = 'player-figure'; // Blacksmith (gold soul/herald) avatar
@@ -47,6 +48,10 @@ export class Player {
   readonly sprite: Phaser.Physics.Arcade.Sprite;
   /** Move-speed multiplier (1 = base). Skill passives/buffs + class base speed set this. */
   speedMultiplier = 1;
+  /** DEV traversal multiplier from ?devspeed=N (cap 8) — WORLD SCALE V2 dev
+   *  testing. No param ⇒ EXACTLY 1: base speeds untouched. Fixed for the
+   *  session at construction; gate-observable. */
+  readonly devSpeed = devSpeedMultiplier();
   /** HOSTILE slow (1 = none). Multiplied on top of speedMultiplier so enemy slows
    *  (dark-caster bolts) compose with — and never clobber — skill/class speed math. */
   slowFactor = 1;
@@ -100,7 +105,7 @@ export class Player {
       this.facingY = y;
       this.applyFacingFrame();
     }
-    const s = RUN_SPEED * this.speedMultiplier * this.slowFactor;
+    const s = RUN_SPEED * this.speedMultiplier * this.slowFactor * this.devSpeed;
     this.sprite.setVelocity(x * s, y * s);
   }
 
