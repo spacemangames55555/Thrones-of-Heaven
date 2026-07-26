@@ -149,6 +149,84 @@ const ok = (name, pass, detail = '') => {
   );
 }
 
+// 0c. PACK-INTEGRITY (PASS 3, pure Node): the committed real-Earth packs must
+// match their manifests byte-for-byte, decode to headers that agree with the
+// LIVE terrain-schema constants (never a copy), respect the size guards
+// (total ≤ 60 MB, single file ≤ 45 MB), keep the download cache gitignored,
+// and carry the required rivers + 300 coast-truth points.
+{
+  const worldDir = new URL('../public/world/', import.meta.url).pathname;
+  const schema = await (async () => {
+    const { build } = await import('esbuild');
+    const { mkdirSync } = await import('node:fs');
+    const outfile = new URL('../node_modules/.cache/toh-terrain-schema.mjs', import.meta.url).pathname;
+    mkdirSync(new URL('../node_modules/.cache', import.meta.url).pathname, { recursive: true });
+    await build({ entryPoints: [new URL('../src/world/terrain-schema.ts', import.meta.url).pathname], bundle: true, format: 'esm', platform: 'node', outfile, logLevel: 'silent' });
+    return import(outfile);
+  })();
+  const ws = await (async () => {
+    const { build } = await import('esbuild');
+    const outfile = new URL('../node_modules/.cache/toh-world-scale.mjs', import.meta.url).pathname;
+    await build({ entryPoints: [new URL('../src/world/world-scale.ts', import.meta.url).pathname], bundle: true, format: 'esm', platform: 'node', outfile, logLevel: 'silent' });
+    return import(outfile);
+  })();
+  const read = (f) => readFileSync(join(worldDir, f));
+  const planet = read('planet.bin');
+  const pnw = read('regions/pnw.bin');
+  const regions = JSON.parse(read('regions.json'));
+  const rivers = JSON.parse(read('regions/pnw-rivers.json'));
+  const coast = JSON.parse(read('coast-truth.json'));
+  const bakeManifest = JSON.parse(readFileSync(new URL('../scripts/bake-earth/bake-manifest.json', import.meta.url).pathname));
+  const sha = (buf) => createHash('sha256').update(buf).digest('hex');
+  // Manifest checksums (regions.json AND bake-manifest) vs committed bytes.
+  const pnwEntry = regions.regions.find((r) => r.id === 'pnw');
+  const manifestShaOk =
+    pnwEntry.sha256 === sha(pnw) &&
+    bakeManifest.outputs.every((o) => {
+      const rel = o.file.replace('public/world/', '');
+      return sha(read(rel)) === o.sha256;
+    });
+  // Headers vs the LIVE schema/scale constants.
+  const worldTilesX = (360 * ws.PX_PER_DEG_LNG) / 32;
+  const worldTilesY = (170 * ws.PX_PER_DEG_LAT) / 32;
+  const u32 = (buf, o) => buf.readUInt32LE(o);
+  const planetHeaderOk =
+    planet.toString('latin1', 0, 4) === 'TOHW' &&
+    u32(planet, 4) === 1 &&
+    u32(planet, 8) === Math.ceil(worldTilesX / 256) &&
+    u32(planet, 12) === Math.ceil(worldTilesY / 256) &&
+    u32(planet, 16) === 256 &&
+    u32(planet, 20) === Math.ceil(worldTilesX / 512) &&
+    u32(planet, 24) === Math.ceil(worldTilesY / 512) &&
+    u32(planet, 28) === 512 &&
+    u32(planet, 32) === schema.ELEV_BAND_OFFSET_M &&
+    u32(planet, 36) === schema.ELEV_BAND_STEP_M &&
+    planet.length === 40 + Math.ceil(worldTilesX / 256) * Math.ceil(worldTilesY / 256) + Math.ceil(worldTilesX / 512) * Math.ceil(worldTilesY / 512);
+  const rw = u32(pnw, 8);
+  const rh = u32(pnw, 12);
+  const pnwHeaderOk =
+    pnw.toString('latin1', 0, 4) === 'TOHR' &&
+    u32(pnw, 4) === 1 &&
+    u32(pnw, 16) === 16 &&
+    pnw.readDoubleLE(20) === 41.5 &&
+    pnw.readDoubleLE(28) === 49.5 &&
+    pnw.readDoubleLE(36) === -125.0 &&
+    pnw.readDoubleLE(44) === -110.5 &&
+    pnw.length === 52 + rw * rh * 2;
+  const totalBytes = bakeManifest.outputs.reduce((a, o) => a + o.bytes, 0);
+  const sizeOk = totalBytes <= 60 * 1024 * 1024 && bakeManifest.outputs.every((o) => o.bytes <= 45 * 1024 * 1024);
+  const gitignoreOk = readFileSync(new URL('../.gitignore', import.meta.url).pathname, 'utf8').includes('scripts/bake-earth/.cache/');
+  const riverNames = new Set(rivers.rivers.map((r) => r.name));
+  const riversOk = riverNames.has('Columbia') && riverNames.has('Snake') && rivers.rivers.every((r) => r.widthClass >= 1 && r.widthClass <= 3);
+  const coastOk = coast.points.length === 300 && coast.points.every((p) => typeof p.water === 'boolean');
+  const sourcesOk = Array.isArray(bakeManifest.sources) && bakeManifest.sources.length >= 3 && bakeManifest.sources.every((s) => s.url && s.sha256);
+  ok(
+    'pack-integrity: manifest checksums match committed packs; headers agree with the live schema; size guards hold; cache gitignored; Columbia+Snake shipped; 300 coast-truth points',
+    manifestShaOk && planetHeaderOk && pnwHeaderOk && sizeOk && gitignoreOk && riversOk && coastOk && sourcesOk,
+    JSON.stringify({ manifestShaOk, planetHeaderOk, pnwHeaderOk, totalMB: +(totalBytes / 1048576).toFixed(1), sizeOk, gitignoreOk, riversOk, coastOk, sourcesOk, derivedBiomes: bakeManifest.derivedBiomes === true }),
+  );
+}
+
 // 1) Preview server (killed on exit).
 const server = spawn('npx', ['vite', 'preview', '--port', String(PORT), '--strictPort'], { stdio: 'ignore' });
 const kill = () => {
@@ -7322,10 +7400,22 @@ try {
     JSON.stringify({ smV1: { ...smV1, fixture: undefined }, smV2 }),
   );
 
-  // ── PASS 2, LIVE v2 SESSION (still on the ?scale=v2&devspeed page) ────────
-  // 2f4. chunk-determinism: the same chunk synthesized twice on the direct
-  // path, and once through the REAL Web Worker, is byte-identical — and the
-  // worker must actually be live (not the fallback).
+  // ── PASS 2 + 3, LIVE v2 SESSION (still on the ?scale=v2&devspeed page) ────
+  // PASS 3 preamble: the session swaps to the EARTH source once planet.bin
+  // decodes, and — because the fixture player boots inside the PNW bbox —
+  // the pnw region pack streams in and repaints. Wait for both.
+  await page.waitForFunction(
+    () => {
+      const st = window.__game.scene.getScene('MainScene').chunkStreamer;
+      return !!st && st.activeSourceLabel === 'earth' && st.stats().regions >= 1;
+    },
+    { timeout: 60000 },
+  );
+
+  // 2f4. chunk-determinism (now against the EARTH source): the same chunk
+  // synthesized twice on the direct path, and once through the REAL Web
+  // Worker (probe worker receives the same grids), is byte-identical — and
+  // the worker must actually be live (not the fallback).
   const chunkDet = await page.evaluate(async () => {
     const ms = window.__game.scene.getScene('MainScene');
     const st = ms.chunkStreamer;
@@ -7394,9 +7484,165 @@ try {
     JSON.stringify(zoomCap),
   );
 
+  // ── PASS 3: THE EARTH CHECKS (player still at the Seattle fixture spot) ───
+  // 2g0. geo-truth: land/water strict, biomes as family sets, through the
+  // FULL earth source. NOTE the Himalaya probe: the literal point (28.0,
+  // 84.0) is a Nepalese valley (~1 km real elevation) — no real dataset puts
+  // 3,500 m there — so the massif is probed as the MAX over the surrounding
+  // 1° box (same spirit as the Columbia radius probe).
+  const geoTruth = await page.evaluate(() => {
+    const st = window.__game.scene.getScene('MainScene').chunkStreamer;
+    const B = window.__worldScale.schema.Biome;
+    const s = (lat, lng) => st.earthSample(lat, lng);
+    const water = (r) => r[0] === B.OCEAN || r[0] === B.FRESHWATER;
+    const sea = s(47.61, -122.33);
+    const pac = s(0, -150);
+    const cairo = s(30.04, 31.24);
+    const green = s(72, -40);
+    const mur = s(68.97, 33.08);
+    let hiBand = 0;
+    let hiBiome = null;
+    for (let la = 27.5; la <= 28.5; la += 0.05) {
+      for (let ln = 83.5; ln <= 84.5; ln += 0.05) {
+        const r = s(la, ln);
+        if (!water(r) && r[1] > hiBand) {
+          hiBand = r[1];
+          hiBiome = r[0];
+        }
+      }
+    }
+    let columbia = false;
+    for (let dj = -40; dj <= 40 && !columbia; dj += 4) {
+      for (let di = -40; di <= 40 && !columbia; di += 4) {
+        const lat = 46.15 - (dj * 32) / 178112;
+        const lng = -123.0 + (di * 32) / 121472;
+        if (s(lat, lng)[0] === B.FRESHWATER) columbia = true;
+      }
+    }
+    return {
+      sahara: s(23, 10)[0] === B.DESERT,
+      amazon: [B.FOREST, B.SWAMP, B.SAVANNA].includes(s(-3, -60)[0]),
+      seattle: !water(sea) && [B.FOREST, B.GRASS, B.TAIGA, B.BEACH].includes(sea[0]),
+      pacific: pac[0] === B.OCEAN && (pac[3] & 1) === 0,
+      cairo: !water(cairo) && [B.DESERT, B.SAVANNA, B.GRASS].includes(cairo[0]),
+      himalaya: hiBand >= 100 && [B.ROCK, B.SNOW, B.TUNDRA].includes(hiBiome),
+      hiBand,
+      greenland: [B.SNOW, B.TUNDRA].includes(green[0]),
+      bali: !water(s(-8.65, 115.22)),
+      murmansk: !water(mur) && [B.TAIGA, B.TUNDRA, B.SNOW, B.GRASS].includes(mur[0]),
+      columbia,
+    };
+  });
+  ok(
+    'geo-truth: Sahara desert, Amazon forest, Seattle land, mid-Pacific non-walkable ocean, Cairo, Himalaya high+bare (1-deg box), Greenland, Bali island, Murmansk, Columbia freshwater',
+    geoTruth.sahara &&
+      geoTruth.amazon &&
+      geoTruth.seattle &&
+      geoTruth.pacific &&
+      geoTruth.cairo &&
+      geoTruth.himalaya &&
+      geoTruth.greenland &&
+      geoTruth.bali &&
+      geoTruth.murmansk &&
+      geoTruth.columbia,
+    JSON.stringify(geoTruth),
+  );
+
+  // 2g1. coast-fidelity: ≥96% agreement with the 300 full-precision
+  // Natural-Earth land/water truth points.
+  const coastFid = await page.evaluate(async () => {
+    const st = window.__game.scene.getScene('MainScene').chunkStreamer;
+    const B = window.__worldScale.schema.Biome;
+    const truth = await (await fetch('/world/coast-truth.json')).json();
+    let agree = 0;
+    for (const p of truth.points) {
+      const r = st.earthSample(p.lat, p.lng);
+      const water = r[0] === B.OCEAN || r[0] === B.FRESHWATER;
+      if (water === p.water) agree++;
+    }
+    return { n: truth.points.length, agree, pct: +((agree / truth.points.length) * 100).toFixed(1) };
+  });
+  ok('coast-fidelity: >=96% agreement with the full-precision coast truth', coastFid.n === 300 && coastFid.pct >= 96, JSON.stringify(coastFid));
+
+  // 2g2. earth seam-purity + determinism: border strips of a chunk quad
+  // STRADDLING the pnw bbox west edge (lng −125 falls inside chunk 3262)
+  // recompute byte-identically through the per-tile reference, twice.
+  const earthSeam = await page.evaluate(() => {
+    const st = window.__game.scene.getScene('MainScene').chunkStreamer;
+    const CT = 64;
+    const quads = [
+      [3261, 3435],
+      [3262, 3435],
+      [3263, 3435],
+      [3262, 3436],
+    ];
+    let checked = 0;
+    let mismatches = 0;
+    for (const [cx, cy] of quads) {
+      const a = st.synthesizeDirect(cx, cy);
+      const b = st.synthesizeDirect(cx, cy);
+      for (let e = 0; e < CT; e++) {
+        for (const [i, j] of [[0, e], [CT - 1, e], [e, 0], [e, CT - 1]]) {
+          const ref = st.referenceRecord(cx * CT + i, cy * CT + j);
+          const o = (j * CT + i) * 4;
+          checked++;
+          if (a[o] !== ref[0] || a[o + 1] !== ref[1] || a[o + 2] !== ref[2] || a[o + 3] !== ref[3] || b[o] !== a[o] || b[o + 3] !== a[o + 3]) mismatches++;
+        }
+      }
+    }
+    return { quads: quads.length, checked, mismatches };
+  });
+  ok(
+    'earth seam-purity: chunk quad straddling the pnw bbox edge recomputes byte-identically via the per-tile reference (twice)',
+    earthSeam.quads === 4 && earthSeam.checked === 1024 && earthSeam.mismatches === 0,
+    JSON.stringify(earthSeam),
+  );
+
+  // 2g3. region-refinement: inside the pnw bbox, a planet-only fill differs
+  // from the region-refined fill; the version bumped for earth AND region;
+  // and every cached ring chunk has converged onto the current version.
+  await page.waitForFunction(
+    () => {
+      const ms = window.__game.scene.getScene('MainScene');
+      const st = ms.chunkStreamer;
+      const pcx = Math.floor((ms.player.x - st.originPx.x) / 2048);
+      const pcy = Math.floor((ms.player.y - st.originPx.y) / 2048);
+      for (let dy = -2; dy <= 2; dy++) {
+        for (let dx = -2; dx <= 2; dx++) {
+          if (st.chunkVersion(pcx + dx, pcy + dy) !== st.sourceVersion) return false;
+        }
+      }
+      return true;
+    },
+    { timeout: 45000 },
+  );
+  const regionRefine = await page.evaluate(() => {
+    const st = window.__game.scene.getScene('MainScene').chunkStreamer;
+    const full = st.synthesizeDirect(3422, 3252); // Seattle-ish, deep inside pnw
+    const planetOnly = st.fillPlanetOnly(3422, 3252);
+    let diff = 0;
+    for (let i = 0; i < full.length; i++) if (full[i] !== planetOnly[i]) diff++;
+    return { diff, version: st.sourceVersion, regions: st.stats().regions };
+  });
+  ok(
+    'region-refinement: pnw fills differ from planet-only synth; sourceVersion bumped for earth + region; loaded ring repainted to the current version',
+    regionRefine.diff > 1000 && regionRefine.version >= 3 && regionRefine.regions >= 1,
+    JSON.stringify(regionRefine),
+  );
+
   // 2f7. playwright drive: 60s of real keyboard autorun east at the capped
   // devspeed — chunks must load AND evict along the way, with zero page or
-  // console errors across the window.
+  // console errors across the window. LAUNCHED MID-PACIFIC: under real Earth
+  // an eastward land run hits real water; open ocean is the one guaranteed
+  // 60s corridor (standing on water keeps the shipped walking-out rule; the
+  // land-memory snap-back is cleared for the teleport).
+  await page.evaluate(() => {
+    const ms = window.__ready();
+    const p = ms.terrestrialPxFromLatLng({ lat: 5, lng: -150 });
+    ms.player.sprite.body.reset(p.x, p.y);
+    ms.lastLandPos = undefined;
+  });
+  await page.waitForTimeout(1200);
   const drive0 = await page.evaluate(() => {
     const ms = window.__game.scene.getScene('MainScene');
     return { x: ms.player.x, stats: ms.chunkStreamer.stats() };
@@ -7422,8 +7668,16 @@ try {
   );
 
   // 2f8. walkability-wiring: force a strip of OCEAN records ahead of the
-  // player (all-land placeholder terrain has no natural water yet) and drive
-  // into it — the collision path must reject the movement.
+  // player and drive into it — the collision path must reject the movement.
+  // Runs in the SAHARA (flat, dry, riverless for hundreds of km) so real
+  // geography cannot interfere with the fixture.
+  await page.evaluate(() => {
+    const ms = window.__ready();
+    const p = ms.terrestrialPxFromLatLng({ lat: 23.0, lng: 10.0 });
+    ms.player.sprite.body.reset(p.x, p.y);
+    ms.lastLandPos = undefined;
+  });
+  await page.waitForTimeout(1800); // the ring synthesizes at the new spot
   const walkFix = await page.evaluate(() => {
     const ms = window.__game.scene.getScene('MainScene');
     const st = ms.chunkStreamer;
@@ -7449,6 +7703,26 @@ try {
     'cache-bound: 300-chunk traversal holds the cache at <= 96 with LRU evictions; buffers released',
     cacheBound.maxCache <= 96 && cacheBound.evicted >= 200 && cacheBound.buffersHeld <= 96,
     JSON.stringify(cacheBound),
+  );
+
+  // 2g4. offline-cache: a SECOND v2 boot must serve planet.bin from
+  // IndexedDB — proven by BLOCKING the network route for it and still
+  // arriving at a live earth source.
+  await page.route('**/world/planet.bin', (route) => route.abort());
+  await page.goto(`http://localhost:${PORT}/?scale=v2`, { waitUntil: 'load' });
+  await page.waitForFunction(() => !!window.__game && window.__game.scene.isActive('TitleScene'), { timeout: 25000 });
+  await page.evaluate(() => window.__game.scene.getScene('TitleScene').scene.start('MainScene', { mode: 'continue' }));
+  await page.waitForFunction(() => window.__game.scene.isActive('MainScene'), { timeout: 60000 });
+  await page.waitForFunction(() => window.__game.scene.getScene('MainScene').chunkStreamer?.activeSourceLabel === 'earth', { timeout: 30000 });
+  const offlineCache = await page.evaluate(() => {
+    const st = window.__game.scene.getScene('MainScene').chunkStreamer;
+    return { planetFrom: st.packOrigin.planet, source: st.activeSourceLabel };
+  });
+  await page.unroute('**/world/planet.bin');
+  ok(
+    'offline-cache: second v2 boot serves planet.bin from IndexedDB with the network route blocked',
+    offlineCache.planetFrom === 'idb' && offlineCache.source === 'earth',
+    JSON.stringify(offlineCache),
   );
 
   // 4) THE GATE: zero page errors across everything above.

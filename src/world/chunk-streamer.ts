@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { TILE_PX } from './world-scale';
+import { PX_PER_DEG_LAT, PX_PER_DEG_LNG, TILE_PX } from './world-scale';
 import {
   CHUNK_PX,
   CHUNK_RECORD_BYTES,
@@ -9,6 +9,16 @@ import {
   type TerrainSource,
 } from './terrain-schema';
 import { PLACEHOLDER_ATLAS_KEY, VARIANTS_PER_BIOME } from './terrain-placeholder';
+import {
+  createEarthSource,
+  decodePlanetPack,
+  decodeRegionPack,
+  earthSampleAt,
+  earthTileRecord,
+  loadPack,
+  type PlanetGrids,
+  type RegionGrids,
+} from './terrain-earth';
 import type { GameMap } from '../map/GameMap';
 
 /** Load ring radius: 5×5 chunks around the player, +1 in the velocity heading. */
@@ -26,13 +36,17 @@ export const RING_SPAN_PX = (2 * LOAD_RING_RADIUS + 1) * CHUNK_PX;
 const LAYER_DEPTH = -3;
 /** Direct-synthesis budget: at most one chunk fill per frame (~2 ms). */
 const DIRECT_FILLS_PER_FRAME = 1;
-/** Worker jobs allowed in flight at once. */
+/** Worker jobs allowed in flight at once (backlog drains as jobs finish). */
 const WORKER_JOBS_MAX = 4;
+/** Region packs prefetch when the load ring is this many chunks from a bbox. */
+const REGION_PREFETCH_MARGIN_CHUNKS = 2;
 
 interface ChunkEntry {
   cx: number;
   cy: number;
-  bytes: Uint8Array | null; // null while pending
+  bytes: Uint8Array | null; // null while first fill is pending
+  version: number; // sourceVersion the bytes were computed under
+  requestedVersion: number; // latest version a fill has been requested for
   map?: Phaser.Tilemaps.Tilemap;
   layer?: Phaser.Tilemaps.TilemapLayerBase;
   lastTouch: number;
@@ -43,29 +57,41 @@ interface ChunkEntry {
  * CHUNK STREAMER (WORLD SCALE V2 only — v1 never constructs this). Streams
  * 64×64-tile terrain chunks around the player from a pure TerrainSource:
  * synthesis runs in a Web Worker (ArrayBuffer transfer back), with a direct
- * main-thread path as fallback and as the determinism reference. The
- * compositor then lets authored zone/city stamps WIN over procedural terrain:
- * stamped tiles are punched out of the streamer layer (the authored map is
- * the sole visual + collision truth there), and composed walkability reads
- * stamps first. Terrain is never persisted — always re-derived. Nothing here
- * allocates or iterates by world extents: state is strictly the ≤96 cached
- * chunks.
+ * main-thread path as fallback and as the determinism reference.
+ *
+ * PASS 3: boots on the procedural source, then swaps to the EARTH source when
+ * the baked packs decode (loadEarthPacks — IndexedDB-cached; ?terrain=proc
+ * pins the procedural dev fallback). Region packs stream lazily as the load
+ * ring nears their manifest bbox; every source improvement bumps
+ * sourceVersion and REPAINTS affected cached chunks exactly once (fill
+ * responses echo their version, so stale fills are re-requested, never
+ * applied). The compositor is untouched: authored zone/city stamps always
+ * win. Terrain is never persisted. Nothing allocates or iterates by world
+ * extents: state is strictly the ≤96 cached chunks + the decoded pack grids.
  */
 export class ChunkStreamer {
   private readonly scene: Phaser.Scene;
   private readonly originPx: { x: number; y: number };
-  private readonly source: TerrainSource;
+  private source: TerrainSource;
   private readonly stamps: { map: GameMap; x: number; y: number; w: number; h: number }[];
   private readonly chunks = new Map<string, ChunkEntry>();
   private worker?: Worker;
   private workerJobs = 0;
-  private readonly workerWanted = new Map<string, { cx: number; cy: number }>();
+  private readonly workerBacklog: { cx: number; cy: number }[] = [];
   private readonly directQueue: { cx: number; cy: number }[] = [];
   private touchClock = 0;
-  // Gate-observable counters.
+  // Earth pack state.
+  private planetGrids?: PlanetGrids;
+  private readonly regionsRef: RegionGrids[] = [];
+  private regionManifest?: { regions: { id: string; bbox: { latMin: number; latMax: number; lngMin: number; lngMax: number }; file: string; version: number }[] };
+  private readonly regionFetching = new Set<string>();
+  // Gate-observable state.
   chunksLoaded = 0;
   chunksEvicted = 0;
   workerUsed = false;
+  sourceVersion = 1;
+  activeSourceLabel: 'proc' | 'earth' = 'proc';
+  packOrigin: Record<string, 'idb' | 'network'> = {};
 
   constructor(scene: Phaser.Scene, opts: { originPx: { x: number; y: number }; source: TerrainSource; stamps: GameMap[] }) {
     this.scene = scene;
@@ -74,17 +100,17 @@ export class ChunkStreamer {
     this.stamps = opts.stamps.map((m) => ({ map: m, x: m.bounds.x, y: m.bounds.y, w: m.bounds.width, h: m.bounds.height }));
     try {
       this.worker = new Worker(new URL('./terrain-worker.ts', import.meta.url), { type: 'module' });
-      this.worker.onmessage = (e: MessageEvent<{ cx: number; cy: number; buffer: ArrayBuffer }>) => {
+      this.worker.onmessage = (e: MessageEvent<{ cx: number; cy: number; version: number; buffer: ArrayBuffer }>) => {
         this.workerJobs = Math.max(0, this.workerJobs - 1);
         this.workerUsed = true;
-        const { cx, cy, buffer } = e.data;
-        this.workerWanted.delete(key(cx, cy));
-        this.finishChunk(cx, cy, new Uint8Array(buffer), false);
+        this.pumpWorker();
+        const { cx, cy, version, buffer } = e.data;
+        this.applyFill(cx, cy, new Uint8Array(buffer), version);
       };
       this.worker.onerror = () => {
         // Genuine worker failure → fall back to time-sliced direct synthesis.
-        for (const j of this.workerWanted.values()) this.directQueue.push(j);
-        this.workerWanted.clear();
+        this.directQueue.push(...this.workerBacklog);
+        this.workerBacklog.length = 0;
         this.worker?.terminate();
         this.worker = undefined;
       };
@@ -92,6 +118,42 @@ export class ChunkStreamer {
       this.worker = undefined; // direct path carries the session
     }
     scene.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.destroy());
+  }
+
+  /** PASS 3 boot: fetch + decode the earth packs (IndexedDB-cached, keyed by
+   *  pack version) and swap the live source. Fire-and-forget: the procedural
+   *  source carries the session until (or unless) the packs arrive. */
+  async loadEarthPacks(): Promise<void> {
+    try {
+      const planet = await loadPack('/world/planet.bin');
+      this.packOrigin.planet = planet.from;
+      const manifest = await loadPack('/world/regions.json');
+      this.packOrigin.regions = manifest.from;
+      this.regionManifest = JSON.parse(new TextDecoder().decode(manifest.buf));
+      this.setEarthGrids(decodePlanetPack(planet.buf));
+    } catch (e) {
+      console.warn('ToH: earth packs unavailable — staying on procedural terrain:', e);
+    }
+  }
+
+  /** Swap the live source to earth (main thread + worker) and repaint. */
+  setEarthGrids(planet: PlanetGrids): void {
+    this.planetGrids = planet;
+    this.source = createEarthSource(planet, this.regionsRef);
+    this.worker?.postMessage({ type: 'use-earth', planet });
+    this.activeSourceLabel = 'earth';
+    this.sourceVersion++;
+    for (const entry of this.chunks.values()) this.request(entry); // repaint everything cached
+  }
+
+  /** A region pack decoded: refine — repaint every cached chunk its bbox touches. */
+  addRegion(region: RegionGrids): void {
+    this.regionsRef.push(region);
+    this.worker?.postMessage({ type: 'region', region });
+    this.sourceVersion++;
+    for (const entry of this.chunks.values()) {
+      if (this.chunkIntersectsBbox(entry.cx, entry.cy, region)) this.request(entry);
+    }
   }
 
   /** Per-frame: ensure the ring around the player, drain budgets, evict. */
@@ -109,12 +171,14 @@ export class ChunkStreamer {
       const hy = Math.abs(velY) > Math.abs(velX) * 0.4 ? Math.sign(velY) : 0;
       this.want(pcx + hx * (LOAD_RING_RADIUS + 1), pcy + hy * (LOAD_RING_RADIUS + 1));
     }
-    // Drain the direct queue within its per-frame budget (worker path drains itself).
+    // Lazy region packs: fetch when the ring nears a manifest bbox.
+    this.maybeFetchRegions(pcx, pcy);
+    // Drain the direct queue within its per-frame budget (worker drains itself).
     for (let n = 0; n < DIRECT_FILLS_PER_FRAME && this.directQueue.length > 0; n++) {
       const j = this.directQueue.shift()!;
       const entry = this.chunks.get(key(j.cx, j.cy));
-      if (!entry || entry.bytes) continue;
-      this.finishChunk(j.cx, j.cy, this.synthesizeDirect(j.cx, j.cy), false);
+      if (!entry || (entry.bytes && entry.version === this.sourceVersion)) continue;
+      this.applyFill(j.cx, j.cy, this.synthesizeDirect(j.cx, j.cy), this.sourceVersion);
     }
     this.evict(pcx, pcy);
   }
@@ -143,10 +207,19 @@ export class ChunkStreamer {
     return Math.max(Math.max(viewW, viewH) / RING_SPAN_PX, Math.sqrt((viewW * viewH) / (V2_MAX_VISIBLE_TILES * TILE_PX * TILE_PX)));
   }
 
-  stats(): { loaded: number; evicted: number; cacheSize: number; buffersHeld: number; workerUsed: boolean } {
+  stats(): { loaded: number; evicted: number; cacheSize: number; buffersHeld: number; workerUsed: boolean; source: string; version: number; regions: number } {
     let buffersHeld = 0;
     for (const c of this.chunks.values()) if (c.bytes) buffersHeld++;
-    return { loaded: this.chunksLoaded, evicted: this.chunksEvicted, cacheSize: this.chunks.size, buffersHeld, workerUsed: this.workerUsed };
+    return {
+      loaded: this.chunksLoaded,
+      evicted: this.chunksEvicted,
+      cacheSize: this.chunks.size,
+      buffersHeld,
+      workerUsed: this.workerUsed,
+      source: this.activeSourceLabel,
+      version: this.sourceVersion,
+      regions: this.regionsRef.length,
+    };
   }
 
   /** The determinism reference path: synchronous main-thread synthesis. */
@@ -156,10 +229,10 @@ export class ChunkStreamer {
     return bytes;
   }
 
-  /** The worker path, exposed for the gate's worker-vs-direct parity check. */
+  /** The worker path, exposed for the gate's worker-vs-direct parity check —
+   *  a fresh probe worker receives the SAME grids, so parity covers earth. */
   synthesizeViaWorker(cx: number, cy: number): Promise<Uint8Array> {
-    const w = this.worker;
-    if (!w) return Promise.resolve(this.synthesizeDirect(cx, cy)); // fallback mode
+    if (!this.worker) return Promise.resolve(this.synthesizeDirect(cx, cy)); // fallback mode
     return new Promise((resolve, reject) => {
       const probe = new Worker(new URL('./terrain-worker.ts', import.meta.url), { type: 'module' });
       probe.onmessage = (e: MessageEvent<{ buffer: ArrayBuffer }>) => {
@@ -170,7 +243,11 @@ export class ChunkStreamer {
         probe.terminate();
         reject(err);
       };
-      probe.postMessage({ cx, cy });
+      if (this.planetGrids && this.activeSourceLabel === 'earth') {
+        probe.postMessage({ type: 'use-earth', planet: this.planetGrids });
+        for (const r of this.regionsRef) probe.postMessage({ type: 'region', region: r });
+      }
+      probe.postMessage({ type: 'fill', cx, cy, version: this.sourceVersion });
     });
   }
 
@@ -179,9 +256,33 @@ export class ChunkStreamer {
     return this.chunks.get(key(cx, cy))?.bytes ?? null;
   }
 
+  /** Cached bytes' source version for a chunk (gate: repaint convergence). */
+  chunkVersion(cx: number, cy: number): number | null {
+    return this.chunks.get(key(cx, cy))?.version ?? null;
+  }
+
+  /** Gate probe: the composed earth record at a lat/lng (null before packs). */
+  earthSample(lat: number, lng: number): [number, number, number, number] | null {
+    return this.planetGrids ? earthSampleAt(lat, lng, this.planetGrids, this.regionsRef) : null;
+  }
+
+  /** Gate probe: the pure per-tile reference (seam checks recompute borders). */
+  referenceRecord(tx: number, ty: number): [number, number, number, number] | null {
+    return this.planetGrids ? earthTileRecord(tx, ty, this.planetGrids, this.regionsRef) : null;
+  }
+
+  /** Gate probe: a planet-only fill (regions ignored) for refinement diffs. */
+  fillPlanetOnly(cx: number, cy: number): Uint8Array | null {
+    if (!this.planetGrids) return null;
+    const src = createEarthSource(this.planetGrids, []);
+    const bytes = new Uint8Array(CHUNK_RECORD_BYTES);
+    src.fillChunk(cx, cy, bytes);
+    return bytes;
+  }
+
   /** DEV/gate fixture: force every CACHED tile in a scene-px rect to OCEAN
-   *  (non-walkable) so walkability wiring is testable this pass (procedural
-   *  terrain is all land until Pass 3). Returns how many tiles were forced. */
+   *  (non-walkable) so walkability wiring is testable anywhere. Returns how
+   *  many tiles were forced. */
   devForceWater(x0: number, y0: number, x1: number, y1: number): number {
     let forced = 0;
     for (let y = y0; y <= y1; y += TILE_PX) {
@@ -216,9 +317,18 @@ export class ChunkStreamer {
         for (let dx = -LOAD_RING_RADIUS; dx <= LOAD_RING_RADIUS; dx++) {
           const k = key(cx + dx, cy + dy);
           if (!this.chunks.has(k)) {
-            const entry: ChunkEntry = { cx: cx + dx, cy: cy + dy, bytes: null, lastTouch: ++this.touchClock, renderless: true };
+            const entry: ChunkEntry = {
+              cx: cx + dx,
+              cy: cy + dy,
+              bytes: null,
+              version: 0,
+              requestedVersion: this.sourceVersion,
+              lastTouch: ++this.touchClock,
+              renderless: true,
+            };
             this.chunks.set(k, entry);
             entry.bytes = this.synthesizeDirect(cx + dx, cy + dy);
+            entry.version = this.sourceVersion;
             this.chunksLoaded++;
           } else {
             this.chunks.get(k)!.lastTouch = ++this.touchClock;
@@ -245,25 +355,82 @@ export class ChunkStreamer {
     const existing = this.chunks.get(k);
     if (existing) {
       existing.lastTouch = ++this.touchClock;
+      if (existing.requestedVersion < this.sourceVersion) this.request(existing);
       return;
     }
-    this.chunks.set(k, { cx, cy, bytes: null, lastTouch: ++this.touchClock, renderless: false });
-    if (this.worker && this.workerJobs < WORKER_JOBS_MAX) {
-      this.workerJobs++;
-      this.workerWanted.set(k, { cx, cy });
-      this.worker.postMessage({ cx, cy });
+    const entry: ChunkEntry = { cx, cy, bytes: null, version: 0, requestedVersion: 0, lastTouch: ++this.touchClock, renderless: false };
+    this.chunks.set(k, entry);
+    this.request(entry);
+  }
+
+  private request(entry: ChunkEntry): void {
+    entry.requestedVersion = this.sourceVersion;
+    if (this.worker) {
+      this.workerBacklog.push({ cx: entry.cx, cy: entry.cy });
+      this.pumpWorker();
     } else {
-      this.directQueue.push({ cx, cy });
+      this.directQueue.push({ cx: entry.cx, cy: entry.cy });
     }
   }
 
-  private finishChunk(cx: number, cy: number, bytes: Uint8Array, renderless: boolean): void {
+  private pumpWorker(): void {
+    while (this.worker && this.workerJobs < WORKER_JOBS_MAX && this.workerBacklog.length > 0) {
+      const j = this.workerBacklog.shift()!;
+      this.workerJobs++;
+      this.worker.postMessage({ type: 'fill', cx: j.cx, cy: j.cy, version: this.sourceVersion });
+    }
+  }
+
+  private applyFill(cx: number, cy: number, bytes: Uint8Array, version: number): void {
     const entry = this.chunks.get(key(cx, cy));
-    if (!entry || entry.bytes) return; // evicted while in flight, or already done
+    if (!entry) return; // evicted while in flight
+    if (version !== this.sourceVersion) {
+      // Stale fill (a repaint bumped the source mid-flight): keep whatever is
+      // showing and request a fresh fill exactly once.
+      if (entry.requestedVersion < this.sourceVersion) this.request(entry);
+      return;
+    }
+    if (entry.bytes && entry.version === version) return; // duplicate
     entry.bytes = bytes;
+    entry.version = version;
     this.chunksLoaded++;
     this.compositeStamps(entry);
-    if (!renderless && !entry.renderless) this.buildLayer(entry);
+    if (!entry.renderless) this.buildLayer(entry);
+  }
+
+  private maybeFetchRegions(pcx: number, pcy: number): void {
+    if (!this.regionManifest || !this.planetGrids) return;
+    const m = REGION_PREFETCH_MARGIN_CHUNKS;
+    const ring = {
+      x0: (pcx - LOAD_RING_RADIUS - m) * CHUNK_PX,
+      x1: (pcx + LOAD_RING_RADIUS + 1 + m) * CHUNK_PX,
+      y0: (pcy - LOAD_RING_RADIUS - m) * CHUNK_PX,
+      y1: (pcy + LOAD_RING_RADIUS + 1 + m) * CHUNK_PX,
+    };
+    const ringLatMax = 85 - ring.y0 / PX_PER_DEG_LAT;
+    const ringLatMin = 85 - ring.y1 / PX_PER_DEG_LAT;
+    const ringLngMin = -180 + ring.x0 / PX_PER_DEG_LNG;
+    const ringLngMax = -180 + ring.x1 / PX_PER_DEG_LNG;
+    for (const r of this.regionManifest.regions) {
+      if (this.regionFetching.has(r.id) || this.regionsRef.some((g) => g.id === r.id)) continue;
+      const b = r.bbox;
+      if (b.latMin > ringLatMax || b.latMax < ringLatMin || b.lngMin > ringLngMax || b.lngMax < ringLngMin) continue;
+      this.regionFetching.add(r.id);
+      loadPack(`/world/${r.file}`)
+        .then((pack) => {
+          this.packOrigin[r.id] = pack.from;
+          this.addRegion(decodeRegionPack(r.id, pack.buf));
+        })
+        .catch((e) => console.warn(`ToH: region pack ${r.id} failed:`, e));
+    }
+  }
+
+  private chunkIntersectsBbox(cx: number, cy: number, b: { latMin: number; latMax: number; lngMin: number; lngMax: number }): boolean {
+    const latMax = 85 - (cy * CHUNK_PX) / PX_PER_DEG_LAT;
+    const latMin = 85 - ((cy + 1) * CHUNK_PX) / PX_PER_DEG_LAT;
+    const lngMin = -180 + (cx * CHUNK_PX) / PX_PER_DEG_LNG;
+    const lngMax = -180 + ((cx + 1) * CHUNK_PX) / PX_PER_DEG_LNG;
+    return !(b.latMin > latMax || b.latMax < latMin || b.lngMin > lngMax || b.lngMax < lngMin);
   }
 
   /** COMPOSITOR: authored stamps overwrite their tiles — walkability comes
@@ -293,6 +460,12 @@ export class ChunkStreamer {
   }
 
   private buildLayer(entry: ChunkEntry): void {
+    // A repaint replaces the whole layer (simplest correct path — happens at
+    // most once per source upgrade per chunk).
+    entry.layer?.destroy();
+    entry.map?.destroy();
+    entry.layer = undefined;
+    entry.map = undefined;
     const bytes = entry.bytes!;
     const data: number[][] = [];
     for (let j = 0; j < CHUNK_TILES; j++) {

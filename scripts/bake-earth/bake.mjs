@@ -108,13 +108,26 @@ function fbm3(x, y, seed) {
 }
 const MOISTURE_SCALE = 1 / 384;
 
-/** Derived biome (fallback 3): Pass 2 bands from |lat| + moisture, pushed by
- *  REAL elevation band; caller has already resolved REAL water. */
+/** SUBTROPICAL ARIDITY (derived-biome refinement): the Hadley-cell descending
+ *  branch makes |lat| ≈ 15–35° the planet's desert belt (Sahara, Arabia,
+ *  Kalahari, Australia). Moisture is biased down by a triangular weight
+ *  peaking at the Tropic (~23°) — climatology, not point-fitting. */
+const ARIDITY_PEAK_LAT = 23;
+const ARIDITY_HALF_WIDTH = 12;
+const ARIDITY_STRENGTH = 0.28;
+function aridity(absLat) {
+  const d = Math.abs(absLat - ARIDITY_PEAK_LAT);
+  return d >= ARIDITY_HALF_WIDTH ? 0 : ARIDITY_STRENGTH * (1 - d / ARIDITY_HALF_WIDTH);
+}
+
+/** Derived biome (fallback 3): Pass 2 bands from |lat| + moisture (with the
+ *  subtropical aridity bias), pushed by REAL elevation band; caller has
+ *  already resolved REAL water. */
 function derivedLandBiome(lat, tileX, tileY, elevBand) {
   if (elevBand >= SNOW_BAND) return B.SNOW;
   if (elevBand >= ROCK_BAND) return B.ROCK;
-  const m = fbm3(tileX * MOISTURE_SCALE, tileY * MOISTURE_SCALE, WORLD_SEED ^ 0x2c1b3c6d);
   const a = Math.abs(lat);
+  const m = fbm3(tileX * MOISTURE_SCALE, tileY * MOISTURE_SCALE, WORLD_SEED ^ 0x2c1b3c6d) - aridity(a);
   if (a < 15) return m < 0.33 ? B.SAVANNA : m < 0.75 ? B.FOREST : B.SWAMP;
   if (a < 35) return m < 0.33 ? B.DESERT : m < 0.66 ? B.SAVANNA : B.GRASS;
   if (a < 55) return m < 0.5 ? B.GRASS : B.FOREST;
@@ -188,11 +201,13 @@ function rasterizeMask(rings, W, H, lngOf, latOf, mask) {
   }
 }
 
-/** Full-precision even-odd point-in-polygons (for coast-truth). */
+/** Full-precision even-odd point-in-polygons (for coast-truth). The loop
+ *  covers EVERY edge including the ring-closing one (GeoJSON rings repeat
+ *  the first vertex, making exactly one harmless degenerate edge). */
 function pointInRings(rings, lng, lat) {
   let inside = false;
   for (const ring of rings) {
-    for (let k = 0, m = ring.length - 1; k < ring.length - 1; m = k++) {
+    for (let k = 0, m = ring.length - 1; k < ring.length; m = k++) {
       const [xi, yi] = ring[k];
       const [xj, yj] = ring[m];
       if (yi > lat !== yj > lat && lng < ((xj - xi) * (lat - yi)) / (yj - yi) + xi) inside = !inside;

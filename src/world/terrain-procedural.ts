@@ -29,7 +29,7 @@ import {
 // ── Integer-hash noise (deterministic across main thread and worker) ─────────
 
 /** 2D integer coordinate + seed → [0, 1). Pure 32-bit integer mixing. */
-function hash01(ix: number, iy: number, seed: number): number {
+export function hash01(ix: number, iy: number, seed: number): number {
   let h = (Math.imul(ix, 374761393) + Math.imul(iy, 668265263)) ^ seed;
   h = Math.imul(h ^ (h >>> 13), 1274126177);
   h ^= h >>> 16;
@@ -52,7 +52,7 @@ function vnoise(x: number, y: number, seed: number): number {
 }
 
 /** 3-octave fractal value noise → [0, 1). */
-function fbm3(x: number, y: number, seed: number): number {
+export function fbm3(x: number, y: number, seed: number): number {
   const n = vnoise(x, y, seed) + 0.5 * vnoise(x * 2, y * 2, seed ^ 0x9e3779b9) + 0.25 * vnoise(x * 4, y * 4, seed ^ 0x51ed270b);
   return n / 1.75;
 }
@@ -61,8 +61,8 @@ function fbm3(x: number, y: number, seed: number): number {
 const ELEVATION_SCALE = 1 / 256;
 const MOISTURE_SCALE = 1 / 384;
 // Elevation thresholds (band 0–255): high ground reads ROCK, peaks read SNOW.
-const ROCK_BAND = 200;
-const SNOW_BAND = 232;
+export const ROCK_BAND = 200;
+export const SNOW_BAND = 232;
 
 /** The full 4-byte record for ONE global tile — the single source of truth
  *  every path (chunk fill, worker, gate probes) goes through. */

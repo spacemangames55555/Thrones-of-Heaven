@@ -47,7 +47,7 @@ import { CITY_DEFS, CITY_FAIYUM, type CityDef } from '../world/cities';
 import { MANIFEST_CLASS_FOR, KNOWN_CLASS_NAMES, homeZoneForClass } from '../world/class-canon';
 import { SparseWorldMap } from '../map/SparseWorldMap';
 import { WORLD_CALIBRATION, WORLD_SPAN_DEGREES, latLngToPixels } from '../world/world-calibration';
-import { isScaleV2 } from '../world/world-scale';
+import { isScaleV2, isTerrainProc } from '../world/world-scale';
 import { globeSceneOriginX } from '../world/scene-origin';
 import { ChunkStreamer } from '../world/chunk-streamer';
 import { createProceduralSource } from '../world/terrain-procedural';
@@ -9235,6 +9235,9 @@ export class MainScene extends Phaser.Scene {
     if (isScaleV2()) {
       ensurePlaceholderAtlas(this);
       this.chunkStreamer = new ChunkStreamer(this, { originPx: { ...origin }, source: createProceduralSource(), stamps: chunkMaps });
+      // PASS 3: swap to the baked real-Earth packs (async; IndexedDB-cached).
+      // ?terrain=proc pins the Pass 2 procedural source as the dev fallback.
+      if (!isTerrainProc()) void this.chunkStreamer.loadEarthPacks();
     }
     this.worlds[WORLD_EARTH] = {
       id: WORLD_EARTH,

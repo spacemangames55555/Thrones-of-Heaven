@@ -1,5 +1,5 @@
 {
-  "bakedAt": "2026-07-26T21:13:46.485Z",
+  "bakedAt": "2026-07-26T21:40:29.638Z",
   "sources": [
     {
       "name": "land",
@@ -27,7 +27,7 @@
     {
       "file": "public/world/planet.bin",
       "bytes": 24675153,
-      "sha256": "bd6db4f7748c5c6c024d4bbb61454c8ec57fedbe4182d7d77d8bef62aa5bef53"
+      "sha256": "9e881e73761fef15f30510b406f756316100680e4607e3b8eff88f9b9252544d"
     },
     {
       "file": "public/world/regions/pnw.bin",
@@ -41,8 +41,8 @@
     },
     {
       "file": "public/world/coast-truth.json",
-      "bytes": 14034,
-      "sha256": "5ba6d4e857561a2ee1dd52d8179a89aeb05b1bdee5cacbf43eefa7f150f3130b"
+      "bytes": 14023,
+      "sha256": "f53b36df0c00574239e6e6372ac8de7135ad5cf41ea1d72c204017246abfc128"
     },
     {
       "file": "public/world/regions.json",
