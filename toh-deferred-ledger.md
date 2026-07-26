@@ -16,7 +16,17 @@ ruling lands, strike the entry with a pointer to the commit that resolved it.
   parked pending Casey ruling after a trailer-quality capture.
 - Tiles-vs-labels device cost apportionment: superseded if this pass lifts
   far-zoom FPS; dev overlay now exposes both counts live.
-- World scale v2 (Pass 1 shipped flag-gated behind ?scale=v2): Pass 2 flips
+- ~~World scale v2 (Pass 1 shipped flag-gated behind ?scale=v2): Pass 2 flips
   the default to v2 and replaces the TEMP render window (the ~200-tile
   zoom-out clamp) with real chunk streaming; mounts + the waypoint network
-  ship in a later pass.
+  ship in a later pass.~~ Pass 2 SHIPPED chunk streaming (TEMP window gone);
+  the remaining items moved to the entry below.
+- World scale v2 Pass 2 (chunk streaming + procedural placeholder terrain,
+  still flag-gated): the DEFAULT FLIP to v2 moves to Pass 3 (real Earth
+  geography through the same TerrainSource interface); autotile transitions
+  between biomes go to the art pass; the world-map overview render is
+  deferred (v2 zoom-out is ring-bounded by design); prop SCATTER on
+  forest/taiga was skipped — no tree/rock prop texture exists in the game
+  yet (the scatter-allowed flag already ships in the tile records); mounts +
+  the waypoint network still ship in a later pass. Hillshade DID ship (subtle
+  per-tile elevation tint, set once at chunk build).
