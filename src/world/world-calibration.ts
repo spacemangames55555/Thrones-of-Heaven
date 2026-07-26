@@ -1,4 +1,5 @@
 import type { LatLng } from './world-manifest';
+import { isScaleV2, PX_PER_DEG_LAT, PX_PER_DEG_LNG, V1_PX_PER_DEG_LAT, V1_PX_PER_DEG_LNG } from './world-scale';
 
 /**
  * PER-WORLD lat/lng → pixel calibration (Phase 0 of the data-driven world
@@ -42,15 +43,29 @@ export const WORLD_CALIBRATION: Record<string, WorldCalibration> = {
   // GLOBE — the ONE whole-planet SPARSE region world (the former per-continent
   // 'europe' and 'africa' worlds, consolidated at TRUE Earth positions through
   // this single calibration). Origin is the planet's usable top-left (85°N
-  // 180°W); same pixels-per-degree as earth so travel feel is unchanged. Far
-  // too large for one dense tilemap, so only stamped zone areas materialize as
-  // their own small chunk layers (createSparseWorld in world-builder.ts); the
-  // span between renders as the whole-planet Natural-Earth ground raster —
-  // already global, so no new ground data was needed.
-  earth: {
-    origin: { lat: 85.0, lng: -180.0 },
-    pixelsPerDegree: { x: 2426, y: 2453 },
-  },
+  // 180°W). Far too large for one dense tilemap, so only stamped zone areas
+  // materialize as their own small chunk layers (createSparseWorld in
+  // world-builder.ts); the span between renders as the whole-planet
+  // Natural-Earth ground raster — already global, so no new ground data was
+  // needed.
+  //
+  // WORLD SCALE V2 (flag-gated, ?scale=v2): the row swaps to the v2
+  // equirectangular projection (standard parallel 47°N — world-scale.ts).
+  // Same origin, ~50× the pixels per degree: every lat/lng consumer (zone
+  // stamps, the PNW/egypt unification deltas, spans, save conversion)
+  // re-derives automatically. This runtime frame is the v2 SPEC frame
+  // translated by a constant (+180° lng / −85° lat) so local px stay
+  // positive; distances are identical. Default (no flag) is byte-identical
+  // to the shipped v1 row — zero behavior change.
+  earth: isScaleV2()
+    ? {
+        origin: { lat: 85.0, lng: -180.0 },
+        pixelsPerDegree: { x: PX_PER_DEG_LNG, y: PX_PER_DEG_LAT },
+      }
+    : {
+        origin: { lat: 85.0, lng: -180.0 },
+        pixelsPerDegree: { x: V1_PX_PER_DEG_LNG, y: V1_PX_PER_DEG_LAT },
+      },
   // Future region worlds (e.g. the Egypt map) get their own row, derived the
   // same way from that world's existing landmarks.
 };

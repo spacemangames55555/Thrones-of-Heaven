@@ -14,6 +14,8 @@ import {
   ENDGAME_ACTIVE_IDS,
   type SaveData,
 } from './SaveData';
+import { pxToLatLngV1Local } from '../world/world-scale';
+import { globeSceneOriginX } from '../world/scene-origin';
 
 /**
  * Migrate an older save in place to the current SAVE_VERSION. Each step is
@@ -191,6 +193,24 @@ function migrate(data: SaveData): SaveData {
   if (data.saveVersion < 16 && data.world?.remembered?.globe) {
     if (!data.world.remembered.earth) data.world.remembered.earth = data.world.remembered.globe;
     delete data.world.remembered.globe;
+  }
+  // v16→v17 — WORLD SCALE V2: lat/lng becomes the CANONICAL stored format for
+  // terrestrial positions. A pre-v17 save's 'earth' px were written under the
+  // v1 projection, so the conversion is PINNED to v1 (world-scale.ts) — never
+  // the active projection — and uses the static globe scene origin. On load,
+  // MainScene.applySave derives px back through whichever projection is
+  // active. Pre-v15 'earth-legacy'/'egypt' actives keep their existing
+  // apply-time translation (it needs live map origins) and gain canonical
+  // latLng on their first post-load save. Heaven/Hell are planes — px stands.
+  if (data.saveVersion < 17 && data.world) {
+    const ox = globeSceneOriginX();
+    if (data.world.active === 'earth' && Number.isFinite(data.world.x) && Number.isFinite(data.world.y)) {
+      data.world.latLng = pxToLatLngV1Local(data.world.x - ox, data.world.y);
+    }
+    const rem = data.world.remembered?.earth;
+    if (rem && Number.isFinite(rem.x) && Number.isFinite(rem.y)) {
+      rem.latLng = pxToLatLngV1Local(rem.x - ox, rem.y);
+    }
   }
   if (data.quests) data.quests.completed = [...completed];
   data.saveVersion = SAVE_VERSION;

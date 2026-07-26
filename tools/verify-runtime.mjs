@@ -2658,6 +2658,127 @@ try {
     JSON.stringify(featherCheck),
   );
 
+  // ── WORLD SCALE V2 (PASS 1 — flag-gated behind ?scale=v2; the default
+  // session these checks run in is v1, byte-identical to shipped) ───────────
+  // 2d0. scale-spec: the locked constants ship EXACTLY as specified —
+  // 0.625 m/px (1600 px/km), 32 px tiles at 20 m, the 47°N-parallel
+  // equirectangular v2 projection, the foot/mount speeds, and the pinned v1
+  // constants read from the shipped calibration.
+  const scaleSpec = await page.evaluate(() => {
+    const s = window.__worldScale;
+    return {
+      metersPerPx: s.METERS_PER_PX,
+      pxPerKm: s.PX_PER_KM,
+      tilePx: s.TILE_PX,
+      metersPerTile: s.METERS_PER_TILE,
+      pdLat: s.PX_PER_DEG_LAT,
+      pdLng: s.PX_PER_DEG_LNG,
+      foot: s.FOOT_SPEED_PX,
+      mount: s.MOUNT_SPEED_PX,
+      v1Lng: s.V1_PX_PER_DEG_LNG,
+      v1Lat: s.V1_PX_PER_DEG_LAT,
+      v1Origin: s.V1_ORIGIN,
+      v2Active: s.isScaleV2(),
+    };
+  });
+  ok(
+    'scale-spec: METERS_PER_PX 0.625 / PX_PER_KM 1600 / 32px=20m tiles / v2 178112×121472 / speeds 192-384 / v1 pinned 2426×2453; default session is v1',
+    scaleSpec.metersPerPx === 0.625 &&
+      scaleSpec.pxPerKm === 1600 &&
+      scaleSpec.tilePx === 32 &&
+      scaleSpec.metersPerTile === 20 &&
+      scaleSpec.pdLat === 178112 &&
+      scaleSpec.pdLng === 121472 &&
+      scaleSpec.foot === 192 &&
+      scaleSpec.mount === 384 &&
+      scaleSpec.v1Lng === 2426 &&
+      scaleSpec.v1Lat === 2453 &&
+      scaleSpec.v1Origin.lat === 85 &&
+      scaleSpec.v1Origin.lng === -180 &&
+      scaleSpec.v2Active === false,
+    JSON.stringify(scaleSpec),
+  );
+
+  // 2d1. wa-crossing: the flagship corridor — the WA coast (47.0, −124.6) to
+  // the Idaho line (47.0, −117.03) — must resolve to 38–42 min mounted and
+  // 76–84 min on foot under v2 (the whole point of the 47°N parallel).
+  const waCrossing = await page.evaluate(() => {
+    const s = window.__worldScale;
+    const a = s.latLngToPxV2(47.0, -124.6);
+    const b = s.latLngToPxV2(47.0, -117.03);
+    const distPx = Math.hypot(b.x - a.x, b.y - a.y);
+    return { distPx: +distPx.toFixed(1), mountMin: +(distPx / s.MOUNT_SPEED_PX / 60).toFixed(2), footMin: +(distPx / s.FOOT_SPEED_PX / 60).toFixed(2) };
+  });
+  ok(
+    'wa-crossing: coast→Idaho at 47°N is 38–42 min mounted and 76–84 min on foot under v2',
+    waCrossing.mountMin >= 38 && waCrossing.mountMin <= 42 && waCrossing.footMin >= 76 && waCrossing.footMin <= 84,
+    JSON.stringify(waCrossing),
+  );
+
+  // 2d2. projection-roundtrip: every home-city anchor (all 14) plus Murmansk
+  // and Bali survives lat/lng → v2 px → lat/lng within 1e−6°.
+  const roundtrip = await page.evaluate(() => {
+    const s = window.__worldScale;
+    const anchors = s.homeAnchors.filter((h) => h.anchor).map((h) => ({ id: h.classId, lat: h.anchor.lat, lng: h.anchor.lng }));
+    const homes = anchors.length;
+    anchors.push({ id: 'murmansk-spec', lat: 68.97, lng: 33.08 }, { id: 'bali-spec', lat: -8.65, lng: 115.22 });
+    let worst = 0;
+    for (const a of anchors) {
+      const p = s.latLngToPxV2(a.lat, a.lng);
+      const back = s.pxToLatLngV2(p.x, p.y);
+      worst = Math.max(worst, Math.abs(back.lat - a.lat), Math.abs(back.lng - a.lng));
+    }
+    return { homes, n: anchors.length, worst };
+  });
+  ok(
+    'projection-roundtrip: all 14 home anchors + Murmansk + Bali round-trip through v2 with error < 1e-6°',
+    roundtrip.homes === 14 && roundtrip.n === 16 && roundtrip.worst < 1e-6,
+    JSON.stringify(roundtrip),
+  );
+
+  // 2d3. anchor-sanity: all 14 home anchors project finite and inside the v2
+  // planet extents, and real geography holds — Munich west of Moscow, Rome
+  // south of Munich, Murmansk north of Moscow (spec frame: y grows SOUTH).
+  const anchorSanity = await page.evaluate(() => {
+    const s = window.__worldScale;
+    const proj = (a) => s.latLngToPxV2(a.lat, a.lng);
+    const XMAX = 180 * s.PX_PER_DEG_LNG;
+    const YMAX = 90 * s.PX_PER_DEG_LAT;
+    const homes = s.homeAnchors.filter((h) => h.anchor).map((h) => ({ id: h.classId, ...proj(h.anchor) }));
+    const inBounds = homes.every((p) => Number.isFinite(p.x) && Number.isFinite(p.y) && Math.abs(p.x) <= XMAX && Math.abs(p.y) <= YMAX);
+    const za = s.zoneAnchors;
+    const find = (frag) => {
+      const k = Object.keys(za).find((id) => id.includes(frag));
+      return k ? proj(za[k]) : null;
+    };
+    return { count: homes.length, inBounds, munich: find('munich'), moscow: find('moscow'), rome: find('rome'), murmansk: find('murmansk') };
+  });
+  ok(
+    'anchor-sanity: 14 finite in-bounds home anchors under v2; Munich west of Moscow, Rome south of Munich, Murmansk north of Moscow',
+    anchorSanity.count === 14 &&
+      anchorSanity.inBounds &&
+      !!anchorSanity.munich &&
+      !!anchorSanity.moscow &&
+      !!anchorSanity.rome &&
+      !!anchorSanity.murmansk &&
+      anchorSanity.munich.x < anchorSanity.moscow.x &&
+      anchorSanity.rome.y > anchorSanity.munich.y &&
+      anchorSanity.murmansk.y < anchorSanity.moscow.y,
+    JSON.stringify(anchorSanity),
+  );
+
+  // 2d4. devspeed-off: with NO ?devspeed param the multiplier is EXACTLY 1 —
+  // both the parser and the live player's applied factor. Base speeds only.
+  const devspeedOff = await page.evaluate(() => ({
+    fn: window.__worldScale.devSpeedMultiplier(),
+    player: window.__ready().player.devSpeed,
+  }));
+  ok(
+    'devspeed-off: no param means a multiplier of exactly 1 (parser and live player agree)',
+    devspeedOff.fn === 1 && devspeedOff.player === 1,
+    JSON.stringify(devspeedOff),
+  );
+
   // 2c. EVERY COMMIT-1 EXTENSION THROUGH A REAL DRUID SKILL: stealth (Snow Leopard),
   // the dual-use bolt (Lye, heal path), both friendly zones (Sage Burn mobile +
   // Healing Spores static), chain (Lightning Strike across two foes), the pair
@@ -6995,6 +7116,94 @@ try {
   });
   await page.mouse.click(card.x, card.y);
   await page.waitForTimeout(600);
+
+  // SM. save-migration (WORLD SCALE V2): a v16 (px-era) fixture save migrates
+  // to CANONICAL lat/lng through the PINNED v1 projection and loads at the
+  // same spot under v1 (lossless); the SAME fixture then boots under
+  // ?scale=v2 (+ devspeed cap coverage) and lands on the same GEOGRAPHY
+  // through the v2 projection, with the TEMP render window bounding zoom-out.
+  await page.goto(`http://localhost:${PORT}/`, { waitUntil: 'load' });
+  await page.waitForFunction(() => !!window.__game && window.__game.scene.isActive('TitleScene'), { timeout: 25000 });
+  await page.evaluate(() => {
+    localStorage.clear();
+    window.__game.scene.getScene('TitleScene').scene.start('MainScene', { mode: 'new', classId: 'druid' });
+  });
+  await page.waitForFunction(() => window.__game.scene.isActive('MainScene'), { timeout: 25000 });
+  await page.waitForTimeout(1500);
+  if (await page.evaluate(() => window.__game.scene.isActive('FirstSkillScene'))) {
+    await page.mouse.click(214, 462);
+    await page.waitForTimeout(600);
+  }
+  const smV1 = await page.evaluate(async () => {
+    const ms = window.__ready();
+    const wait = (t) => new Promise((r) => setTimeout(r, t));
+    const spot = ms.map.nearestWalkableWorld(ms.town.spawn.x + 700, ms.town.spawn.y - 400);
+    ms.player.sprite.body.reset(spot.x, spot.y);
+    await wait(200);
+    if (!ms.requestSave()) return { setup: 'save write refused' };
+    const raw = JSON.parse(localStorage.getItem('toh_save'));
+    const wroteCanonical = raw.saveVersion === 17 && !!raw.world.latLng && !!raw.world.remembered.earth?.latLng;
+    // Strip to a pure v16 (px-era) fixture — exactly what a shipped save holds.
+    delete raw.world.latLng;
+    if (raw.world.remembered?.earth) delete raw.world.remembered.earth.latLng;
+    raw.saveVersion = 16;
+    const fixture = JSON.stringify(raw);
+    localStorage.setItem('toh_save', fixture);
+    ms.devLoadSave(); // the REAL path: read → migrate (px→latLng via PINNED v1) → apply (latLng→px via ACTIVE v1)
+    await wait(400);
+    const d = Math.hypot(ms.player.x - spot.x, ms.player.y - spot.y);
+    if (!ms.requestSave()) return { setup: 'post-load save refused' };
+    const migrated = JSON.parse(localStorage.getItem('toh_save'));
+    // Independent v1 math (world-scale's pinned constants, not the live calibration).
+    const s = window.__worldScale;
+    const expect = s.pxToLatLngV1Local(spot.x - ms.globeOriginPx.x, spot.y - ms.globeOriginPx.y);
+    return {
+      wroteCanonical,
+      d: +d.toFixed(3),
+      v: migrated.saveVersion,
+      dLat: Math.abs(migrated.world.latLng.lat - expect.lat),
+      dLng: Math.abs(migrated.world.latLng.lng - expect.lng),
+      expect,
+      fixture,
+    };
+  });
+  await page.goto(`http://localhost:${PORT}/?scale=v2&devspeed=99`, { waitUntil: 'load' });
+  await page.waitForFunction(() => !!window.__game && window.__game.scene.isActive('TitleScene'), { timeout: 25000 });
+  await page.evaluate((fx) => localStorage.setItem('toh_save', fx), smV1.fixture ?? '{}');
+  await page.evaluate(() => window.__game.scene.getScene('TitleScene').scene.start('MainScene', { mode: 'continue' }));
+  await page.waitForFunction(() => window.__game.scene.isActive('MainScene'), { timeout: 60000 });
+  await page.waitForTimeout(2500);
+  const smV2 = await page.evaluate(
+    (expect) => {
+      const ms = window.__game.scene.getScene('MainScene');
+      const s = window.__worldScale;
+      const geo = ms.terrestrialLatLngFromPx(ms.player.x, ms.player.y);
+      return {
+        v2: s.isScaleV2(),
+        world: ms.activeWorld,
+        dLat: Math.abs(geo.lat - expect.lat),
+        dLng: Math.abs(geo.lng - expect.lng),
+        outLimit: ms.zoomControls.outLimit,
+        devSpeedCapped: ms.player.devSpeed,
+      };
+    },
+    smV1.expect ?? { lat: 0, lng: 0 },
+  );
+  ok(
+    'save-migration: a v16 px save gains canonical lat/lng via the pinned v1 projection, reloads losslessly under v1, and the SAME fixture loads under ?scale=v2 onto the same geography (TEMP window active, devspeed capped at 8)',
+    smV1.wroteCanonical === true &&
+      smV1.v === 17 &&
+      smV1.d <= 0.5 &&
+      smV1.dLat < 1e-6 &&
+      smV1.dLng < 1e-6 &&
+      smV2.v2 === true &&
+      smV2.world === 'earth' &&
+      smV2.dLat < 1e-3 &&
+      smV2.dLng < 1e-3 &&
+      smV2.outLimit >= 0.05 &&
+      smV2.devSpeedCapped === 8,
+    JSON.stringify({ smV1: { ...smV1, fixture: undefined }, smV2 }),
+  );
 
   // 4) THE GATE: zero page errors across everything above.
   ok('zero page errors during boot + travel', pageErrors.length === 0, pageErrors.slice(0, 3).join(' | '));
