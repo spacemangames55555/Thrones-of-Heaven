@@ -45,23 +45,23 @@ export class ZoomControls {
   private holdStart = 0;
   private holdPointer: number | null = null;
 
-  /** When set, the zoom-out limit also keeps the on-screen view no wider/taller
-   *  than this many world px (TEMP — the WORLD SCALE V2 render window; Pass 2
-   *  replaces it with real chunk streaming). Unset ⇒ shipped behavior. */
-  private readonly maxViewPx?: number;
+  /** When set, an extra zoom-out FLOOR computed from the live viewport (WORLD
+   *  SCALE V2: the streamed ring + visible-tile budget — chunk-streamer.ts
+   *  owns the math). Unset ⇒ shipped v1 behavior. */
+  private readonly outFloorFn?: (viewW: number, viewH: number) => number;
 
   constructor(
     scene: Phaser.Scene,
     camera: Phaser.Cameras.Scene2D.Camera,
     mapPixelWidth: number,
     mapPixelHeight: number,
-    maxViewPx?: number,
+    outFloorFn?: (viewW: number, viewH: number) => number,
   ) {
     this.scene = scene;
     this.cam = camera;
     this.mapW = mapPixelWidth;
     this.mapH = mapPixelHeight;
-    this.maxViewPx = maxViewPx;
+    this.outFloorFn = outFloorFn;
 
     this.target = camera.zoom;
     this.outLimit = this.computeOutLimit();
@@ -171,9 +171,9 @@ export class ZoomControls {
     const w = this.scene.scale.width;
     const h = this.scene.scale.height;
     let fit = Math.min(w / (this.mapW * ZOOM_OUT_MARGIN), h / (this.mapH * ZOOM_OUT_MARGIN));
-    // TEMP render window (WORLD SCALE V2): never zoom out past the point where
-    // the view would span more world px than the bounded window allows.
-    if (this.maxViewPx !== undefined) fit = Math.max(fit, Math.max(w, h) / this.maxViewPx);
+    // WORLD SCALE V2: the streamed world imposes its own zoom-out floor (the
+    // view must fit the loaded chunk ring and the visible-tile budget).
+    if (this.outFloorFn) fit = Math.max(fit, this.outFloorFn(w, h));
     return Math.min(fit, ZOOM_IN_LIMIT); // never invert the clamp
   }
 

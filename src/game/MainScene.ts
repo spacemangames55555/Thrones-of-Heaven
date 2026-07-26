@@ -47,8 +47,11 @@ import { CITY_DEFS, CITY_FAIYUM, type CityDef } from '../world/cities';
 import { MANIFEST_CLASS_FOR, KNOWN_CLASS_NAMES, homeZoneForClass } from '../world/class-canon';
 import { SparseWorldMap } from '../map/SparseWorldMap';
 import { WORLD_CALIBRATION, WORLD_SPAN_DEGREES, latLngToPixels } from '../world/world-calibration';
-import { isScaleV2, V2_TEMP_WINDOW_PX } from '../world/world-scale';
+import { isScaleV2 } from '../world/world-scale';
 import { globeSceneOriginX } from '../world/scene-origin';
+import { ChunkStreamer } from '../world/chunk-streamer';
+import { createProceduralSource } from '../world/terrain-procedural';
+import { ensurePlaceholderAtlas } from '../world/terrain-placeholder';
 import { createSparseWorld, stampZone, buildChunkMapData, CONTINENT_WORLD, type BuiltChunk } from '../world/world-builder';
 import { egyptUnificationDelta, earthUnificationDelta, ABSORBED_ZONE_HOSTS } from '../world/world-unification';
 import { getZone, WORLD } from '../world/world-manifest';
@@ -1236,6 +1239,12 @@ export class MainScene extends Phaser.Scene {
   /** The globe world's scene-frame origin (set in setupGlobe) — the bridge
    *  between canonical lat/lng and scene px for the terrestrial helpers. */
   private globeOriginPx = { x: 0, y: 0 };
+  /** WORLD SCALE V2 only: the terrain chunk streamer (v1 never constructs it). */
+  chunkStreamer?: ChunkStreamer;
+  /** Last known walkable spot (streamer worlds): the anti-tunnel snap-back. */
+  private lastLandPos?: { x: number; y: number };
+  /** Every stamped earth chunk map (the compositor's stamp set). */
+  earthChunkMaps: GameMap[] = [];
   /** The egypt map's PRE-UNIFICATION chain origin (for 'egypt' save translation). */
   private egyptOldOriginX = 0;
   /** Where the city sub-map chain starts (pinned to the pre-unification value). */
@@ -1809,17 +1818,18 @@ export class MainScene extends Phaser.Scene {
     // inconsistent-cap observation. Pure size arithmetic; no map object needed.)
     const planetCal = WORLD_CALIBRATION[WORLD_EARTH];
     const planetSpan = WORLD_SPAN_DEGREES[WORLD_EARTH];
-    // TEMP (WORLD SCALE V2, Pass 2 replaces with real chunk streaming): under
-    // ?scale=v2 the zoom-out limit is clamped so the on-screen view never
-    // spans more than a ~200-tile-radius window — no render/update path may
-    // walk the v2 planet's full extents (~43.7M × 32.1M px). Default v1
-    // passes no window: shipped behavior, byte-identical.
+    // WORLD SCALE V2: under ?scale=v2 the zoom-out limit is floored so the
+    // view always fits inside the streamed chunk ring AND stays within the
+    // visible-tile budget (chunk-streamer.ts owns both constraints, computed
+    // from the LIVE viewport). No render/update path may walk the v2 planet
+    // extents (~43.7M × 32.1M px). Default v1 passes no floor: shipped
+    // behavior, byte-identical.
     this.zoomControls = new ZoomControls(
       this,
       cam,
       planetSpan.lng * planetCal.pixelsPerDegree.x,
       planetSpan.lat * planetCal.pixelsPerDegree.y,
-      isScaleV2() ? 2 * V2_TEMP_WINDOW_PX : undefined,
+      isScaleV2() ? (w, h) => ChunkStreamer.outFloor(w, h) : undefined,
     );
     this.readout = new DebugReadout(this, () => this.activeMap(), this.player);
     // DEV-only live perf readout (FPS / frame-time + entity, effect + pool counts) so
@@ -2013,6 +2023,10 @@ export class MainScene extends Phaser.Scene {
       if (this.regionWorldIds.has(this.activeWorld)) {
         this.updateRegionSpawns(); // per-chunk packs (any region world)
         this.groundLayers.get(this.activeWorld)?.update(this.cameras.main); // continents under the camera
+        if (this.chunkStreamer) {
+          const pb = this.player.sprite.body as Phaser.Physics.Arcade.Body;
+          this.chunkStreamer.update(this.player.x, this.player.y, pb.velocity.x, pb.velocity.y);
+        }
         this.blockVoidWater(); // water is impassable ground; gates are the travel
       }
       this.updateLod(); // far-zoom tile + label LOD (render visibility only) — every world, so a zoom carried through a portal still resolves
@@ -9213,6 +9227,15 @@ export class MainScene extends Phaser.Scene {
     this.globeMap = new SparseWorldMap(origin, rw.sparse!.boundsPx, chunkMaps, () => ({ x: this.player.x, y: this.player.y }), (x, y) => ground.isWaterAtWorld(x, y));
     this.lodTileLayers = chunkMaps.map((m) => m.layer); // the far-zoom LOD set (render visibility only)
     for (const m of chunkMaps) this.featherChunkEdges(m); // dissolve every stamped border into the raster
+    this.earthChunkMaps = chunkMaps;
+    // WORLD SCALE V2 (Pass 2): the terrain chunk streamer replaces the Pass 1
+    // TEMP window — procedural placeholder chunks stream around the player,
+    // with the authored stamps above always winning. v1 never constructs any
+    // of this (no worker, no atlas, no streamer).
+    if (isScaleV2()) {
+      ensurePlaceholderAtlas(this);
+      this.chunkStreamer = new ChunkStreamer(this, { originPx: { ...origin }, source: createProceduralSource(), stamps: chunkMaps });
+    }
     this.worlds[WORLD_EARTH] = {
       id: WORLD_EARTH,
       map: this.globeMap,
@@ -10862,12 +10885,32 @@ export class MainScene extends Phaser.Scene {
     const body = this.player.sprite.body as Phaser.Physics.Arcade.Body;
     if (body.velocity.x === 0 && body.velocity.y === 0) return;
     const map = this.activeMap();
-    const overWaterNow = map.terrainAtWorld(this.player.x, this.player.y) === null && ground.isWaterAtWorld(this.player.x, this.player.y);
-    if (overWaterNow) return; // walking out is allowed
+    // Off authored chunks, the terrain truth is the STREAMER under v2 (its
+    // composed walkable flags — OCEAN/FRESHWATER records block) and the
+    // planet raster's water under v1. Authored chunks keep their colliders.
+    const blockedAt = (x: number, y: number): boolean => {
+      if (map.terrainAtWorld(x, y) !== null) return false;
+      if (this.chunkStreamer) return !this.chunkStreamer.walkableAt(x, y);
+      return ground.isWaterAtWorld(x, y);
+    };
+    if (blockedAt(this.player.x, this.player.y)) {
+      // v2 (streamer truth): never STAND on non-walkable terrain — one long
+      // frame at devspeed can hop the lookahead entirely, so snap back to the
+      // last land position. v1 keeps its shipped walking-out-is-allowed rule.
+      if (this.chunkStreamer && this.lastLandPos) {
+        body.reset(this.lastLandPos.x, this.lastLandPos.y);
+        body.velocity.set(0, 0);
+      }
+      return;
+    }
+    this.lastLandPos = { x: this.player.x, y: this.player.y };
     const len = Math.hypot(body.velocity.x, body.velocity.y) || 1;
-    const nx = this.player.x + (body.velocity.x / len) * 18;
-    const ny = this.player.y + (body.velocity.y / len) * 18;
-    if (map.terrainAtWorld(nx, ny) === null && ground.isWaterAtWorld(nx, ny)) body.velocity.set(0, 0);
+    // Lookahead scales with speed so a devspeed session cannot tunnel through
+    // in a single frame (18 px was tuned for the base 256 px/s).
+    const ahead = Math.max(18, len * 0.05);
+    const nx = this.player.x + (body.velocity.x / len) * ahead;
+    const ny = this.player.y + (body.velocity.y / len) * ahead;
+    if (blockedAt(nx, ny)) body.velocity.set(0, 0);
   }
 
   /** Tear the escort run down (death/arrival/leave/beat change) — clean state. */

@@ -2,6 +2,8 @@ import Phaser from 'phaser';
 import { gameConfig } from './game/config';
 import { viewportSize, type Insets } from './ui/uiLayout';
 import * as worldScale from './world/world-scale';
+import * as terrainSchema from './world/terrain-schema';
+import { createProceduralSource, sampleRecord, tileRecord } from './world/terrain-procedural';
 import { WORLD } from './world/world-manifest';
 import { MANIFEST_CLASS_FOR, homeZoneForClass } from './world/class-canon';
 
@@ -24,6 +26,12 @@ const game = new Phaser.Game(gameConfig);
 // from. Invisible to players; no UI, no behavior — do not remove.
 (window as unknown as { __worldScale: unknown }).__worldScale = {
   ...worldScale,
+  // Pass 2: the LOCKED terrain schema + the pure synthesis reference paths
+  // (exposing the factory constructs nothing — v1 stays fully inert).
+  schema: terrainSchema,
+  createProceduralSource,
+  sampleRecord,
+  tileRecord,
   homeAnchors: Object.keys(MANIFEST_CLASS_FOR).map((classId) => {
     const zone = homeZoneForClass(classId);
     return { classId, zoneId: zone?.id ?? null, anchor: zone?.anchor ?? null };

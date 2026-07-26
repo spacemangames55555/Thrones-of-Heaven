@@ -201,6 +201,12 @@ try {
   // Tag each page error with how many checks had completed when it fired, so a
   // failure names its neighborhood instead of just its message.
   page.on('pageerror', (e) => pageErrors.push(`[after check ${results.length}] ${e.message}`));
+  // Console errors are tracked separately (the streaming drive check asserts a
+  // zero DELTA across its window; page-load resource noise stays out of scope).
+  const consoleErrors = [];
+  page.on('console', (m) => {
+    if (m.type() === 'error') consoleErrors.push(`[after check ${results.length}] ${m.text()}`);
+  });
 
   async function newGame(classId) {
     await page.goto(`http://localhost:${PORT}/`, { waitUntil: 'load' });
@@ -2778,6 +2784,117 @@ try {
     devspeedOff.fn === 1 && devspeedOff.player === 1,
     JSON.stringify(devspeedOff),
   );
+
+  // ── PASS 2: CHUNK STREAMING + PROCEDURAL TERRAIN (v2 only) ────────────────
+  // 2f0. biome-schema-lock: the LOCKED terrain schema ships exactly as
+  // specified — Pass 3 and the art pass depend on these never drifting.
+  const schemaLock = await page.evaluate(() => {
+    const s = window.__worldScale.schema;
+    const B = s.Biome;
+    return {
+      enums: [B.OCEAN, B.FRESHWATER, B.BEACH, B.GRASS, B.SAVANNA, B.DESERT, B.FOREST, B.TAIGA, B.TUNDRA, B.SNOW, B.ROCK, B.SWAMP],
+      rec: s.TILE_RECORD_BYTES,
+      ct: s.CHUNK_TILES,
+      cp: s.CHUNK_PX,
+      crb: s.CHUNK_RECORD_BYTES,
+      seedType: typeof s.WORLD_SEED,
+      latLimit: s.PLAYABLE_LAT_LIMIT,
+      nonWalk: s.NON_WALKABLE_BIOMES.slice().sort(),
+      flags: [s.FLAG_WALKABLE, s.FLAG_SCATTER],
+    };
+  });
+  ok(
+    'biome-schema-lock: enum 0..11 in spec order, 4-byte records, 64-tile (2048 px) chunks, OCEAN+FRESHWATER non-walkable, flag bits 1/2',
+    schemaLock.enums.every((v, i) => v === i) &&
+      schemaLock.enums.length === 12 &&
+      schemaLock.rec === 4 &&
+      schemaLock.ct === 64 &&
+      schemaLock.cp === 2048 &&
+      schemaLock.crb === 16384 &&
+      schemaLock.seedType === 'number' &&
+      schemaLock.latLimit === 85 &&
+      schemaLock.nonWalk.join(',') === '0,1' &&
+      schemaLock.flags.join(',') === '1,2',
+    JSON.stringify(schemaLock),
+  );
+
+  // 2f1. seam-purity: for 4 adjacent chunk pairs, every border-strip tile of
+  // each chunk is recomputed through the pure per-tile reference path — the
+  // SAME world tile must yield identical bytes no matter which chunk (or
+  // which caller) requests it. That per-tile purity is what makes seams
+  // impossible by construction.
+  const seamPurity = await page.evaluate(() => {
+    const s = window.__worldScale;
+    const { CHUNK_TILES, TILE_RECORD_BYTES, CHUNK_RECORD_BYTES } = s.schema;
+    const src = s.createProceduralSource();
+    const fill = (cx, cy) => {
+      const b = new Uint8Array(CHUNK_RECORD_BYTES);
+      src.fillChunk(cx, cy, b);
+      return b;
+    };
+    const pairs = [
+      [[5000, 3000], [5001, 3000]],
+      [[5000, 3000], [5000, 3001]],
+      [[7123, 4567], [7124, 4567]],
+      [[7123, 4567], [7123, 4568]],
+    ];
+    let mismatches = 0;
+    let tilesChecked = 0;
+    for (const pair of pairs) {
+      for (const [cx, cy] of pair) {
+        const bytes = fill(cx, cy);
+        for (let e = 0; e < CHUNK_TILES; e++) {
+          for (const [i, j] of [[0, e], [CHUNK_TILES - 1, e], [e, 0], [e, CHUNK_TILES - 1]]) {
+            const ref = s.tileRecord(cx * CHUNK_TILES + i, cy * CHUNK_TILES + j);
+            const o = (j * CHUNK_TILES + i) * TILE_RECORD_BYTES;
+            tilesChecked++;
+            if (bytes[o] !== ref[0] || bytes[o + 1] !== ref[1] || bytes[o + 2] !== ref[2] || bytes[o + 3] !== ref[3]) mismatches++;
+          }
+        }
+      }
+    }
+    return { pairs: pairs.length, tilesChecked, mismatches };
+  });
+  ok(
+    'seam-purity: border-strip tiles of 4 adjacent chunk pairs recompute byte-identically through the per-tile reference',
+    seamPurity.pairs === 4 && seamPurity.tilesChecked === 2048 && seamPurity.mismatches === 0,
+    JSON.stringify(seamPurity),
+  );
+
+  // 2f2. latitude-sanity: loose biome-family checks at three latitudes, 32
+  // longitudes each (elevation may locally push ROCK/SNOW — hence >= 75%).
+  const latSanity = await page.evaluate(() => {
+    const s = window.__worldScale;
+    const B = s.schema.Biome;
+    const family = (lat, allowed) => {
+      let hit = 0;
+      for (let k = 0; k < 32; k++) {
+        const r = s.sampleRecord(lat, -178 + k * 11);
+        if (allowed.includes(r[0])) hit++;
+      }
+      return hit;
+    };
+    return {
+      cairo: family(30.04, [B.DESERT, B.SAVANNA, B.GRASS]),
+      murmansk: family(68.97, [B.TAIGA, B.TUNDRA, B.SNOW, B.GRASS]),
+      south5: family(-5, [B.FOREST, B.SAVANNA, B.SWAMP]),
+    };
+  });
+  ok(
+    'latitude-sanity: Cairo-lat desert/savanna/grass, Murmansk-lat taiga/tundra/snow/grass, 5S forest/savanna/swamp (>=75% of 32 samples each)',
+    latSanity.cairo >= 24 && latSanity.murmansk >= 24 && latSanity.south5 >= 24,
+    JSON.stringify(latSanity),
+  );
+
+  // 2f3. v1-inert: with NO param, none of the streaming machinery exists —
+  // no streamer, no worker (only the streamer constructs one), no placeholder
+  // atlas texture. Every OTHER check in this gate runs on v1 pages: the whole
+  // suite staying green IS the no-behavior-change proof.
+  const v1Inert = await page.evaluate(() => ({
+    streamer: window.__ready().chunkStreamer === undefined,
+    atlas: window.__game.textures.exists('terrain-ph'),
+  }));
+  ok('v1-inert: no param means no streamer, no worker, no placeholder atlas', v1Inert.streamer === true && v1Inert.atlas === false, JSON.stringify(v1Inert));
 
   // 2c. EVERY COMMIT-1 EXTENSION THROUGH A REAL DRUID SKILL: stealth (Snow Leopard),
   // the dual-use bolt (Lye, heal path), both friendly zones (Sage Burn mobile +
@@ -7190,7 +7307,7 @@ try {
     smV1.expect ?? { lat: 0, lng: 0 },
   );
   ok(
-    'save-migration: a v16 px save gains canonical lat/lng via the pinned v1 projection, reloads losslessly under v1, and the SAME fixture loads under ?scale=v2 onto the same geography (TEMP window active, devspeed capped at 8)',
+    'save-migration: a v16 px save gains canonical lat/lng via the pinned v1 projection, reloads losslessly under v1, and the SAME fixture loads under ?scale=v2 onto the same geography (bounded ring window, devspeed capped at 8)',
     smV1.wroteCanonical === true &&
       smV1.v === 17 &&
       smV1.d <= 0.5 &&
@@ -7203,6 +7320,135 @@ try {
       smV2.outLimit >= 0.05 &&
       smV2.devSpeedCapped === 8,
     JSON.stringify({ smV1: { ...smV1, fixture: undefined }, smV2 }),
+  );
+
+  // ── PASS 2, LIVE v2 SESSION (still on the ?scale=v2&devspeed page) ────────
+  // 2f4. chunk-determinism: the same chunk synthesized twice on the direct
+  // path, and once through the REAL Web Worker, is byte-identical — and the
+  // worker must actually be live (not the fallback).
+  const chunkDet = await page.evaluate(async () => {
+    const ms = window.__game.scene.getScene('MainScene');
+    const st = ms.chunkStreamer;
+    if (!st) return { setup: 'no streamer' };
+    const a = st.synthesizeDirect(5417, 3311);
+    const b = st.synthesizeDirect(5417, 3311);
+    let w = null;
+    try {
+      w = await Promise.race([st.synthesizeViaWorker(5417, 3311), new Promise((_, rej) => setTimeout(() => rej(new Error('worker timeout')), 10000))]);
+    } catch (e) {
+      return { setup: `worker: ${e}` };
+    }
+    let same = a.length === b.length && a.length === w.length;
+    for (let i = 0; same && i < a.length; i++) same = a[i] === b[i] && a[i] === w[i];
+    return { setup: 'ok', len: a.length, same, workerLive: !!st.worker };
+  });
+  ok(
+    'chunk-determinism: same chunk twice + worker-vs-direct are byte-identical (worker path live)',
+    chunkDet.setup === 'ok' && chunkDet.len === 16384 && chunkDet.same === true && chunkDet.workerLive === true,
+    JSON.stringify(chunkDet),
+  );
+
+  // 2f5. stamp-over-synth: tiles inside the Munich stamp answer from the
+  // AUTHORED map (source 'stamp', walkability = the authored collision, no
+  // procedural biome) — stamps always win over synthesis.
+  const stampWin = await page.evaluate(() => {
+    const ms = window.__game.scene.getScene('MainScene');
+    const st = ms.chunkStreamer;
+    const zoneId = Object.keys(ms.regionZoneArrivals).find((id) => id.includes('munich'));
+    if (!zoneId) return { setup: 'no munich zone' };
+    const p = ms.regionZoneArrivals[zoneId];
+    const covering = ms.earthChunkMaps.find(
+      (m) => p.x >= m.bounds.x && p.x < m.bounds.x + m.bounds.width && p.y >= m.bounds.y && p.y < m.bounds.y + m.bounds.height,
+    );
+    if (!covering) return { setup: 'munich arrival not covered by a stamp' };
+    const probes = [p, { x: p.x + 96, y: p.y }, { x: p.x, y: p.y + 96 }, { x: p.x - 96, y: p.y - 96 }];
+    let stampCount = 0;
+    let walkMatch = 0;
+    let noBiome = 0;
+    for (const q of probes) {
+      const c = st.composedTileAt(q.x, q.y);
+      if (c.source === 'stamp') stampCount++;
+      if (c.walkable === !covering.isBlockedAtWorld(q.x, q.y)) walkMatch++;
+      if (c.biome === undefined) noBiome++;
+    }
+    return { setup: 'ok', zoneId, probes: probes.length, stampCount, walkMatch, noBiome };
+  });
+  ok(
+    'stamp-over-synth: Munich-stamp tiles answer from the authored map, not procedural terrain',
+    stampWin.setup === 'ok' && stampWin.stampCount === 4 && stampWin.walkMatch === 4 && stampWin.noBiome === 4,
+    JSON.stringify(stampWin),
+  );
+
+  // 2f6. zoom-cap: the v2 zoom-out limit obeys BOTH live-viewport constraints —
+  // at most 12,000 visible tiles, and the view always inside the loaded ring.
+  const zoomCap = await page.evaluate(() => {
+    const ms = window.__game.scene.getScene('MainScene');
+    const w = ms.scale.width;
+    const h = ms.scale.height;
+    const z = ms.zoomControls.outLimit;
+    return { z, tiles: (w / z) * (h / z) / 1024, fitPx: Math.max(w, h) / z, ringSpanPx: 5 * 2048 };
+  });
+  ok(
+    'zoom-cap: v2 zoom-out keeps visible tiles <= 12000 and the viewport inside the 5-chunk loaded ring',
+    zoomCap.tiles <= 12000 * 1.001 && zoomCap.fitPx <= zoomCap.ringSpanPx + 1,
+    JSON.stringify(zoomCap),
+  );
+
+  // 2f7. playwright drive: 60s of real keyboard autorun east at the capped
+  // devspeed — chunks must load AND evict along the way, with zero page or
+  // console errors across the window.
+  const drive0 = await page.evaluate(() => {
+    const ms = window.__game.scene.getScene('MainScene');
+    return { x: ms.player.x, stats: ms.chunkStreamer.stats() };
+  });
+  const drivePe0 = pageErrors.length;
+  const driveCe0 = consoleErrors.length;
+  await page.keyboard.down('d');
+  await page.waitForTimeout(60000);
+  await page.keyboard.up('d');
+  const drive1 = await page.evaluate(() => {
+    const ms = window.__game.scene.getScene('MainScene');
+    return { x: ms.player.x, stats: ms.chunkStreamer.stats() };
+  });
+  ok(
+    'playwright drive: 60s autorun east under ?scale=v2 — chunks load and evict, cache bounded, zero errors in the window',
+    drive1.x - drive0.x > 20000 &&
+      drive1.stats.loaded - drive0.stats.loaded >= 50 &&
+      drive1.stats.evicted > drive0.stats.evicted &&
+      drive1.stats.cacheSize <= 96 &&
+      pageErrors.length === drivePe0 &&
+      consoleErrors.length === driveCe0,
+    JSON.stringify({ dx: Math.round(drive1.x - drive0.x), before: drive0.stats, after: drive1.stats, newPageErrors: pageErrors.length - drivePe0, newConsoleErrors: consoleErrors.length - driveCe0 }),
+  );
+
+  // 2f8. walkability-wiring: force a strip of OCEAN records ahead of the
+  // player (all-land placeholder terrain has no natural water yet) and drive
+  // into it — the collision path must reject the movement.
+  const walkFix = await page.evaluate(() => {
+    const ms = window.__game.scene.getScene('MainScene');
+    const st = ms.chunkStreamer;
+    const stripStart = Math.ceil((ms.player.x + 150) / 32) * 32;
+    const forced = st.devForceWater(stripStart, ms.player.y - 640, stripStart + 640, ms.player.y + 640);
+    return { x0: ms.player.x, stripStart, forced };
+  });
+  await page.keyboard.down('d');
+  await page.waitForTimeout(1500);
+  await page.keyboard.up('d');
+  const walkEnd = await page.evaluate(() => ({ x: window.__game.scene.getScene('MainScene').player.x }));
+  ok(
+    'walkability-wiring: a forced OCEAN strip blocks movement through the real collision path',
+    walkFix.forced >= 200 && walkEnd.x > walkFix.x0 + 5 && walkEnd.x < walkFix.stripStart,
+    JSON.stringify({ ...walkFix, x0: Math.round(walkFix.x0), endX: Math.round(walkEnd.x) }),
+  );
+
+  // 2f9. cache-bound: a 300-chunk traversal through the REAL ensure+evict
+  // machinery (synchronous renderless synthesis) — cache never exceeds 96,
+  // LRU evictions happen, and released chunks drop their buffers.
+  const cacheBound = await page.evaluate(() => window.__game.scene.getScene('MainScene').chunkStreamer.devSimulateTraversal(300));
+  ok(
+    'cache-bound: 300-chunk traversal holds the cache at <= 96 with LRU evictions; buffers released',
+    cacheBound.maxCache <= 96 && cacheBound.evicted >= 200 && cacheBound.buffersHeld <= 96,
+    JSON.stringify(cacheBound),
   );
 
   // 4) THE GATE: zero page errors across everything above.

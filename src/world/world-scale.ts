@@ -84,9 +84,5 @@ export function devSpeedMultiplier(): number {
   }
 }
 
-/** TEMP (Pass 2 replaces with real chunk streaming): under v2 the active
- *  render/update window is bounded to this radius around the player — nothing
- *  may allocate or iterate proportional to the v2 planet extents
- *  (~43.7M × 32.1M px). */
-export const V2_TEMP_WINDOW_TILES = 200;
-export const V2_TEMP_WINDOW_PX = V2_TEMP_WINDOW_TILES * TILE_PX;
+// (The Pass 1 TEMP render window lived here; Pass 2 replaced it with real
+// chunk streaming — the zoom-out floor now comes from chunk-streamer.ts.)
