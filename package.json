@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Thrones of Heaven \u2014 Washington State map prototype",
+  "description": "Thrones of Heaven — Washington State map prototype",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
@@ -17,6 +17,7 @@
     "phaser": "^4.2.0"
   },
   "devDependencies": {
+    "playwright-core": "1.62.0",
     "typescript": "^5.6.3",
     "vite": "^6.0.3"
   }
