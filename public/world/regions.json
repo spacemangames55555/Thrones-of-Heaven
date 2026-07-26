@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "regions": [
+    {
+      "id": "pnw",
+      "bbox": {
+        "latMin": 41.5,
+        "latMax": 49.5,
+        "lngMin": -125,
+        "lngMax": -110.5
+      },
+      "file": "regions/pnw.bin",
+      "rivers": "regions/pnw-rivers.json",
+      "bytes": 19152658,
+      "sha256": "14c4ab4de9690edba81e06a2482d085358af557f65c4b68a1b7ff2a0ffda9ff1",
+      "version": 1
+    }
+  ]
+}

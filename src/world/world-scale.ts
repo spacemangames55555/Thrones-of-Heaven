@@ -69,6 +69,16 @@ export function isScaleV2(): boolean {
   }
 }
 
+/** ?terrain=proc pins the Pass 2 procedural source under v2 (dev fallback) —
+ *  the real-Earth packs are neither fetched nor decoded. */
+export function isTerrainProc(): boolean {
+  try {
+    return typeof location !== 'undefined' && new URLSearchParams(location.search).get('terrain') === 'proc';
+  } catch {
+    return false;
+  }
+}
+
 /** ?devspeed=N multiplies movement speed for traversal testing (cap 8).
  *  No param (or junk) ⇒ EXACTLY 1 — base speeds untouched. */
 export function devSpeedMultiplier(): number {

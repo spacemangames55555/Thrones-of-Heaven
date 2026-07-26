@@ -1,0 +1,55 @@
+{
+  "bakedAt": "2026-07-26T21:40:29.638Z",
+  "sources": [
+    {
+      "name": "land",
+      "url": "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_10m_land.geojson",
+      "sha256": "1ac90796408bc6ad6911d69448485d3c4dbf2190370080368a09976e1c9f7416",
+      "bytes": 10157965,
+      "resolution": "10m"
+    },
+    {
+      "name": "lakes",
+      "url": "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_10m_lakes.geojson",
+      "sha256": "2d036f53dedec578001c5c30c2959ee7d4eebc1306900fa4367c49929ec8f2d9",
+      "bytes": 5043554,
+      "resolution": "10m"
+    },
+    {
+      "name": "rivers",
+      "url": "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_10m_rivers_lake_centerlines.geojson",
+      "sha256": "bb854a900ecbd3b408df46d5e16e3e0f974ba55993f9d8b5c26e855273c0905a",
+      "bytes": 7307743,
+      "resolution": "10m"
+    }
+  ],
+  "outputs": [
+    {
+      "file": "public/world/planet.bin",
+      "bytes": 24675153,
+      "sha256": "9e881e73761fef15f30510b406f756316100680e4607e3b8eff88f9b9252544d"
+    },
+    {
+      "file": "public/world/regions/pnw.bin",
+      "bytes": 19152658,
+      "sha256": "14c4ab4de9690edba81e06a2482d085358af557f65c4b68a1b7ff2a0ffda9ff1"
+    },
+    {
+      "file": "public/world/regions/pnw-rivers.json",
+      "bytes": 60736,
+      "sha256": "cbe488163a605c3e97916fd2feb62583bfaa9055dcf767b005546f642e5950a1"
+    },
+    {
+      "file": "public/world/coast-truth.json",
+      "bytes": 14023,
+      "sha256": "f53b36df0c00574239e6e6372ac8de7135ad5cf41ea1d72c204017246abfc128"
+    },
+    {
+      "file": "public/world/regions.json",
+      "bytes": 395,
+      "sha256": "675374468cccf70734960145b7022fdb6467ed103165bcc0fad60e1b3bb08a5b"
+    }
+  ],
+  "derivedBiomes": true,
+  "derivedBiomesNote": "Biomes are DERIVED (fallback 3): Pass 2 latitude+moisture bands masked by REAL Natural Earth land/ocean/lakes and pushed by REAL terrarium elevation. WWF ecoregions and Koppen-Geiger GeoTIFF were attempted first; their hosts are unreachable from the build environment."
+}

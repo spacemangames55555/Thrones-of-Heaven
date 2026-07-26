@@ -4,3 +4,4 @@ dist
 .DS_Store
 .vercel
 npm-debug.log*
+scripts/bake-earth/.cache/

@@ -49,6 +49,15 @@ export const PLAYABLE_LAT_LIMIT = 85;
 export const FLAG_WALKABLE = 1;
 export const FLAG_SCATTER = 2;
 
+/** ELEVATION BAND ENCODING (PINNED — the bake pipeline and every pack file
+ *  use exactly this): band = clamp(floor((meters + ELEV_BAND_OFFSET_M) /
+ *  ELEV_BAND_STEP_M), 0, 255). Band 0 ≈ −500 m, band 255 ≈ +9700 m. */
+export const ELEV_BAND_OFFSET_M = 500;
+export const ELEV_BAND_STEP_M = 40;
+export function elevationBandFromMeters(m: number): number {
+  return Math.min(255, Math.max(0, Math.floor((m + ELEV_BAND_OFFSET_M) / ELEV_BAND_STEP_M)));
+}
+
 /** OCEAN and FRESHWATER are non-walkable (wired into the collision path). */
 export const NON_WALKABLE_BIOMES: readonly number[] = [Biome.OCEAN, Biome.FRESHWATER];
 

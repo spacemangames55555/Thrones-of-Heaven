@@ -30,3 +30,12 @@ ruling lands, strike the entry with a pointer to the commit that resolved it.
   yet (the scatter-allowed flag already ships in the tile records); mounts +
   the waypoint network still ship in a later pass. Hillshade DID ship (subtle
   per-tile elevation tint, set once at chunk build).
+- World scale v2 Pass 3 (real-Earth bake + earth TerrainSource, still
+  flag-gated): the DEFAULT FLIP to v2 is now gated on PASS 4 (mounts +
+  waypoints), NOT this pass. Additional region packs (Egypt next) bake via
+  the same script per-bbox. Pack files are committed build artifacts
+  (~42 MB) — consider git-lfs if regeneration churn bloats history. DERIVED
+  BIOMES shipped (fallback 3 — real land/ocean/lakes/rivers/elevation, but
+  biome classes from the Pass 2 latitude+moisture model): upgrade to WWF
+  ecoregions or Koppen-Geiger when a reachable mirror exists (their hosts
+  are blocked from the build environment).
