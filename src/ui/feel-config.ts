@@ -89,7 +89,13 @@ export const FEEL = {
     dustIntervalMs: 90, // dust puff cadence while moving mounted
     dustRadiusPx: 7,
     dustColor: 0xcfc2a6,
-    combatLockoutMs: 2500, // recent combat blocks summoning this long
+  },
+
+  /** COMBAT STATE (hotfix: derived, not declared). in-combat is recomputed
+   *  every frame from the live engagement set — never from event flags. */
+  combat: {
+    leashRadiusPx: 2048, // beyond this every engagement releases (hard deaggro)
+    lingerMs: 2500, // grace after the engagement set empties (mount stays blocked)
   },
 
   /** WAYPOINT travel (the "Waystone" network — display name is TODO-lore). */

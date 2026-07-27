@@ -112,6 +112,14 @@ export class SpiritSwarmer {
   }
 
   /** Stop moving (used while the player is frozen in dialogue/death). */
+  /** LEASH RELEASE (combat hotfix): the engagement funnel drops any
+   *  entity beyond FEEL.combat.leashRadiusPx — the flag resets WITH it. */
+  deaggro(): void {
+    if (this.dead) return;
+    this.aggroing = false;
+    (this.sprite.body as Phaser.Physics.Arcade.Body).velocity.set(0, 0);
+  }
+
   halt(): void {
     if (this.dead) return;
     (this.sprite.body as Phaser.Physics.Arcade.Body).velocity.set(0, 0);

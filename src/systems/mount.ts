@@ -21,6 +21,8 @@ export interface MountHost {
   playerSprite(): Phaser.Physics.Arcade.Sprite;
   setMountedSpeed(px: number | null): void;
   inCombat(): boolean;
+  /** ?debug=1 observability: names the blocking entity ids (else empty). */
+  combatNote(): string;
   onPlane(): boolean;
   dust(x: number, y: number): void;
   banner(text: string): void;
@@ -52,7 +54,7 @@ export class MountSystem {
       return false;
     }
     if (this.host.inCombat()) {
-      this.host.banner('You cannot summon a mount in combat.');
+      this.host.banner('You cannot summon a mount in combat.' + this.host.combatNote());
       return false;
     }
     this.state = 'casting';

@@ -80,6 +80,14 @@ export class Townsfolk {
     this.targetPoint = point;
   }
 
+  /** COMBAT DERIVATION (hotfix): true when this townsfolk hunts the PLAYER
+   *  (null target) rather than marching on a fixed point — the engagement
+   *  funnel derives in-combat from this + live distance, since townsfolk
+   *  have no aggro state of their own. */
+  get targetsPlayer(): boolean {
+    return this.targetPoint === null;
+  }
+
   get x(): number {
     return this.sprite.x;
   }
