@@ -78,6 +78,17 @@ export function formatKm(distPx: number): string {
   return km < 10 ? `${km.toFixed(1)} km` : `${Math.round(km)} km`;
 }
 
+/** ?debug=1 turns on opt-in dev observability (e.g. the mount-block toast
+ *  names the entity ids holding the player in combat). Zero player-facing
+ *  behavior without the param. */
+export function isDebugOverlay(): boolean {
+  try {
+    return typeof location !== 'undefined' && new URLSearchParams(location.search).get('debug') === '1';
+  } catch {
+    return false;
+  }
+}
+
 /** ?terrain=proc pins the Pass 2 procedural source under v2 (dev fallback) —
  *  the real-Earth packs are neither fetched nor decoded. */
 export function isTerrainProc(): boolean {

@@ -47,7 +47,7 @@ import { CITY_DEFS, CITY_FAIYUM, type CityDef } from '../world/cities';
 import { MANIFEST_CLASS_FOR, KNOWN_CLASS_NAMES, homeZoneForClass } from '../world/class-canon';
 import { SparseWorldMap } from '../map/SparseWorldMap';
 import { WORLD_CALIBRATION, WORLD_SPAN_DEGREES, latLngToPixels } from '../world/world-calibration';
-import { isScaleV2, isTerrainProc, formatKm } from '../world/world-scale';
+import { isScaleV2, isTerrainProc, isDebugOverlay, formatKm } from '../world/world-scale';
 import { legacyEarthPx, LEGACY_GLOBE_ORIGIN_X } from '../world/legacy-frame';
 import { MountSystem } from '../systems/mount';
 import { WaypointSystem } from '../systems/waypoints';
@@ -246,6 +246,7 @@ import {
   TOWNSFOLK_PORTAL_DAMAGE,
   TOWNSFOLK_PLAYER_DAMAGE,
   TOWNSFOLK_VARIANTS,
+  TOWNSFOLK_AGGRO_RANGE,
   type TownsfolkVariant,
   WOLVES_COUNT,
   RAIDERS_COUNT,
@@ -602,6 +603,16 @@ export class MainScene extends Phaser.Scene {
   private combatEnemyCache: CombatEnemy[] = [];
   private combatEnemyCacheTime = -1;
   private lastCombatTime = -1e9;
+  /** COMBAT IS DERIVED, NOT DECLARED (hotfix): the live engagement set —
+   *  entity → id — recomputed EVERY frame from alive + resident + leashed +
+   *  actually-engaging truth. The ONE combat source for the mount block and
+   *  the regen gate; entries release on death, despawn, cull, world change,
+   *  and leash-exceed. lastCombatTime above remains as the regen-delay
+   *  timestamp of the last combat EVENT only — nothing refreshes it into a
+   *  permanent block anymore. */
+  private engagements = new Map<object, string>();
+  /** When the engagement set last transitioned to empty (linger anchor). */
+  private combatEmptiedAt = -1e9;
   private playerDead = false;
   /** Player-allied summons (Ice Golem, skeletons, the Dark Matter Monster) — transient, not serialized. */
   private summons!: AlliedSummonManager;
@@ -6987,20 +6998,80 @@ export class MainScene extends Phaser.Scene {
     this.controls.setEnabled(true);
   }
 
+  /**
+   * THE ENGAGEMENT FUNNEL (combat hotfix — the ONE combat derivation).
+   * An enemy is engaging iff it is alive, resident in the ACTIVE world,
+   * within FEEL.combat.leashRadiusPx of the player (or of the live summon
+   * it is targeting), and actually in its engaging state — recomputed from
+   * that truth every frame. Beyond the leash the entity is hard-deaggroed
+   * (where it has a flag to reset), so no frozen aggro state, paused body,
+   * culled pack, or forgotten wave can ever hold the player in combat.
+   * Townsfolk have NO aggro state: their engagement is derived (hunting the
+   * player inside TOWNSFOLK_AGGRO_RANGE, marching on the portal during an
+   * active defense, or redirected onto a live summon).
+   */
+  private recomputeEngagements(): void {
+    const now = this.time.now;
+    const leash = FEEL.combat.leashRadiusPx;
+    const px = this.player.x;
+    const py = this.player.y;
+    const next = new Map<object, string>();
+    const summonTargetOf = (e: object): { x: number; y: number } | null => {
+      const t = this.aggroState.get(e)?.targetSummon ?? null;
+      return t && t.isAlive ? { x: t.x, y: t.y } : null;
+    };
+    const consider = (e: { x: number; y: number; isAlive: boolean; deaggro?: () => void }, engaging: boolean, id: string): void => {
+      if (!e.isAlive || !engaging || !this.isActiveWorldResident(e.x)) return;
+      const st = summonTargetOf(e);
+      const near =
+        Phaser.Math.Distance.Between(e.x, e.y, px, py) <= leash || (st !== null && Phaser.Math.Distance.Between(e.x, e.y, st.x, st.y) <= leash);
+      if (!near) {
+        e.deaggro?.(); // LEASH-EXCEED: release the engagement AND the flag
+        return;
+      }
+      next.set(e, id);
+    };
+    consider(this.sasquatch, this.sasquatch.isAggro, 'sasquatch');
+    this.swarmers.forEach((s, i) => consider(s, s.isAggro, `swarmer-${i}`));
+    for (const a of this.angels) consider(a, a.isAggro, a.id);
+    for (const t of this.townsfolk) {
+      const st = summonTargetOf(t);
+      const engaging =
+        (t.targetsPlayer ? t.distanceTo(px, py) <= TOWNSFOLK_AGGRO_RANGE : this.portalDefense.isActive) ||
+        (st !== null && t.distanceTo(st.x, st.y) <= leash);
+      consider(t, engaging, t.id);
+    }
+    for (const g of this.guardians) consider(g, g.isAggro, g.id);
+    for (const c of this.cherubs) consider(c, c.isAggro, c.id);
+    for (const d of this.demons) consider(d, d.isAggro, d.id);
+    for (const b of this.bosses) consider(b, b.isAggro, b.id);
+    if (this.engagements.size > 0 && next.size === 0) this.combatEmptiedAt = now;
+    this.engagements = next;
+  }
+
+  /** Gate/debug introspection: the ids currently holding the player in combat. */
+  combatEngagements(): string[] {
+    return [...this.engagements.values()].sort();
+  }
+
+  /** in-combat ⇔ the engagement set is non-empty, plus a short linger after
+   *  it empties. THE only combat truth the mount block consults. */
+  inCombatDerived(): boolean {
+    return this.engagements.size > 0 || this.time.now - this.combatEmptiedAt < FEEL.combat.lingerMs;
+  }
+
+  /** ?debug=1 observability: the blocking ids, formatted for the mount toast. */
+  combatBlockNote(): string {
+    if (!isDebugOverlay()) return '';
+    const ids = this.combatEngagements();
+    return ids.length > 0 ? ` [${ids.join(', ')}]` : ' [linger]';
+  }
+
   private regenTick(delta: number): void {
-    // Aggro flags of PAUSED foreign residents are frozen (their update no longer
-    // runs), so only same-world residents may hold the player in combat — a
-    // Hell demon left mid-fight must not suppress regen in Europe.
-    const local = (x: number): boolean => this.isActiveWorldResident(x);
-    const enemiesEngaged =
-      (this.sasquatch.isAggro && local(this.sasquatch.x)) ||
-      this.swarmers.some((s) => s.isAggro && local(s.x)) ||
-      this.angels.some((a) => a.isAggro && local(a.x)) ||
-      this.townsfolk.some((t) => t.isAlive && local(t.x)) ||
-      this.guardians.some((g) => g.isAggro && local(g.x)) ||
-      this.cherubs.some((c) => c.isAggro && local(c.x)) ||
-      this.demons.some((d) => d.isAggro && local(d.x)) ||
-      this.bosses.some((b) => b.isAggro && local(b.x));
+    // The engagement funnel is THE combat truth (derived every frame — see
+    // recomputeEngagements). lastCombatTime is only the regen-delay anchor.
+    this.recomputeEngagements();
+    const enemiesEngaged = this.engagements.size > 0;
     if (enemiesEngaged) this.lastCombatTime = this.time.now;
     const outOfCombat = !enemiesEngaged && this.time.now - this.lastCombatTime > PLAYER_HP_REGEN_DELAY_MS;
     if (outOfCombat && this.playerHealth.current < this.playerHealth.max) {
@@ -11621,7 +11692,8 @@ export class MainScene extends Phaser.Scene {
       setMountedSpeed: (px) => {
         this.player.mountedSpeedPx = px;
       },
-      inCombat: () => this.time.now - this.lastCombatTime < FEEL.mount.combatLockoutMs,
+      inCombat: () => this.inCombatDerived(),
+      combatNote: () => this.combatBlockNote(),
       onPlane: () => this.activeWorld !== WORLD_EARTH,
       dust: (x, y) => this.circleFx.show(x, y, FEEL.mount.dustRadiusPx, FEEL.mount.dustColor, { alpha: 0.4, toScale: 1.8, durationMs: 380, depth: 11 }),
       banner: (t) => this.showBanner(t, 1400),

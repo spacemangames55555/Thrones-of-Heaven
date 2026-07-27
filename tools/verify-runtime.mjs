@@ -7952,16 +7952,22 @@ try {
     ms.player.sprite.body.reset(p.x, p.y);
     ms.lastLandPos = undefined;
     await wait(900);
-    ms.lastCombatTime = ms.time.now; // fresh combat → summon must refuse
-    const blockedInCombat = mt.trySummon() === false && mt.state === 'off';
-    ms.lastCombatTime = -1e9;
+    // Fresh combat → summon must refuse. DERIVED combat needs a REAL live
+    // aggressor (the engagement funnel is the only combat source now): a
+    // wolf hunting the player from adjacent range.
+    const wolf = ms.spawnTownsfolk(p.x + 80, p.y, null, 'wolf');
+    await wait(250); // the funnel recomputes every frame
+    const blockedInCombat = mt.trySummon() === false && mt.state === 'off' && ms.combatEngagements().includes(wolf.id);
+    wolf.takeHit(1e9); // kill the aggressor — the engagement releases
+    await wait(ms.feel.combat.lingerMs + 400); // the linger grace passes
     mt.trySummon();
     const casting = mt.state === 'casting';
     ms.playerHealth.shield = 0;
     ms.playerHealth.damage(5); // real intake path
     ms.playerHealth.shield = 1e9;
     const interrupted = mt.state === 'off';
-    ms.lastCombatTime = -1e9; // the real damage intake marks combat — clear it
+    // No enemy is engaging (the damage was sourceless) — derived combat is
+    // already clear, no flag to reset.
     mt.trySummon();
     await wait(1700);
     const mounted = mt.state === 'mounted' && ms.player.mountedSpeedPx === window.__worldScale.MOUNT_SPEED_PX;
@@ -7972,8 +7978,7 @@ try {
     ms.player.setDirection(0, 0);
     mt.onPlayerDealtDamage(); // the feel-path funnel (onFeelDamaged drives exactly this)
     const dismountOnDeal = mt.state === 'off';
-    ms.lastCombatTime = -1e9;
-    mt.trySummon();
+    mt.trySummon(); // dealing damage engaged nothing — derived combat stays clear
     await wait(1700);
     const remounted = mt.state === 'mounted';
     ms.travelToWorld('heaven');
@@ -7999,6 +8004,172 @@ try {
       mountRules.blockedOnPlane &&
       mountRules.backOnEarth,
     JSON.stringify(mountRules),
+  );
+
+  // ── COMBAT HOTFIX: in-combat derives from LIVE ENGAGEMENTS only ───────────
+  // 2h7. combat-derives: engage → kill → mountable within the linger; engage
+  // → ride beyond the leash → mountable once released — both legs repeated
+  // with a FAUNA aggressor (the stuck-on-device class of source). The gate
+  // reads the same introspection the ?debug=1 toast prints.
+  const combatDerives = await page.evaluate(async () => {
+    const ms = window.__ready();
+    const mt = ms.mountSys;
+    const wait = (t) => new Promise((r) => setTimeout(r, t));
+    const linger = ms.feel.combat.lingerMs;
+    const home = ms.terrestrialPxFromLatLng({ lat: 23.0, lng: 2.0 });
+    const settle = async () => {
+      ms.player.sprite.body.reset(home.x, home.y);
+      ms.lastLandPos = undefined;
+      await wait(400);
+    };
+    const runLeg = async (spawn) => {
+      await settle();
+      const e = spawn(home.x + 90, home.y);
+      e.takeHit(1); // provoke: aggro through the real intake path
+      await wait(300); // the funnel recomputes every frame
+      const blocked = mt.trySummon() === false && ms.inCombatDerived() === true && ms.combatEngagements().length > 0;
+      const named = ms.combatEngagements().join(',');
+      // KILL leg: death releases the engagement; mountable within the linger.
+      e.takeHit(1e9);
+      await wait(linger + 400);
+      const clearAfterKill = ms.inCombatDerived() === false && mt.trySummon() === true;
+      mt.dismount();
+      // RIDE-AWAY leg: fresh aggressor, then the player is far beyond the
+      // leash — the engagement releases (cull/leash) with the enemy STILL alive.
+      await settle();
+      const e2 = spawn(home.x + 90, home.y);
+      e2.takeHit(1);
+      await wait(300);
+      const blocked2 = mt.trySummon() === false;
+      ms.player.sprite.body.reset(home.x + ms.feel.combat.leashRadiusPx + 1200, home.y);
+      ms.lastLandPos = undefined;
+      await wait(400);
+      const released = ms.combatEngagements().length === 0 && e2.isAlive === true;
+      await wait(linger + 200);
+      const clearAfterRide = ms.inCombatDerived() === false && mt.trySummon() === true;
+      mt.dismount();
+      e2.destroy(); // fixture cleanup
+      return { blocked, named, clearAfterKill, blocked2, released, clearAfterRide };
+    };
+    const demonLeg = await runLeg((x, y) => ms.spawnDemon(x, y, ms.activeMap().layer));
+    const faunaLeg = await runLeg((x, y) => ms.spawnTownsfolk(x, y, null, 'wolf'));
+    return { setup: 'ok', demonLeg, faunaLeg };
+  });
+  ok(
+    'combat-derives: engage→kill and engage→outride both return the mount within the linger, for a demon and a fauna wolf; blockers enumerated',
+    combatDerives.setup === 'ok' &&
+      [combatDerives.demonLeg, combatDerives.faunaLeg].every(
+        (l) => l.blocked && l.named.length > 0 && l.clearAfterKill && l.blocked2 && l.released && l.clearAfterRide,
+      ) &&
+      combatDerives.demonLeg.named.includes('demon-') &&
+      combatDerives.faunaLeg.named.includes('townsfolk-'),
+    JSON.stringify(combatDerives),
+  );
+
+  // 2h8. druid-summon-neutral: a summon EXISTING is not combat; a summon
+  // actively fighting is. Through the real allied-summon seam every summon
+  // skill spawns through (drawsAggro pulls the enemy onto the pet).
+  const summonNeutral = await page.evaluate(async () => {
+    const ms = window.__ready();
+    const mt = ms.mountSys;
+    const wait = (t) => new Promise((r) => setTimeout(r, t));
+    const linger = ms.feel.combat.lingerMs;
+    const home = ms.terrestrialPxFromLatLng({ lat: 23.0, lng: 2.0 });
+    ms.player.sprite.body.reset(home.x, home.y);
+    ms.lastLandPos = undefined;
+    await wait(400);
+    const cfg = { key: 'gate_kin_tank', name: 'Gate Kin', behavior: 'tank', maxHP: 200, durationMs: 30000, aggroRadius: 300, followRange: 200, moveTilesPerSec: 5, bodyRadius: 12, tint: 0x88cc88, drawsAggro: true, aggroPriority: 2 };
+    ms.summonAlliedUnits(cfg, 1, 1); // the REAL seam every summon skill spawns through
+    await wait(300);
+    // Idle summon + no enemies → NOT combat (existence is neutral).
+    const idleNeutral = ms.inCombatDerived() === false && mt.trySummon() === true;
+    mt.dismount();
+    // A target arrives: provoke it — the aggro hierarchy sends it onto the
+    // pet (drawsAggro) and the funnel counts the fight as combat.
+    const d = ms.spawnDemon(home.x + 120, home.y, ms.activeMap().layer);
+    d.takeHit(1);
+    await wait(400);
+    const fighting = ms.inCombatDerived() === true && mt.trySummon() === false && ms.combatEngagements().some((id) => id.startsWith('demon-'));
+    // Target dies → the engagement releases → mountable within the linger.
+    d.takeHit(1e9);
+    await wait(linger + 400);
+    const clears = ms.inCombatDerived() === false && mt.trySummon() === true;
+    mt.dismount();
+    ms.summons.clear();
+    return { setup: 'ok', idleNeutral, fighting, clears };
+  });
+  ok(
+    'druid-summon-neutral: an idle summon never blocks the mount; a summon-drawn fight does; the block clears on target death',
+    summonNeutral.setup === 'ok' && summonNeutral.idleNeutral && summonNeutral.fighting && summonNeutral.clears,
+    JSON.stringify(summonNeutral),
+  );
+
+  // 2h9. dot-on-evicted: a ticking DoT on a target that gets EVICTED (the
+  // zone-deactivation destroy path) must not refresh combat — the DoT
+  // prunes, the engagement releases, the mount returns.
+  const dotEvict = await page.evaluate(async () => {
+    const ms = window.__ready();
+    const mt = ms.mountSys;
+    const wait = (t) => new Promise((r) => setTimeout(r, t));
+    const linger = ms.feel.combat.lingerMs;
+    const home = ms.terrestrialPxFromLatLng({ lat: 23.0, lng: 2.0 });
+    ms.player.sprite.body.reset(home.x, home.y);
+    ms.lastLandPos = undefined;
+    await wait(400);
+    const d = ms.spawnDemon(home.x + 100, home.y, ms.activeMap().layer);
+    d.takeHit(1);
+    ms.applyDotInRange(d.x, d.y, 60, 3, 250, 9000, 0x77ff77);
+    await wait(600); // ticks are landing
+    const dotLive = ms.dots.length >= 1 && ms.inCombatDerived() === true;
+    d.destroy(); // the eviction path (deactivateRegionZone destroys exactly so)
+    await wait(600);
+    const dotPruned = ms.dots.length === 0;
+    await wait(linger);
+    const clears = ms.inCombatDerived() === false && mt.trySummon() === true;
+    mt.dismount();
+    return { setup: 'ok', dotLive, dotPruned, clears };
+  });
+  ok(
+    'dot-on-evicted: a DoT on an evicted target prunes instead of ticking combat alive; the mount returns within the linger',
+    dotEvict.setup === 'ok' && dotEvict.dotLive && dotEvict.dotPruned && dotEvict.clears,
+    JSON.stringify(dotEvict),
+  );
+
+  // 2h10. leash-release: outrunning beyond FEEL.combat.leashRadiusPx hard-
+  // deaggros the pursuers (flag reset, not just released) and the mount
+  // returns — a demon AND a wolf, both still alive.
+  const leashRelease = await page.evaluate(async () => {
+    const ms = window.__ready();
+    const mt = ms.mountSys;
+    const wait = (t) => new Promise((r) => setTimeout(r, t));
+    const linger = ms.feel.combat.lingerMs;
+    const leash = ms.feel.combat.leashRadiusPx;
+    const home = ms.terrestrialPxFromLatLng({ lat: 23.0, lng: 2.0 });
+    ms.player.sprite.body.reset(home.x, home.y);
+    ms.lastLandPos = undefined;
+    await wait(400);
+    const d = ms.spawnDemon(home.x + 90, home.y, ms.activeMap().layer);
+    const w = ms.spawnTownsfolk(home.x - 90, home.y, null, 'wolf');
+    d.takeHit(1);
+    w.takeHit(1);
+    await wait(300);
+    const engaged = ms.combatEngagements().length >= 2 && mt.trySummon() === false;
+    ms.player.sprite.body.reset(home.x + leash + 1500, home.y);
+    ms.lastLandPos = undefined;
+    await wait(400);
+    const released = ms.combatEngagements().length === 0;
+    const deaggroed = d.isAggro === false && d.isAlive === true && w.isAlive === true;
+    await wait(linger + 200);
+    const mountable = ms.inCombatDerived() === false && mt.trySummon() === true;
+    mt.dismount();
+    d.destroy();
+    w.destroy();
+    return { setup: 'ok', engaged, released, deaggroed, leash };
+  });
+  ok(
+    'leash-release: beyond LEASH_RADIUS both pursuers hard-deaggro (alive, flag reset), the set empties, the mount returns',
+    leashRelease.setup === 'ok' && leashRelease.engaged && leashRelease.released && leashRelease.deaggroed && leashRelease.leash === 2048,
+    JSON.stringify(leashRelease),
   );
 
   // 2f7. playwright drive: 60s of real keyboard autorun east at the capped
@@ -8088,8 +8259,7 @@ try {
   await page.waitForTimeout(1500);
   const md0 = await page.evaluate(async () => {
     const ms = window.__ready();
-    ms.lastCombatTime = -1e9;
-    ms.mountSys.trySummon();
+    ms.mountSys.trySummon(); // mid-Sahara: nothing engages, derived combat is clear
     await new Promise((r) => setTimeout(r, 1700));
     return { mounted: ms.mountSys.state === 'mounted', x: ms.player.x, pe: 0 };
   });

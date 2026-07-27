@@ -77,3 +77,10 @@ ruling lands, strike the entry with a pointer to the commit that resolved it.
   forbids. Fringe rendering across chunk borders resolves neighbors through
   the pure per-tile reference at the current source version (deterministic;
   noted here because a future multi-version blend would need a repaint hook).
+- Combat hotfix (derived in-combat): DoT ticks the player's own effects land
+  still AUTO-DISMOUNT per the Pass 4 spec (dealing damage dismounts — a
+  poison applied before mounting will knock the rider down on its next
+  tick). Deliberately unchanged in the hotfix; feel ruling owed if
+  playtesting hates it. The old FEEL.mount.combatLockoutMs knob is retired
+  in favor of FEEL.combat.lingerMs (the grace after the engagement set
+  empties); leash is FEEL.combat.leashRadiusPx = 2048 px.

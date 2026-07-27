@@ -161,6 +161,15 @@ export class Cherub {
     this.floatBar();
   }
 
+  /** LEASH RELEASE (combat hotfix): the engagement funnel drops any
+   *  entity beyond FEEL.combat.leashRadiusPx — the flag resets WITH it,
+   *  so a frozen/paused aggro state can never outlive its engagement. */
+  deaggro(): void {
+    if (this.state === 'dead') return;
+    this.state = 'idle';
+    (this.sprite.body as Phaser.Physics.Arcade.Body).velocity.set(0, 0);
+  }
+
   halt(): void {
     if (this.state === 'dead') return;
     (this.sprite.body as Phaser.Physics.Arcade.Body).velocity.set(0, 0);
