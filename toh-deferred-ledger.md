@@ -87,6 +87,45 @@ ruling lands, strike the entry with a pointer to the commit that resolved it.
   one; discovery-gated reveal pends a Casey ruling). CORRIDOR-BEAT MARKERS
   are deferred to the Egypt pass (only the tracked-quest target renders as
   a beat marker today).
+- SCALE-HEURISTIC AUDIT (Pass 6A addendum — REPORT ONLY, nothing changed):
+  sweep for regional-era predicates that became planet-scoped at unification
+  (the combat bug's class). Findings, each awaiting its own gated fix after
+  triage:
+  1. Entity tick gates are residency-only (MainScene updateAngels ~7365,
+     updateCherubs ~7550, boss loop ~7726, updateTownsfolk ~8886,
+     updateDemons ~11180): isActiveWorldResident is an X-band test, so every
+     live terrestrial enemy anywhere on Earth ticks + raycasts every frame.
+     Blast radius: perf ceiling scales with global population (bounded today
+     by zone hysteresis + the enemy cap); no-self-leash walkers (portal-target
+     townsfolk) advance planet-wide. The combat funnel already contains the
+     combat/mount consequences.
+  2. applyResidentPause (~12126): physics bodies stay enabled planet-wide on
+     earth (the disable keys off world bands). Perf only.
+  3. refreshBossBar (~7910) reads RAW b.isAggro + residency, not the
+     engagement funnel — and Boss has no deaggro(), so the leash release is a
+     no-op on bosses: an aggroed boss outrun beyond leash keeps the boss bar
+     on screen until its lifecycle despawn. Visible-UI bug candidate; fix =
+     Boss.deaggro() + bar reads the funnel.
+  4. PortalDefense.update runs whenever the active world is earth (~2076):
+     pre-unification, leaving the Washington MAP paused the encounter; now
+     riding away leaves waves spawning and the portal losing HP in absentia
+     (possible off-screen loss). Needs a proximity/participation pause.
+  5. Guardian encounter (~9024): activation is distance-gated, but once
+     'fighting' the phase machine never resets — and the hotfix leash now
+     RE-DORMANTS the FlamingSword entities beyond 2048 px while guardianPhase
+     stays 'fighting', whose activation check only runs from 'dormant'.
+     Possible encounter soft-lock on leave-and-return; needs triage first.
+  6. updateSwarmers (~7293) has no residency or distance gate at all inside
+     the terrestrial branch. Small population; perf-noise only.
+  7. updateRegionSpawns zone scan (~10330): correct distance logic, stale
+     "25 distance checks" comment now covers ~81 planet-wide. Informational.
+  8. EUROPE_ENEMY_CAP (settings ~1764) is now a PLANETARY live-enemy cap
+     (regionLiveCount counts every zone on Earth). Effectively local today
+     via hysteresis; will bite multi-hotspot content. Informational.
+  9. Verified CLEAN (real proximity/zoom scoping): Uriel/Seattle/rift
+     triggers, city gates, hearth radius, mentor/neighbor buttons,
+     respawn-nearest + waypoint lists (planetary min-distance is CORRECT
+     there), LoD bands, nameplate pool.
 - Combat hotfix (derived in-combat): DoT ticks the player's own effects land
   still AUTO-DISMOUNT per the Pass 4 spec (dealing damage dismounts — a
   poison applied before mounting will knock the rider down on its next
