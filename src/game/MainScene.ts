@@ -55,6 +55,7 @@ import { globeSceneOriginX } from '../world/scene-origin';
 import { ChunkStreamer } from '../world/chunk-streamer';
 import { createProceduralSource } from '../world/terrain-procedural';
 import { ensurePlaceholderAtlas } from '../world/terrain-placeholder';
+import { applyTerrainArt } from '../world/terrain-art';
 import { createSparseWorld, stampZone, buildChunkMapData, CONTINENT_WORLD, type BuiltChunk } from '../world/world-builder';
 import { egyptUnificationDelta, earthUnificationDelta, ABSORBED_ZONE_HOSTS } from '../world/world-unification';
 import { getZone, WORLD } from '../world/world-manifest';
@@ -9263,6 +9264,9 @@ export class MainScene extends Phaser.Scene {
       // PASS 3: swap to the baked real-Earth packs (async; IndexedDB-cached).
       // ?terrain=proc pins the Pass 2 procedural source as the dev fallback.
       if (!isTerrainProc()) void this.chunkStreamer.loadEarthPacks();
+      // PASS 5: activate any dropped terrain art (per-biome/per-prop, with the
+      // procedural fallback carrying everything that has no art yet).
+      void applyTerrainArt(this, this.chunkStreamer);
     }
     this.worlds[WORLD_EARTH] = {
       id: WORLD_EARTH,

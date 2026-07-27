@@ -8,7 +8,9 @@ import {
   TILE_RECORD_BYTES,
   type TerrainSource,
 } from './terrain-schema';
-import { PLACEHOLDER_ATLAS_KEY, VARIANTS_PER_BIOME } from './terrain-placeholder';
+import { ATLAS_STRIDE, PLACEHOLDER_ATLAS_KEY, VARIANTS_PER_BIOME, ensurePropPlaceholders } from './terrain-placeholder';
+import { TerrainVisualsRenderer, computeChunkVisuals, type ChunkVisuals } from './terrain-visuals';
+import { tileRecord as procTileRecord } from './terrain-procedural';
 import {
   createEarthSource,
   decodePlanetPack,
@@ -51,6 +53,7 @@ interface ChunkEntry {
   layer?: Phaser.Tilemaps.TilemapLayerBase;
   lastTouch: number;
   renderless: boolean; // dev-simulation chunks skip layer construction
+  visuals?: ChunkVisuals; // Pass 5: fringe/water/scatter data (built with the layer)
 }
 
 /**
@@ -92,12 +95,16 @@ export class ChunkStreamer {
   sourceVersion = 1;
   activeSourceLabel: 'proc' | 'earth' = 'proc';
   packOrigin: Record<string, 'idb' | 'network'> = {};
+  /** Pass 5: the pooled fringe/scatter renderer + water anim cycle. */
+  readonly visualsRenderer: TerrainVisualsRenderer;
 
   constructor(scene: Phaser.Scene, opts: { originPx: { x: number; y: number }; source: TerrainSource; stamps: GameMap[] }) {
     this.scene = scene;
     this.originPx = { ...opts.originPx };
     this.source = opts.source;
     this.stamps = opts.stamps.map((m) => ({ map: m, x: m.bounds.x, y: m.bounds.y, w: m.bounds.width, h: m.bounds.height }));
+    ensurePropPlaceholders(scene); // scatter silhouettes (art drops replace by key)
+    this.visualsRenderer = new TerrainVisualsRenderer(scene);
     try {
       this.worker = new Worker(new URL('./terrain-worker.ts', import.meta.url), { type: 'module' });
       this.worker.onmessage = (e: MessageEvent<{ cx: number; cy: number; version: number; buffer: ArrayBuffer }>) => {
@@ -181,6 +188,10 @@ export class ChunkStreamer {
       this.applyFill(j.cx, j.cy, this.synthesizeDirect(j.cx, j.cy), this.sourceVersion);
     }
     this.evict(pcx, pcy);
+    // Pass 5: assign the fringe/scatter pools + water anim from cached data.
+    const withVisuals: { cx: number; cy: number; visuals: ChunkVisuals; layer?: Phaser.Tilemaps.TilemapLayerBase }[] = [];
+    for (const c of this.chunks.values()) if (c.visuals) withVisuals.push(c as (typeof withVisuals)[number]);
+    this.visualsRenderer.update(withVisuals, this.originPx, this.scene.time.now);
   }
 
   /** Composed walkability at a scene-px point: authored stamps win; then the
@@ -207,7 +218,7 @@ export class ChunkStreamer {
     return Math.max(Math.max(viewW, viewH) / RING_SPAN_PX, Math.sqrt((viewW * viewH) / (V2_MAX_VISIBLE_TILES * TILE_PX * TILE_PX)));
   }
 
-  stats(): { loaded: number; evicted: number; cacheSize: number; buffersHeld: number; workerUsed: boolean; source: string; version: number; regions: number } {
+  stats(): { loaded: number; evicted: number; cacheSize: number; buffersHeld: number; workerUsed: boolean; source: string; version: number; regions: number; visuals: ReturnType<TerrainVisualsRenderer['stats']> } {
     let buffersHeld = 0;
     for (const c of this.chunks.values()) if (c.bytes) buffersHeld++;
     return {
@@ -219,6 +230,7 @@ export class ChunkStreamer {
       source: this.activeSourceLabel,
       version: this.sourceVersion,
       regions: this.regionsRef.length,
+      visuals: this.visualsRenderer.stats(),
     };
   }
 
@@ -341,7 +353,21 @@ export class ChunkStreamer {
     return { maxCache, evicted: this.chunksEvicted - evicted0, buffersHeld: this.stats().buffersHeld };
   }
 
+  /** Pass 5: rebuild every cached chunk's layer + visual data (called after an
+   *  art drop swaps the atlas textures — same frames, new pixels). */
+  repaintAllLayers(): void {
+    for (const entry of this.chunks.values()) {
+      if (entry.bytes && !entry.renderless) this.buildLayer(entry);
+    }
+  }
+
+  /** Gate probe: a cached chunk's precomputed visual data (fringe/scatter). */
+  chunkVisuals(cx: number, cy: number): ChunkVisuals | null {
+    return this.chunks.get(key(cx, cy))?.visuals ?? null;
+  }
+
   destroy(): void {
+    this.visualsRenderer.destroy();
     this.worker?.terminate();
     this.worker = undefined;
     for (const c of this.chunks.values()) this.release(c);
@@ -472,8 +498,9 @@ export class ChunkStreamer {
       const row: number[] = [];
       for (let i = 0; i < CHUNK_TILES; i++) {
         const o = (j * CHUNK_TILES + i) * TILE_RECORD_BYTES;
-        // Punched out under stamps; otherwise biome frame + speckle variant.
-        row.push((bytes[o + 3] & 0x80) !== 0 ? -1 : bytes[o] * VARIANTS_PER_BIOME + (bytes[o + 2] & (VARIANTS_PER_BIOME - 1)));
+        // Punched out under stamps; otherwise biome frame + speckle variant
+        // (Pass 5 atlas: ATLAS_STRIDE cells per biome — slots 0-3 variants).
+        row.push((bytes[o + 3] & 0x80) !== 0 ? -1 : bytes[o] * ATLAS_STRIDE + (bytes[o + 2] & (VARIANTS_PER_BIOME - 1)));
       }
       data.push(row);
     }
@@ -496,6 +523,25 @@ export class ChunkStreamer {
     }
     entry.map = map;
     entry.layer = layer;
+    // Pass 5: fringe/water/scatter data — pure function of the records (the
+    // border resolver keeps chunk seams deterministic at the current version).
+    entry.visuals = computeChunkVisuals(bytes, entry.cx, entry.cy, (tx, ty) => this.tileBiomeAt(tx, ty));
+  }
+
+  /** Neighbor-biome resolver for visual autotiling: a cached chunk at the
+   *  CURRENT source version wins; anything else recomputes through the pure
+   *  per-tile reference — byte-identical to what that chunk will hold. */
+  private tileBiomeAt(tx: number, ty: number): number {
+    const cx = Math.floor(tx / CHUNK_TILES);
+    const cy = Math.floor(ty / CHUNK_TILES);
+    const entry = this.chunks.get(key(cx, cy));
+    if (entry?.bytes && entry.version === this.sourceVersion) {
+      const i = tx - cx * CHUNK_TILES;
+      const j = ty - cy * CHUNK_TILES;
+      return entry.bytes[(j * CHUNK_TILES + i) * TILE_RECORD_BYTES];
+    }
+    if (this.activeSourceLabel === 'earth' && this.planetGrids) return earthTileRecord(tx, ty, this.planetGrids, this.regionsRef)[0];
+    return procTileRecord(tx, ty)[0];
   }
 
   private evict(pcx: number, pcy: number): void {
@@ -519,6 +565,7 @@ export class ChunkStreamer {
     c.layer = undefined;
     c.map = undefined;
     c.bytes = null; // buffer released
+    c.visuals = undefined;
   }
 
   private stampAt(x: number, y: number): { map: GameMap } | null {

@@ -21,7 +21,7 @@
 // Self-contained: builds nothing (run `npm run build` first — `npm run verify`
 // chains it), starts its own preview server on :4174, exits nonzero on any
 // failure. Requires the window.__game handle exported by src/main.ts.
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -330,6 +330,69 @@ const ok = (name, pass, detail = '') => {
     'plane-anchor-invariance: plane anchors byte-identical across v1/v2/flag permutations; TRINITY_ARENA restored hell-local and in-plane',
     violations.length === 0 && tOk && invariant >= 1 && shifted >= 40,
     JSON.stringify({ invariant, shifted, violations: violations.slice(0, 8), trinity: t }),
+  );
+}
+
+// 0f. LINT-HARD-WIRED (PASS 5, pure Node): the terrain-art lint + converter
+// are wired as npm scripts AND enforce the drop contract — the lint passes a
+// contract-true fixture, hard-fails a contract-breaking one, and the magenta
+// converter actually keys pixels out. The tools run for real; nothing mocked.
+{
+  const { PNG } = await import('pngjs');
+  const { mkdirSync, writeFileSync } = await import('node:fs');
+  const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url).pathname, 'utf8'));
+  const scriptsWired = pkg.scripts['lint:terrain-art'] === 'node tools/lint-terrain-art.mjs' && pkg.scripts['convert:terrain'] === 'node tools/convert-terrain-art.mjs';
+  const fx = new URL('../node_modules/.cache/toh-art-fixtures', import.meta.url).pathname;
+  rmSync(fx, { recursive: true, force: true });
+  mkdirSync(join(fx, 'good'), { recursive: true });
+  mkdirSync(join(fx, 'bad'), { recursive: true });
+  mkdirSync(join(fx, 'raw'), { recursive: true });
+  // Good: a contract-true grass sheet (opaque base+anim row, dithered fringes).
+  const good = new PNG({ width: 256, height: 128 });
+  for (let y = 0; y < 128; y++) {
+    for (let x = 0; x < 256; x++) {
+      const o = (y * 256 + x) * 4;
+      const row = Math.floor(y / 32);
+      const col = Math.floor(x / 32);
+      let a = 0;
+      if (row === 0 && col <= 6) a = 255;
+      else if (row >= 1 && (row < 3 || col === 0)) a = (x + y) % 2 ? 255 : 0;
+      good.data[o] = 90 + col; // distinct variants (keeps the advisory quiet too)
+      good.data[o + 1] = 150;
+      good.data[o + 2] = 70;
+      good.data[o + 3] = a;
+    }
+  }
+  writeFileSync(join(fx, 'good', 'grass.png'), PNG.sync.write(good));
+  // Bad: a wrong-size sheet — the exact class of drop the lint must stop.
+  writeFileSync(join(fx, 'bad', 'grass.png'), PNG.sync.write(new PNG({ width: 64, height: 64 })));
+  // Raw: a magenta-keyed prop for the converter round-trip.
+  const raw = new PNG({ width: 32, height: 32 });
+  for (let i = 0; i < raw.data.length; i += 4) {
+    const key = (i / 4) % 2 === 0;
+    raw.data[i] = key ? 255 : 10;
+    raw.data[i + 1] = key ? 0 : 200;
+    raw.data[i + 2] = key ? 255 : 10;
+    raw.data[i + 3] = 255;
+  }
+  mkdirSync(join(fx, 'raw', 'props'), { recursive: true });
+  writeFileSync(join(fx, 'raw', 'props', 'boulder-a.png'), PNG.sync.write(raw));
+  const run = (args) => spawnSync('node', args, { encoding: 'utf8' });
+  const goodRun = run(['tools/lint-terrain-art.mjs', '--dir', join(fx, 'good')]);
+  const badRun = run(['tools/lint-terrain-art.mjs', '--dir', join(fx, 'bad')]);
+  const realRun = run(['tools/lint-terrain-art.mjs']); // the live drop dir must be clean
+  const convRun = run(['tools/convert-terrain-art.mjs', join(fx, 'raw'), join(fx, 'out')]);
+  let keyed = false;
+  try {
+    const out = PNG.sync.read(readFileSync(join(fx, 'out', 'props', 'boulder-a.png')));
+    keyed = out.data[3] === 0 && out.data[7] === 255; // magenta px transparent, real px kept
+  } catch {
+    keyed = false;
+  }
+  ok(
+    'lint-hard-wired: npm scripts wired; lint passes a contract-true fixture, hard-fails a broken one, live dir clean; converter keys magenta',
+    scriptsWired && goodRun.status === 0 && badRun.status === 1 && /HARD/.test(badRun.stderr) && realRun.status === 0 && convRun.status === 0 && keyed,
+    JSON.stringify({ scriptsWired, good: goodRun.status, bad: badRun.status, real: realRun.status, conv: convRun.status, keyed }),
   );
 }
 
@@ -8069,6 +8132,349 @@ try {
     'cache-bound: 300-chunk traversal holds the cache at <= 96 with LRU evictions; buffers released',
     cacheBound.maxCache <= 96 && cacheBound.evicted >= 200 && cacheBound.buffersHeld <= 96,
     JSON.stringify(cacheBound),
+  );
+
+  // ── PASS 5: TERRAIN ART PIPELINE (same live v2 session) ───────────────────
+  // 2j0. priority-lock: the visuals config ships EXACTLY the locked render
+  // model — fringe priority order, overlay budget, scatter densities, pool
+  // caps, the 17 fringe geometries, and the drop-contract tables.
+  const prioLock = await page.evaluate(() => {
+    const v = window.__worldScale.visuals;
+    return {
+      seq: v.TERRAIN_PRIORITY.join(','),
+      rankOk: v.TERRAIN_PRIORITY.every((b, i) => v.PRIORITY_RANK[b] === i),
+      biomes: v.OVERLAY_MAX_BIOMES,
+      quads: v.OVERLAY_MAX_QUADS,
+      dens: [v.SCATTER_DENSITY[6], v.SCATTER_DENSITY[7], v.SCATTER_DENSITY[11], v.SCATTER_DENSITY[10], v.SCATTER_DENSITY[5]],
+      caps: [v.SCATTER_POOL_CAP, v.FRINGE_POOL_CAP],
+      cells: v.FRINGE_CELLS.length,
+      sheets: Object.keys(v.BIOME_SHEET_NAME).length,
+      props: Object.keys(v.PROP_TABLE).length,
+    };
+  });
+  ok(
+    'priority-lock: TERRAIN_PRIORITY order, overlay budget 2/4, densities .30/.22/.15/.05/.03, pool caps 900/2600, 17 fringe cells, contract tables',
+    prioLock.seq === '0,1,2,5,4,3,11,8,7,6,9,10' &&
+      prioLock.rankOk &&
+      prioLock.biomes === 2 &&
+      prioLock.quads === 4 &&
+      prioLock.dens.join(',') === '0.3,0.22,0.15,0.05,0.03' &&
+      prioLock.caps.join(',') === '900,2600' &&
+      prioLock.cells === 17 &&
+      prioLock.sheets === 12 &&
+      prioLock.props === 11,
+    JSON.stringify(prioLock),
+  );
+
+  // 2j1. fringe-selection: the pure mask→pieces function agrees with an
+  // INDEPENDENT rule-by-rule reference over ALL 256 neighbor masks (4 edges ×
+  // 4 diagonals), including the corner-in suppression rule.
+  const fringeSel = await page.evaluate(() => {
+    const v = window.__worldScale.visuals;
+    const ref = (m) => {
+      const edges = ['n', 'e', 's', 'w'].filter((k) => m[k]);
+      let out = [];
+      if (edges.length === 4) out = ['island'];
+      else if (edges.length === 3) out = ['cap-open-' + ['n', 'e', 's', 'w'].find((k) => !m[k])];
+      else if (edges.length === 2) {
+        const pair = edges.join('');
+        if (pair === 'ns') out = ['edge-n', 'edge-s'];
+        else if (pair === 'ew') out = ['edge-e', 'edge-w'];
+        else out = [{ ne: 'corner-out-ne', es: 'corner-out-se', sw: 'corner-out-sw', nw: 'corner-out-nw' }[pair]];
+      } else if (edges.length === 1) out = ['edge-' + edges[0]];
+      for (const d of ['ne', 'se', 'sw', 'nw']) {
+        if (m[d] && !m[d[0]] && !m[d[1]]) out.push('corner-in-' + d);
+      }
+      return out;
+    };
+    let mismatches = 0;
+    let checked = 0;
+    let sample = null;
+    for (let bits = 0; bits < 256; bits++) {
+      const m = {
+        n: !!(bits & 1),
+        e: !!(bits & 2),
+        s: !!(bits & 4),
+        w: !!(bits & 8),
+        ne: !!(bits & 16),
+        se: !!(bits & 32),
+        sw: !!(bits & 64),
+        nw: !!(bits & 128),
+      };
+      checked++;
+      const got = v.fringePiecesForMask(m).slice().sort().join('|');
+      const want = ref(m).sort().join('|');
+      if (got !== want) {
+        mismatches++;
+        if (!sample) sample = { bits, got, want };
+      }
+    }
+    return { checked, mismatches, sample };
+  });
+  ok(
+    'fringe-selection: all 256 neighbor masks agree with the independent rule reference (edges, corners, caps, island, corner-in suppression)',
+    fringeSel.checked === 256 && fringeSel.mismatches === 0,
+    JSON.stringify(fringeSel),
+  );
+
+  // 2j2. overlay-budget: three synthetic neighborhoods through the REAL
+  // selector — 3 higher biomes trim to the top-2 by priority; 6 candidate
+  // quads trim to 4 dropping the LOWEST priority first; no higher neighbor
+  // means no quads.
+  const ovBudget = await page.evaluate(() => {
+    const v = window.__worldScale.visuals;
+    const GRASS = 3;
+    const DESERT = 5;
+    const FOREST = 6;
+    const SNOW = 9;
+    const ROCK = 10;
+    const nb = (o) => ({ n: GRASS, e: GRASS, s: GRASS, w: GRASS, ne: GRASS, se: GRASS, sw: GRASS, nw: GRASS, ...o });
+    const a = v.selectOverlays(GRASS, nb({ n: FOREST, e: SNOW, s: ROCK }));
+    const b = v.selectOverlays(GRASS, nb({ n: FOREST, s: FOREST, ne: ROCK, se: ROCK, sw: ROCK, nw: ROCK }));
+    const c = v.selectOverlays(ROCK, nb({}));
+    const d = v.selectOverlays(GRASS, nb({ n: DESERT })); // LOWER priority neighbor: desert never fringes onto grass
+    return {
+      a: a.map((q) => `${q.biome}:${q.cell}`),
+      b: b.map((q) => `${q.biome}:${q.cell}`),
+      c: c.length,
+      d: d.length,
+    };
+  });
+  ok(
+    'overlay-budget: <=2 biomes (highest kept), <=4 quads (lowest trimmed first), zero quads without a higher neighbor',
+    ovBudget.a.join('|') === '9:edge-e|10:edge-s' &&
+      ovBudget.b.join('|') === '10:corner-in-ne|10:corner-in-se|10:corner-in-sw|10:corner-in-nw' &&
+      ovBudget.c === 0 &&
+      ovBudget.d === 0,
+    JSON.stringify(ovBudget),
+  );
+
+  // 2j3. art-fallback-chain: the all-procedural boot has both atlases + all
+  // prop silhouettes; injecting a synthetic DESERT sheet through the REAL
+  // activation path recolors ONLY desert (base cells + named fringe frames,
+  // repaint clean); rebuilding with no art restores the procedural pixels
+  // byte-identically. Per-biome activation, loud fallback, zero errors.
+  const afcPe0 = pageErrors.length;
+  const artChain = await page.evaluate(() => {
+    const ms = window.__ready();
+    const v = window.__worldScale.visuals;
+    const readBase = (biome) => {
+      const ctx = ms.textures.get('terrain-ph').context;
+      return [...ctx.getImageData((biome * 8 + 0) * 32 + 16, 16, 1, 1).data];
+    };
+    const existed = ms.textures.exists('terrain-ph') && ms.textures.exists('terrain-fringe');
+    const propsOk = Object.keys(v.PROP_TABLE).every((id) => ms.textures.exists(`terrain-prop-${id}`));
+    const before = readBase(5);
+    const grassBefore = readBase(3);
+    const cvs = document.createElement('canvas');
+    cvs.width = 256;
+    cvs.height = 128;
+    const c = cvs.getContext('2d');
+    c.fillStyle = '#ff8800';
+    c.fillRect(0, 0, 7 * 32, 32); // base + anim row fully opaque
+    for (let row = 1; row < 4; row++) c.fillRect(0, row * 32, 256, 16); // fringe cells: top half opaque
+    window.__worldScale.buildTerrainAtlases(ms, new Map([[5, cvs]]));
+    ms.chunkStreamer.repaintAllLayers();
+    const after = readBase(5);
+    const grassAfter = readBase(3);
+    const ftex = ms.textures.get('terrain-fringe');
+    const frameOk = ftex.has('5:edge-n') && ftex.has('5:island') && ftex.has('3:edge-n');
+    const fctx = ftex.context;
+    const fTop = [...fctx.getImageData(16, 5 * 32 + 4, 1, 1).data];
+    const fBot = [...fctx.getImageData(16, 5 * 32 + 28, 1, 1).data];
+    window.__worldScale.buildTerrainAtlases(ms, new Map());
+    ms.chunkStreamer.repaintAllLayers();
+    const restored = readBase(5);
+    return { existed, propsOk, before, after, grassSame: grassBefore.join() === grassAfter.join(), frameOk, fTop, fBot, restoredSame: restored.join() === before.join() };
+  });
+  ok(
+    'art-fallback-chain: procedural boot complete; a one-biome synthetic drop activates ONLY that biome (base + fringe frames); no-art rebuild restores procedural pixels; zero errors',
+    artChain.existed &&
+      artChain.propsOk &&
+      artChain.after.join() === '255,136,0,255' &&
+      artChain.before.join() !== artChain.after.join() &&
+      artChain.grassSame &&
+      artChain.frameOk &&
+      artChain.fTop.join() === '255,136,0,255' &&
+      artChain.fBot[3] === 0 &&
+      artChain.restoredSame &&
+      pageErrors.length === afcPe0,
+    JSON.stringify(artChain),
+  );
+
+  // 2j4. water-anim-or-shimmer: the fallback atlas ships three DISTINCT water
+  // anim frames (the shimmer is real without art), and a mid-Pacific tile
+  // actually cycles through anim slots 4-6 in the live layer.
+  await page.evaluate(() => {
+    const ms = window.__ready();
+    ms.mountSys.dismount();
+    const p = ms.terrestrialPxFromLatLng({ lat: 5, lng: -150 });
+    ms.player.sprite.body.reset(p.x, p.y);
+    ms.lastLandPos = undefined;
+  });
+  await page.waitForTimeout(1400);
+  await page.evaluate(() => {
+    const ms = window.__ready();
+    const p = ms.terrestrialPxFromLatLng({ lat: 5, lng: -150 });
+    ms.player.sprite.body.reset(p.x, p.y);
+    ms.lastLandPos = undefined;
+  });
+  await page.waitForTimeout(1600);
+  const waterAnim = await page.evaluate(async () => {
+    const ms = window.__ready();
+    const st = ms.chunkStreamer;
+    const cell = (slot) => {
+      const ctx = ms.textures.get('terrain-ph').context;
+      return ctx.getImageData((0 * 8 + slot) * 32, 0, 32, 32).data.join();
+    };
+    const a4 = cell(4);
+    const a5 = cell(5);
+    const a6 = cell(6);
+    const cx = Math.floor((ms.player.x - st.originPx.x) / 2048);
+    const cy = Math.floor((ms.player.y - st.originPx.y) / 2048);
+    const vis = st.chunkVisuals(cx, cy);
+    if (!vis || vis.water.length === 0) return { setup: `no water visuals at ${cx},${cy}` };
+    const w = vis.water[0] & 0x0fff; // packed: bits 0-11 local tile index
+    const wi = w % 64;
+    const wj = Math.floor(w / 64);
+    const layer = st.chunks.get(`${cx},${cy}`).layer;
+    const seen = new Set();
+    for (let k = 0; k < 10; k++) {
+      seen.add(layer.getTileAt(wi, wj).index);
+      await new Promise((r) => setTimeout(r, 250));
+    }
+    return {
+      setup: 'ok',
+      distinct: a4 !== a5 && a5 !== a6 && a4 !== a6,
+      waterTiles: vis.water.length,
+      seen: [...seen].sort(),
+      cycles: st.stats().visuals.waterCycles,
+    };
+  });
+  ok(
+    'water-anim-or-shimmer: three distinct fallback anim frames; a live mid-Pacific tile cycles through anim slots 4-6',
+    waterAnim.setup === 'ok' &&
+      waterAnim.distinct === true &&
+      waterAnim.waterTiles >= 3000 &&
+      waterAnim.seen.length >= 2 &&
+      waterAnim.seen.every((i) => i >= 4 && i <= 6) &&
+      waterAnim.cycles > 0,
+    JSON.stringify(waterAnim),
+  );
+
+  // 2j5. scatter-determinism: the pure per-tile hash hits the locked FOREST
+  // density over 10k tiles and never scatters bare biomes; a REAL forest
+  // chunk's streamed scatter list recomputes byte-identically from the pure
+  // reference (flags + hash — nothing random, nothing frame-dependent).
+  const scatterDet = await page.evaluate(() => {
+    const ws = window.__worldScale;
+    let hits = 0;
+    for (let tx = 0; tx < 100; tx++) {
+      for (let ty = 0; ty < 100; ty++) {
+        if (ws.scatterFor(100000 + tx, 200000 + ty, 6)) hits++;
+      }
+    }
+    const freq = hits / 10000;
+    let grassNone = true;
+    for (let k = 0; k < 200; k++) if (ws.scatterFor(5000 + k, 7000, 3)) grassNone = false;
+    const a = ws.scatterFor(123456, 654321, 6);
+    const b = ws.scatterFor(123456, 654321, 6);
+    const stable = JSON.stringify(a) === JSON.stringify(b);
+    // A real forest anchor: first candidate whose composed earth record is
+    // FOREST with the scatter flag (loud setup failure if none).
+    const cands = [
+      [47.6, -123.7],
+      [46.1, -123.4],
+      [48.6, -121.3],
+      [50.5, -126.5],
+      [44.5, -122.2],
+    ];
+    const ms = window.__ready();
+    const st = ms.chunkStreamer;
+    let spot = null;
+    for (const [lat, lng] of cands) {
+      const r = st.earthSample(lat, lng);
+      if (r && r[0] === 6 && (r[3] & 2) !== 0) {
+        spot = { lat, lng };
+        break;
+      }
+    }
+    return { freq, grassNone, stable, spot };
+  });
+  let scatterLive = { setup: 'no forest spot' };
+  if (scatterDet.spot) {
+    await page.evaluate((spot) => {
+      const ms = window.__ready();
+      const p = ms.terrestrialPxFromLatLng(spot);
+      ms.player.sprite.body.reset(p.x, p.y);
+      ms.lastLandPos = undefined;
+    }, scatterDet.spot);
+    await page.waitForTimeout(1400);
+    await page.evaluate((spot) => {
+      const ms = window.__ready();
+      const p = ms.terrestrialPxFromLatLng(spot);
+      ms.player.sprite.body.reset(p.x, p.y);
+      ms.lastLandPos = undefined;
+    }, scatterDet.spot);
+    await page.waitForTimeout(1600);
+    scatterLive = await page.evaluate(() => {
+      const ms = window.__ready();
+      const ws = window.__worldScale;
+      const st = ms.chunkStreamer;
+      const cx = Math.floor((ms.player.x - st.originPx.x) / 2048);
+      const cy = Math.floor((ms.player.y - st.originPx.y) / 2048);
+      const bytes = st.chunkBytes(cx, cy);
+      const vis = st.chunkVisuals(cx, cy);
+      if (!bytes || !vis) return { setup: `chunk ${cx},${cy} not built` };
+      const expected = [];
+      for (let j = 0; j < 64; j++) {
+        for (let i = 0; i < 64; i++) {
+          const o = (j * 64 + i) * 4;
+          const fl = bytes[o + 3];
+          if ((fl & 0x80) !== 0 || (fl & 2) === 0) continue;
+          const s = ws.scatterFor(cx * 64 + i, cy * 64 + j, bytes[o]);
+          if (s) expected.push({ i, j, ...s });
+        }
+      }
+      return {
+        setup: 'ok',
+        count: vis.scatter.length,
+        match: JSON.stringify(expected) === JSON.stringify(vis.scatter),
+      };
+    });
+  }
+  ok(
+    'scatter-determinism: pure FOREST density within 0.30±0.03 over 10k tiles, bare biomes never scatter, and a live forest chunk recomputes byte-identically',
+    Math.abs(scatterDet.freq - 0.3) <= 0.03 &&
+      scatterDet.grassNone === true &&
+      scatterDet.stable === true &&
+      scatterLive.setup === 'ok' &&
+      scatterLive.count >= 20 &&
+      scatterLive.match === true,
+    JSON.stringify({ ...scatterDet, live: scatterLive }),
+  );
+
+  // 2j6. scatter-pool-stability: 3.5s of real movement through the forest —
+  // both pools stay hard-capped, visible never exceeds the pool, the pools
+  // never churn (created === pool size, monotone), and the second half of the
+  // run reuses the warm pool instead of allocating per frame.
+  const poolPe0 = pageErrors.length;
+  await page.keyboard.down('d');
+  const poolSamples = [];
+  for (let k = 0; k < 10; k++) {
+    await page.waitForTimeout(350);
+    poolSamples.push(await page.evaluate(() => window.__ready().chunkStreamer.stats().visuals));
+  }
+  await page.keyboard.up('d');
+  const poolMid = poolSamples[4];
+  const poolEnd = poolSamples[9];
+  const poolOk = poolSamples.every(
+    (s) => s.scatterPool <= 900 && s.fringePool <= 2600 && s.scatterVisible <= s.scatterPool && s.fringeVisible <= s.fringePool && s.scatterCreated === s.scatterPool && s.fringeCreated === s.fringePool,
+  );
+  ok(
+    'scatter-pool-stability: pools hard-capped and churn-free through a forest run; the warm pool is reused, not regrown',
+    poolOk && poolEnd.scatterVisible > 0 && poolEnd.scatterCreated - poolMid.scatterCreated <= 400 && pageErrors.length === poolPe0,
+    JSON.stringify({ mid: poolMid, end: poolEnd }),
   );
 
   // 2g4. offline-cache: a SECOND v2 boot must serve planet.bin from
