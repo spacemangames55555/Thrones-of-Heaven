@@ -53,12 +53,31 @@ export class PauseScene extends Phaser.Scene {
       .setOrigin(0.5);
 
     const btnW = panelW - 48;
-    this.makeButton(cx, h / 2 - 138, btnW, 'Resume', 0x13506b, 0x49d6ff, () => this.resumeGame());
-    this.makeButton(cx, h / 2 - 84, btnW, 'Skills', 0x2a1f3a, 0xb98aff, () => this.onSkills());
-    this.makeButton(cx, h / 2 - 30, btnW, 'Save Game', 0x1d2b40, 0x9fd0ff, () => this.onSave());
-    this.makeButton(cx, h / 2 + 24, btnW, 'Export Save', 0x1d3a2b, 0x7ae0a8, () => this.onExport());
-    this.makeButton(cx, h / 2 + 78, btnW, 'Import Save', 0x3a331d, 0xe0c87a, () => void this.onImport());
-    this.makeButton(cx, h / 2 + 132, btnW, 'Return to Title', 0x4a1d1d, 0xff7a5a, () => this.onReturnToTitle());
+    // TRAVEL (Pass 4): Summon Mount always; Waystones once >= 2 are attuned.
+    // The list is dynamic, so the stride tightens as entries grow (the panel
+    // must keep fitting a LANDSCAPE viewport).
+    const travel = this.scene.get('MainScene') as unknown as {
+      mountSys?: { trySummon(): boolean };
+      waypointSys?: { unlocked: Set<string> };
+      openWaypointPanel?: () => void;
+    };
+    const entries: { label: string; fill: number; stroke: number; cb: () => void }[] = [
+      { label: 'Resume', fill: 0x13506b, stroke: 0x49d6ff, cb: () => this.resumeGame() },
+      { label: 'Skills', fill: 0x2a1f3a, stroke: 0xb98aff, cb: () => this.onSkills() },
+    ];
+    if (travel.mountSys) entries.push({ label: 'Summon Mount', fill: 0x1d3540, stroke: 0x7ad6c8, cb: () => this.onSummonMount() });
+    if ((travel.waypointSys?.unlocked.size ?? 0) >= 2) {
+      entries.push({ label: 'Waystones', fill: 0x25203a, stroke: 0x9fb0ff, cb: () => this.onWaystones() });
+    }
+    entries.push(
+      { label: 'Save Game', fill: 0x1d2b40, stroke: 0x9fd0ff, cb: () => this.onSave() },
+      { label: 'Export Save', fill: 0x1d3a2b, stroke: 0x7ae0a8, cb: () => this.onExport() },
+      { label: 'Import Save', fill: 0x3a331d, stroke: 0xe0c87a, cb: () => void this.onImport() },
+      { label: 'Return to Title', fill: 0x4a1d1d, stroke: 0xff7a5a, cb: () => this.onReturnToTitle() },
+    );
+    const stride = entries.length >= 8 ? 46 : entries.length === 7 ? 50 : 54;
+    const firstY = h / 2 - 3 - ((entries.length - 1) * stride) / 2;
+    entries.forEach((e, i) => this.makeButton(cx, firstY + i * stride, btnW, e.label, e.fill, e.stroke, e.cb));
 
     // A small toast for save feedback (the game's own "Saved" flash is paused).
     this.toast = this.add
@@ -76,6 +95,20 @@ export class PauseScene extends Phaser.Scene {
   private resumeGame(): void {
     this.scene.resume('MainScene');
     this.scene.stop();
+  }
+
+  /** TRAVEL (Pass 4): resume play, then start the mount summon cast. */
+  private onSummonMount(): void {
+    const travel = this.scene.get('MainScene') as unknown as { mountSys?: { trySummon(): boolean } };
+    this.resumeGame();
+    travel.mountSys?.trySummon();
+  }
+
+  /** TRAVEL (Pass 4): resume play, then open the waystone travel panel. */
+  private onWaystones(): void {
+    const travel = this.scene.get('MainScene') as unknown as { openWaypointPanel?: () => void };
+    this.resumeGame();
+    travel.openWaypointPanel?.();
   }
 
   /** Open the skill tree. MainScene stays paused (this menu paused it); the skill

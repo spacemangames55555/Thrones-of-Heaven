@@ -212,6 +212,12 @@ function migrate(data: SaveData): SaveData {
       rem.latLng = pxToLatLngV1Local(rem.x - ox, rem.y);
     }
   }
+  // v17→v18 — TRAVEL SYSTEMS (Pass 4): waypoint/mount fields only. No
+  // position transforms of any kind.
+  if (data.saveVersion < 18 && data.player) {
+    data.player.unlockedWaypoints ??= [];
+    data.player.mountUnlocked ??= true;
+  }
   if (data.quests) data.quests.completed = [...completed];
   data.saveVersion = SAVE_VERSION;
   return data;

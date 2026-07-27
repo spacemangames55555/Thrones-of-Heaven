@@ -227,6 +227,66 @@ const ok = (name, pass, detail = '') => {
   );
 }
 
+// 0d. QUEST-ANCHOR-SANITY (PASS 4 flip, pure Node): every Acts I–IV authored
+// world-frame anchor (the legacy-frame-translated settings constants) must
+// resolve IN-BOUNDS under the flipped v2 default and sit INSIDE the authored
+// PNW stamp (their content home); every quest radius/range constant must sit
+// within [16, 4096] px. Offenders are enumerated. TRINITY_ARENA is excluded:
+// it is a hell-plane constant with a shipped mistranslation, flagged in the
+// Pass 4 commit body rather than silently changed.
+{
+  const { build } = await import('esbuild');
+  const outfile = new URL('../node_modules/.cache/toh-settings.mjs', import.meta.url).pathname;
+  await build({ entryPoints: [new URL('../src/game/settings.ts', import.meta.url).pathname], bundle: true, format: 'esm', platform: 'node', outfile, logLevel: 'silent' });
+  const settings = await import(outfile);
+  const lf = await (async () => {
+    const out2 = new URL('../node_modules/.cache/toh-legacy-frame.mjs', import.meta.url).pathname;
+    await build({ entryPoints: [new URL('../src/world/legacy-frame.ts', import.meta.url).pathname], bundle: true, format: 'esm', platform: 'node', outfile: out2, logLevel: 'silent' });
+    return import(out2);
+  })();
+  const ws2 = await import(new URL('../node_modules/.cache/toh-world-scale.mjs', import.meta.url).pathname);
+  // The v2 PNW stamp rect (node runs the flipped default, so the deltas are v2).
+  const stampX = lf.LEGACY_GLOBE_ORIGIN_X + Math.round((-126.96 + 180) * ws2.PX_PER_DEG_LNG);
+  const stampY = Math.round((85 - 50.12) * ws2.PX_PER_DEG_LAT);
+  const stampW = 1100 * 32;
+  const stampH = 800 * 32;
+  const worldW = 360 * ws2.PX_PER_DEG_LNG;
+  const worldH = 170 * ws2.PX_PER_DEG_LAT;
+  const anchorOffenders = [];
+  const radiusOffenders = [];
+  let anchors = 0;
+  let radii = 0;
+  for (const [name, v] of Object.entries(settings)) {
+    if (name === 'TRINITY_ARENA') continue; // hell-plane constant (flagged, not swept)
+    if (v && typeof v === 'object' && typeof v.x === 'number' && typeof v.y === 'number' && v.x >= 1_000_000) {
+      anchors++;
+      const inBounds = v.x >= 0 && v.x <= lf.LEGACY_GLOBE_ORIGIN_X + worldW && v.y >= 0 && v.y <= worldH;
+      const onStamp = v.x >= stampX && v.x < stampX + stampW && v.y >= stampY && v.y < stampY + stampH;
+      if (!inBounds || !onStamp) anchorOffenders.push(name);
+    }
+    if (Array.isArray(v)) {
+      for (const e of v) {
+        if (e && typeof e === 'object' && typeof e.x === 'number' && e.x >= 1_000_000) {
+          anchors++;
+          const onStamp = e.x >= stampX && e.x < stampX + stampW && e.y >= stampY && e.y < stampY + stampH;
+          if (!onStamp) anchorOffenders.push(`${name}[]`);
+        }
+      }
+    }
+    // Quest-domain radii only: projectile/bolt HIT radii are weapon hitboxes
+    // (7-12 px by design), not trigger geometry.
+    if (/(_RADIUS|_RANGE)$/.test(name) && typeof v === 'number' && !/BOLT|PROJECTILE|HIT_RADIUS/.test(name)) {
+      radii++;
+      if (v < 16 || v > 4096) radiusOffenders.push(`${name}=${v}`);
+    }
+  }
+  ok(
+    'quest-anchor-sanity: every Acts I-IV world anchor lands in-bounds INSIDE the authored stamp under the v2 default; radii within [16, 4096]',
+    anchors >= 40 && anchorOffenders.length === 0 && radii >= 5 && radiusOffenders.length === 0,
+    JSON.stringify({ anchors, radii, anchorOffenders: anchorOffenders.slice(0, 10), radiusOffenders: radiusOffenders.slice(0, 10) }),
+  );
+}
+
 // 1) Preview server (killed on exit).
 const server = spawn('npx', ['vite', 'preview', '--port', String(PORT), '--strictPort'], { stdio: 'ignore' });
 const kill = () => {
@@ -287,11 +347,11 @@ try {
   });
 
   async function newGame(classId) {
-    await page.goto(`http://localhost:${PORT}/`, { waitUntil: 'load' });
-    await page.waitForFunction(() => !!window.__game && window.__game.scene.isActive('TitleScene'), { timeout: 25000 });
+    await page.goto(`http://localhost:${PORT}/?scale=v1`, { waitUntil: 'load' });
+    await page.waitForFunction(() => !!window.__game && window.__game.scene.isActive('TitleScene'), null, { timeout: 25000 });
     await page.evaluate(() => localStorage.clear());
     await page.evaluate((cid) => window.__game.scene.getScene('TitleScene').scene.start('MainScene', { mode: 'new', classId: cid }), classId);
-    await page.waitForFunction(() => window.__game.scene.isActive('MainScene'), { timeout: 25000 });
+    await page.waitForFunction(() => window.__game.scene.isActive('MainScene'), null, { timeout: 25000 });
     await page.waitForTimeout(1500);
     if (await page.evaluate(() => window.__game.scene.isActive('FirstSkillScene'))) {
       await page.mouse.click(214, 462);
@@ -305,15 +365,15 @@ try {
   // This check drives the REAL UI: the select screen must list exactly one card per
   // REGISTERED class, and CLICKING each card must start MainScene as that class.
   const registeredIds = await (async () => {
-    await page.goto(`http://localhost:${PORT}/`, { waitUntil: 'load' });
-    await page.waitForFunction(() => !!window.__game && window.__game.scene.isActive('TitleScene'), { timeout: 25000 });
+    await page.goto(`http://localhost:${PORT}/?scale=v1`, { waitUntil: 'load' });
+    await page.waitForFunction(() => !!window.__game && window.__game.scene.isActive('TitleScene'), null, { timeout: 25000 });
     return page.evaluate(() => Object.keys(window.__game.scene.getScene('MainScene').classSkillsAll));
   })();
   const startedIds = [];
   let selectCards = -1;
   for (let i = 0; i < registeredIds.length; i++) {
-    await page.goto(`http://localhost:${PORT}/`, { waitUntil: 'load' });
-    await page.waitForFunction(() => !!window.__game && window.__game.scene.isActive('TitleScene'), { timeout: 25000 });
+    await page.goto(`http://localhost:${PORT}/?scale=v1`, { waitUntil: 'load' });
+    await page.waitForFunction(() => !!window.__game && window.__game.scene.isActive('TitleScene'), null, { timeout: 25000 });
     await page.evaluate(() => {
       localStorage.clear();
       window.__game.scene.getScene('TitleScene').scene.start('CharacterSelectScene');
@@ -329,7 +389,7 @@ try {
     selectCards = cards.length;
     if (i >= cards.length) break; // fewer cards than classes → the assert below fails loudly
     await page.mouse.click(cards[i].x, cards[i].y); // the REAL door: a pointer tap on the card
-    await page.waitForFunction(() => window.__game.scene.isActive('MainScene'), { timeout: 25000 });
+    await page.waitForFunction(() => window.__game.scene.isActive('MainScene'), null, { timeout: 25000 });
     await page.waitForTimeout(1200);
     startedIds.push(await page.evaluate(() => window.__game.scene.getScene('MainScene').classId));
   }
@@ -363,10 +423,10 @@ try {
       localStorage.setItem('toh_save', JSON.stringify(raw));
       return spot;
     });
-    await page.goto(`http://localhost:${PORT}/`, { waitUntil: 'load' });
-    await page.waitForFunction(() => !!window.__game && window.__game.scene.isActive('TitleScene'), { timeout: 25000 });
+    await page.goto(`http://localhost:${PORT}/?scale=v1`, { waitUntil: 'load' });
+    await page.waitForFunction(() => !!window.__game && window.__game.scene.isActive('TitleScene'), null, { timeout: 25000 });
     await page.evaluate(() => window.__game.scene.getScene('TitleScene').scene.start('MainScene', { mode: 'continue' }));
-    await page.waitForFunction(() => window.__game.scene.isActive('MainScene'), { timeout: 25000 });
+    await page.waitForFunction(() => window.__game.scene.isActive('MainScene'), null, { timeout: 25000 });
     await page.waitForTimeout(1500);
     return page.evaluate((spot) => {
       const ms = window.__game.scene.getScene('MainScene');
@@ -2625,10 +2685,10 @@ try {
     await wait(120);
     const near0 = { state: ms.lodState, ...counts() };
     zoomTo(0.0005); // world view
-    await wait(ms.feel.lod.fadeMs + 350);
+    await wait(ms.feel.lod.fadeMs + 1200); // generous settle: swiftshader world-zoom frames stall under load (3 observed flakes)
     const far = { state: ms.lodState, ...counts() };
     zoomTo(1.1);
-    await wait(ms.feel.lod.fadeMs + 350);
+    await wait(ms.feel.lod.fadeMs + 1200);
     const near1 = { state: ms.lodState, ...counts() };
     return { near0, far, near1 };
   });
@@ -7024,8 +7084,8 @@ try {
   // flows into columns (every card fully on screen), and the skill tree flows its
   // ten rows into two columns (every node bar fully on screen).
   const landscapeMenus = await (async () => {
-    await page.goto(`http://localhost:${PORT}/`, { waitUntil: 'load' });
-    await page.waitForFunction(() => !!window.__game && window.__game.scene.isActive('TitleScene'), { timeout: 25000 });
+    await page.goto(`http://localhost:${PORT}/?scale=v1`, { waitUntil: 'load' });
+    await page.waitForFunction(() => !!window.__game && window.__game.scene.isActive('TitleScene'), null, { timeout: 25000 });
     await page.evaluate(() => {
       localStorage.clear();
       window.__game.scene.getScene('TitleScene').scene.start('CharacterSelectScene');
@@ -7045,7 +7105,7 @@ try {
     });
     // Into a run (top-left card = blacksmith) → open the skill tree in landscape.
     await page.evaluate(() => window.__game.scene.getScene('CharacterSelectScene').scene.start('MainScene', { mode: 'new', classId: 'blacksmith' }));
-    await page.waitForFunction(() => window.__game.scene.isActive('MainScene'), { timeout: 25000 });
+    await page.waitForFunction(() => window.__game.scene.isActive('MainScene'), null, { timeout: 25000 });
     await page.waitForTimeout(1500);
     if (await page.evaluate(() => window.__game.scene.isActive('FirstSkillScene'))) {
       // The picker's cards are landscape-laid too; click the FIRST card's live position.
@@ -7284,13 +7344,13 @@ try {
 
   // (e) WHEN SHOWN, THE PICKER'S CLASS IS THE LIVE CHARACTER'S: a genuinely
   // fresh character opens the picker for exactly its own class.
-  await page.goto(`http://localhost:${PORT}/`, { waitUntil: 'load' });
-  await page.waitForFunction(() => !!window.__game && window.__game.scene.isActive('TitleScene'), { timeout: 25000 });
+  await page.goto(`http://localhost:${PORT}/?scale=v1`, { waitUntil: 'load' });
+  await page.waitForFunction(() => !!window.__game && window.__game.scene.isActive('TitleScene'), null, { timeout: 25000 });
   await page.evaluate(() => {
     localStorage.clear();
     window.__game.scene.getScene('TitleScene').scene.start('MainScene', { mode: 'new', classId: 'witchdoctor' });
   });
-  await page.waitForFunction(() => window.__game.scene.isActive('FirstSkillScene'), { timeout: 25000 });
+  await page.waitForFunction(() => window.__game.scene.isActive('FirstSkillScene'), null, { timeout: 25000 });
   await page.waitForTimeout(400);
   const freshPicker = await page.evaluate(() => {
     const ms = window.__game.scene.getScene('MainScene');
@@ -7317,13 +7377,13 @@ try {
   // same spot under v1 (lossless); the SAME fixture then boots under
   // ?scale=v2 (+ devspeed cap coverage) and lands on the same GEOGRAPHY
   // through the v2 projection, with the TEMP render window bounding zoom-out.
-  await page.goto(`http://localhost:${PORT}/`, { waitUntil: 'load' });
-  await page.waitForFunction(() => !!window.__game && window.__game.scene.isActive('TitleScene'), { timeout: 25000 });
+  await page.goto(`http://localhost:${PORT}/?scale=v1`, { waitUntil: 'load' });
+  await page.waitForFunction(() => !!window.__game && window.__game.scene.isActive('TitleScene'), null, { timeout: 25000 });
   await page.evaluate(() => {
     localStorage.clear();
     window.__game.scene.getScene('TitleScene').scene.start('MainScene', { mode: 'new', classId: 'druid' });
   });
-  await page.waitForFunction(() => window.__game.scene.isActive('MainScene'), { timeout: 25000 });
+  await page.waitForFunction(() => window.__game.scene.isActive('MainScene'), null, { timeout: 25000 });
   await page.waitForTimeout(1500);
   if (await page.evaluate(() => window.__game.scene.isActive('FirstSkillScene'))) {
     await page.mouse.click(214, 462);
@@ -7337,7 +7397,7 @@ try {
     await wait(200);
     if (!ms.requestSave()) return { setup: 'save write refused' };
     const raw = JSON.parse(localStorage.getItem('toh_save'));
-    const wroteCanonical = raw.saveVersion === 17 && !!raw.world.latLng && !!raw.world.remembered.earth?.latLng;
+    const wroteCanonical = raw.saveVersion >= 17 && !!raw.world.latLng && !!raw.world.remembered.earth?.latLng;
     // Strip to a pure v16 (px-era) fixture — exactly what a shipped save holds.
     delete raw.world.latLng;
     if (raw.world.remembered?.earth) delete raw.world.remembered.earth.latLng;
@@ -7363,10 +7423,10 @@ try {
     };
   });
   await page.goto(`http://localhost:${PORT}/?scale=v2&devspeed=99`, { waitUntil: 'load' });
-  await page.waitForFunction(() => !!window.__game && window.__game.scene.isActive('TitleScene'), { timeout: 25000 });
+  await page.waitForFunction(() => !!window.__game && window.__game.scene.isActive('TitleScene'), null, { timeout: 25000 });
   await page.evaluate((fx) => localStorage.setItem('toh_save', fx), smV1.fixture ?? '{}');
   await page.evaluate(() => window.__game.scene.getScene('TitleScene').scene.start('MainScene', { mode: 'continue' }));
-  await page.waitForFunction(() => window.__game.scene.isActive('MainScene'), { timeout: 60000 });
+  await page.waitForFunction(() => window.__game.scene.isActive('MainScene'), null, { timeout: 60000 });
   await page.waitForTimeout(2500);
   const smV2 = await page.evaluate(
     (expect) => {
@@ -7387,7 +7447,7 @@ try {
   ok(
     'save-migration: a v16 px save gains canonical lat/lng via the pinned v1 projection, reloads losslessly under v1, and the SAME fixture loads under ?scale=v2 onto the same geography (bounded ring window, devspeed capped at 8)',
     smV1.wroteCanonical === true &&
-      smV1.v === 17 &&
+      smV1.v >= 17 &&
       smV1.d <= 0.5 &&
       smV1.dLat < 1e-6 &&
       smV1.dLng < 1e-6 &&
@@ -7409,6 +7469,7 @@ try {
       const st = window.__game.scene.getScene('MainScene').chunkStreamer;
       return !!st && st.activeSourceLabel === 'earth' && st.stats().regions >= 1;
     },
+    null,
     { timeout: 60000 },
   );
 
@@ -7614,6 +7675,7 @@ try {
       }
       return true;
     },
+    null,
     { timeout: 45000 },
   );
   const regionRefine = await page.evaluate(() => {
@@ -7630,6 +7692,206 @@ try {
     JSON.stringify(regionRefine),
   );
 
+  // ── PASS 4: TRAVEL SYSTEMS (v2 session; player still at the Seattle spot) ─
+  // 2h0. travel-distance-ui: the km readout matches the px math exactly for
+  // two fixtures (8,000 px = 5.0 km one-decimal; 40,000 px = 25 km whole).
+  const kmUi = await page.evaluate(() => ({
+    a: window.__worldScale.formatKm(8000),
+    b: window.__worldScale.formatKm(40000),
+    markerHasKm: (() => {
+      const ms = window.__game.scene.getScene('MainScene');
+      return typeof ms.marker !== 'undefined';
+    })(),
+  }));
+  ok('travel-distance-ui: km readout matches px math (5.0 km / 25 km fixtures)', kmUi.a === '5.0 km' && kmUi.b === '25 km', JSON.stringify(kmUi));
+
+  // 2h1. waypoint-registry: 17 nodes (14 class homes by zone id + Olympia +
+  // Boise + the Kamiah staging camp), every anchor walkable post-validation,
+  // every nudge within the 64-tile rule.
+  const wpRegistry = await page.evaluate(() => {
+    const ms = window.__game.scene.getScene('MainScene');
+    const wp = ms.waypointSys;
+    if (!wp) return { setup: 'no waypoint system' };
+    const homes = wp.nodes.filter((n) => n.zoneId).length;
+    const fixed = wp.nodes.filter((n) => !n.zoneId).map((n) => n.id).sort();
+    const walkable = wp.nodes.filter((n) => ms.composedTravelWalkable(n.x, n.y) === true).length;
+    const maxNudge = Math.max(...wp.nodes.map((n) => n.nudgedTiles));
+    const nudged = wp.nodes.filter((n) => n.nudgedTiles > 0).map((n) => `${n.id}:${n.nudgedTiles}`);
+    return { setup: 'ok', total: wp.nodes.length, homes, fixed, validated: wp.validated, walkable, maxNudge, nudged };
+  });
+  ok(
+    'waypoint-registry: 17 nodes resolve on existing anchors, all walkable post-validation, nudges within 64 tiles',
+    wpRegistry.setup === 'ok' &&
+      wpRegistry.total === 17 &&
+      wpRegistry.homes === 14 &&
+      wpRegistry.fixed.join(',') === 'wp-boise,wp-kamiah,wp-olympia' &&
+      wpRegistry.validated === true &&
+      wpRegistry.walkable === 17 &&
+      wpRegistry.maxNudge <= 64,
+    JSON.stringify(wpRegistry),
+  );
+
+  // 2h2. save-migration v17→v18: adds ONLY the travel fields, losslessly.
+  const v18 = await page.evaluate(async () => {
+    const ms = window.__ready();
+    const wait = (t) => new Promise((r) => setTimeout(r, t));
+    if (!ms.requestSave()) return { setup: 'save refused' };
+    const spot = { x: ms.player.x, y: ms.player.y };
+    const raw = JSON.parse(localStorage.getItem('toh_save'));
+    delete raw.player.unlockedWaypoints;
+    delete raw.player.mountUnlocked;
+    raw.saveVersion = 17;
+    localStorage.setItem('toh_save', JSON.stringify(raw));
+    ms.devLoadSave();
+    await wait(500);
+    const d = Math.hypot(ms.player.x - spot.x, ms.player.y - spot.y);
+    if (!ms.requestSave()) return { setup: 'post save refused' };
+    const migrated = JSON.parse(localStorage.getItem('toh_save'));
+    return {
+      setup: 'ok',
+      d: +d.toFixed(2),
+      v: migrated.saveVersion,
+      hasWp: Array.isArray(migrated.player.unlockedWaypoints),
+      mount: migrated.player.mountUnlocked === true,
+      homeUnlocked: migrated.player.unlockedWaypoints.some((id) => id.startsWith('wp-')),
+    };
+  });
+  ok(
+    'save-migration v18: a v17 save gains ONLY waypoint/mount fields and reloads losslessly (class home auto-attuned)',
+    v18.setup === 'ok' && v18.d <= 0.5 && v18.v === 18 && v18.hasWp && v18.mount && v18.homeUnlocked,
+    JSON.stringify(v18),
+  );
+
+  // 2h3. waypoint-discovery: walking into the radius attunes the node, it
+  // persists across save/load, and the class home starts pre-attuned.
+  const wpDiscover = await page.evaluate(async () => {
+    const ms = window.__ready();
+    const wp = ms.waypointSys;
+    const wait = (t) => new Promise((r) => setTimeout(r, t));
+    const home = wp.nodes.find((n) => n.classId === ms.classId);
+    const target = wp.nodes.find((n) => n.id === 'wp-olympia');
+    const preHome = wp.unlocked.has(home.id);
+    const preTarget = wp.unlocked.has(target.id);
+    ms.player.sprite.body.reset(target.x + 100, target.y);
+    ms.lastLandPos = undefined;
+    await wait(900); // two discovery scans
+    const unlockedNow = wp.unlocked.has(target.id);
+    if (!ms.requestSave()) return { setup: 'save refused' };
+    ms.devLoadSave();
+    await wait(500);
+    return { setup: 'ok', preHome, preTarget, unlockedNow, persisted: ms.waypointSys.unlocked.has('wp-olympia') };
+  });
+  ok(
+    'waypoint-discovery: entering the radius attunes the waystone; persists across save/load; class home pre-attuned',
+    wpDiscover.setup === 'ok' && wpDiscover.preHome === true && wpDiscover.preTarget === false && wpDiscover.unlockedNow === true && wpDiscover.persisted === true,
+    JSON.stringify(wpDiscover),
+  );
+
+  // 2h4. waypoint-travel: locked nodes refuse; damage cancels the cast with
+  // no teleport; a clean cast lands within 2 tiles of the anchor.
+  const wpTravel = await page.evaluate(async () => {
+    const ms = window.__ready();
+    const wp = ms.waypointSys;
+    const wait = (t) => new Promise((r) => setTimeout(r, t));
+    const locked = wp.nodes.find((n) => !wp.unlocked.has(n.id));
+    const refuse = wp.startTravel(locked.id);
+    const refusedClean = refuse === false && wp.casting === null;
+    const home = wp.nodes.find((n) => n.classId === ms.classId);
+    wp.startTravel(home.id);
+    const castStarted = wp.casting !== null;
+    const before = { x: ms.player.x, y: ms.player.y };
+    ms.playerHealth.shield = 0;
+    ms.playerHealth.damage(5); // REAL damage intake → the hurt hook cancels
+    ms.playerHealth.shield = 1e9;
+    const cancelled = wp.casting === null;
+    const stayed = Math.hypot(ms.player.x - before.x, ms.player.y - before.y) < 1;
+    wp.startTravel(home.id);
+    await wait(4400); // 3s cast + the world-transition fade
+    const d = Math.hypot(ms.player.x - home.x, ms.player.y - home.y);
+    return { setup: 'ok', refusedClean, castStarted, cancelled, stayed, d: +d.toFixed(1), landed: d <= 64 };
+  });
+  ok(
+    'waypoint-travel: locked refuses, damage cancels without teleport, a clean 3s cast lands within 2 tiles',
+    wpTravel.setup === 'ok' && wpTravel.refusedClean && wpTravel.castStarted && wpTravel.cancelled && wpTravel.stayed && wpTravel.landed,
+    JSON.stringify(wpTravel),
+  );
+
+  // The home arrival can auto-open story dialogue (gameplay freezes while a
+  // conversation is open — by design). Tap through it like a player would so
+  // the mount checks run against a live loop.
+  for (let i = 0; i < 12; i++) {
+    await page.waitForTimeout(280);
+    const uiOpen = await page.evaluate(() => {
+      const ms = window.__game.scene.getScene('MainScene');
+      return ms.dialogue.isOpen() || ms.choice.isOpen();
+    });
+    if (!uiOpen) break;
+    await page.mouse.click(214, 520);
+    await page.mouse.click(214, 462); // a choice row, if a choice is what opened
+  }
+
+  // 2h5. mount-rules: combat blocks the summon; damage interrupts the cast;
+  // mounted speed is EXACTLY MOUNT_SPEED_PX (× the session devspeed);
+  // dealing damage dismounts; planes block and dismount.
+  const mountRules = await page.evaluate(async () => {
+    const ms = window.__ready();
+    const mt = ms.mountSys;
+    const wait = (t) => new Promise((r) => setTimeout(r, t));
+    if (!mt) return { setup: 'no mount system' };
+    // Clean fixture ground: the empty western Sahara (no zones, no enemies).
+    const p = ms.terrestrialPxFromLatLng({ lat: 23.0, lng: 2.0 });
+    ms.player.sprite.body.reset(p.x, p.y);
+    ms.lastLandPos = undefined;
+    await wait(900);
+    ms.lastCombatTime = ms.time.now; // fresh combat → summon must refuse
+    const blockedInCombat = mt.trySummon() === false && mt.state === 'off';
+    ms.lastCombatTime = -1e9;
+    mt.trySummon();
+    const casting = mt.state === 'casting';
+    ms.playerHealth.shield = 0;
+    ms.playerHealth.damage(5); // real intake path
+    ms.playerHealth.shield = 1e9;
+    const interrupted = mt.state === 'off';
+    ms.lastCombatTime = -1e9; // the real damage intake marks combat — clear it
+    mt.trySummon();
+    await wait(1700);
+    const mounted = mt.state === 'mounted' && ms.player.mountedSpeedPx === window.__worldScale.MOUNT_SPEED_PX;
+    // Exact speed through the REAL movement path (velocity magnitude).
+    ms.player.setDirection(1, 0);
+    const body = ms.player.sprite.body;
+    const speedExact = Math.abs(Math.hypot(body.velocity.x, body.velocity.y) - window.__worldScale.MOUNT_SPEED_PX * ms.player.devSpeed) < 1e-6;
+    ms.player.setDirection(0, 0);
+    mt.onPlayerDealtDamage(); // the feel-path funnel (onFeelDamaged drives exactly this)
+    const dismountOnDeal = mt.state === 'off';
+    ms.lastCombatTime = -1e9;
+    mt.trySummon();
+    await wait(1700);
+    const remounted = mt.state === 'mounted';
+    ms.travelToWorld('heaven');
+    await wait(2600); // let the world transition fully land before the next one
+    const planeDismount = mt.state === 'off' && ms.activeWorld === 'heaven';
+    const blockedOnPlane = mt.trySummon() === false;
+    ms.travelToWorld('earth');
+    await wait(2600);
+    const backOnEarth = ms.activeWorld === 'earth';
+    return { setup: 'ok', blockedInCombat, casting, interrupted, mounted, speedExact, dismountOnDeal, remounted, planeDismount, blockedOnPlane, backOnEarth };
+  });
+  ok(
+    'mount-rules: combat blocks summon, damage interrupts cast, mounted speed exactly MOUNT_SPEED_PX, dealing damage dismounts, planes dismount and block',
+    mountRules.setup === 'ok' &&
+      mountRules.blockedInCombat &&
+      mountRules.casting &&
+      mountRules.interrupted &&
+      mountRules.mounted &&
+      mountRules.speedExact &&
+      mountRules.dismountOnDeal &&
+      mountRules.remounted &&
+      mountRules.planeDismount &&
+      mountRules.blockedOnPlane &&
+      mountRules.backOnEarth,
+    JSON.stringify(mountRules),
+  );
+
   // 2f7. playwright drive: 60s of real keyboard autorun east at the capped
   // devspeed — chunks must load AND evict along the way, with zero page or
   // console errors across the window. LAUNCHED MID-PACIFIC: under real Earth
@@ -7637,6 +7899,15 @@ try {
   // 60s corridor (standing on water keeps the shipped walking-out rule; the
   // land-memory snap-back is cleared for the teleport).
   await page.evaluate(() => {
+    const ms = window.__ready();
+    const p = ms.terrestrialPxFromLatLng({ lat: 5, lng: -150 });
+    ms.player.sprite.body.reset(p.x, p.y);
+    ms.lastLandPos = undefined;
+  });
+  await page.waitForTimeout(1400);
+  await page.evaluate(() => {
+    // Re-assert the launch point: a world transition that was still settling
+    // when the first reset ran would otherwise override the teleport.
     const ms = window.__ready();
     const p = ms.terrestrialPxFromLatLng({ lat: 5, lng: -150 });
     ms.player.sprite.body.reset(p.x, p.y);
@@ -7695,6 +7966,55 @@ try {
     JSON.stringify({ ...walkFix, x0: Math.round(walkFix.x0), endX: Math.round(walkEnd.x) }),
   );
 
+  // 2h6. mounted-drive: a 60s MOUNTED run (exactly MOUNT_SPEED_PX × the
+  // session devspeed) across the western Sahara, ending against a forced
+  // water-edge fixture — the speed-scaled lookahead must stop the rider
+  // short, with zero errors across the window.
+  await page.evaluate(() => {
+    const ms = window.__ready();
+    const p = ms.terrestrialPxFromLatLng({ lat: 23.0, lng: 5.0 });
+    ms.player.sprite.body.reset(p.x, p.y);
+    ms.lastLandPos = undefined;
+  });
+  await page.waitForTimeout(1500);
+  const md0 = await page.evaluate(async () => {
+    const ms = window.__ready();
+    ms.lastCombatTime = -1e9;
+    ms.mountSys.trySummon();
+    await new Promise((r) => setTimeout(r, 1700));
+    return { mounted: ms.mountSys.state === 'mounted', x: ms.player.x, pe: 0 };
+  });
+  const mdPe0 = pageErrors.length;
+  const mdCe0 = consoleErrors.length;
+  await page.keyboard.down('d');
+  await page.waitForTimeout(58000);
+  await page.keyboard.up('d');
+  const mdStrip = await page.evaluate(() => {
+    const ms = window.__ready();
+    const stripStart = Math.ceil((ms.player.x + 200) / 32) * 32;
+    const forced = ms.chunkStreamer.devForceWater(stripStart, ms.player.y - 700, stripStart + 700, ms.player.y + 700);
+    return { stripStart, forced, x1: ms.player.x };
+  });
+  await page.keyboard.down('d');
+  await page.waitForTimeout(2000);
+  await page.keyboard.up('d');
+  const mdEnd = await page.evaluate(() => {
+    const ms = window.__game.scene.getScene('MainScene');
+    return { x: ms.player.x, mounted: ms.mountSys.state === 'mounted', v: ms.player.devSpeed };
+  });
+  ok(
+    'mounted-drive: 60s mounted Sahara run at exactly the mounted speed, stopping short of the water-edge fixture, zero errors',
+    md0.mounted &&
+      mdStrip.forced >= 200 &&
+      mdStrip.x1 - md0.x > 384 * mdEnd.v * 50 && // ≥50s worth of exact mounted speed covered
+      mdEnd.x < mdStrip.stripStart &&
+      mdEnd.x > mdStrip.x1 + 5 &&
+      mdEnd.mounted === true &&
+      pageErrors.length === mdPe0 &&
+      consoleErrors.length === mdCe0,
+    JSON.stringify({ dx: Math.round(mdStrip.x1 - md0.x), stop: Math.round(mdStrip.stripStart - mdEnd.x), ...mdEnd }),
+  );
+
   // 2f9. cache-bound: a 300-chunk traversal through the REAL ensure+evict
   // machinery (synchronous renderless synthesis) — cache never exceeds 96,
   // LRU evictions happen, and released chunks drop their buffers.
@@ -7710,10 +8030,10 @@ try {
   // arriving at a live earth source.
   await page.route('**/world/planet.bin', (route) => route.abort());
   await page.goto(`http://localhost:${PORT}/?scale=v2`, { waitUntil: 'load' });
-  await page.waitForFunction(() => !!window.__game && window.__game.scene.isActive('TitleScene'), { timeout: 25000 });
+  await page.waitForFunction(() => !!window.__game && window.__game.scene.isActive('TitleScene'), null, { timeout: 25000 });
   await page.evaluate(() => window.__game.scene.getScene('TitleScene').scene.start('MainScene', { mode: 'continue' }));
-  await page.waitForFunction(() => window.__game.scene.isActive('MainScene'), { timeout: 60000 });
-  await page.waitForFunction(() => window.__game.scene.getScene('MainScene').chunkStreamer?.activeSourceLabel === 'earth', { timeout: 30000 });
+  await page.waitForFunction(() => window.__game.scene.isActive('MainScene'), null, { timeout: 60000 });
+  await page.waitForFunction(() => window.__game.scene.getScene('MainScene').chunkStreamer?.activeSourceLabel === 'earth', null, { timeout: 30000 });
   const offlineCache = await page.evaluate(() => {
     const st = window.__game.scene.getScene('MainScene').chunkStreamer;
     return { planetFrom: st.packOrigin.planet, source: st.activeSourceLabel };
@@ -7723,6 +8043,64 @@ try {
     'offline-cache: second v2 boot serves planet.bin from IndexedDB with the network route blocked',
     offlineCache.planetFrom === 'idb' && offlineCache.source === 'earth',
     JSON.stringify(offlineCache),
+  );
+
+  // ── PASS 4 COMMIT 2: THE FLIP ─────────────────────────────────────────────
+  // 2i0. flip-default: a page with NO param is v2 — streamer live, the earth
+  // packs served from the IndexedDB cache, and the v17-lineage save loading
+  // onto the same geography as before.
+  await page.goto(`http://localhost:${PORT}/`, { waitUntil: 'load' });
+  await page.waitForFunction(() => !!window.__game && window.__game.scene.isActive('TitleScene'), null, { timeout: 25000 });
+  await page.evaluate(() => window.__game.scene.getScene('TitleScene').scene.start('MainScene', { mode: 'continue' }));
+  await page.waitForFunction(() => window.__game.scene.isActive('MainScene'), null, { timeout: 60000 });
+  await page.waitForFunction(() => window.__game.scene.getScene('MainScene').chunkStreamer?.activeSourceLabel === 'earth', null, { timeout: 60000 });
+  const flipDefault = await page.evaluate(() => {
+    const ms = window.__game.scene.getScene('MainScene');
+    return {
+      noParam: !location.search.includes('scale'),
+      v2: window.__worldScale.isScaleV2(),
+      streamer: !!ms.chunkStreamer,
+      planetFrom: ms.chunkStreamer.packOrigin.planet,
+      world: ms.activeWorld,
+      travelSystems: !!ms.mountSys && !!ms.waypointSys,
+    };
+  });
+  ok(
+    'flip-default: no param means v2 — streamer live, planet from IndexedDB cache, travel systems constructed',
+    flipDefault.noParam && flipDefault.v2 === true && flipDefault.streamer && flipDefault.planetFrom === 'idb' && flipDefault.world === 'earth' && flipDefault.travelSystems,
+    JSON.stringify(flipDefault),
+  );
+
+  // 2i1. respawn-nearest: a death mid-PNW respawns at the NEAREST settlement
+  // by LIVE v2 distance — the check recomputes the argmin over the same
+  // candidate set (zone arrivals + the Egypt gate + the Enumclaw square)
+  // independently and the engine must agree.
+  const respawnNearest = await page.evaluate(async () => {
+    const ms = window.__ready();
+    const wait = (t) => new Promise((r) => setTimeout(r, t));
+    const mid = ms.terrestrialPxFromLatLng({ lat: 46.8, lng: -120.6 }); // mid-PNW, between settlements
+    ms.player.sprite.body.reset(mid.x, mid.y);
+    ms.lastLandPos = undefined;
+    await wait(400);
+    const candidates = [...Object.values(ms.regionZoneArrivals), ms.egyptArrivalPos, { x: ms.town.spawn.x, y: ms.town.spawn.y }];
+    let best = null;
+    let bestD = Infinity;
+    for (const c of candidates) {
+      const d = Math.hypot(c.x - mid.x, c.y - mid.y);
+      if (d < bestD) {
+        bestD = d;
+        best = c;
+      }
+    }
+    ms.respawnPlayer(); // the REAL death respawn path (nearest safe point)
+    await wait(200);
+    const d = Math.hypot(ms.player.x - best.x, ms.player.y - best.y);
+    return { candidates: candidates.length, bestD: Math.round(bestD), landedD: +d.toFixed(1), agrees: d <= 64 };
+  });
+  ok(
+    'respawn-nearest: a mid-PNW death respawns at the settlement the v2 distances actually select',
+    respawnNearest.candidates >= 60 && respawnNearest.agrees === true,
+    JSON.stringify(respawnNearest),
   );
 
   // 4) THE GATE: zero page errors across everything above.

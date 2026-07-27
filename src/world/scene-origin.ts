@@ -1,10 +1,10 @@
 import washingtonMap from '../map/washington.map.json';
 import egyptMapJson from '../map/egypt.map.json';
 import type { WashingtonMap } from '../map/mapTypes';
-import { HEAVEN_WORLD_GAP } from '../game/settings';
 import { HEAVEN_WIDTH } from '../map/heavenWorld';
 import { HELL_WIDTH } from '../map/hellWorld';
 import { TILE_SIZE } from '../render/tileAtlas';
+import { HEAVEN_WORLD_GAP } from '../game/settings';
 import { CITY_DEFS } from './cities';
 
 /**

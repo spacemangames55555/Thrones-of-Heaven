@@ -52,6 +52,10 @@ export class Player {
    *  testing. No param ⇒ EXACTLY 1: base speeds untouched. Fixed for the
    *  session at construction; gate-observable. */
   readonly devSpeed = devSpeedMultiplier();
+  /** MOUNTED speed override (px/s). When set, movement runs at EXACTLY this
+   *  speed (× devSpeed only) — skill multipliers and slows do not apply; any
+   *  combat dismounts before they could matter. null = on foot. */
+  mountedSpeedPx: number | null = null;
   /** HOSTILE slow (1 = none). Multiplied on top of speedMultiplier so enemy slows
    *  (dark-caster bolts) compose with — and never clobber — skill/class speed math. */
   slowFactor = 1;
@@ -105,7 +109,7 @@ export class Player {
       this.facingY = y;
       this.applyFacingFrame();
     }
-    const s = RUN_SPEED * this.speedMultiplier * this.slowFactor * this.devSpeed;
+    const s = this.mountedSpeedPx !== null ? this.mountedSpeedPx * this.devSpeed : RUN_SPEED * this.speedMultiplier * this.slowFactor * this.devSpeed;
     this.sprite.setVelocity(x * s, y * s);
   }
 
