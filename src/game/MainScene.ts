@@ -1851,6 +1851,10 @@ export class MainScene extends Phaser.Scene {
       planetSpan.lng * planetCal.pixelsPerDegree.x,
       planetSpan.lat * planetCal.pixelsPerDegree.y,
       isScaleV2() ? (w, h) => ChunkStreamer.outFloor(w, h) : undefined,
+      // PASS 6A: at the zoom cap the SAME gesture hands off to map mode (and
+      // the map button opens it anytime). v1 passes nothing: no button, no
+      // handoff, shipped behavior byte-identical.
+      isScaleV2() ? () => this.openWorldMap() : undefined,
     );
     this.readout = new DebugReadout(this, () => this.activeMap(), this.player);
     // DEV-only live perf readout (FPS / frame-time + entity, effect + pool counts) so
@@ -11677,6 +11681,71 @@ export class MainScene extends Phaser.Scene {
   }
 
   // ── TRAVEL SYSTEMS (WORLD SCALE V2, Pass 4) ────────────────────────────────
+
+  // ── PASS 6A: WORLD MAP MODE (the zoom cap's other half) ────────────────────
+
+  /** Decode the streamed worldmap bytes into the texture once (async, idempotent). */
+  private worldmapDecodePending = false;
+  private ensureWorldmapTexture(): boolean {
+    if (this.textures.exists('worldmap')) return true;
+    const buf = this.chunkStreamer?.worldmapBuf;
+    if (!buf || this.worldmapDecodePending) return false;
+    this.worldmapDecodePending = true;
+    const url = URL.createObjectURL(new Blob([buf], { type: 'image/png' }));
+    const img = new Image();
+    img.onload = () => {
+      if (!this.textures.exists('worldmap')) this.textures.addImage('worldmap', img);
+      URL.revokeObjectURL(url);
+      this.worldmapDecodePending = false;
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      this.worldmapDecodePending = false;
+    };
+    img.src = url;
+    return false;
+  }
+
+  /** Open map mode (the map button + the at-cap zoom handoff both land here).
+   *  v2 earth only; the gameplay camera is NEVER touched — MainScene pauses
+   *  under the map scene and resumes exactly as it was. */
+  openWorldMap(): boolean {
+    if (!isScaleV2() || this.activeWorld !== WORLD_EARTH) return false;
+    if (this.scene.isActive('WorldMapScene')) return false;
+    const wp = this.waypointSys;
+    if (!wp) return false;
+    if (!this.ensureWorldmapTexture()) {
+      this.showBanner('The world map is still being drawn…', 1400);
+      return false;
+    }
+    const host = {
+      playerLatLng: () => this.terrestrialLatLngFromPx(this.player.x, this.player.y),
+      waystones: () =>
+        wp.nodes.map((n) => ({
+          id: n.id,
+          label: n.label,
+          ...this.terrestrialLatLngFromPx(n.x, n.y),
+          attuned: wp.unlocked.has(n.id),
+        })),
+      homeCities: () =>
+        WORLD.filter((z) => z.homeClass).map((z) => ({ label: z.displayName, lat: z.anchor.lat, lng: z.anchor.lng })),
+      questTarget: () => {
+        const t = this.currentMarkerTarget();
+        if (!t) return null;
+        return {
+          ...this.terrestrialLatLngFromPx(t.x, t.y),
+          label: t.label,
+          km: formatKm(Math.hypot(t.x - this.player.x, t.y - this.player.y)),
+        };
+      },
+      // The EXISTING waypoint travel flow — same rules, cast, and cancels.
+      startTravel: (id: string) => wp.startTravel(id),
+      onClosed: () => this.scene.resume(),
+    };
+    this.scene.launch('WorldMapScene', { host });
+    this.scene.pause();
+    return true;
+  }
 
   /** Build the mount + waypoint systems, the waystone pillars (the existing
    *  heaven-pillar texture — real waystone art is ledgered), the interact
