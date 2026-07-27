@@ -7,6 +7,7 @@ import { createProceduralSource, sampleRecord, tileRecord } from './world/terrai
 import * as terrainVisualsConfig from './world/terrain-visuals-config';
 import { scatterFor, tileHash01 } from './world/terrain-visuals';
 import { buildTerrainAtlases, fringeCoverage } from './world/terrain-placeholder';
+import { latLngToMapPx } from './ui/WorldMapScene';
 import { WORLD } from './world/world-manifest';
 import { MANIFEST_CLASS_FOR, homeZoneForClass } from './world/class-canon';
 
@@ -42,6 +43,8 @@ const game = new Phaser.Game(gameConfig);
   tileHash01,
   fringeCoverage,
   buildTerrainAtlases,
+  // Pass 6A: the pure map-marker projection (the gate recomputes it closed-form).
+  latLngToMapPx,
   homeAnchors: Object.keys(MANIFEST_CLASS_FOR).map((classId) => {
     const zone = homeZoneForClass(classId);
     return { classId, zoneId: zone?.id ?? null, anchor: zone?.anchor ?? null };

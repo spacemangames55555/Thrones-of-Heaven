@@ -15,5 +15,12 @@
       "sha256": "14c4ab4de9690edba81e06a2482d085358af557f65c4b68a1b7ff2a0ffda9ff1",
       "version": 1
     }
-  ]
+  ],
+  "worldmap": {
+    "file": "worldmap.png",
+    "w": 2048,
+    "h": 1418,
+    "bytes": 928586,
+    "sha256": "a0152b866bb5627b4f80954cc64f8444c37b7a9465118ae18367cf55112f96c4"
+  }
 }

@@ -49,6 +49,12 @@ export class ZoomControls {
    *  SCALE V2: the streamed ring + visible-tile budget — chunk-streamer.ts
    *  owns the math). Unset ⇒ shipped v1 behavior. */
   private readonly outFloorFn?: (viewW: number, viewH: number) => number;
+  /** PASS 6A ZOOM HANDOFF: at the out-limit a FURTHER zoom-out gesture hands
+   *  off to map mode (plus the always-visible map button). Unset (v1) ⇒ the
+   *  cap simply holds — no button, no handoff, shipped behavior. */
+  private readonly onMapHandoff?: () => void;
+  private lastHandoffAt = -1e9;
+  private mapBtn?: { bg: Phaser.GameObjects.Rectangle; label: Phaser.GameObjects.Text };
 
   constructor(
     scene: Phaser.Scene,
@@ -56,6 +62,7 @@ export class ZoomControls {
     mapPixelWidth: number,
     mapPixelHeight: number,
     outFloorFn?: (viewW: number, viewH: number) => number,
+    onMapHandoff?: () => void,
   ) {
     this.scene = scene;
     this.cam = camera;
@@ -66,8 +73,10 @@ export class ZoomControls {
     this.target = camera.zoom;
     this.outLimit = this.computeOutLimit();
 
+    this.onMapHandoff = onMapHandoff;
     this.inBtn = this.makeButton('+', (p) => this.press('in', p));
     this.outBtn = this.makeButton('−', (p) => this.press('out', p)); // − (minus sign)
+    if (onMapHandoff) this.mapBtn = this.makeButton('◈', () => onMapHandoff());
 
     // Keyboard: '=' / '+' and numpad-add zoom in; '-' / '_' and numpad-sub out.
     const KC = Phaser.Input.Keyboard.KeyCodes;
@@ -157,6 +166,16 @@ export class ZoomControls {
   }
 
   private setTarget(z: number): void {
+    // ZOOM HANDOFF (Pass 6A): a zoom-out request pushing PAST the cap while
+    // already sitting at it opens map mode — the cap is full zoom-out, and
+    // the same gesture keeps going into the map. Debounced; v1 has no hook.
+    if (this.onMapHandoff && z < this.outLimit - 1e-9 && this.target <= this.outLimit + 1e-4) {
+      const now = this.scene.time.now;
+      if (now - this.lastHandoffAt > 700) {
+        this.lastHandoffAt = now;
+        this.onMapHandoff();
+      }
+    }
     this.target = Phaser.Math.Clamp(z, this.outLimit, ZOOM_IN_LIMIT);
   }
 
@@ -218,5 +237,10 @@ export class ZoomControls {
     this.inBtn.label.setPosition(x, inY);
     this.outBtn.bg.setPosition(x, outY);
     this.outBtn.label.setPosition(x, outY);
+    if (this.mapBtn) {
+      const mapY = outY + BTN + GAP; // stacked under the − button
+      this.mapBtn.bg.setPosition(x, mapY);
+      this.mapBtn.label.setPosition(x, mapY);
+    }
   }
 }

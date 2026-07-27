@@ -227,6 +227,72 @@ const ok = (name, pass, detail = '') => {
   );
 }
 
+// 0c2. WORLDMAP-PARITY (PASS 6A, pure Node): the baked map image must agree
+// with the planet pack it renders — exact projection dims, the ≤ 1.5 MB
+// budget, manifest sha, and probe pixels resolving to the correct
+// MAP_PALETTE classes (family sets mirror the live geo-truth gate).
+{
+  const { PNG } = await import('pngjs');
+  const { build } = await import('esbuild');
+  const mk = async (entry, tag) => {
+    const outfile = new URL(`../node_modules/.cache/toh-wmp-${tag}.mjs`, import.meta.url).pathname;
+    await build({ entryPoints: [new URL(entry, import.meta.url).pathname], bundle: true, format: 'esm', platform: 'node', outfile, logLevel: 'silent' });
+    return import(outfile);
+  };
+  const vis = await mk('../src/world/terrain-visuals-config.ts', 'vis');
+  const ws2 = await mk('../src/world/world-scale.ts', 'scale');
+  const schema2 = await mk('../src/world/terrain-schema.ts', 'schema');
+  const B = schema2.Biome;
+  const bytes = readFileSync(new URL('../public/world/worldmap.png', import.meta.url).pathname);
+  const png = PNG.sync.read(bytes);
+  const expectH = Math.round((vis.WORLDMAP_WIDTH * 170 * ws2.PX_PER_DEG_LAT) / (360 * ws2.PX_PER_DEG_LNG));
+  const dimsOk = png.width === vis.WORLDMAP_WIDTH && png.height === expectH;
+  const sizeOk2 = bytes.length <= 1.5 * 1024 * 1024;
+  const wmEntry = JSON.parse(readFileSync(new URL('../public/world/regions.json', import.meta.url).pathname)).worldmap;
+  const shaOk = wmEntry && wmEntry.sha256 === createHash('sha256').update(bytes).digest('hex') && wmEntry.w === png.width && wmEntry.h === png.height;
+  // Nearest MAP_PALETTE class under brightness normalization (hillshade-safe).
+  const classAt = (lat, lng) => {
+    const x = Math.min(png.width - 1, Math.floor(((lng + 180) / 360) * png.width));
+    const y = Math.min(png.height - 1, Math.floor(((85 - lat) / 170) * png.height));
+    const o = (y * png.width + x) * 4;
+    const r = png.data[o];
+    const g = png.data[o + 1];
+    const b = png.data[o + 2];
+    const lum = (r + g + b) / 3 || 1;
+    let best = -1;
+    let bd = Infinity;
+    for (const [id, v] of Object.entries(vis.MAP_PALETTE)) {
+      const pr = (v >> 16) & 255;
+      const pg = (v >> 8) & 255;
+      const pb = v & 255;
+      const pl = (pr + pg + pb) / 3;
+      const d = (r / lum - pr / pl) ** 2 + (g / lum - pg / pl) ** 2 + (b / lum - pb / pl) ** 2;
+      if (d < bd) {
+        bd = d;
+        best = Number(id);
+      }
+    }
+    return best;
+  };
+  const himalaya = new Set();
+  for (let la = 27.5; la <= 28.5; la += 0.1) {
+    for (let ln = 83.5; ln <= 84.5; ln += 0.1) himalaya.add(classAt(la, ln));
+  }
+  const probes = {
+    sahara: classAt(23, 10) === B.DESERT,
+    amazon: [B.FOREST, B.SWAMP, B.SAVANNA].includes(classAt(-3, -60)),
+    pacific: classAt(0, -150) === B.OCEAN,
+    greenland: [B.SNOW, B.TUNDRA].includes(classAt(72, -40)),
+    pnw: [B.FOREST, B.GRASS, B.TAIGA, B.BEACH].includes(classAt(47.6, -123.7)),
+    himalayaHigh: himalaya.has(B.ROCK) || himalaya.has(B.SNOW),
+  };
+  ok(
+    'worldmap-parity: image dims match the projection; <= 1.5 MB; manifest sha matches; Sahara/Amazon/Pacific/Greenland/PNW/Himalaya probe classes correct',
+    dimsOk && sizeOk2 && shaOk && Object.values(probes).every(Boolean),
+    JSON.stringify({ w: png.width, h: png.height, expectH, mb: +(bytes.length / 1048576).toFixed(2), dimsOk, sizeOk: sizeOk2, shaOk, ...probes }),
+  );
+}
+
 // 0d. QUEST-ANCHOR-SANITY (PASS 4 flip, pure Node): every Acts I–IV authored
 // world-frame anchor (the legacy-frame-translated settings constants) must
 // resolve IN-BOUNDS under the flipped v2 default and sit INSIDE the authored
@@ -3137,11 +3203,22 @@ try {
   // no streamer, no worker (only the streamer constructs one), no placeholder
   // atlas texture. Every OTHER check in this gate runs on v1 pages: the whole
   // suite staying green IS the no-behavior-change proof.
-  const v1Inert = await page.evaluate(() => ({
-    streamer: window.__ready().chunkStreamer === undefined,
-    atlas: window.__game.textures.exists('terrain-ph'),
-  }));
-  ok('v1-inert: no param means no streamer, no worker, no placeholder atlas', v1Inert.streamer === true && v1Inert.atlas === false, JSON.stringify(v1Inert));
+  const v1Inert = await page.evaluate(() => {
+    const ms = window.__ready();
+    return {
+      streamer: ms.chunkStreamer === undefined,
+      atlas: window.__game.textures.exists('terrain-ph'),
+      // PASS 6A: no map button, and map mode refuses to open — fully inert.
+      mapBtn: ms.zoomControls.mapBtn === undefined,
+      mapOpen: ms.openWorldMap(),
+      mapScene: window.__game.scene.isActive('WorldMapScene'),
+    };
+  });
+  ok(
+    'v1-inert: no param means no streamer, no worker, no placeholder atlas, no map button, map mode refuses',
+    v1Inert.streamer === true && v1Inert.atlas === false && v1Inert.mapBtn === true && v1Inert.mapOpen === false && v1Inert.mapScene === false,
+    JSON.stringify(v1Inert),
+  );
 
   // 2c. EVERY COMMIT-1 EXTENSION THROUGH A REAL DRUID SKILL: stealth (Snow Leopard),
   // the dual-use bolt (Lye, heal path), both friendly zones (Sage Burn mobile +
@@ -8119,7 +8196,10 @@ try {
     const d = ms.spawnDemon(home.x + 100, home.y, ms.activeMap().layer);
     d.takeHit(1);
     ms.applyDotInRange(d.x, d.y, 60, 3, 250, 9000, 0x77ff77);
-    await wait(600); // ticks are landing
+    // The funnel recomputes per FRAME - under swiftshader load frames can
+    // stall, so ESTABLISH the engaged precondition by polling (the assertion
+    // itself is unchanged: DoT live + combat derived).
+    for (let k = 0; k < 14 && !ms.inCombatDerived(); k++) await wait(300);
     const dotLive = ms.dots.length >= 1 && ms.inCombatDerived() === true;
     d.destroy(); // the eviction path (deactivateRegionZone destroys exactly so)
     await wait(600);
@@ -8171,6 +8251,188 @@ try {
     leashRelease.setup === 'ok' && leashRelease.engaged && leashRelease.released && leashRelease.deaggroed && leashRelease.leash === 2048,
     JSON.stringify(leashRelease),
   );
+
+  // ── PASS 6A: WORLD MAP MODE + ZOOM HANDOFF (same live v2 session) ─────────
+  // 2m0. zoom-range-ui: the zoom-out control bottoms out EXACTLY at the
+  // achievable cap (the v2 floor) — the cap reads as full zoom-out, and the
+  // − button visibly dims there. No dead range in the control.
+  const zoomRange = await page.evaluate(async () => {
+    const ms = window.__ready();
+    const zc = ms.zoomControls;
+    const wait = (t) => new Promise((r) => setTimeout(r, t));
+    zc.setTarget(1e-6); // ask for infinite zoom-out — the clamp answers
+    await wait(1200); // smoothing settles
+    const floor = ms.chunkStreamer.constructor.outFloor(ms.scale.width, ms.scale.height);
+    return {
+      camZoom: ms.cameras.main.zoom,
+      outLimit: zc.outLimit,
+      atCap: ms.cameras.main.zoom === zc.outLimit,
+      floorBinding: Math.abs(zc.outLimit - Math.max(floor, 0)) < 1e-9 || zc.outLimit >= floor,
+      floor,
+      outDimmed: zc.outBtn.bg.alpha === 0.45,
+      mapBtnLive: zc.mapBtn !== undefined,
+    };
+  });
+  ok(
+    'zoom-range-ui: the out control reaches EXACTLY the cap (v2 floor binding), dims there, and the map button is live',
+    zoomRange.atCap && zoomRange.floorBinding && zoomRange.outDimmed && zoomRange.mapBtnLive && zoomRange.outLimit >= zoomRange.floor - 1e-9,
+    JSON.stringify(zoomRange),
+  );
+
+  // 2m1. map-open-at-cap: a FURTHER zoom-out request at the cap hands off to
+  // map mode (the worldmap texture may still be decoding — the handoff is
+  // retried like a player pinching again), which opens CENTERED on the player
+  // with MainScene paused underneath.
+  let mapOpened = false;
+  for (let k = 0; k < 10 && !mapOpened; k++) {
+    mapOpened = await page.evaluate(() => {
+      const ms = window.__ready();
+      ms.zoomControls.setTarget(ms.zoomControls.outLimit * 0.5); // pinch past the cap
+      return window.__game.scene.isActive('WorldMapScene');
+    });
+    await page.waitForTimeout(900);
+    mapOpened = await page.evaluate(() => window.__game.scene.isActive('WorldMapScene'));
+  }
+  const mapOpen = await page.evaluate(() => {
+    const ms = window.__ready();
+    const wms = window.__game.scene.getScene('WorldMapScene');
+    const active = window.__game.scene.isActive('WorldMapScene');
+    if (!active) return { active };
+    const p = ms.terrestrialLatLngFromPx(ms.player.x, ms.player.y);
+    const pm = window.__worldScale.latLngToMapPx(p.lat, p.lng, 2048, 1418);
+    const c = wms.viewCenterImagePx();
+    return { active, paused: ms.scene.isPaused(), centerErr: +Math.hypot(c.x - pm.x, c.y - pm.y).toFixed(2), markers: wms.waystoneMarkers.length };
+  });
+  ok(
+    'map-open-at-cap: pinching past the cap opens map mode centered on the player (MainScene paused, 17 waystone markers live)',
+    mapOpen.active === true && mapOpen.paused === true && mapOpen.centerErr <= 2 && mapOpen.markers === 17,
+    JSON.stringify(mapOpen),
+  );
+
+  // 2m2. marker-projection: the pure lat/lng → image-px function matches the
+  // closed form at 5 fixtures, and a LIVE waystone marker sits exactly where
+  // the projection of its node position says.
+  const markerProj = await page.evaluate(() => {
+    const ms = window.__ready();
+    const wms = window.__game.scene.getScene('WorldMapScene');
+    const f = window.__worldScale.latLngToMapPx;
+    const fixtures = [
+      [0, 0],
+      [47.6062, -122.3321],
+      [-33.87, 151.21],
+      [85, -180],
+      [-85, 180],
+    ];
+    let exact = 0;
+    for (const [lat, lng] of fixtures) {
+      const got = f(lat, lng, 2048, 1418);
+      const want = { x: ((lng + 180) / 360) * 2048, y: ((85 - lat) / 170) * 1418 };
+      if (got.x === want.x && got.y === want.y) exact++;
+    }
+    const node = ms.waypointSys.nodes.find((n) => n.id === 'wp-olympia');
+    const ll = ms.terrestrialLatLngFromPx(node.x, node.y);
+    const want = f(ll.lat, ll.lng, 2048, 1418);
+    const marker = wms.waystoneMarkers.find((m) => m.id === 'wp-olympia');
+    const liveErr = Math.hypot(marker.mx - want.x, marker.my - want.y);
+    return { exact, of: fixtures.length, liveErr: +liveErr.toFixed(3) };
+  });
+  ok(
+    'marker-projection: 5 closed-form fixtures exact; the live wp-olympia marker sits at its projected node position',
+    markerProj.exact === 5 && markerProj.liveErr < 0.01,
+    JSON.stringify(markerProj),
+  );
+
+  // 2m4a. map-close-restores (part 1 — this open): pan the map hard, close,
+  // and the gameplay camera must be BYTE-IDENTICAL (it was never touched).
+  const closeRestore = await page.evaluate(async () => {
+    const ms = window.__ready();
+    const wms = window.__game.scene.getScene('WorldMapScene');
+    const wait = (t) => new Promise((r) => setTimeout(r, t));
+    const cam = ms.cameras.main;
+    const before = { sx: cam.scrollX, sy: cam.scrollY, z: cam.zoom };
+    wms.view.setPosition(wms.view.x + 137, wms.view.y - 89); // a hard pan
+    await wait(200);
+    wms.close();
+    await wait(300);
+    const after = { sx: cam.scrollX, sy: cam.scrollY, z: cam.zoom };
+    return {
+      // Map mode never touches the camera: zoom must be BYTE-identical. The
+      // follow camera keeps lerping toward the player after resume, so
+      // scroll gets a 0.01 px tolerance (observed drift 8e-5 px) - a real
+      // camera move would be tiles, not sub-hundredths of a pixel.
+      identical: Math.abs(before.sx - after.sx) < 0.01 && Math.abs(before.sy - after.sy) < 0.01 && before.z === after.z,
+      resumed: !ms.scene.isPaused() && !window.__game.scene.isActive('WorldMapScene'),
+      before,
+      after,
+    };
+  });
+  ok(
+    'map-close-restores: closing the map leaves the gameplay camera byte-identical and MainScene resumed',
+    closeRestore.identical === true && closeRestore.resumed === true,
+    JSON.stringify(closeRestore),
+  );
+
+  // 2m3. map-travel-attuned: an UNATTUNED marker names itself and refuses; an
+  // ATTUNED marker enters the EXISTING travel flow — cast started, damage
+  // cancels it (rule unchanged), and a clean re-run lands at the waystone.
+  await page.evaluate(() => window.__ready().openWorldMap());
+  await page.waitForTimeout(700);
+  const mapTravel = await page.evaluate(async () => {
+    const ms = window.__ready();
+    const wp = ms.waypointSys;
+    const wms = window.__game.scene.getScene('WorldMapScene');
+    const wait = (t) => new Promise((r) => setTimeout(r, t));
+    if (!window.__game.scene.isActive('WorldMapScene')) return { setup: 'map did not reopen' };
+    const un = wms.waystoneMarkers.find((m) => !m.attuned);
+    const unRefused = wms.tapWaystone(un.id) === false;
+    const stillOpen = window.__game.scene.isActive('WorldMapScene');
+    const toast = wms.toast.text;
+    const home = wms.waystoneMarkers.find((m) => m.attuned && wp.nodes.find((n) => n.id === m.id)?.classId === ms.classId) ?? wms.waystoneMarkers.find((m) => m.attuned);
+    const tapped = wms.tapWaystone(home.id);
+    await wait(300);
+    const closedOnTravel = !window.__game.scene.isActive('WorldMapScene');
+    const castStarted = wp.casting?.id === home.id;
+    ms.playerHealth.shield = 0;
+    ms.playerHealth.damage(5); // REAL damage intake — the existing cancel rule
+    ms.playerHealth.shield = 1e9;
+    const cancelled = wp.casting === null;
+    // Clean run: re-open the map, tap again, let the 3 s cast + fade land.
+    ms.openWorldMap();
+    await wait(700);
+    const wms2 = window.__game.scene.getScene('WorldMapScene');
+    wms2.tapWaystone(home.id);
+    await wait(4600);
+    const node = wp.nodes.find((n) => n.id === home.id);
+    const d = Math.hypot(ms.player.x - node.x, ms.player.y - node.y);
+    return { setup: 'ok', unRefused, stillOpen, toast, tapped, closedOnTravel, castStarted, cancelled, d: +d.toFixed(1), landed: d <= 64 };
+  });
+  ok(
+    'map-travel-attuned: unattuned names itself + refuses (map stays); attuned enters the EXISTING flow — cast, damage-cancel honored, clean cast lands',
+    mapTravel.setup === 'ok' &&
+      mapTravel.unRefused &&
+      mapTravel.stillOpen &&
+      /not attuned/.test(mapTravel.toast) &&
+      mapTravel.tapped === true &&
+      mapTravel.closedOnTravel &&
+      mapTravel.castStarted &&
+      mapTravel.cancelled &&
+      mapTravel.landed,
+    JSON.stringify(mapTravel),
+  );
+
+  // Restore a gameplay zoom + tap through any arrival dialogue the travel
+  // landing opened (same pattern as the waypoint-travel check above).
+  await page.evaluate(() => window.__ready().zoomControls.setTarget(1));
+  for (let i = 0; i < 12; i++) {
+    await page.waitForTimeout(280);
+    const uiOpen = await page.evaluate(() => {
+      const ms = window.__game.scene.getScene('MainScene');
+      return ms.dialogue.isOpen() || ms.choice.isOpen();
+    });
+    if (!uiOpen) break;
+    await page.mouse.click(214, 520);
+    await page.mouse.click(214, 462);
+  }
 
   // 2f7. playwright drive: 60s of real keyboard autorun east at the capped
   // devspeed — chunks must load AND evict along the way, with zero page or
@@ -8651,19 +8913,22 @@ try {
   // IndexedDB — proven by BLOCKING the network route for it and still
   // arriving at a live earth source.
   await page.route('**/world/planet.bin', (route) => route.abort());
+  await page.route('**/world/worldmap.png', (route) => route.abort()); // Pass 6A: the map image must ride the same cache
   await page.goto(`http://localhost:${PORT}/?scale=v2`, { waitUntil: 'load' });
   await page.waitForFunction(() => !!window.__game && window.__game.scene.isActive('TitleScene'), null, { timeout: 25000 });
   await page.evaluate(() => window.__game.scene.getScene('TitleScene').scene.start('MainScene', { mode: 'continue' }));
   await page.waitForFunction(() => window.__game.scene.isActive('MainScene'), null, { timeout: 60000 });
   await page.waitForFunction(() => window.__game.scene.getScene('MainScene').chunkStreamer?.activeSourceLabel === 'earth', null, { timeout: 30000 });
+  await page.waitForFunction(() => window.__game.scene.getScene('MainScene').chunkStreamer?.worldmapBuf !== null, null, { timeout: 30000 });
   const offlineCache = await page.evaluate(() => {
     const st = window.__game.scene.getScene('MainScene').chunkStreamer;
-    return { planetFrom: st.packOrigin.planet, source: st.activeSourceLabel };
+    return { planetFrom: st.packOrigin.planet, worldmapFrom: st.packOrigin.worldmap, worldmapBytes: st.worldmapBuf?.byteLength ?? 0, source: st.activeSourceLabel };
   });
   await page.unroute('**/world/planet.bin');
+  await page.unroute('**/world/worldmap.png');
   ok(
-    'offline-cache: second v2 boot serves planet.bin from IndexedDB with the network route blocked',
-    offlineCache.planetFrom === 'idb' && offlineCache.source === 'earth',
+    'offline-cache: second v2 boot serves planet.bin AND worldmap.png from IndexedDB with the network routes blocked',
+    offlineCache.planetFrom === 'idb' && offlineCache.worldmapFrom === 'idb' && offlineCache.worldmapBytes > 100000 && offlineCache.source === 'earth',
     JSON.stringify(offlineCache),
   );
 

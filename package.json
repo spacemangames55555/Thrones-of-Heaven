@@ -13,6 +13,7 @@
     "verify": "npm run build && npm run smoke && npm run verify:runtime",
     "gen:sprites": "node scripts/gen-sprites.mjs",
     "bake:earth": "node scripts/bake-earth/bake.mjs",
+    "bake:worldmap": "node scripts/bake-earth/worldmap.mjs",
     "lint:terrain-art": "node tools/lint-terrain-art.mjs",
     "convert:terrain": "node tools/convert-terrain-art.mjs"
   },

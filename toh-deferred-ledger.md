@@ -77,6 +77,16 @@ ruling lands, strike the entry with a pointer to the commit that resolved it.
   forbids. Fringe rendering across chunk borders resolves neighbors through
   the pure per-tile reference at the current source version (deterministic;
   noted here because a future multi-version blend would need a repaint hook).
+- World map overview (Pass 6A): the MAP ART RESTYLE is open — worldmap.png
+  ships as MAP_PALETTE cartographic classes + hillshade straight from the
+  bake; a parchment/atlas treatment (and richer biome classes when the
+  ledgered ecoregion upgrade lands) replaces it via the same
+  npm run bake:worldmap. REGION-DETAIL INSETS are deferred (the map renders
+  the planet pack only — the pnw region pack's 320 m detail does not inset
+  yet). FOG-OF-DISCOVERY is deferred (the whole map is visible from minute
+  one; discovery-gated reveal pends a Casey ruling). CORRIDOR-BEAT MARKERS
+  are deferred to the Egypt pass (only the tracked-quest target renders as
+  a beat marker today).
 - Combat hotfix (derived in-combat): DoT ticks the player's own effects land
   still AUTO-DISMOUNT per the Pass 4 spec (dealing damage dismounts — a
   poison applied before mounting will knock the rider down on its next

@@ -8,6 +8,7 @@ import { FirstSkillScene } from '../ui/FirstSkillScene';
 import { CharacterSelectScene } from '../ui/CharacterSelectScene';
 import { DevPanelScene } from '../ui/DevPanelScene';
 import { QuestTabScene } from '../ui/QuestTabScene';
+import { WorldMapScene } from '../ui/WorldMapScene';
 import { viewportSize } from '../ui/uiLayout';
 
 const { w, h } = viewportSize();
@@ -45,5 +46,5 @@ export const gameConfig: Phaser.Types.Core.GameConfig = {
   },
   // TitleScene starts automatically (the start screen); it launches MainScene with
   // { mode: 'new' | 'continue' }. InteriorScene + PauseScene are launched on demand.
-  scene: [TitleScene, CharacterSelectScene, MainScene, InteriorScene, PauseScene, SkillTreeScene, FirstSkillScene, DevPanelScene, QuestTabScene],
+  scene: [TitleScene, CharacterSelectScene, MainScene, InteriorScene, PauseScene, SkillTreeScene, FirstSkillScene, DevPanelScene, QuestTabScene, WorldMapScene],
 };
