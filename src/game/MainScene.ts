@@ -9281,14 +9281,14 @@ export class MainScene extends Phaser.Scene {
     this.nextWorldOriginX = origin.x + rw.sparse!.boundsPx.w + HEAVEN_WORLD_GAP;
 
     // THE OLD EGYPT ↔ LUXOR CROSS-WORLD GATE IS RETIRED (world unification):
-    // the Nile is ONE ground now — Luxor's content lives on this same map, so
-    // travel is a walk upriver. Two road-sign labels mark the old seam as a
-    // local landmark; no travel gates.
+    // the Nile is ONE ground now — travel is a walk upriver (under v1 Luxor's
+    // content re-hosts on this map; under v2 it stands on its own stamped
+    // chunk at real Luxor). Two road-sign labels mark the route; no gates.
     const eb = this.egyptMap.bounds;
     const egyptPad = this.egyptMap.nearestWalkableWorld(eb.x + eb.width * 0.5, eb.y + eb.height - 96, 60);
     this.addHeavenLabel(egyptPad.x, egyptPad.y - 24, '→ Luxor (Valley of the Kings), upriver', '#ffe9a8');
     const luxorArrival = this.regionZoneArrivals['luxor-valley-of-kings'];
-    if (!luxorArrival) throw new Error("setupGlobe: 'luxor-valley-of-kings' must be absorbed — its arrival anchors the road sign");
+    if (!luxorArrival) throw new Error("setupGlobe: 'luxor-valley-of-kings' must be built — its arrival anchors the road sign");
     this.addHeavenLabel(luxorArrival.x, luxorArrival.y - 24, '→ Cairo (The Nile Crown), downriver', '#ffe9a8');
   }
 
@@ -9311,6 +9311,19 @@ export class MainScene extends Phaser.Scene {
     const cal = rw.calibration;
     const plan = stampZone(rw, zone); // validates bounds + records the chunk
     const chunk = buildChunkMapData(zone, plan, cal);
+    // ABSORPTION IS GEOMETRIC, NOT DECLARED (Pass 5): a zone re-hosts on a
+    // hand-built map only while its true position actually lies under that
+    // map. Under v1 Luxor sits on the egypt map's Nile tiles (the dry-run's
+    // collision); under the v2 projection the same declaration would strand
+    // every Luxor placement ~760 km off the stamp, alive only through the
+    // silent walkable-ground fallback (the fallback-loud gate enumerates
+    // exactly this). Off-host zones build their own chunk like every other.
+    if (absorbedHost) {
+      const hb = absorbedHost.bounds;
+      const ax = origin.x + chunk.arrivalLocalPx.x;
+      const ay = origin.y + chunk.arrivalLocalPx.y;
+      if (!(ax >= hb.x && ax < hb.x + hb.width && ay >= hb.y && ay < hb.y + hb.height)) absorbedHost = undefined;
+    }
     let map: GameMap;
     if (absorbedHost) {
       // ABSORBED (world unification): the zone's true position lies under a

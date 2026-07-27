@@ -212,8 +212,16 @@ export class GameMap {
       }
       if (best) return best; // nearest walkable in this ring wins
     }
+    // FALLBACK-LOUD (Pass 5): the spiral found nothing — runtime behavior is
+    // unchanged (return the original point), but the engagement is RECORDED
+    // so the gate can enumerate any spawn that only works by accident.
+    GameMap.walkableFallbacks.push({ x: worldX, y: worldY });
+    if (GameMap.walkableFallbacks.length > 40) GameMap.walkableFallbacks.shift();
     return { x: worldX, y: worldY };
   }
+
+  /** Gate-observable ring buffer of walkable-spiral fallback engagements. */
+  static walkableFallbacks: { x: number; y: number }[] = [];
 
   get spawnWorld(): { x: number; y: number } {
     return this.tileToWorldCenter(this.data.spawn.x, this.data.spawn.y);

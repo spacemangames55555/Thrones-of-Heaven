@@ -287,6 +287,52 @@ const ok = (name, pass, detail = '') => {
   );
 }
 
+// 0e. PLANE-ANCHOR-INVARIANCE (PASS 5, pure Node): plane-scoped anchors
+// (Heaven, Hell, city interiors) must be byte-identical under v1, v2, and
+// flag permutations — planes never pass through a projection — and the
+// restored TRINITY_ARENA must sit inside the hell plane bounds.
+{
+  const { build } = await import('esbuild');
+  const mk = async (tag, search) => {
+    const outfile = new URL(`../node_modules/.cache/toh-settings-${tag}.mjs`, import.meta.url).pathname;
+    await build({ entryPoints: [new URL('../src/game/settings.ts', import.meta.url).pathname], bundle: true, format: 'esm', platform: 'node', outfile, logLevel: 'silent' });
+    globalThis.location = { search };
+    const mod = await import(outfile);
+    delete globalThis.location;
+    return mod;
+  };
+  const sV1 = await mk('flag-v1', '?scale=v1');
+  const sV2 = await mk('flag-v2', '');
+  const sMix = await mk('flag-mix', '?terrain=proc&devspeed=8');
+  const isPt = (v) => v && typeof v === 'object' && typeof v.x === 'number' && typeof v.y === 'number';
+  let invariant = 0;
+  let shifted = 0;
+  const violations = [];
+  const classify = (name, v, a, c) => {
+    const same12 = isPt(a) && a.x === v.x && a.y === v.y;
+    const same2m = isPt(c) && c.x === v.x && c.y === v.y;
+    if (same12 && same2m) invariant++;
+    else if (!same12 && same2m) shifted++; // earth anchors ride the projection (v2 == mix, v1 differs)
+    else violations.push(name); // flag-dependent in any OTHER way = broken
+  };
+  for (const [name, v] of Object.entries(sV2)) {
+    if (isPt(v)) classify(name, v, sV1[name], sMix[name]);
+    else if (Array.isArray(v)) {
+      for (let i = 0; i < v.length; i++) {
+        if (isPt(v[i])) classify(`${name}[${i}]`, v[i], sV1[name]?.[i], sMix[name]?.[i]);
+      }
+    }
+  }
+  const t = sV2.TRINITY_ARENA;
+  const tOk =
+    t.x === sV1.TRINITY_ARENA.x && t.y === sV1.TRINITY_ARENA.y && t.x === sMix.TRINITY_ARENA.x && t.x >= 0 && t.x < 23040 && t.y >= 0 && t.y < 23040;
+  ok(
+    'plane-anchor-invariance: plane anchors byte-identical across v1/v2/flag permutations; TRINITY_ARENA restored hell-local and in-plane',
+    violations.length === 0 && tOk && invariant >= 1 && shifted >= 40,
+    JSON.stringify({ invariant, shifted, violations: violations.slice(0, 8), trinity: t }),
+  );
+}
+
 // 1) Preview server (killed on exit).
 const server = spawn('npx', ['vite', 'preview', '--port', String(PORT), '--strictPort'], { stdio: 'ignore' });
 const kill = () => {
@@ -8101,6 +8147,25 @@ try {
     'respawn-nearest: a mid-PNW death respawns at the settlement the v2 distances actually select',
     respawnNearest.candidates >= 60 && respawnNearest.agrees === true,
     JSON.stringify(respawnNearest),
+  );
+
+  // PASS 5: TRINITY SPAWN AT ITS AUTHORED TILE + FALLBACK-LOUD.
+  // The restored hell-local arena must be walkable AS AUTHORED (zero spiral
+  // fallback), and the final session must have engaged the walkable-ground
+  // fallback exactly never — engagements are enumerated on failure.
+  const trinityLoud = await page.evaluate(() => {
+    const ms = window.__ready();
+    const F = ms.map.constructor;
+    const hb = ms.hellMap.bounds;
+    const n0 = F.walkableFallbacks.length;
+    const spot = ms.hellMap.nearestWalkableWorld(hb.x + 11520, hb.y + 9000);
+    const sameTile = Math.hypot(spot.x - (hb.x + 11520), spot.y - (hb.y + 9000)) < 32;
+    return { sameTile, probeEngaged: F.walkableFallbacks.length - n0, sessionEngagements: F.walkableFallbacks.slice(0, 10), n: F.walkableFallbacks.length };
+  });
+  ok(
+    'fallback-loud: the authored Trinity arena tile is walkable with zero fallback; the session engaged the walkable fallback never (enumerated)',
+    trinityLoud.sameTile && trinityLoud.probeEngaged === 0 && trinityLoud.n === 0,
+    JSON.stringify(trinityLoud),
   );
 
   // 4) THE GATE: zero page errors across everything above.
