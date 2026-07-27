@@ -47,7 +47,10 @@ import { CITY_DEFS, CITY_FAIYUM, type CityDef } from '../world/cities';
 import { MANIFEST_CLASS_FOR, KNOWN_CLASS_NAMES, homeZoneForClass } from '../world/class-canon';
 import { SparseWorldMap } from '../map/SparseWorldMap';
 import { WORLD_CALIBRATION, WORLD_SPAN_DEGREES, latLngToPixels } from '../world/world-calibration';
-import { isScaleV2, isTerrainProc } from '../world/world-scale';
+import { isScaleV2, isTerrainProc, formatKm } from '../world/world-scale';
+import { legacyEarthPx, LEGACY_GLOBE_ORIGIN_X } from '../world/legacy-frame';
+import { MountSystem } from '../systems/mount';
+import { WaypointSystem } from '../systems/waypoints';
 import { globeSceneOriginX } from '../world/scene-origin';
 import { ChunkStreamer } from '../world/chunk-streamer';
 import { createProceduralSource } from '../world/terrain-procedural';
@@ -435,7 +438,7 @@ const SASQUATCH_SPAWN_TILES_NORTH = 26;
 // Oregon spirit-swarm seed: a pack in the Willamette Valley just south of
 // Portland. Translated with the map in the world unification (was 12240,13616
 // in the old earth frame). Fightable only with Spirit Vision on.
-const OREGON_SWARM_SPAWN = { x: 140915, y: 99177 };
+const OREGON_SWARM_SPAWN = legacyEarthPx({ x: 140915, y: 99177 });
 
 // >>> PLACEHOLDER TEXT — edit to change the descent-climax beat shown when the
 // player corrupts the Heaven Portal (gold→purple). Walking into the corrupted
@@ -1243,6 +1246,12 @@ export class MainScene extends Phaser.Scene {
   chunkStreamer?: ChunkStreamer;
   /** Last known walkable spot (streamer worlds): the anti-tunnel snap-back. */
   private lastLandPos?: { x: number; y: number };
+  /** TRAVEL SYSTEMS (Pass 4): the mount framework + the waystone network. */
+  mountSys?: MountSystem;
+  waypointSys?: WaypointSystem;
+  private savedWaypointUnlocks: string[] = [];
+  private waystoneButton!: TouchButton;
+  private waypointPillars = new Map<string, Phaser.GameObjects.Image>();
   /** Every stamped earth chunk map (the compositor's stamp set). */
   earthChunkMaps: GameMap[] = [];
   /** The egypt map's PRE-UNIFICATION chain origin (for 'egypt' save translation). */
@@ -1881,6 +1890,11 @@ export class MainScene extends Phaser.Scene {
     // spirit corridor extends into Oregon (only fightable with Spirit Vision on).
     this.spawnSwarmPack(OREGON_SWARM_SPAWN.x, OREGON_SWARM_SPAWN.y);
 
+    // TRAVEL SYSTEMS (Pass 4, v2 only — v1 keeps the legacy world untouched):
+    // the mount framework + the waystone network, built BEFORE any save
+    // restore so a Continue can load its unlocks.
+    if (isScaleV2()) this.setupTravelSystems();
+
     // SAVE SYSTEM: if launched via "Continue", restore the full saved state now
     // (everything above is built to defaults first, then overridden). Then arm
     // autosave (event-driven hooks call autosave() directly; here: a periodic
@@ -2020,6 +2034,7 @@ export class MainScene extends Phaser.Scene {
       if (this.isDashing()) this.talkButton.setVisible(false);
       else this.checkInteractions();
       this.updateCityGates(); // AFTER interactions: Talk keeps the shared slot
+      this.updateTravelSystems(); // Pass 4: mount + waystones
       if (this.regionWorldIds.has(this.activeWorld)) {
         this.updateRegionSpawns(); // per-chunk packs (any region world)
         this.groundLayers.get(this.activeWorld)?.update(this.cameras.main); // continents under the camera
@@ -6589,6 +6604,12 @@ export class MainScene extends Phaser.Scene {
    *  buff). Both bounce damage to nearby attackers; `amount` is the HP just lost. */
   private onPlayerHurt(amount: number): void {
     if (this.playerDead) return;
+    // TRAVEL (Pass 4): damage interrupts mount casts, dismounts riders, and
+    // cancels waystone channels.
+    if (amount > 0) {
+      this.mountSys?.onPlayerDamaged();
+      this.waypointSys?.onPlayerDamaged();
+    }
     // MEDITATION (Monk): the rapid mend BREAKS the moment any blow lands.
     if (amount > 0 && this.skillTimed.some((t) => t.id === MEDITATION_ID)) {
       this.skillTimed = this.skillTimed.filter((t) => t.id !== MEDITATION_ID);
@@ -8418,6 +8439,8 @@ export class MainScene extends Phaser.Scene {
         title: this.currentTitle,
         hunterBonded: !!this.hunterBond,
         watcherSpoken: this.watcherSpoken,
+        unlockedWaypoints: this.waypointSys ? [...this.waypointSys.unlocked] : this.savedWaypointUnlocks,
+        mountUnlocked: true,
       },
       quests: this.chain.toJSON(),
       skills: this.skills.toJSON(),
@@ -8470,6 +8493,8 @@ export class MainScene extends Phaser.Scene {
       this.clearHunterState(true);
       this.hunterBond = s.player.hunterBonded ? { deathUntil: 0 } : null;
       this.watcherSpoken = s.player.watcherSpoken === true; // absent (old save) = never spoken
+      this.savedWaypointUnlocks = s.player.unlockedWaypoints ?? []; // preserved verbatim on v1 sessions
+      this.waypointSys?.load(s.player.unlockedWaypoints); // v18 travel unlocks (class home always re-added)
       this.breakPlayerStealth();
       this.clearDots(); // drop any poison DoTs
       this.summons.clear(); // summons are transient — never carried across a load
@@ -11563,6 +11588,107 @@ export class MainScene extends Phaser.Scene {
     g.destroy();
   }
 
+  // ── TRAVEL SYSTEMS (WORLD SCALE V2, Pass 4) ────────────────────────────────
+
+  /** Build the mount + waypoint systems, the waystone pillars (the existing
+   *  heaven-pillar texture — real waystone art is ledgered), the interact
+   *  button, and their glue. */
+  private setupTravelSystems(): void {
+    // Drift guard for the legacy-frame shim's literal chain (smoke-safe copy).
+    if (LEGACY_GLOBE_ORIGIN_X !== this.computeGlobeOriginX()) {
+      throw new Error(`legacy-frame origin drift: ${LEGACY_GLOBE_ORIGIN_X} vs ${this.computeGlobeOriginX()}`);
+    }
+    MainScene.ensureHeavenPropTextures(this);
+    this.mountSys = new MountSystem(this, {
+      playerSprite: () => this.player.sprite,
+      setMountedSpeed: (px) => {
+        this.player.mountedSpeedPx = px;
+      },
+      inCombat: () => this.time.now - this.lastCombatTime < FEEL.mount.combatLockoutMs,
+      onPlane: () => this.activeWorld !== WORLD_EARTH,
+      dust: (x, y) => this.circleFx.show(x, y, FEEL.mount.dustRadiusPx, FEEL.mount.dustColor, { alpha: 0.4, toScale: 1.8, durationMs: 380, depth: 11 }),
+      banner: (t) => this.showBanner(t, 1400),
+    });
+    this.waypointSys = new WaypointSystem(this, {
+      playerPos: () => ({ x: this.player.x, y: this.player.y }),
+      // The same resolution chain applyClassHomeStart uses: the Cairo mentor
+      // for the Egypt-map home, then stamped-zone arrivals, then the zone
+      // mentor; NA homes share the shipped WA towns (Seattle tree-house for
+      // the Druid, the Enumclaw square otherwise).
+      resolveZoneArrival: (zoneId) => {
+        if (zoneId === 'cairo-nile-crown') return { ...this.cairoMentorPos };
+        const arr = this.regionZoneArrivals[zoneId];
+        if (arr) return { x: arr.x, y: arr.y };
+        const mentor = this.regionMentors.find((m) => m.zoneId === zoneId)?.pos;
+        if (mentor) return { ...mentor };
+        const zone = WORLD.find((z) => z.id === zoneId);
+        if (zone?.continent === 'North America') {
+          if (zoneId.includes('seattle') && this.seattle) return { ...this.seattle.spawn };
+          return { ...this.town.spawn };
+        }
+        return null;
+      },
+      composedWalkable: (x, y) => this.composedTravelWalkable(x, y),
+      teleport: (x, y) => {
+        this.mountSys?.dismount();
+        this.travelToWorld(WORLD_EARTH, { x, y });
+      },
+      banner: (t) => this.showBanner(t, 1600),
+      onUnlocked: (node) => {
+        this.showBanner(`Waystone attuned: ${node.label}`, 2200);
+        this.autosave();
+      },
+      onNudged: (node) => console.warn(`ToH waypoints: ${node.id} nudged ${node.nudgedTiles} tiles to walkable ground`),
+      classId: () => this.classId,
+    });
+    this.waypointSys.build();
+    for (const n of this.waypointSys.nodes) {
+      const pillar = this.add.image(n.x, n.y, 'heaven-pillar').setDepth(7).setTint(0xbfd8ff);
+      this.tweens.add({ targets: pillar, alpha: { from: 1, to: 0.72 }, duration: 1400, yoyo: true, repeat: -1 }); // subtle glow pulse
+      this.waypointPillars.set(n.id, pillar);
+      this.addHeavenLabel(n.x, n.y - 46, n.label, '#bfe0ff');
+    }
+    this.waystoneButton = new TouchButton(this, 'Waystone', () => this.openWaypointPanel());
+    this.waystoneButton.setVisible(false);
+  }
+
+  /** Composed travel walkability: authored stamps first (their collision is
+   *  the truth), then the earth source; null before the packs decode. */
+  private composedTravelWalkable(x: number, y: number): boolean | null {
+    const covering = this.earthChunkMaps.find((m) => x >= m.bounds.x && x < m.bounds.x + m.bounds.width && y >= m.bounds.y && y < m.bounds.y + m.bounds.height);
+    if (covering) return !covering.isBlockedAtWorld(x, y);
+    if (!this.chunkStreamer) return true; // v1: authored maps carry travel; open ground is walkable
+    const rec = this.chunkStreamer.earthSample(this.terrestrialLatLngFromPx(x, y).lat, this.terrestrialLatLngFromPx(x, y).lng);
+    if (rec === null) return null;
+    return (rec[3] & 1) !== 0;
+  }
+
+  /** Per-frame travel upkeep (mount bob/dust, discovery, casts, the button). */
+  private updateTravelSystems(): void {
+    if (!this.mountSys) return; // v1: travel systems never construct
+    this.mountSys.update();
+    this.waypointSys!.update();
+    if (this.chunkStreamer?.activeSourceLabel === 'earth' && !this.waypointSys!.validated) this.waypointSys!.validateAnchors();
+    const near = this.activeWorld === WORLD_EARTH ? this.waypointSys!.nearestInteractable() : null;
+    this.waystoneButton.setVisible(!!near);
+  }
+
+  /** The waystone travel panel — the shared scrollable overlay, rows grouped
+   *  by continent and sorted by distance with the km readout. */
+  openWaypointPanel(): void {
+    if (!this.waypointSys || this.scene.isActive('DevPanelScene')) return;
+    const rows = this.waypointSys.travelRows().map((r) => ({
+      label: r.label,
+      onPress: () => {
+        this.game.scene.stop('DevPanelScene');
+        this.scene.resume();
+        this.waypointSys!.startTravel(r.id);
+      },
+    }));
+    this.scene.launch('DevPanelScene', { actions: rows });
+    this.scene.pause();
+  }
+
   /** A small Heaven world-space label. Everything through this funnel is
    *  close-range signage (road signs, spawn/boss markers, NPC names) — the
    *  near LOD tier, hidden once the camera pulls too far out to read it. */
@@ -11640,6 +11766,7 @@ export class MainScene extends Phaser.Scene {
    * world's remembered position (the portals pass explicit arrival points).
    */
   private travelToWorld(worldId: WorldId, arrival?: { x: number; y: number }, durationMs = WORLD_TRANSITION_MS): void {
+    if (worldId !== WORLD_EARTH) this.mountSys?.onEnteredPlane(); // planes always dismount
     if (this.transitioning) return;
     const target = this.worlds[worldId];
     if (!target) return;
@@ -12571,6 +12698,7 @@ export class MainScene extends Phaser.Scene {
     }
     const t = this.feelTargets.get(pool);
     if (!t || !t.enemy || removed < 1) return;
+    this.mountSys?.onPlayerDealtDamage(); // dealing damage always dismounts
     this.nameplates.notifyDamaged(t.sprite, this.time.now); // 'onAggroOrDamage' plates light up
     this.feelQueue.push({ x: t.sprite.x, y: t.sprite.y - 24, amt: removed });
   }
@@ -13719,7 +13847,7 @@ export class MainScene extends Phaser.Scene {
   /** Position the world marker on the current target and update the edge arrow. */
   private updateObjectiveMarker(): void {
     const t = this.currentMarkerTarget();
-    if (t) this.marker.show(t.x, t.y, t.label);
+    if (t) this.marker.show(t.x, t.y, `${t.label} · ${formatKm(Math.hypot(t.x - this.player.x, t.y - this.player.y))}`);
     else this.marker.hide();
     this.tracker.updateArrow(this.cameras.main, t);
   }

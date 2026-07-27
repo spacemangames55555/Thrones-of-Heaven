@@ -80,6 +80,23 @@ export const FEEL = {
     floatText: 950,
     screenUi: 1350, // the existing UI band (LoadoutBar et al.) — reference, not a redefinition
   },
+  /** MOUNT (WORLD SCALE V2 travel framework — durable tuning; no creature art
+   *  ships yet, so the mounted read is the player figure + dust + bob). */
+  mount: {
+    castMs: 1500, // summon cast — interrupted by damage
+    bobAmpPx: 2, // mounted sprite bob (visual only)
+    bobHz: 5,
+    dustIntervalMs: 90, // dust puff cadence while moving mounted
+    dustRadiusPx: 7,
+    dustColor: 0xcfc2a6,
+    combatLockoutMs: 2500, // recent combat blocks summoning this long
+  },
+
+  /** WAYPOINT travel (the "Waystone" network — display name is TODO-lore). */
+  waypoint: {
+    castMs: 3000, // travel cast — interrupted by damage
+  },
+
   /** FAR-ZOOM LOD (render visibility only — never data): below tileFadeOutZoom
    *  every stamped chunk tile layer fades out and skips render, leaving the
    *  pre-baked planet raster as the sole ground; at/above tileFadeInZoom the

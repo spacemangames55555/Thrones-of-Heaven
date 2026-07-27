@@ -69,6 +69,13 @@ export function isScaleV2(): boolean {
   }
 }
 
+/** Distance readout for travel UI: km from px through METERS_PER_PX — one
+ *  decimal under 10 km, whole km above. */
+export function formatKm(distPx: number): string {
+  const km = (distPx * METERS_PER_PX) / 1000;
+  return km < 10 ? `${km.toFixed(1)} km` : `${Math.round(km)} km`;
+}
+
 /** ?terrain=proc pins the Pass 2 procedural source under v2 (dev fallback) —
  *  the real-Earth packs are neither fetched nor decoded. */
 export function isTerrainProc(): boolean {

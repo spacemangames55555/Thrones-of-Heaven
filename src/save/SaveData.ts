@@ -5,7 +5,7 @@ import type { PlayerPath } from '../story/playerPath';
 import type { SkillSaveState } from '../skills/SkillState';
 
 /** Bump when the SaveData shape changes; SaveSystem.read can then migrate old saves. */
-export const SAVE_VERSION = 17;
+export const SAVE_VERSION = 18;
 
 /**
  * Act I (Enumclaw opening) quest ids — inserted at the FRONT of the chain, with the
@@ -161,6 +161,12 @@ export interface SaveData {
     /** THE WATCHER has spoken its one line to this character (narrative one-shot).
      *  Optional → older saves default false (no migration needed). */
     watcherSpoken?: boolean;
+    /** WORLD SCALE V2 Pass 4 (v18): discovered waystone ids. The class home
+     *  is re-added at load regardless (never lockable-out). */
+    unlockedWaypoints?: string[];
+    /** v18: mount availability (unlocked by default this pass; acquisition
+     *  content flag-gates it later — ledgered). */
+    mountUnlocked?: boolean;
   };
 
   /** The full quest-chain state (completed set + active quest + objective index). */
