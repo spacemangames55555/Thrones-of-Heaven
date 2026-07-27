@@ -1011,7 +1011,12 @@ export const SINS_TOTAL = 7;
 
 /** The lair ARENA (LOCAL Hell px) — where the Dragon/Beast spawn + are fought (just
  *  south of Satan's Lair at SATAN_LAIR ≈ (11520, 8600) in hellWorld.ts). */
-export const TRINITY_ARENA = { x: 140195, y: 94561 };
+// RESTORED (Pass 5): the pre-one-earth authored HELL-LOCAL value (git
+// history: introduced as {11520, 9000}, just south of SATAN_LAIR at
+// (11520, 8600)). The one-earth pass had applied the EARTH translation to
+// this plane-local constant, so the Trinity spawned off the hell map and
+// survived only via the walkable-ground fallback.
+export const TRINITY_ARENA = { x: 11520, y: 9000 };
 /** Proximity (px) to the lair that OPENS + enters the Trinity (once 7 Sins beaten). */
 export const TRINITY_ENTER_RANGE = 230;
 /** Recovery pause between stages, in ms (HP + energy restored, a beat, then the next boss). */

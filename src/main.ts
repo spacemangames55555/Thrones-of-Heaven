@@ -4,6 +4,9 @@ import { viewportSize, type Insets } from './ui/uiLayout';
 import * as worldScale from './world/world-scale';
 import * as terrainSchema from './world/terrain-schema';
 import { createProceduralSource, sampleRecord, tileRecord } from './world/terrain-procedural';
+import * as terrainVisualsConfig from './world/terrain-visuals-config';
+import { scatterFor, tileHash01 } from './world/terrain-visuals';
+import { buildTerrainAtlases, fringeCoverage } from './world/terrain-placeholder';
 import { WORLD } from './world/world-manifest';
 import { MANIFEST_CLASS_FOR, homeZoneForClass } from './world/class-canon';
 
@@ -32,6 +35,13 @@ const game = new Phaser.Game(gameConfig);
   createProceduralSource,
   sampleRecord,
   tileRecord,
+  // Pass 5: the LOCKED visuals config + the pure autotile/scatter references
+  // (again pure exposure — nothing constructs, v1 stays fully inert).
+  visuals: terrainVisualsConfig,
+  scatterFor,
+  tileHash01,
+  fringeCoverage,
+  buildTerrainAtlases,
   homeAnchors: Object.keys(MANIFEST_CLASS_FOR).map((classId) => {
     const zone = homeZoneForClass(classId);
     return { classId, zoneId: zone?.id ?? null, anchor: zone?.anchor ?? null };

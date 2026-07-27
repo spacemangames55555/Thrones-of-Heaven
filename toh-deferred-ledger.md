@@ -29,7 +29,10 @@ ruling lands, strike the entry with a pointer to the commit that resolved it.
   forest/taiga was skipped — no tree/rock prop texture exists in the game
   yet (the scatter-allowed flag already ships in the tile records); mounts +
   the waypoint network still ship in a later pass. Hillshade DID ship (subtle
-  per-tile elevation tint, set once at chunk build).
+  per-tile elevation tint, set once at chunk build). (Pass 5 amendment: the
+  autotile-transitions and prop-scatter deferrals are CLOSED — both shipped
+  in 'terrain: autotile + scatter + drop contract + art brief',
+  procedural-first.)
 - World scale v2 Pass 3 (real-Earth bake + earth TerrainSource, still
   flag-gated): the DEFAULT FLIP to v2 is now gated on PASS 4 (mounts +
   waypoints), NOT this pass. Additional region packs (Egypt next) bake via
@@ -50,6 +53,27 @@ ruling lands, strike the entry with a pointer to the commit that resolved it.
   A spawn-coverage/density audit at v2 scale is owed (zone spawns were tuned
   for v1 distances). En-route encounter content for the long overland
   corridors is owed (open terrain between stamps is currently empty land).
-  TRINITY_ARENA carries a suspected shipped mistranslation (a hell-plane
+  ~~TRINITY_ARENA carries a suspected shipped mistranslation (a hell-plane
   constant holding an earth-frame value; the spawn survives via the
-  walkable-fallback) — flagged for a ruling, deliberately not changed.
+  walkable-fallback) — flagged for a ruling, deliberately not changed.~~
+  CLOSED by Pass 5 ('planes: restore TRINITY_ARENA, projection-invariance +
+  loud-fallback gates'): the pre-one-earth hell-local value {11520, 9000} is
+  restored, the plane-anchor-invariance gate pins every plane anchor across
+  flag permutations, and any walkable-fallback engagement is now a loud,
+  enumerated gate failure.
+- World scale v2 Pass 5 (terrain art pipeline): autotile fringes + scatter +
+  water shimmer shipped PROCEDURAL-FIRST — all 12 biome sheets and all 11
+  prop drops are open art debt (the drop contract lives in
+  toh-terrain-art-brief.md; lint:terrain-art + convert:terrain enforce it).
+  Water anim frames upgrade from procedural shimmer to real art per water
+  sheet when dropped. The waystone prop slot ships reserved (no scatter rule
+  spawns it yet — waystone pillar art + placement pend the Pass 4 lore
+  ruling). Scatter densities are the locked launch values; a density/readability
+  tuning pass under real art is expected. LUXOR ABSORPTION IS NOW GEOMETRIC:
+  under v1 Luxor still re-hosts on the egypt map (unchanged), under the v2
+  default it builds its own stamped chunk at real Luxor — the declared-host
+  shortcut had left every Luxor placement ~760 km off the stamp, surviving
+  only through the silent walkable-ground fallback the Pass 5 gate now
+  forbids. Fringe rendering across chunk borders resolves neighbors through
+  the pure per-tile reference at the current source version (deterministic;
+  noted here because a future multi-version blend would need a repaint hook).

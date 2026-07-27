@@ -267,7 +267,8 @@ export function earthTileRecord(tx: number, ty: number, planet: PlanetGrids, reg
   }
 
   let flags = FLAG_WALKABLE;
-  if (biome === Biome.FOREST || biome === Biome.TAIGA) flags |= FLAG_SCATTER;
+  // Pass 5: scatter-allowed = the five prop biomes (SCATTER_DENSITY keys).
+  if (biome === Biome.FOREST || biome === Biome.TAIGA || biome === Biome.SWAMP || biome === Biome.ROCK || biome === Biome.DESERT) flags |= FLAG_SCATTER;
   return [biome, band, moist, flags];
 }
 
