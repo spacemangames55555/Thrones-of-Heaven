@@ -227,6 +227,72 @@ const ok = (name, pass, detail = '') => {
   );
 }
 
+// 0c2. WORLDMAP-PARITY (PASS 6A, pure Node): the baked map image must agree
+// with the planet pack it renders — exact projection dims, the ≤ 1.5 MB
+// budget, manifest sha, and probe pixels resolving to the correct
+// MAP_PALETTE classes (family sets mirror the live geo-truth gate).
+{
+  const { PNG } = await import('pngjs');
+  const { build } = await import('esbuild');
+  const mk = async (entry, tag) => {
+    const outfile = new URL(`../node_modules/.cache/toh-wmp-${tag}.mjs`, import.meta.url).pathname;
+    await build({ entryPoints: [new URL(entry, import.meta.url).pathname], bundle: true, format: 'esm', platform: 'node', outfile, logLevel: 'silent' });
+    return import(outfile);
+  };
+  const vis = await mk('../src/world/terrain-visuals-config.ts', 'vis');
+  const ws2 = await mk('../src/world/world-scale.ts', 'scale');
+  const schema2 = await mk('../src/world/terrain-schema.ts', 'schema');
+  const B = schema2.Biome;
+  const bytes = readFileSync(new URL('../public/world/worldmap.png', import.meta.url).pathname);
+  const png = PNG.sync.read(bytes);
+  const expectH = Math.round((vis.WORLDMAP_WIDTH * 170 * ws2.PX_PER_DEG_LAT) / (360 * ws2.PX_PER_DEG_LNG));
+  const dimsOk = png.width === vis.WORLDMAP_WIDTH && png.height === expectH;
+  const sizeOk2 = bytes.length <= 1.5 * 1024 * 1024;
+  const wmEntry = JSON.parse(readFileSync(new URL('../public/world/regions.json', import.meta.url).pathname)).worldmap;
+  const shaOk = wmEntry && wmEntry.sha256 === createHash('sha256').update(bytes).digest('hex') && wmEntry.w === png.width && wmEntry.h === png.height;
+  // Nearest MAP_PALETTE class under brightness normalization (hillshade-safe).
+  const classAt = (lat, lng) => {
+    const x = Math.min(png.width - 1, Math.floor(((lng + 180) / 360) * png.width));
+    const y = Math.min(png.height - 1, Math.floor(((85 - lat) / 170) * png.height));
+    const o = (y * png.width + x) * 4;
+    const r = png.data[o];
+    const g = png.data[o + 1];
+    const b = png.data[o + 2];
+    const lum = (r + g + b) / 3 || 1;
+    let best = -1;
+    let bd = Infinity;
+    for (const [id, v] of Object.entries(vis.MAP_PALETTE)) {
+      const pr = (v >> 16) & 255;
+      const pg = (v >> 8) & 255;
+      const pb = v & 255;
+      const pl = (pr + pg + pb) / 3;
+      const d = (r / lum - pr / pl) ** 2 + (g / lum - pg / pl) ** 2 + (b / lum - pb / pl) ** 2;
+      if (d < bd) {
+        bd = d;
+        best = Number(id);
+      }
+    }
+    return best;
+  };
+  const himalaya = new Set();
+  for (let la = 27.5; la <= 28.5; la += 0.1) {
+    for (let ln = 83.5; ln <= 84.5; ln += 0.1) himalaya.add(classAt(la, ln));
+  }
+  const probes = {
+    sahara: classAt(23, 10) === B.DESERT,
+    amazon: [B.FOREST, B.SWAMP, B.SAVANNA].includes(classAt(-3, -60)),
+    pacific: classAt(0, -150) === B.OCEAN,
+    greenland: [B.SNOW, B.TUNDRA].includes(classAt(72, -40)),
+    pnw: [B.FOREST, B.GRASS, B.TAIGA, B.BEACH].includes(classAt(47.6, -123.7)),
+    himalayaHigh: himalaya.has(B.ROCK) || himalaya.has(B.SNOW),
+  };
+  ok(
+    'worldmap-parity: image dims match the projection; <= 1.5 MB; manifest sha matches; Sahara/Amazon/Pacific/Greenland/PNW/Himalaya probe classes correct',
+    dimsOk && sizeOk2 && shaOk && Object.values(probes).every(Boolean),
+    JSON.stringify({ w: png.width, h: png.height, expectH, mb: +(bytes.length / 1048576).toFixed(2), dimsOk, sizeOk: sizeOk2, shaOk, ...probes }),
+  );
+}
+
 // 0d. QUEST-ANCHOR-SANITY (PASS 4 flip, pure Node): every Acts I–IV authored
 // world-frame anchor (the legacy-frame-translated settings constants) must
 // resolve IN-BOUNDS under the flipped v2 default and sit INSIDE the authored
@@ -8119,7 +8185,10 @@ try {
     const d = ms.spawnDemon(home.x + 100, home.y, ms.activeMap().layer);
     d.takeHit(1);
     ms.applyDotInRange(d.x, d.y, 60, 3, 250, 9000, 0x77ff77);
-    await wait(600); // ticks are landing
+    // The funnel recomputes per FRAME - under swiftshader load frames can
+    // stall, so ESTABLISH the engaged precondition by polling (the assertion
+    // itself is unchanged: DoT live + combat derived).
+    for (let k = 0; k < 14 && !ms.inCombatDerived(); k++) await wait(300);
     const dotLive = ms.dots.length >= 1 && ms.inCombatDerived() === true;
     d.destroy(); // the eviction path (deactivateRegionZone destroys exactly so)
     await wait(600);
@@ -8651,19 +8720,22 @@ try {
   // IndexedDB — proven by BLOCKING the network route for it and still
   // arriving at a live earth source.
   await page.route('**/world/planet.bin', (route) => route.abort());
+  await page.route('**/world/worldmap.png', (route) => route.abort()); // Pass 6A: the map image must ride the same cache
   await page.goto(`http://localhost:${PORT}/?scale=v2`, { waitUntil: 'load' });
   await page.waitForFunction(() => !!window.__game && window.__game.scene.isActive('TitleScene'), null, { timeout: 25000 });
   await page.evaluate(() => window.__game.scene.getScene('TitleScene').scene.start('MainScene', { mode: 'continue' }));
   await page.waitForFunction(() => window.__game.scene.isActive('MainScene'), null, { timeout: 60000 });
   await page.waitForFunction(() => window.__game.scene.getScene('MainScene').chunkStreamer?.activeSourceLabel === 'earth', null, { timeout: 30000 });
+  await page.waitForFunction(() => window.__game.scene.getScene('MainScene').chunkStreamer?.worldmapBuf !== null, null, { timeout: 30000 });
   const offlineCache = await page.evaluate(() => {
     const st = window.__game.scene.getScene('MainScene').chunkStreamer;
-    return { planetFrom: st.packOrigin.planet, source: st.activeSourceLabel };
+    return { planetFrom: st.packOrigin.planet, worldmapFrom: st.packOrigin.worldmap, worldmapBytes: st.worldmapBuf?.byteLength ?? 0, source: st.activeSourceLabel };
   });
   await page.unroute('**/world/planet.bin');
+  await page.unroute('**/world/worldmap.png');
   ok(
-    'offline-cache: second v2 boot serves planet.bin from IndexedDB with the network route blocked',
-    offlineCache.planetFrom === 'idb' && offlineCache.source === 'earth',
+    'offline-cache: second v2 boot serves planet.bin AND worldmap.png from IndexedDB with the network routes blocked',
+    offlineCache.planetFrom === 'idb' && offlineCache.worldmapFrom === 'idb' && offlineCache.worldmapBytes > 100000 && offlineCache.source === 'earth',
     JSON.stringify(offlineCache),
   );
 

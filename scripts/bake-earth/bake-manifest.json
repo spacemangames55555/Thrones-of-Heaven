@@ -46,8 +46,13 @@
     },
     {
       "file": "public/world/regions.json",
-      "bytes": 395,
-      "sha256": "675374468cccf70734960145b7022fdb6467ed103165bcc0fad60e1b3bb08a5b"
+      "bytes": 576,
+      "sha256": "37040dae6dd1f8b9a20f8ad5a8907c3cdb7ba2e00626638ce0f33add3e0cd31e"
+    },
+    {
+      "file": "public/world/worldmap.png",
+      "bytes": 928586,
+      "sha256": "a0152b866bb5627b4f80954cc64f8444c37b7a9465118ae18367cf55112f96c4"
     }
   ],
   "derivedBiomes": true,

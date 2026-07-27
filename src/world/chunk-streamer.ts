@@ -97,6 +97,9 @@ export class ChunkStreamer {
   packOrigin: Record<string, 'idb' | 'network'> = {};
   /** Pass 5: the pooled fringe/scatter renderer + water anim cycle. */
   readonly visualsRenderer: TerrainVisualsRenderer;
+  /** Pass 6A: the baked world-map image bytes (IDB-cached like the packs;
+   *  map mode decodes them into a texture — null until loaded/if missing). */
+  worldmapBuf: ArrayBuffer | null = null;
 
   constructor(scene: Phaser.Scene, opts: { originPx: { x: number; y: number }; source: TerrainSource; stamps: GameMap[] }) {
     this.scene = scene;
@@ -140,6 +143,15 @@ export class ChunkStreamer {
       this.setEarthGrids(decodePlanetPack(planet.buf));
     } catch (e) {
       console.warn('ToH: earth packs unavailable — staying on procedural terrain:', e);
+    }
+    // Pass 6A: the world-map image, cached like the packs — its failure never
+    // touches the terrain path (map mode just stays unavailable).
+    try {
+      const wm = await loadPack('/world/worldmap.png');
+      this.packOrigin.worldmap = wm.from;
+      this.worldmapBuf = wm.buf;
+    } catch (e) {
+      console.warn('ToH: worldmap unavailable — map mode disabled:', e);
     }
   }
 

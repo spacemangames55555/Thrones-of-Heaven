@@ -176,6 +176,28 @@ export const SCATTER_PROPS: Record<number, readonly string[]> = {
   [Biome.DESERT]: ['cactus-a', 'scrub-a'],
 };
 
+/** MAP_PALETTE (Pass 6A): the world-map overview colors — CARTOGRAPHIC
+ *  (physical-atlas hues modulated by hillshade at bake time), deliberately
+ *  NOT the placeholder speckle palette. The worldmap bake and the
+ *  worldmap-parity gate both read exactly this table (art restyle slot —
+ *  parchment/atlas pass — is ledgered). */
+export const MAP_PALETTE: Record<number, number> = {
+  [Biome.OCEAN]: 0x5d89b3,
+  [Biome.FRESHWATER]: 0x7fb3d4,
+  [Biome.BEACH]: 0xe6d9a8,
+  [Biome.GRASS]: 0xa9c489,
+  [Biome.SAVANNA]: 0xd6c883,
+  [Biome.DESERT]: 0xe8d3a0,
+  [Biome.FOREST]: 0x6f9e63,
+  [Biome.TAIGA]: 0x86a98a,
+  [Biome.TUNDRA]: 0xc7c9b0,
+  [Biome.SNOW]: 0xf4f6f4,
+  [Biome.ROCK]: 0xa89a8c,
+  [Biome.SWAMP]: 0x8fae7e,
+};
+/** Worldmap image width (px); height follows the world aspect exactly. */
+export const WORLDMAP_WIDTH = 2048;
+
 /** Water shimmer: anim slots 4–6 cycle at this period (art frames when
  *  dropped; distinct procedural speckle phases in the fallback). */
 export const WATER_ANIM_MS = 450;
