@@ -39,3 +39,17 @@ ruling lands, strike the entry with a pointer to the commit that resolved it.
   biome classes from the Pass 2 latitude+moisture model): upgrade to WWF
   ecoregions or Koppen-Geiger when a reachable mirror exists (their hosts
   are blocked from the build environment).
+- World scale v2 Pass 4 (mounts + waystones + THE DEFAULT FLIP): v2 (the
+  real Earth) is now the default; ?scale=v1 keeps the legacy world fully
+  functional as a gate-checked escape hatch — its REMOVAL is ledgered here,
+  not scheduled. Mount acquisition/content + real mount art (PixelLab) +
+  class mounts are future passes (Summon Mount is unlocked-by-default until
+  then). Waystone art + lore naming pend a Casey ruling (the display text
+  Waystone is a marked placeholder). Waypoint travel cost hooks into the
+  crystal/arcane-liquid economy when that ships (travel is free this pass).
+  A spawn-coverage/density audit at v2 scale is owed (zone spawns were tuned
+  for v1 distances). En-route encounter content for the long overland
+  corridors is owed (open terrain between stamps is currently empty land).
+  TRINITY_ARENA carries a suspected shipped mistranslation (a hell-plane
+  constant holding an earth-frame value; the spawn survives via the
+  walkable-fallback) — flagged for a ruling, deliberately not changed.

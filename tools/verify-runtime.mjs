@@ -227,6 +227,66 @@ const ok = (name, pass, detail = '') => {
   );
 }
 
+// 0d. QUEST-ANCHOR-SANITY (PASS 4 flip, pure Node): every Acts I–IV authored
+// world-frame anchor (the legacy-frame-translated settings constants) must
+// resolve IN-BOUNDS under the flipped v2 default and sit INSIDE the authored
+// PNW stamp (their content home); every quest radius/range constant must sit
+// within [16, 4096] px. Offenders are enumerated. TRINITY_ARENA is excluded:
+// it is a hell-plane constant with a shipped mistranslation, flagged in the
+// Pass 4 commit body rather than silently changed.
+{
+  const { build } = await import('esbuild');
+  const outfile = new URL('../node_modules/.cache/toh-settings.mjs', import.meta.url).pathname;
+  await build({ entryPoints: [new URL('../src/game/settings.ts', import.meta.url).pathname], bundle: true, format: 'esm', platform: 'node', outfile, logLevel: 'silent' });
+  const settings = await import(outfile);
+  const lf = await (async () => {
+    const out2 = new URL('../node_modules/.cache/toh-legacy-frame.mjs', import.meta.url).pathname;
+    await build({ entryPoints: [new URL('../src/world/legacy-frame.ts', import.meta.url).pathname], bundle: true, format: 'esm', platform: 'node', outfile: out2, logLevel: 'silent' });
+    return import(out2);
+  })();
+  const ws2 = await import(new URL('../node_modules/.cache/toh-world-scale.mjs', import.meta.url).pathname);
+  // The v2 PNW stamp rect (node runs the flipped default, so the deltas are v2).
+  const stampX = lf.LEGACY_GLOBE_ORIGIN_X + Math.round((-126.96 + 180) * ws2.PX_PER_DEG_LNG);
+  const stampY = Math.round((85 - 50.12) * ws2.PX_PER_DEG_LAT);
+  const stampW = 1100 * 32;
+  const stampH = 800 * 32;
+  const worldW = 360 * ws2.PX_PER_DEG_LNG;
+  const worldH = 170 * ws2.PX_PER_DEG_LAT;
+  const anchorOffenders = [];
+  const radiusOffenders = [];
+  let anchors = 0;
+  let radii = 0;
+  for (const [name, v] of Object.entries(settings)) {
+    if (name === 'TRINITY_ARENA') continue; // hell-plane constant (flagged, not swept)
+    if (v && typeof v === 'object' && typeof v.x === 'number' && typeof v.y === 'number' && v.x >= 1_000_000) {
+      anchors++;
+      const inBounds = v.x >= 0 && v.x <= lf.LEGACY_GLOBE_ORIGIN_X + worldW && v.y >= 0 && v.y <= worldH;
+      const onStamp = v.x >= stampX && v.x < stampX + stampW && v.y >= stampY && v.y < stampY + stampH;
+      if (!inBounds || !onStamp) anchorOffenders.push(name);
+    }
+    if (Array.isArray(v)) {
+      for (const e of v) {
+        if (e && typeof e === 'object' && typeof e.x === 'number' && e.x >= 1_000_000) {
+          anchors++;
+          const onStamp = e.x >= stampX && e.x < stampX + stampW && e.y >= stampY && e.y < stampY + stampH;
+          if (!onStamp) anchorOffenders.push(`${name}[]`);
+        }
+      }
+    }
+    // Quest-domain radii only: projectile/bolt HIT radii are weapon hitboxes
+    // (7-12 px by design), not trigger geometry.
+    if (/(_RADIUS|_RANGE)$/.test(name) && typeof v === 'number' && !/BOLT|PROJECTILE|HIT_RADIUS/.test(name)) {
+      radii++;
+      if (v < 16 || v > 4096) radiusOffenders.push(`${name}=${v}`);
+    }
+  }
+  ok(
+    'quest-anchor-sanity: every Acts I-IV world anchor lands in-bounds INSIDE the authored stamp under the v2 default; radii within [16, 4096]',
+    anchors >= 40 && anchorOffenders.length === 0 && radii >= 5 && radiusOffenders.length === 0,
+    JSON.stringify({ anchors, radii, anchorOffenders: anchorOffenders.slice(0, 10), radiusOffenders: radiusOffenders.slice(0, 10) }),
+  );
+}
+
 // 1) Preview server (killed on exit).
 const server = spawn('npx', ['vite', 'preview', '--port', String(PORT), '--strictPort'], { stdio: 'ignore' });
 const kill = () => {
@@ -287,7 +347,7 @@ try {
   });
 
   async function newGame(classId) {
-    await page.goto(`http://localhost:${PORT}/`, { waitUntil: 'load' });
+    await page.goto(`http://localhost:${PORT}/?scale=v1`, { waitUntil: 'load' });
     await page.waitForFunction(() => !!window.__game && window.__game.scene.isActive('TitleScene'), null, { timeout: 25000 });
     await page.evaluate(() => localStorage.clear());
     await page.evaluate((cid) => window.__game.scene.getScene('TitleScene').scene.start('MainScene', { mode: 'new', classId: cid }), classId);
@@ -305,14 +365,14 @@ try {
   // This check drives the REAL UI: the select screen must list exactly one card per
   // REGISTERED class, and CLICKING each card must start MainScene as that class.
   const registeredIds = await (async () => {
-    await page.goto(`http://localhost:${PORT}/`, { waitUntil: 'load' });
+    await page.goto(`http://localhost:${PORT}/?scale=v1`, { waitUntil: 'load' });
     await page.waitForFunction(() => !!window.__game && window.__game.scene.isActive('TitleScene'), null, { timeout: 25000 });
     return page.evaluate(() => Object.keys(window.__game.scene.getScene('MainScene').classSkillsAll));
   })();
   const startedIds = [];
   let selectCards = -1;
   for (let i = 0; i < registeredIds.length; i++) {
-    await page.goto(`http://localhost:${PORT}/`, { waitUntil: 'load' });
+    await page.goto(`http://localhost:${PORT}/?scale=v1`, { waitUntil: 'load' });
     await page.waitForFunction(() => !!window.__game && window.__game.scene.isActive('TitleScene'), null, { timeout: 25000 });
     await page.evaluate(() => {
       localStorage.clear();
@@ -363,7 +423,7 @@ try {
       localStorage.setItem('toh_save', JSON.stringify(raw));
       return spot;
     });
-    await page.goto(`http://localhost:${PORT}/`, { waitUntil: 'load' });
+    await page.goto(`http://localhost:${PORT}/?scale=v1`, { waitUntil: 'load' });
     await page.waitForFunction(() => !!window.__game && window.__game.scene.isActive('TitleScene'), null, { timeout: 25000 });
     await page.evaluate(() => window.__game.scene.getScene('TitleScene').scene.start('MainScene', { mode: 'continue' }));
     await page.waitForFunction(() => window.__game.scene.isActive('MainScene'), null, { timeout: 25000 });
@@ -7024,7 +7084,7 @@ try {
   // flows into columns (every card fully on screen), and the skill tree flows its
   // ten rows into two columns (every node bar fully on screen).
   const landscapeMenus = await (async () => {
-    await page.goto(`http://localhost:${PORT}/`, { waitUntil: 'load' });
+    await page.goto(`http://localhost:${PORT}/?scale=v1`, { waitUntil: 'load' });
     await page.waitForFunction(() => !!window.__game && window.__game.scene.isActive('TitleScene'), null, { timeout: 25000 });
     await page.evaluate(() => {
       localStorage.clear();
@@ -7284,7 +7344,7 @@ try {
 
   // (e) WHEN SHOWN, THE PICKER'S CLASS IS THE LIVE CHARACTER'S: a genuinely
   // fresh character opens the picker for exactly its own class.
-  await page.goto(`http://localhost:${PORT}/`, { waitUntil: 'load' });
+  await page.goto(`http://localhost:${PORT}/?scale=v1`, { waitUntil: 'load' });
   await page.waitForFunction(() => !!window.__game && window.__game.scene.isActive('TitleScene'), null, { timeout: 25000 });
   await page.evaluate(() => {
     localStorage.clear();
@@ -7317,7 +7377,7 @@ try {
   // same spot under v1 (lossless); the SAME fixture then boots under
   // ?scale=v2 (+ devspeed cap coverage) and lands on the same GEOGRAPHY
   // through the v2 projection, with the TEMP render window bounding zoom-out.
-  await page.goto(`http://localhost:${PORT}/`, { waitUntil: 'load' });
+  await page.goto(`http://localhost:${PORT}/?scale=v1`, { waitUntil: 'load' });
   await page.waitForFunction(() => !!window.__game && window.__game.scene.isActive('TitleScene'), null, { timeout: 25000 });
   await page.evaluate(() => {
     localStorage.clear();
@@ -7983,6 +8043,64 @@ try {
     'offline-cache: second v2 boot serves planet.bin from IndexedDB with the network route blocked',
     offlineCache.planetFrom === 'idb' && offlineCache.source === 'earth',
     JSON.stringify(offlineCache),
+  );
+
+  // ── PASS 4 COMMIT 2: THE FLIP ─────────────────────────────────────────────
+  // 2i0. flip-default: a page with NO param is v2 — streamer live, the earth
+  // packs served from the IndexedDB cache, and the v17-lineage save loading
+  // onto the same geography as before.
+  await page.goto(`http://localhost:${PORT}/`, { waitUntil: 'load' });
+  await page.waitForFunction(() => !!window.__game && window.__game.scene.isActive('TitleScene'), null, { timeout: 25000 });
+  await page.evaluate(() => window.__game.scene.getScene('TitleScene').scene.start('MainScene', { mode: 'continue' }));
+  await page.waitForFunction(() => window.__game.scene.isActive('MainScene'), null, { timeout: 60000 });
+  await page.waitForFunction(() => window.__game.scene.getScene('MainScene').chunkStreamer?.activeSourceLabel === 'earth', null, { timeout: 60000 });
+  const flipDefault = await page.evaluate(() => {
+    const ms = window.__game.scene.getScene('MainScene');
+    return {
+      noParam: !location.search.includes('scale'),
+      v2: window.__worldScale.isScaleV2(),
+      streamer: !!ms.chunkStreamer,
+      planetFrom: ms.chunkStreamer.packOrigin.planet,
+      world: ms.activeWorld,
+      travelSystems: !!ms.mountSys && !!ms.waypointSys,
+    };
+  });
+  ok(
+    'flip-default: no param means v2 — streamer live, planet from IndexedDB cache, travel systems constructed',
+    flipDefault.noParam && flipDefault.v2 === true && flipDefault.streamer && flipDefault.planetFrom === 'idb' && flipDefault.world === 'earth' && flipDefault.travelSystems,
+    JSON.stringify(flipDefault),
+  );
+
+  // 2i1. respawn-nearest: a death mid-PNW respawns at the NEAREST settlement
+  // by LIVE v2 distance — the check recomputes the argmin over the same
+  // candidate set (zone arrivals + the Egypt gate + the Enumclaw square)
+  // independently and the engine must agree.
+  const respawnNearest = await page.evaluate(async () => {
+    const ms = window.__ready();
+    const wait = (t) => new Promise((r) => setTimeout(r, t));
+    const mid = ms.terrestrialPxFromLatLng({ lat: 46.8, lng: -120.6 }); // mid-PNW, between settlements
+    ms.player.sprite.body.reset(mid.x, mid.y);
+    ms.lastLandPos = undefined;
+    await wait(400);
+    const candidates = [...Object.values(ms.regionZoneArrivals), ms.egyptArrivalPos, { x: ms.town.spawn.x, y: ms.town.spawn.y }];
+    let best = null;
+    let bestD = Infinity;
+    for (const c of candidates) {
+      const d = Math.hypot(c.x - mid.x, c.y - mid.y);
+      if (d < bestD) {
+        bestD = d;
+        best = c;
+      }
+    }
+    ms.respawnPlayer(); // the REAL death respawn path (nearest safe point)
+    await wait(200);
+    const d = Math.hypot(ms.player.x - best.x, ms.player.y - best.y);
+    return { candidates: candidates.length, bestD: Math.round(bestD), landedD: +d.toFixed(1), agrees: d <= 64 };
+  });
+  ok(
+    'respawn-nearest: a mid-PNW death respawns at the settlement the v2 distances actually select',
+    respawnNearest.candidates >= 60 && respawnNearest.agrees === true,
+    JSON.stringify(respawnNearest),
   );
 
   // 4) THE GATE: zero page errors across everything above.

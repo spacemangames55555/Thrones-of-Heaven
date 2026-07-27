@@ -59,13 +59,15 @@ export function pxToLatLngV2(x: number, y: number): { lat: number; lng: number }
 }
 
 // ── Boot-time flags (query params; default = v1, zero behavior change) ───────
-/** ?scale=v2 activates the v2 projection for this session. Safe under Node
- *  (no location) → always v1 there. */
+/** PASS 4 FLIP: v2 (the real Earth) is the DEFAULT. ?scale=v1 is the
+ *  gate-checked escape hatch keeping the legacy world fully functional
+ *  (removal ledgered, not scheduled). Node tooling follows the default. */
 export function isScaleV2(): boolean {
   try {
-    return typeof location !== 'undefined' && new URLSearchParams(location.search).get('scale') === 'v2';
+    if (typeof location === 'undefined') return true;
+    return new URLSearchParams(location.search).get('scale') !== 'v1';
   } catch {
-    return false;
+    return true;
   }
 }
 
