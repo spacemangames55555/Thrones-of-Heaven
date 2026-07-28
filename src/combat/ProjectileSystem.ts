@@ -2,6 +2,11 @@ import Phaser from 'phaser';
 import type { GameMap } from '../map/GameMap';
 import { PROJECTILE_SIZE_SCALE } from '../game/settings';
 
+/** The one terrain query bolts need — a GameMap satisfies it, and so does the
+ *  scene's dissolution-following lookup (Pass 6C: on the v2 globe the sparse
+ *  world answers, not the dissolved mega-map). */
+export type ProjectileTerrain = Pick<GameMap, 'terrainAtWorld'>;
+
 const TEXTURE_KEY = 'holy-bolt';
 
 /** Who a projectile belongs to / can hit. Only 'enemy' is used now; 'player' is
@@ -128,7 +133,7 @@ class Bolt {
  */
 export class ProjectileSystem {
   private readonly scene: Phaser.Scene;
-  private readonly map: GameMap;
+  private readonly map: ProjectileTerrain;
   private readonly layer: Phaser.GameObjects.Layer;
   private readonly pool: Bolt[] = [];
 
@@ -162,7 +167,7 @@ export class ProjectileSystem {
    *  leg re-aims at it every frame so the boomerang lands back in the hand. */
   onReturnHome?: () => { x: number; y: number };
 
-  constructor(scene: Phaser.Scene, map: GameMap, layer: Phaser.GameObjects.Layer) {
+  constructor(scene: Phaser.Scene, map: ProjectileTerrain, layer: Phaser.GameObjects.Layer) {
     this.scene = scene;
     this.map = map;
     this.layer = layer;

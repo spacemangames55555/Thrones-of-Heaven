@@ -48,7 +48,8 @@ import { MANIFEST_CLASS_FOR, KNOWN_CLASS_NAMES, homeZoneForClass } from '../worl
 import { SparseWorldMap } from '../map/SparseWorldMap';
 import { WORLD_CALIBRATION, WORLD_SPAN_DEGREES, latLngToPixels } from '../world/world-calibration';
 import { isScaleV2, isTerrainProc, isDebugOverlay, formatKm } from '../world/world-scale';
-import { legacyEarthPx, LEGACY_GLOBE_ORIGIN_X } from '../world/legacy-frame';
+import { legacyEarthPx, legacyRawToLocal, LEGACY_GLOBE_ORIGIN_X } from '../world/legacy-frame';
+import { isReplantActive, latLngGlobePx, poiGlobePx, poiLegacyAnchor, REPLANT_CROSSINGS, REPLANT_POIS } from '../world/replant';
 import { MountSystem } from '../systems/mount';
 import { WaypointSystem } from '../systems/waypoints';
 import { EncounterCoordinator } from '../systems/encounters';
@@ -415,7 +416,7 @@ import {
 import { TOWN_TILES, TownTileId } from '../town/townTiles';
 import { buildTown, type TownFeatures, type DoorFeature } from '../town/TownBuilder';
 import { PORTLAND_TOWN, PORTLAND_NPC_LINES, SEATTLE_DRUID_TOWN } from '../town/townData';
-import type { WashingtonMap } from '../map/mapTypes';
+import type { TerrainType, WashingtonMap } from '../map/mapTypes';
 import washingtonMap from '../map/washington.map.json';
 import egyptMapJson from '../map/egypt.map.json';
 
@@ -443,7 +444,7 @@ const SASQUATCH_SPAWN_TILES_NORTH = 26;
 // Oregon spirit-swarm seed: a pack in the Willamette Valley just south of
 // Portland. Translated with the map in the world unification (was 12240,13616
 // in the old earth frame). Fightable only with Spirit Vision on.
-const OREGON_SWARM_SPAWN = legacyEarthPx({ x: 140915, y: 99177 });
+const OREGON_SWARM_SPAWN = legacyEarthPx({ x: 140915, y: 99177 }, 'portland');
 
 // >>> PLACEHOLDER TEXT — edit to change the descent-climax beat shown when the
 // player corrupts the Heaven Portal (gold→purple). Walking into the corrupted
@@ -555,6 +556,18 @@ declare const __BUILD_TIME__: string;
 
 export class MainScene extends Phaser.Scene {
   private map!: GameMap;
+  /** PASS 6C — PNW RE-PLANTING (v2 only; empty under v1): the per-POI terrain
+   *  sub-stamps cut byte-for-byte from washington.map.json and re-planted at
+   *  their TRUE Earth anchors, plus the authored water-crossing causeways.
+   *  Public readonly: the runtime gate enumerates and probes them. */
+  readonly replantStamps: GameMap[] = [];
+  readonly replantStampById = new Map<string, GameMap>();
+  /** Gate introspection: the declared POI + crossing tables. */
+  readonly replantPois = REPLANT_POIS;
+  readonly replantCrossings = REPLANT_CROSSINGS;
+  /** Commit 2: the corridor-interpolated escort anchors after the
+   *  nudge-to-walkable rule (v1: the authored points, untouched). */
+  corridorAnchorsGrounded: { q9: { x: number; y: number }[]; q12: { x: number; y: number }[] } = { q9: [], q12: [] };
   private player!: Player;
   private controls!: Controls;
   private readout!: DebugReadout;
@@ -1460,6 +1473,17 @@ export class MainScene extends Phaser.Scene {
     const earthD = earthUnificationDelta();
     this.map = new GameMap(this, data, TOWN_TILES, { x: this.computeGlobeOriginX() + Math.round(earthD.dx), y: Math.round(earthD.dy) }, { forceCpuLayer: true });
 
+    // PASS 6C — PNW RE-PLANTING (v2): the legacy mega-stamp DISSOLVES. Its
+    // layer never renders, never collides, and never registers as a globe
+    // chunk; every POI re-plants at its TRUE Earth anchor as a small
+    // sub-stamp cut byte-for-byte from the same authored JSON (below). The
+    // GameMap object itself stays alive as the byte-preserved SOURCE of those
+    // slices and the v1 hatch. Under ?scale=v1 nothing changes.
+    if (isReplantActive()) {
+      this.map.layer.setVisible(false);
+      this.buildReplantStamps(data);
+    }
+
     this.physics.world.setBounds(0, 0, this.map.pixelWidth, this.map.pixelHeight);
     this.cameras.main.setBounds(0, 0, this.map.pixelWidth, this.map.pixelHeight);
     this.cameras.main.setBackgroundColor('#0b1a2b');
@@ -1467,26 +1491,38 @@ export class MainScene extends Phaser.Scene {
     // City labels for everywhere except the real walkable towns. Exclude the cities
     // that have a real stamped town (Enumclaw = home, Portland, and now Seattle =
     // the Druid tree-house city); everywhere else gets a generic labeled marker.
-    new CityMarkers(this, this.map, ['Enumclaw', 'Portland', 'Seattle'], 'mid'); // settlement names — the mid LOD tier
+    // Re-plant: each sub-stamp carries its own markers (built above); the
+    // dissolved mega-map must not label empty terrain.
+    if (!isReplantActive()) new CityMarkers(this, this.map, ['Enumclaw', 'Portland', 'Seattle'], 'mid'); // settlement names — the mid LOD tier
 
     // Stamp the town onto the overworld and read back its feature positions.
-    this.town = buildTown(this.map);
+    // Under re-plant the towns paint into their POI sub-stamps (the sliced
+    // cities arrays keep the anchor-city lookup working verbatim).
+    this.town = buildTown(this.earthMapFor('enumclaw'));
     this.addTownDecor();
 
     // Portland (Oregon) — a second town from the same system, just a nameplate
     // (no rift). Built before the world snapshot so its tiles + NPC are world.
-    this.portland = buildTown(this.map, PORTLAND_TOWN);
+    this.portland = buildTown(this.earthMapFor('portland'), PORTLAND_TOWN);
     this.addTownLabel(this.portland.label);
 
     // Seattle — the DRUID TREE-HOUSE CITY (Quests 10–11): forest + tree-house tiles
     // stamped at the existing Seattle marker. Rowan + Alder are placed by its plaza.
-    this.seattle = buildTown(this.map, SEATTLE_DRUID_TOWN);
+    this.seattle = buildTown(this.earthMapFor('seattle'), SEATTLE_DRUID_TOWN);
     this.addTownLabel(this.seattle.label);
 
     // Spawn the player in the town square.
     this.player = new Player(this, this.town.spawn.x, this.town.spawn.y, this.classId);
-    this.earthCollider = this.physics.add.collider(this.player.sprite, this.map.layer);
+    this.earthCollider = this.physics.add.collider(this.player.sprite, this.earthMapFor('enumclaw').layer);
     this.regionColliders.push({ c: this.earthCollider, worldId: WORLD_EARTH });
+    // Re-plant: every OTHER sub-stamp gets its own player collider (same
+    // world id, so world swaps toggle them exactly like the mega collider).
+    if (isReplantActive()) {
+      for (const m of this.replantStamps) {
+        if (m === this.replantStampById.get('enumclaw')) continue;
+        this.regionColliders.push({ c: this.physics.add.collider(this.player.sprite, m.layer), worldId: WORLD_EARTH });
+      }
+    }
 
     // A plain Enumclaw townsperson in the plaza (flavor only). The old opening
     // quest ('corruption-at-the-gates') is RETIRED — the corruption beat now lives
@@ -1582,7 +1618,9 @@ export class MainScene extends Phaser.Scene {
     this.swingFx = new SwingFxPool(this, this.worldFx, MAX_SWING_FX); // melee swing crescents (strike primitive)
     // The reusable projectile system draws bolts into the world-FX layer (so the
     // UI camera ignores them). Enemy bolts damage the player; impacts spawn a poof.
-    this.projectiles = new ProjectileSystem(this, this.map, this.worldFx);
+    // Bolts stop on blocking terrain through the dissolution-following lookup
+    // (v1 / non-Earth worlds: byte-identical to the shipped this.map query).
+    this.projectiles = new ProjectileSystem(this, { terrainAtWorld: (x, y) => this.earthTerrainAtWorld(x, y) }, this.worldFx);
     this.projectiles.onPlayerHit = (dmg, tag) => this.onProjectileHitPlayer(dmg, tag);
     this.projectiles.onEnemyHit = (x, y, radius, dmg, hitSet, rider) => {
       const landed = this.resolveHolyBoltHit(x, y, radius, dmg, hitSet);
@@ -1694,7 +1732,7 @@ export class MainScene extends Phaser.Scene {
       this.town.spawn.y - SASQUATCH_SPAWN_TILES_NORTH * this.map.tileSize,
     );
     this.sasquatch.onStrike = () => this.onSasquatchStrike();
-    this.physics.add.collider(this.sasquatch.sprite, this.map.layer);
+    this.physics.add.collider(this.sasquatch.sprite, this.earthMapFor('enumclaw').layer);
     this.physics.add.collider(this.player.sprite, this.sasquatch.sprite);
 
     // Portal Defense objective (world landmark; created here so its sprite + HP
@@ -1743,10 +1781,13 @@ export class MainScene extends Phaser.Scene {
     });
     // GUARDIAN ENCOUNTER: reconciles at the ENTITY leash boundary (the same
     // 2048 px the engagement funnel deaggros at), so no zone exists where the
-    // entities are dormant but the phase still says fighting.
+    // entities are dormant but the phase still says fighting. Anchored where
+    // the guardians STAND (the Heaven portal): in the legacy frame the portal
+    // and the Holy Outpost were one point; the Pass 6C re-plant separates
+    // them, and the encounter must follow its entities.
     this.encounters.register({
       id: 'guardians',
-      anchor: () => ({ x: HOLY_OUTPOST_POSITION.x, y: HOLY_OUTPOST_POSITION.y }),
+      anchor: () => ({ x: HEAVEN_PORTAL_POSITION.x, y: HEAVEN_PORTAL_POSITION.y }),
       radiusPx: FEEL.combat.leashRadiusPx,
       isEngaged: () => this.guardianPhase === 'fighting',
       onSuspend: () => this.resetGuardianFight(),
@@ -7590,10 +7631,16 @@ export class MainScene extends Phaser.Scene {
    */
   private hasLineOfSight(ax: number, ay: number, bx: number, by: number): boolean {
     const dist = Phaser.Math.Distance.Between(ax, ay, bx, by);
+    // PLANETARY GUARD (Pass 6C): every combat range that consults LOS is
+    // <= ~2k px; the only longer queries are far leashed/dormant entities
+    // interrogating a target continents away — sampling that segment is
+    // ~1M terrain reads PER FRAME (the profiled fps collapse). Beyond any
+    // meaningful range the answer is simply "no line of sight".
+    if (dist > 8192) return false;
     const steps = Math.max(1, Math.ceil(dist / (this.map.tileSize * 0.5)));
     for (let i = 1; i < steps; i++) {
       const t = i / steps;
-      const terr = this.map.terrainAtWorld(ax + (bx - ax) * t, ay + (by - ay) * t);
+      const terr = this.earthTerrainAtWorld(ax + (bx - ax) * t, ay + (by - ay) * t);
       if (terr?.blocks) return false;
     }
     return true;
@@ -9111,7 +9158,7 @@ export class MainScene extends Phaser.Scene {
         });
       }
     };
-    this.physics.add.collider(g.sprite, this.map.layer);
+    this.physics.add.collider(g.sprite, this.earthMapFor('heaven-portal').layer);
     this.uiCamera?.ignore(g.objects()); // runtime world objects: keep off the UI camera
     this.guardians.push(g);
     return g;
@@ -9123,8 +9170,12 @@ export class MainScene extends Phaser.Scene {
     for (const g of this.guardians) g.activate();
     this.guardianPhase = 'fighting';
     this.showBanner('The flaming swords awaken!', 1800);
-    this.notifyQuest('reach-holy-outpost'); // Quest 5 obj 1: reached the Holy Outpost
   }
+
+  /** Quest 5 obj 1 fired once per session on entering the OUTPOST radius —
+   *  split from the sword-waking since the Pass 6C re-plant separates the
+   *  outpost from the portal (one point in the legacy frame). */
+  private outpostBeatFired = false;
 
   /** LEASH RESET (Pass 6B): the FIGHT resets - swords dormant + full HP -
    *  but quest state (portal corruption, defeat progress) is untouched. The
@@ -9154,12 +9205,19 @@ export class MainScene extends Phaser.Scene {
     if (this.guardianPhase === 'fighting' && this.guardians.length > 0 && this.guardians.every((g) => !g.isAlive || !g.isAggro) && this.guardians.some((g) => g.isAlive)) {
       this.resetGuardianFight();
     }
-    // Proximity activation: nearing the outpost wakes the dormant pair. During Act IV
-    // 4.9's assault they HOLD until the quest reaches the portal objective and the
-    // mask-drop narration has played (see assaultHoldsGuardians).
+    // Proximity: the OUTPOST fires the quest beat; the PORTAL (its own true
+    // site since Pass 6C — one point in the legacy frame, so v1 behavior is
+    // unchanged) wakes the dormant pair where they actually stand. During Act
+    // IV 4.9's assault they HOLD until the quest reaches the portal objective
+    // and the mask-drop narration has played (see assaultHoldsGuardians).
     if (this.guardianPhase === 'dormant' && !this.assaultHoldsGuardians()) {
-      const d = Phaser.Math.Distance.Between(this.player.x, this.player.y, HOLY_OUTPOST_POSITION.x, HOLY_OUTPOST_POSITION.y);
-      if (d <= GUARDIAN_ACTIVATION_RANGE) this.startGuardianFight();
+      const dOut = Phaser.Math.Distance.Between(this.player.x, this.player.y, HOLY_OUTPOST_POSITION.x, HOLY_OUTPOST_POSITION.y);
+      if (dOut <= GUARDIAN_ACTIVATION_RANGE && !this.outpostBeatFired) {
+        this.outpostBeatFired = true;
+        this.notifyQuest('reach-holy-outpost'); // Quest 5 obj 1: reached the Holy Outpost
+      }
+      const dPortal = Phaser.Math.Distance.Between(this.player.x, this.player.y, HEAVEN_PORTAL_POSITION.x, HEAVEN_PORTAL_POSITION.y);
+      if (dPortal <= GUARDIAN_ACTIVATION_RANGE) this.startGuardianFight();
     }
 
     // Advance each guardian (the ranged one needs line of sight from the scene). Guardians
@@ -9392,6 +9450,15 @@ export class MainScene extends Phaser.Scene {
     // chunk at its true position (and absorbs Luxor onto its Nile tiles).
     this.setupGlobe();
 
+    // PASS 6C COMMIT 2 — corridor anchors GROUNDED: the arc-length
+    // re-projected escort ambushes nudge to walkable ground now that the
+    // sparse world exists (v1: the authored points, untouched). Computed
+    // once; the gate enumerates every nudge.
+    this.corridorAnchorsGrounded = {
+      q9: Q9_AMBUSHES.map((p) => this.corridorAnchorWalkable(p)),
+      q12: Q12_AMBUSHES.map((p) => this.corridorAnchorWalkable(p)),
+    };
+
     // NESTED CITIES (Faiyum stamps its gate onto the now-positioned egypt map).
     this.setupCities();
     // Egypt's arrival lands just OUTSIDE the Faiyum village gate (the village
@@ -9416,6 +9483,152 @@ export class MainScene extends Phaser.Scene {
   // share walkable ground — no Europe↔Africa gate. NA seeds + Cairo stay
   // pre-existing in their hand-built worlds (never stamped; empty ground at
   // the globe's NA position is expected). Future continents just append.
+
+  /** The GameMap that HOSTS authored content at this POI: under re-plant its
+   *  true-coordinate sub-stamp, otherwise the legacy mega-map. Content built
+   *  through this helper (towns, terrain colliders) follows the dissolution
+   *  automatically and stays byte-identical under v1. */
+  private earthMapFor(poiId: string): GameMap {
+    if (!isReplantActive()) return this.map;
+    const m = this.replantStampById.get(poiId);
+    if (!m) throw new Error(`replant: poi '${poiId}' has no terrain sub-stamp`);
+    return m;
+  }
+
+  /** COMMIT 2 RULE: a corridor-interpolated anchor lands on walkable ground,
+   *  nudged AT MOST 64 tiles — anything further is a hard authoring failure
+   *  (the corridor gate proved every route point rideable, so a wider miss
+   *  means the tables drifted). Spiral over the sparse world's own blocking
+   *  rule (chunk terrain where stamped, baked water in the void). Under v1
+   *  the authored points stand on authored ground — identity. */
+  private corridorAnchorWalkable(p: { x: number; y: number }): { x: number; y: number } {
+    if (!isReplantActive()) return p;
+    const g = this.globeMap!;
+    if (!g.isBlockedAtWorld(p.x, p.y)) return p;
+    const ts = 32;
+    for (let r = 1; r <= 64; r++) {
+      for (let ty = -r; ty <= r; ty++) {
+        for (let tx = -r; tx <= r; tx++) {
+          if (Math.max(Math.abs(tx), Math.abs(ty)) !== r) continue;
+          const x = p.x + tx * ts;
+          const y = p.y + ty * ts;
+          if (!g.isBlockedAtWorld(x, y)) return { x, y };
+        }
+      }
+    }
+    throw new Error(`corridor anchor unwalkable within 64 tiles of ${Math.round(p.x)},${Math.round(p.y)}`);
+  }
+
+  /** Terrain lookup that FOLLOWS THE DISSOLUTION: on the v2 globe the
+   *  mega-map no longer answers for Earth — the sparse world (re-planted
+   *  stamps + region chunks + void water) does. Every other world keeps the
+   *  shipped mega-map behavior (out-of-bounds = open ground). */
+  private earthTerrainAtWorld(x: number, y: number): TerrainType | null {
+    if (isReplantActive() && this.activeWorld === WORLD_EARTH && this.globeMap) return this.globeMap.terrainAtWorld(x, y);
+    return this.map.terrainAtWorld(x, y);
+  }
+
+  /**
+   * PASS 6C — build the re-planted POI sub-stamps (v2 only). Each POI with a
+   * terrain footprint gets its legacy tile rect cut BYTE-FOR-BYTE out of
+   * washington.map.json (via the stitched grid) and stamped at its TRUE
+   * Earth anchor, positioned so the POI's legacy-frame anchor and its
+   * re-planted anchor are the SAME WORLD POINT — layouts preserved, anchors
+   * moved (the Luxor geometric-absorption pattern, generalized). Then the
+   * authored WATER CROSSINGS: 3-tile-wide road causeways from the existing
+   * town tile vocabulary at real crossing sites, so the corridor bridges the
+   * baked rivers (authored stamps always win over streamed terrain).
+   */
+  private buildReplantStamps(data: WashingtonMap): void {
+    const grid = GameMap.stitchZones(data);
+    const ts = data.tileSize;
+    for (const poi of REPLANT_POIS) {
+      if (!poi.footprint) continue;
+      const anchorLocal = poiLegacyAnchor(poi, legacyRawToLocal);
+      const anchorTile = { tx: Math.floor(anchorLocal.x / ts), ty: Math.floor(anchorLocal.y / ts) };
+      const tx0 = Math.max(0, anchorTile.tx + poi.footprint.dx);
+      const ty0 = Math.max(0, anchorTile.ty + poi.footprint.dy);
+      const tx1 = Math.min(data.width, tx0 + poi.footprint.w);
+      const ty1 = Math.min(data.height, ty0 + poi.footprint.h);
+      const w = tx1 - tx0;
+      const h = ty1 - ty0;
+      const tiles = Array.from({ length: h }, (_, y) => grid[ty0 + y].slice(tx0, tx1));
+      const cities = data.cities
+        .filter((c) => c.tx >= tx0 && c.tx < tx1 && c.ty >= ty0 && c.ty < ty1)
+        .map((c) => ({ name: c.name, tx: c.tx - tx0, ty: c.ty - ty0 }));
+      const sub: WashingtonMap = {
+        name: `replant-${poi.id}`,
+        generated: data.generated,
+        tileSize: ts,
+        width: w,
+        height: h,
+        zoneSize: Math.max(w, h),
+        zonesX: 1,
+        zonesY: 1,
+        terrain: data.terrain,
+        // The sub-map spawn IS the anchor tile (the gate probes it).
+        spawn: { x: anchorTile.tx - tx0, y: anchorTile.ty - ty0 },
+        cities,
+        zones: [{ id: `replant-${poi.id}`, zx: 0, zy: 0, x: 0, y: 0, width: w, height: h, tiles }],
+      };
+      // Place the slice so anchorLocal lands EXACTLY at the true anchor.
+      const truePx = poiGlobePx(poi.id);
+      const origin = {
+        x: LEGACY_GLOBE_ORIGIN_X + Math.round(truePx.x) - (anchorLocal.x - tx0 * ts),
+        y: Math.round(truePx.y) - (anchorLocal.y - ty0 * ts),
+      };
+      const m = new GameMap(this, sub, TOWN_TILES, origin, { forceCpuLayer: true });
+      this.replantStamps.push(m);
+      this.replantStampById.set(poi.id, m);
+      new CityMarkers(this, m, ['Enumclaw', 'Portland', 'Seattle'], 'mid');
+    }
+    for (const c of REPLANT_CROSSINGS) {
+      const w = c.dir === 'ew' ? c.tiles : 3;
+      const h = c.dir === 'ew' ? 3 : c.tiles;
+      const tiles = Array.from({ length: h }, () => new Array<number>(w).fill(TownTileId.road));
+      const sub: WashingtonMap = {
+        name: `crossing-${c.id}`,
+        generated: data.generated,
+        tileSize: ts,
+        width: w,
+        height: h,
+        zoneSize: Math.max(w, h),
+        zonesX: 1,
+        zonesY: 1,
+        terrain: data.terrain,
+        spawn: { x: Math.floor(w / 2), y: Math.floor(h / 2) },
+        cities: [],
+        zones: [{ id: `crossing-${c.id}`, zx: 0, zy: 0, x: 0, y: 0, width: w, height: h, tiles }],
+      };
+      const px = latLngGlobePx(c.lat, c.lng);
+      const origin = {
+        x: LEGACY_GLOBE_ORIGIN_X + Math.round(px.x) - Math.floor(w / 2) * ts,
+        y: Math.round(px.y) - Math.floor(h / 2) * ts,
+      };
+      const m = new GameMap(this, sub, TOWN_TILES, origin, { forceCpuLayer: true });
+      this.replantStamps.push(m);
+      this.replantStampById.set(`crossing-${c.id}`, m);
+    }
+  }
+
+  /** PASS 6C gate probe: where each POI's legacy anchor ACTUALLY lands in the
+   *  live world vs its declared true Earth anchor (must agree to the pixel).
+   *  Raw-anchored POIs probe through legacyEarthPx (the whole re-projection
+   *  path); city-anchored POIs probe through their stamp's anchor tile. */
+  replantProbe(): { id: string; errPx: number; fiction: boolean; stamped: boolean }[] {
+    return REPLANT_POIS.map((p) => {
+      const truePx = poiGlobePx(p.id);
+      const want = { x: LEGACY_GLOBE_ORIGIN_X + Math.round(truePx.x), y: Math.round(truePx.y) };
+      let got = want;
+      if (p.legacyRaw) {
+        got = legacyEarthPx(p.legacyRaw, p.id);
+      } else {
+        const m = this.replantStampById.get(p.id);
+        if (m) got = m.tileToWorldCenter(m.data.spawn.x, m.data.spawn.y);
+      }
+      return { id: p.id, errPx: Math.hypot(got.x - want.x, got.y - want.y), fiction: !!p.fiction, stamped: this.replantStampById.has(p.id) };
+    });
+  }
 
   private setupGlobe(): void {
     const zoneIds = [...EUROPE_BUILT_ZONES, ...AFRICA_BUILT_ZONES, ...ASIA_BUILT_ZONES, ...FINAL_REGIONS_BUILT_ZONES].filter((id) => !PREBUILT_ZONE_WORLD[id]);
@@ -9449,7 +9662,10 @@ export class MainScene extends Phaser.Scene {
     // (Luxor — see the dry-run's one real collision) keep their id, quests,
     // spawns, arrival, and champion but re-host on the egypt map's Nile tiles;
     // only their generated terrain chunk is retired.
-    const chunkMaps: GameMap[] = [this.map, this.egyptMap];
+    // PASS 6C: under re-plant the mega-stamp is DISSOLVED — the true-anchor
+    // POI sub-stamps (+ crossing causeways) are the PNW's chunks; real baked
+    // terrain streams everywhere between them. v1 keeps the legacy stamp.
+    const chunkMaps: GameMap[] = isReplantActive() ? [...this.replantStamps, this.egyptMap] : [this.map, this.egyptMap];
     const built = new Map<string, { chunk: BuiltChunk; map: GameMap }>();
     for (const id of zoneIds) this.stampRegionZoneChunk(WORLD_EARTH, rw, origin, id, chunkMaps, built, ABSORBED_ZONE_HOSTS[id] ? this.egyptMap : undefined);
     this.buildRegionGates(WORLD_EARTH, origin, built);
@@ -12509,7 +12725,7 @@ export class MainScene extends Phaser.Scene {
         // Escort to Lake Chelan with three en-route ambushes (reach to complete).
         this.arcMode = 'reach';
         this.arcReach = { ...LAKE_CHELAN_POSITION };
-        this.arcAmbushes = Q9_AMBUSHES.map((p, i) => ({ x: p.x, y: p.y, lines: [Q9_AMBUSH_LINES[i] ?? Q9_AMBUSH_LINES[0]], spawned: false }));
+        this.arcAmbushes = this.corridorAnchorsGrounded.q9.map((p, i) => ({ x: p.x, y: p.y, lines: [Q9_AMBUSH_LINES[i] ?? Q9_AMBUSH_LINES[0]], spawned: false }));
         break;
       case 'bellingham-cleared':
         this.spawnArcDemons(BELLINGHAM_FARMS_POSITION, BELLINGHAM_DEMONS_COUNT);
@@ -12528,7 +12744,7 @@ export class MainScene extends Phaser.Scene {
       case 'longview-reached':
         this.arcMode = 'reach';
         this.arcReach = { ...LONGVIEW_POSITION };
-        this.arcAmbushes = Q12_AMBUSHES.map((p, i) => ({ x: p.x, y: p.y, lines: [Q12_AMBUSH_LINES[i] ?? Q12_AMBUSH_LINES[0]], spawned: false }));
+        this.arcAmbushes = this.corridorAnchorsGrounded.q12.map((p, i) => ({ x: p.x, y: p.y, lines: [Q12_AMBUSH_LINES[i] ?? Q12_AMBUSH_LINES[0]], spawned: false }));
         break;
       case 'mire-verdict':
         this.arcMode = 'none'; // deliver: Mire's verdict in Longview
@@ -13483,7 +13699,7 @@ export class MainScene extends Phaser.Scene {
 
   /** (b) Spawn + activate Semyaza on Earth; release controls so the player fights. */
   private riftSpawnSemyaza(): void {
-    this.semyaza = this.spawnBoss(SEMYAZA_DEF, OREGON_RIFT_POSITION.x, OREGON_RIFT_POSITION.y - 40, this.map.layer);
+    this.semyaza = this.spawnBoss(SEMYAZA_DEF, OREGON_RIFT_POSITION.x, OREGON_RIFT_POSITION.y - 40, this.earthMapFor('oregon-rift').layer);
     this.semyaza.activate();
     this.showBanner(RIFT_SCENE.fightBanner, 2200);
     this.reenableControls = true;

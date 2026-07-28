@@ -150,3 +150,22 @@ ruling lands, strike the entry with a pointer to the commit that resolved it.
   playtesting hates it. The old FEEL.mount.combatLockoutMs knob is retired
   in favor of FEEL.combat.lingerMs (the grace after the engagement set
   empties); leash is FEEL.combat.leashRadiusPx = 2048 px.
+- PASS 6C (PNW re-planting): CORRIDOR SPAWN-DENSITY AUDIT at true scale is
+  owed — the gate prints ADVISORY per-leg mounted minutes (Enumclaw to
+  Olympia 5.0m; the long legs run 11-30m and the full Acts corridor is
+  roughly 7 hours mounted) and the encounter spacing that felt right at
+  50:1 has not been re-felt at 1:1. MIGRATION-ARRIVAL TOAST (TODO-lore): a
+  save re-grounded by v19 rule (b) lands at the nearest re-planted
+  settlement SILENTLY; a one-line arrival toast telling the player what
+  happened wants lore-approved wording. CROSSING ART SLOTS: the 11 causeway
+  stamps render as plain road tiles; each real site (Bridge of the Gods,
+  Perrine, Beebe, ...) is an obvious art drop-in slot when bridge art
+  exists. OUTPOST/PORTAL PLACEMENT: the Holy Outpost (46.05,-115.55) and
+  Heaven Portal (46.03,-115.42) are FICTION placements inside spec bands -
+  pending Casey's on-device review before any lore hardening. LEGACY STAMP
+  RETIREMENT: washington.map.json stays byte-preserved as the sub-stamp
+  slice source and the ?scale=v1 world; it retires only when the v1 hatch
+  itself does. LABEL-ONLY CITIES: under v2 the mega-stamp's label-only city
+  markers (Spokane and the other non-POI names) have no host chunk and do
+  not render; restoring them as map-layer labels at true coordinates is a
+  small follow-up when wanted.

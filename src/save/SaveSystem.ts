@@ -16,6 +16,7 @@ import {
 } from './SaveData';
 import { pxToLatLngV1Local } from '../world/world-scale';
 import { globeSceneOriginX } from '../world/scene-origin';
+import { replantRemapLatLng } from '../world/legacy-frame';
 
 /**
  * Migrate an older save in place to the current SAVE_VERSION. Each step is
@@ -217,6 +218,18 @@ function migrate(data: SaveData): SaveData {
   if (data.saveVersion < 18 && data.player) {
     data.player.unlockedWaypoints ??= [];
     data.player.mountUnlocked ??= true;
+  }
+  // v18→v19 — PNW RE-PLANTING (Pass 6C): the legacy mega-stamp is DISSOLVED
+  // under the v2 default, so a stored terrestrial position inside its old
+  // footprint re-plants exactly like the content did — same local offset in
+  // a re-planted POI stamp, else the nearest re-planted settlement, else
+  // untouched (the three rules live in replantRemapLatLng, with the
+  // v1-safety argument documented there). Canonical latLng only: 'earth' px
+  // are re-derived from latLng at apply time, so no px transform exists.
+  if (data.saveVersion < 19 && data.world) {
+    if (data.world.active === 'earth' && data.world.latLng) data.world.latLng = replantRemapLatLng(data.world.latLng);
+    const remEarth = data.world.remembered?.earth;
+    if (remEarth?.latLng) remEarth.latLng = replantRemapLatLng(remEarth.latLng);
   }
   if (data.quests) data.quests.completed = [...completed];
   data.saveVersion = SAVE_VERSION;

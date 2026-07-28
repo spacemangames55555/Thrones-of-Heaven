@@ -293,13 +293,14 @@ const ok = (name, pass, detail = '') => {
   );
 }
 
-// 0d. QUEST-ANCHOR-SANITY (PASS 4 flip, pure Node): every Acts I–IV authored
-// world-frame anchor (the legacy-frame-translated settings constants) must
-// resolve IN-BOUNDS under the flipped v2 default and sit INSIDE the authored
-// PNW stamp (their content home); every quest radius/range constant must sit
-// within [16, 4096] px. Offenders are enumerated. TRINITY_ARENA is excluded:
-// it is a hell-plane constant with a shipped mistranslation, flagged in the
-// Pass 4 commit body rather than silently changed.
+// 0d. REPLANT-TRUE-COORDS (PASS 6C, pure Node — replaces quest-anchor-sanity's
+// inside-the-mega-stamp rule, which the dissolution retires BY DESIGN): under
+// the v2 default every Acts I–IV authored anchor re-plants at its declared
+// POI — in-bounds and within the POI's local neighborhood (exact legacy
+// offsets are all < 4096 px). The POI table itself is held to the spec: the
+// five pinned real places within ε = 0.02°, the two assault FICTION sites
+// within their spec distance bands (haversine), the corridor + crossing
+// tables internally consistent. Radii sweep unchanged from Pass 4.
 {
   const { build } = await import('esbuild');
   const outfile = new URL('../node_modules/.cache/toh-settings.mjs', import.meta.url).pathname;
@@ -310,14 +311,35 @@ const ok = (name, pass, detail = '') => {
     await build({ entryPoints: [new URL('../src/world/legacy-frame.ts', import.meta.url).pathname], bundle: true, format: 'esm', platform: 'node', outfile: out2, logLevel: 'silent' });
     return import(out2);
   })();
+  const rp = await (async () => {
+    const out3 = new URL('../node_modules/.cache/toh-replant.mjs', import.meta.url).pathname;
+    await build({ entryPoints: [new URL('../src/world/replant.ts', import.meta.url).pathname], bundle: true, format: 'esm', platform: 'node', outfile: out3, logLevel: 'silent' });
+    return import(out3);
+  })();
   const ws2 = await import(new URL('../node_modules/.cache/toh-world-scale.mjs', import.meta.url).pathname);
-  // The v2 PNW stamp rect (node runs the flipped default, so the deltas are v2).
-  const stampX = lf.LEGACY_GLOBE_ORIGIN_X + Math.round((-126.96 + 180) * ws2.PX_PER_DEG_LNG);
-  const stampY = Math.round((85 - 50.12) * ws2.PX_PER_DEG_LAT);
-  const stampW = 1100 * 32;
-  const stampH = 800 * 32;
   const worldW = 360 * ws2.PX_PER_DEG_LNG;
   const worldH = 170 * ws2.PX_PER_DEG_LAT;
+  // Every POI's true anchor in the scene frame (what legacyEarthPx targets).
+  const poiScene = rp.REPLANT_POIS.map((p) => {
+    const g = rp.poiGlobePx(p.id);
+    return { id: p.id, x: lf.LEGACY_GLOBE_ORIGIN_X + Math.round(g.x), y: Math.round(g.y) };
+  });
+  const nearPoi = (v) => poiScene.some((s) => Math.hypot(v.x - s.x, v.y - s.y) <= 4096);
+  // Corridor-interpolated anchors (Commit 2) live BETWEEN settlements by
+  // design: their rule is proximity to the corridor POLYLINE, not to a POI.
+  const corridorScene = rp.corridorPoints().map((p) => ({ x: lf.LEGACY_GLOBE_ORIGIN_X + p.x, y: p.y }));
+  const nearCorridor = (v) => {
+    for (let i = 0; i + 1 < corridorScene.length; i++) {
+      const a = corridorScene[i];
+      const b = corridorScene[i + 1];
+      const abx = b.x - a.x;
+      const aby = b.y - a.y;
+      const t = Math.max(0, Math.min(1, ((v.x - a.x) * abx + (v.y - a.y) * aby) / (abx * abx + aby * aby || 1)));
+      if (Math.hypot(v.x - (a.x + abx * t), v.y - (a.y + aby * t)) <= 96) return true;
+    }
+    return false;
+  };
+  const CORRIDOR_ANCHOR_NAMES = new Set(['Q9_AMBUSHES', 'Q12_AMBUSHES']);
   const anchorOffenders = [];
   const radiusOffenders = [];
   let anchors = 0;
@@ -327,15 +349,14 @@ const ok = (name, pass, detail = '') => {
     if (v && typeof v === 'object' && typeof v.x === 'number' && typeof v.y === 'number' && v.x >= 1_000_000) {
       anchors++;
       const inBounds = v.x >= 0 && v.x <= lf.LEGACY_GLOBE_ORIGIN_X + worldW && v.y >= 0 && v.y <= worldH;
-      const onStamp = v.x >= stampX && v.x < stampX + stampW && v.y >= stampY && v.y < stampY + stampH;
-      if (!inBounds || !onStamp) anchorOffenders.push(name);
+      if (!inBounds || !nearPoi(v)) anchorOffenders.push(name);
     }
     if (Array.isArray(v)) {
       for (const e of v) {
         if (e && typeof e === 'object' && typeof e.x === 'number' && e.x >= 1_000_000) {
           anchors++;
-          const onStamp = e.x >= stampX && e.x < stampX + stampW && e.y >= stampY && e.y < stampY + stampH;
-          if (!onStamp) anchorOffenders.push(`${name}[]`);
+          const fits = CORRIDOR_ANCHOR_NAMES.has(name) ? nearCorridor(e) : nearPoi(e);
+          if (!fits) anchorOffenders.push(`${name}[]`);
         }
       }
     }
@@ -346,10 +367,34 @@ const ok = (name, pass, detail = '') => {
       if (v < 16 || v > 4096) radiusOffenders.push(`${name}=${v}`);
     }
   }
+  // The POI table vs the spec.
+  const EPS = 0.02;
+  const PINNED = { enumclaw: [47.204, -121.991], olympia: [47.038, -122.9], boise: [43.615, -116.202], kamiah: [46.227, -116.029], seattle: [47.606, -122.332] };
+  const poiById = new Map(rp.REPLANT_POIS.map((p) => [p.id, p]));
+  const pinnedOk = Object.entries(PINNED).every(([id, [la, ln]]) => {
+    const p = poiById.get(id);
+    return p && Math.abs(p.lat - la) <= EPS && Math.abs(p.lng - ln) <= EPS;
+  });
+  const havKm = (a, b) => {
+    const R = 6371;
+    const dLa = ((b.lat - a.lat) * Math.PI) / 180;
+    const dLn = ((b.lng - a.lng) * Math.PI) / 180;
+    const s = Math.sin(dLa / 2) ** 2 + Math.cos((a.lat * Math.PI) / 180) * Math.cos((b.lat * Math.PI) / 180) * Math.sin(dLn / 2) ** 2;
+    return 2 * R * Math.asin(Math.sqrt(s));
+  };
+  const outpostKm = havKm(poiById.get('kamiah'), poiById.get('holy-outpost'));
+  const portalKm = havKm(poiById.get('holy-outpost'), poiById.get('heaven-portal'));
+  const fictionOk = poiById.get('holy-outpost').fiction === true && poiById.get('heaven-portal').fiction === true && outpostKm >= 25 && outpostKm <= 60 && portalKm <= 15;
+  const uniqueIds = new Set(rp.REPLANT_POIS.map((p) => p.id)).size === rp.REPLANT_POIS.length;
+  const crossIds = rp.REPLANT_CROSSINGS.map((c) => c.id);
+  const crossUnique = new Set(crossIds).size === crossIds.length;
+  const corridorPts = rp.corridorPoints(); // throws on an unknown crossing ref
+  const corridorXs = rp.REPLANT_CORRIDOR.filter((n) => typeof n === 'string' && n.startsWith('x:')).map((n) => n.slice(2));
+  const allCrossingsRouted = crossIds.every((id) => corridorXs.includes(id));
   ok(
-    'quest-anchor-sanity: every Acts I-IV world anchor lands in-bounds INSIDE the authored stamp under the v2 default; radii within [16, 4096]',
-    anchors >= 40 && anchorOffenders.length === 0 && radii >= 5 && radiusOffenders.length === 0,
-    JSON.stringify({ anchors, radii, anchorOffenders: anchorOffenders.slice(0, 10), radiusOffenders: radiusOffenders.slice(0, 10) }),
+    'replant-true-coords (static): anchors in-bounds within their POI neighborhood; radii in [16,4096]; 5 pinned POIs within 0.02 deg; outpost 25-60 km from Kamiah, portal <= 15 km (fiction-flagged); tables consistent; every crossing routed',
+    anchors >= 40 && anchorOffenders.length === 0 && radii >= 5 && radiusOffenders.length === 0 && pinnedOk && fictionOk && uniqueIds && crossUnique && corridorPts.length >= 80 && allCrossingsRouted,
+    JSON.stringify({ anchors, radii, pois: rp.REPLANT_POIS.length, crossings: crossIds.length, corridorPts: corridorPts.length, outpostKm: +outpostKm.toFixed(1), portalKm: +portalKm.toFixed(1), anchorOffenders: anchorOffenders.slice(0, 10), radiusOffenders: radiusOffenders.slice(0, 10) }),
   );
 }
 
@@ -3885,6 +3930,47 @@ try {
     "unification (pnw): towns on hand-built tiles in the globe, the WA road contiguous, Pacific west / land inland, a v14 'earth' save lands within a tile",
     pnw.towns && pnw.enumclawTiles && pnw.townsInRect && pnw.walkable === pnw.of && pnw.pacific && pnw.landHome && pnw.world === 'earth' && pnw.d <= 32,
     JSON.stringify(pnw),
+  );
+
+  // 3m4b. LEGACY-INTACT-V1 (PASS 6C): under ?scale=v1 the re-plant never runs —
+  // the mega-stamp renders, registers as the PNW chunk, and no sub-stamp
+  // exists. The Enumclaw + Olympia neighborhoods (town paint included) are
+  // CAPTURED here byte-for-byte; the v2 session's poi-layout-preserved check
+  // compares its re-planted stamps against these exact bytes.
+  const p6cRects = await (async () => {
+    const lf6 = await import(new URL('../node_modules/.cache/toh-legacy-frame.mjs', import.meta.url).pathname);
+    const rp6 = await import(new URL('../node_modules/.cache/toh-replant.mjs', import.meta.url).pathname);
+    const rectFor = (id) => {
+      const p = rp6.REPLANT_POIS.find((q) => q.id === id);
+      const a = rp6.poiLegacyAnchor(p, lf6.legacyRawToLocal);
+      const t = { tx: Math.floor(a.x / 32), ty: Math.floor(a.y / 32) };
+      return { id, tx0: Math.max(0, t.tx + p.footprint.dx), ty0: Math.max(0, t.ty + p.footprint.dy), w: p.footprint.w, h: p.footprint.h };
+    };
+    return [rectFor('enumclaw'), rectFor('olympia')];
+  })();
+  const p6cV1 = await page.evaluate((rects) => {
+    const ms = window.__ready();
+    const grids = {};
+    for (const r of rects) {
+      const rows = [];
+      for (let y = 0; y < r.h; y++) {
+        let row = '';
+        for (let x = 0; x < r.w; x++) row += ',' + (ms.map.terrainAtTile(r.tx0 + x, r.ty0 + y)?.id ?? 'x');
+        rows.push(row);
+      }
+      grids[r.id] = rows.join('|');
+    }
+    return {
+      grids,
+      megaVisible: ms.map.layer.visible === true,
+      megaIsChunk: ms.earthChunkMaps.includes(ms.map),
+      noStamps: ms.replantStamps.length === 0,
+    };
+  }, p6cRects);
+  ok(
+    'legacy-intact-v1: under ?scale=v1 the mega-stamp renders and registers as the PNW chunk, no re-plant stamp exists; Enumclaw + Olympia neighborhoods captured for the v2 byte-comparison',
+    p6cV1.megaVisible && p6cV1.megaIsChunk && p6cV1.noStamps && p6cV1.grids.enumclaw.length > 4000 && p6cV1.grids.olympia.length > 1000,
+    JSON.stringify({ megaVisible: p6cV1.megaVisible, megaIsChunk: p6cV1.megaIsChunk, noStamps: p6cV1.noStamps, enumclawBytes: p6cV1.grids.enumclaw.length, olympiaBytes: p6cV1.grids.olympia.length }),
   );
 
   // 3m5. ONE EARTH: the unified world is NAMED 'earth' — a v15 'globe' save
@@ -7992,8 +8078,11 @@ try {
     };
   });
   ok(
-    'save-migration v18: a v17 save gains ONLY waypoint/mount fields and reloads losslessly (class home auto-attuned)',
-    v18.setup === 'ok' && v18.d <= 0.5 && v18.v === 18 && v18.hasWp && v18.mount && v18.homeUnlocked,
+    // The fixture stands OUTSIDE the dissolved PNW stamp, so the Pass 6C v19
+    // remap is rule (c) untouched — d stays 0 and the chain lands on the
+    // CURRENT version (19 since Pass 6C Commit 2).
+    'save-migration v18: a v17 save gains ONLY waypoint/mount fields and reloads losslessly (class home auto-attuned; chain lands on the current version)',
+    v18.setup === 'ok' && v18.d <= 0.5 && v18.v === 19 && v18.hasWp && v18.mount && v18.homeUnlocked,
     JSON.stringify(v18),
   );
 
@@ -8926,6 +9015,498 @@ try {
     JSON.stringify({ ...swPrompt, swBytes: swSrc.length }),
   );
 
+  // ── PASS 6C: PNW RE-PLANTING — true-coordinate WA + ID (same v2 session) ──
+  const rp6 = await import(new URL('../node_modules/.cache/toh-replant.mjs', import.meta.url).pathname);
+  const lf6b = await import(new URL('../node_modules/.cache/toh-legacy-frame.mjs', import.meta.url).pathname);
+  const ws6 = await import(new URL('../node_modules/.cache/toh-world-scale.mjs', import.meta.url).pathname);
+
+  // 3r0. legacy-dissolved-v2: the mega-stamp neither renders, nor registers
+  // as a chunk, nor hosts the player collider; every POI stamp + crossing
+  // causeway exists and every declared anchor lands EXACTLY on its true
+  // Earth coordinate through the live legacyEarthPx path.
+  const dissolved = await page.evaluate(() => {
+    const ms = window.__ready();
+    const probe = ms.replantProbe();
+    const worst = probe.reduce((a, b) => (b.errPx > a.errPx ? b : a), probe[0]);
+    const enumStamp = ms.replantStampById.get('enumclaw');
+    const inRect = (p, b) => p.x >= b.x && p.x < b.x + b.width && p.y >= b.y && p.y < b.y + b.height;
+    return {
+      pois: probe.length,
+      footprintStamps: probe.filter((p) => p.stamped).length,
+      crossingStamps: [...ms.replantStampById.keys()].filter((k) => k.startsWith('crossing-')).length,
+      stamps: ms.replantStamps.length,
+      allExact: probe.every((p) => p.errPx <= 0.5),
+      worst,
+      megaInvisible: ms.map.layer.visible === false,
+      megaNotChunk: !ms.earthChunkMaps.includes(ms.map),
+      colliderOnStamp: !!enumStamp && ms.earthCollider.object2 === enumStamp.layer,
+      townInStamp: !!enumStamp && inRect(ms.town.spawn, enumStamp.bounds),
+      seattleInStamp: inRect(ms.seattle.spawn, ms.replantStampById.get('seattle').bounds),
+      portlandInStamp: inRect(ms.portland.spawn, ms.replantStampById.get('portland').bounds),
+    };
+  });
+  ok(
+    'legacy-dissolved-v2: mega-stamp invisible, not a chunk, collider on the Enumclaw stamp; 36 POI stamps + 11 causeways live; every anchor exact on its true coordinate; all three towns inside their stamps',
+    dissolved.pois === 37 &&
+      dissolved.footprintStamps === 36 &&
+      dissolved.crossingStamps === 11 &&
+      dissolved.stamps === 47 &&
+      dissolved.allExact &&
+      dissolved.megaInvisible &&
+      dissolved.megaNotChunk &&
+      dissolved.colliderOnStamp &&
+      dissolved.townInStamp &&
+      dissolved.seattleInStamp &&
+      dissolved.portlandInStamp,
+    JSON.stringify(dissolved),
+  );
+
+  // 3r1. poi-layout-preserved: the Enumclaw + Olympia re-planted stamps are
+  // BYTE-IDENTICAL to the same neighborhoods captured in the v1 session
+  // (town paint included — both scales paint through the same buildTown).
+  const layoutCmp = await page.evaluate((grids) => {
+    const ms = window.__ready();
+    const out = {};
+    for (const id of ['enumclaw', 'olympia']) {
+      const m = ms.replantStampById.get(id);
+      if (!m) {
+        out[id] = { match: false, why: 'no stamp' };
+        continue;
+      }
+      const rows = [];
+      for (let y = 0; y < m.data.height; y++) {
+        let row = '';
+        for (let x = 0; x < m.data.width; x++) row += ',' + (m.terrainAtTile(x, y)?.id ?? 'x');
+        rows.push(row);
+      }
+      const got = rows.join('|');
+      out[id] = { match: got === grids[id], bytes: got.length, wantBytes: grids[id].length };
+      if (!out[id].match) {
+        for (let i = 0; i < Math.min(got.length, grids[id].length); i++) {
+          if (got[i] !== grids[id][i]) {
+            out[id].firstDiff = i;
+            out[id].ctx = `${grids[id].slice(i - 8, i + 8)} vs ${got.slice(i - 8, i + 8)}`;
+            break;
+          }
+        }
+      }
+    }
+    return out;
+  }, p6cV1.grids);
+  ok(
+    'poi-layout-preserved: the Enumclaw + Olympia stamps are byte-identical to their v1 neighborhoods (towns included)',
+    layoutCmp.enumclaw.match === true && layoutCmp.olympia.match === true,
+    JSON.stringify(layoutCmp),
+  );
+
+  // 3r2. crossing-stamps: every authored causeway exists at its site, is
+  // painted entirely from the EXISTING road tile (non-blocking), sits
+  // centered on its declared coordinate, and spans REAL baked water.
+  const crossingsIn = rp6.REPLANT_CROSSINGS.map((c) => {
+    const g = rp6.latLngGlobePx(c.lat, c.lng);
+    return { id: c.id, lat: c.lat, lng: c.lng, sceneX: lf6b.LEGACY_GLOBE_ORIGIN_X + Math.round(g.x), sceneY: Math.round(g.y), dir: c.dir, tiles: c.tiles };
+  });
+  const crossings = await page.evaluate((list) => {
+    const ms = window.__ready();
+    const st = ms.chunkStreamer;
+    const B = window.__worldScale.schema.Biome;
+    const out = [];
+    for (const c of list) {
+      const m = ms.replantStampById.get(`crossing-${c.id}`);
+      if (!m) {
+        out.push({ id: c.id, okAll: false, why: 'no stamp' });
+        continue;
+      }
+      let road = 0;
+      let total = 0;
+      for (let y = 0; y < m.data.height; y++) {
+        for (let x = 0; x < m.data.width; x++) {
+          total++;
+          const t = m.terrainAtTile(x, y);
+          if (t && !t.blocks && /road/i.test(t.key)) road++;
+        }
+      }
+      const b = m.bounds;
+      const cx = b.x + b.width / 2;
+      const cy = b.y + b.height / 2;
+      const centerErr = Math.hypot(cx - c.sceneX, cy - c.sceneY);
+      const water = st.earthSample(c.lat, c.lng);
+      const waterUnder = water[0] === B.OCEAN || water[0] === B.FRESHWATER;
+      const sized = c.dir === 'ew' ? m.data.width === c.tiles && m.data.height === 3 : m.data.width === 3 && m.data.height === c.tiles;
+      out.push({ id: c.id, okAll: road === total && centerErr <= 48 && waterUnder && sized, road, total, centerErr: +centerErr.toFixed(1), waterUnder, sized });
+    }
+    return out;
+  }, crossingsIn);
+  ok(
+    'crossing-stamps: all 11 causeways at real sites — road-tile-only (non-blocking), centered on their coordinates, spanning baked water',
+    crossings.length === 11 && crossings.every((c) => c.okAll),
+    JSON.stringify(crossings.filter((c) => !c.okAll).slice(0, 4)) || 'all ok',
+  );
+
+  // 3r3. corridor-traversable: ride the WHOLE authored corridor polyline
+  // (POIs, land-route vias, causeways entered end-to-end) sampled every
+  // 64 px against the live world rule: baked water blocks unless an
+  // authored stamp covers the point. NO water span wider than a ford
+  // (3 tiles) may remain, and every causeway must be ridden over.
+  const corridorPts = rp6.corridorPoints().map((p) => ({ x: p.x, y: p.y, label: p.label }));
+  const ride = await page.evaluate((pts) => {
+    const ms = window.__ready();
+    const st = ms.chunkStreamer;
+    const B = window.__worldScale.schema.Biome;
+    const origin = ms.globeOriginPx;
+    const stamps = [...ms.replantStampById.entries()].map(([id, m]) => ({ id, b: m.bounds }));
+    const sampleAt = (gx, gy) => {
+      const sx = origin.x + gx;
+      const sy = origin.y + gy;
+      for (const s of stamps) {
+        if (sx >= s.b.x && sx < s.b.x + s.b.width && sy >= s.b.y && sy < s.b.y + s.b.height) return { water: false, cover: s.id };
+      }
+      const ll = ms.terrestrialLatLngFromPx(sx, sy);
+      const r = st.earthSample(ll.lat, ll.lng);
+      return { water: r[0] === B.OCEAN || r[0] === B.FRESHWATER, cover: null };
+    };
+    const offenders = [];
+    const used = {};
+    const segs = [];
+    for (let i = 0; i + 1 < pts.length; i++) {
+      const a = pts[i];
+      const b = pts[i + 1];
+      const len = Math.hypot(b.x - a.x, b.y - a.y);
+      segs.push({ from: a.label, to: b.label, lenPx: Math.round(len) });
+      const n = Math.max(1, Math.ceil(len / 64));
+      let runStart = -1;
+      for (let k = 0; k <= n; k++) {
+        const t = k / n;
+        const s = sampleAt(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t);
+        if (s.cover && s.cover.startsWith('crossing-')) used[s.cover.slice(9)] = true;
+        if (s.water) {
+          if (runStart < 0) runStart = k;
+        } else if (runStart >= 0) {
+          const widthPx = (k - runStart) * 64;
+          if (widthPx > 96) {
+            const mid = (runStart + k - 1) / 2 / n;
+            const ll = ms.terrestrialLatLngFromPx(origin.x + a.x + (b.x - a.x) * mid, origin.y + a.y + (b.y - a.y) * mid);
+            offenders.push({ seg: `${a.label}->${b.label}`, widthPx, lat: +ll.lat.toFixed(3), lng: +ll.lng.toFixed(3) });
+          }
+          runStart = -1;
+        }
+      }
+    }
+    // Every corridor POI anchor must stand on (or within a whisper of) walkable ground.
+    const nudges = [];
+    for (const [id, m] of ms.replantStampById.entries()) {
+      if (id.startsWith('crossing-')) continue;
+      const anchor = m.tileToWorldCenter(m.data.spawn.x, m.data.spawn.y);
+      const w = m.nearestWalkableWorld(anchor.x, anchor.y, 64);
+      const d = Math.hypot(w.x - anchor.x, w.y - anchor.y);
+      if (d > 0) nudges.push({ id, d: Math.round(d) });
+    }
+    return { offenders, used: Object.keys(used).sort(), segs, nudges };
+  }, corridorPts);
+  const allCrossIds = rp6.REPLANT_CROSSINGS.map((c) => c.id).sort();
+  ok(
+    'corridor-traversable: the full Acts corridor rides clean — zero water spans wider than a ford, all 11 causeways ridden, every POI anchor walkable',
+    ride.offenders.length === 0 && JSON.stringify(ride.used) === JSON.stringify(allCrossIds) && ride.nudges.length === 0,
+    JSON.stringify({ offenders: ride.offenders.slice(0, 6), used: ride.used.length, nudges: ride.nudges.slice(0, 6), segments: ride.segs.length }),
+  );
+  // SEGMENT-TIMES (ADVISORY, per spec — printed, never asserted): minutes per
+  // POI-to-POI corridor leg at mount speed. Feeds the ledger's spawn-density
+  // audit; expected to be LONG at true scale.
+  {
+    const legs = [];
+    let acc = 0;
+    let from = ride.segs[0]?.from;
+    for (const s of ride.segs) {
+      acc += s.lenPx;
+      const isPoi = !s.to.startsWith('via(') && !s.to.startsWith('x:');
+      if (isPoi) {
+        legs.push(`${from}->${s.to}: ${(acc / ws6.MOUNT_SPEED_PX / 60).toFixed(1)}m`);
+        from = s.to;
+        acc = 0;
+      }
+    }
+    console.log(`ADVISORY segment-times (mounted, ${ws6.MOUNT_SPEED_PX}px/s): ${legs.join('  ')}`);
+  }
+
+  // 3r4. waystone-reanchor: the olympia/boise/kamiah waystones resolve BY ID
+  // to their re-planted anchors; attunement survives a real save/load; and a
+  // REAL waystone ride lands at the re-planted Olympia.
+  const wsExpected = ['olympia', 'boise', 'kamiah'].map((id) => {
+    const g = rp6.poiGlobePx(id);
+    return { poi: id, node: `wp-${id}`, x: lf6b.LEGACY_GLOBE_ORIGIN_X + Math.round(g.x), y: Math.round(g.y) };
+  });
+  const wsRe = await page.evaluate(async (expected) => {
+    const ms = window.__ready();
+    const wp = ms.waypointSys;
+    const wait = (t) => new Promise((r) => setTimeout(r, t));
+    const nodes = expected.map((e) => {
+      const n = wp.nodes.find((q) => q.id === e.node);
+      return { node: e.node, found: !!n, dPx: n ? +Math.hypot(n.x - e.x, n.y - e.y).toFixed(1) : -1 };
+    });
+    // Attunement fixture: attune wp-olympia through the real discovery walk
+    // if needed, then ride the REAL save/load path — ids must re-resolve.
+    if (!wp.unlocked.has('wp-olympia')) {
+      const oly = wp.nodes.find((n) => n.id === 'wp-olympia');
+      ms.player.sprite.body.reset(oly.x + 100, oly.y);
+      ms.lastLandPos = undefined;
+      await wait(1000);
+    }
+    const unlockedBefore = [...wp.unlocked].sort();
+    const wrote = ms.requestSave();
+    if (!wrote) return { setup: 'save write refused', nodes };
+    ms.devLoadSave();
+    await wait(500);
+    const wp2 = ms.waypointSys;
+    const unlockedAfter = [...wp2.unlocked].sort();
+    const olyNode = wp2.nodes.find((n) => n.id === 'wp-olympia');
+    // The real ride: travel to the re-planted Olympia through the shipped flow.
+    ms.player.sprite.body.reset(ms.town.spawn.x, ms.town.spawn.y);
+    ms.lastLandPos = undefined;
+    await wait(200);
+    const started = wp2.startTravel('wp-olympia');
+    await wait(4600);
+    const dLanding = Math.hypot(ms.player.x - olyNode.x, ms.player.y - olyNode.y);
+    const landedWalkable = !ms.activeMap().isBlockedAtWorld(ms.player.x, ms.player.y);
+    return { setup: 'ok', nodes, attuned: unlockedBefore.includes('wp-olympia'), persisted: JSON.stringify(unlockedBefore) === JSON.stringify(unlockedAfter), started, dLanding: +dLanding.toFixed(0), landedWalkable };
+  }, wsExpected);
+  for (let i = 0; i < 12; i++) {
+    await page.waitForTimeout(280);
+    const uiOpen = await page.evaluate(() => {
+      const ms = window.__game.scene.getScene('MainScene');
+      return ms.dialogue.isOpen() || ms.choice.isOpen();
+    });
+    if (!uiOpen) break;
+    await page.mouse.click(214, 520);
+    await page.mouse.click(214, 462);
+  }
+  ok(
+    'waystone-reanchor: wp-olympia/boise/kamiah resolve by id onto their true anchors; attunement survives a real save/load; a real ride lands walkable at the re-planted Olympia',
+    wsRe.setup === 'ok' && wsRe.nodes.every((n) => n.found && n.dPx >= 0 && n.dPx <= 512) && wsRe.attuned && wsRe.persisted && wsRe.started && wsRe.dLanding <= 2048 && wsRe.landedWalkable,
+    JSON.stringify(wsRe),
+  );
+
+  // 3r5. encounter-follow: the 6B coordinator's anchors stand at the
+  // RE-PLANTED sites (the guardian + portal-defense suites above already ran
+  // their full mechanics against these anchors in this same session).
+  const encFollow = await page.evaluate((exp) => {
+    const ms = window.__ready();
+    const regs = ms.encounters.regs;
+    const pd = regs.find((r) => r.id === 'portal-defense');
+    const gd = regs.find((r) => r.id === 'guardians');
+    const pdA = pd.anchor();
+    const gdA = gd.anchor();
+    return {
+      pdErr: +Math.hypot(pdA.x - exp.portal.x, pdA.y - exp.portal.y).toFixed(1),
+      gdErr: +Math.hypot(gdA.x - exp.heavenPortal.x, gdA.y - exp.heavenPortal.y).toFixed(1),
+      guardianNearPortal: ms.guardians.every((g) => Math.hypot(g.x - exp.heavenPortal.x, g.y - exp.heavenPortal.y) <= 2048),
+      portalInStamp: (() => {
+        const b = ms.replantStampById.get('portal').bounds;
+        return pdA.x >= b.x && pdA.x < b.x + b.width && pdA.y >= b.y && pdA.y < b.y + b.height;
+      })(),
+    };
+  }, (() => {
+    const p = rp6.poiGlobePx('portal');
+    const h = rp6.poiGlobePx('heaven-portal');
+    return {
+      portal: { x: lf6b.LEGACY_GLOBE_ORIGIN_X + Math.round(p.x), y: Math.round(p.y) },
+      heavenPortal: { x: lf6b.LEGACY_GLOBE_ORIGIN_X + Math.round(h.x), y: Math.round(h.y) },
+    };
+  })());
+  ok(
+    'encounter-follow: portal-defense + guardian coordinator anchors stand at the re-planted sites (their 6B suites ran against these anchors in this session), guardians by the portal',
+    encFollow.pdErr <= 512 && encFollow.gdErr <= 512 && encFollow.guardianNearPortal && encFollow.portalInStamp,
+    JSON.stringify(encFollow),
+  );
+
+  // 3r6. heaven-portal-entry: at the portal's NEW high-band site the shipped
+  // entry flow still transports — corrupted portal, stand at it, enter,
+  // land in Heaven — then return to Earth.
+  const heavenEntry = await page.evaluate(async () => {
+    const ms = window.__ready();
+    const wait = (t) => new Promise((r) => setTimeout(r, t));
+    ms.restoreGuardianAccess('corrupted');
+    ms.worldCooldownUntil = 0;
+    ms.player.sprite.body.reset(ms.heavenPortal.x + 40, ms.heavenPortal.y + 40);
+    ms.lastLandPos = undefined;
+    await wait(300);
+    ms.enterHeavenPortal();
+    let inHeaven = false;
+    for (let k = 0; k < 25 && !inHeaven; k++) {
+      await wait(400);
+      inHeaven = ms.activeWorld === 'heaven';
+    }
+    const portalWalkable = (() => {
+      const m = ms.replantStampById.get('heaven-portal');
+      const w = m.nearestWalkableWorld(ms.heavenPortal.x, ms.heavenPortal.y + 60, 8);
+      return Math.hypot(w.x - ms.heavenPortal.x, w.y - (ms.heavenPortal.y + 60)) <= 4 * 32;
+    })();
+    ms.worldCooldownUntil = 0;
+    ms.applyWorldSwap('earth', { x: ms.town.spawn.x, y: ms.town.spawn.y });
+    await wait(600);
+    return { inHeaven, portalWalkable, backOnEarth: ms.activeWorld === 'earth' };
+  });
+  for (let i = 0; i < 12; i++) {
+    await page.waitForTimeout(280);
+    const uiOpen = await page.evaluate(() => {
+      const ms = window.__game.scene.getScene('MainScene');
+      return ms.dialogue.isOpen() || ms.choice.isOpen();
+    });
+    if (!uiOpen) break;
+    await page.mouse.click(214, 520);
+    await page.mouse.click(214, 462);
+  }
+  ok(
+    'heaven-portal-entry: the corrupted portal at its new high-band site transports to Heaven through the shipped flow (walkable approach), and the return lands on Earth',
+    heavenEntry.inHeaven && heavenEntry.portalWalkable && heavenEntry.backOnEarth,
+    JSON.stringify(heavenEntry),
+  );
+
+  // ── PASS 6C COMMIT 2: corridor anchors, spawn re-ground, save v19 ─────────
+  const settings6 = await import(new URL('../node_modules/.cache/toh-settings.mjs', import.meta.url).pathname);
+
+  // 3r7. anchor-reground: in-POI quest anchors keep their EXACT legacy local
+  // offsets (the Boise catapult trio is the fixture — authored px deltas);
+  // the corridor-interpolated escort ambushes re-ground onto the true route
+  // and land walkable within the 64-tile nudge rule, every nudge enumerated.
+  const catapultDeltas = [
+    [settings6.CATAPULT_1_POSITION.x - settings6.BOISE_POSITION.x, settings6.CATAPULT_1_POSITION.y - settings6.BOISE_POSITION.y],
+    [settings6.CATAPULT_2_POSITION.x - settings6.BOISE_POSITION.x, settings6.CATAPULT_2_POSITION.y - settings6.BOISE_POSITION.y],
+    [settings6.CATAPULT_3_POSITION.x - settings6.BOISE_POSITION.x, settings6.CATAPULT_3_POSITION.y - settings6.BOISE_POSITION.y],
+  ];
+  const catapultOk = JSON.stringify(catapultDeltas) === JSON.stringify([[-700, -650], [100, -850], [900, -600]]);
+  const q9Expected = [settings6.Q9_AMBUSHES, settings6.Q12_AMBUSHES];
+  const reground = await page.evaluate(
+    ([q9, q12]) => {
+      const ms = window.__ready();
+      const g = ms.globeMap;
+      const detail = (raw, grounded) =>
+        grounded.map((p, i) => ({
+          nudgePx: +Math.hypot(p.x - raw[i].x, p.y - raw[i].y).toFixed(1),
+          walkable: !g.isBlockedAtWorld(p.x, p.y),
+        }));
+      return {
+        q9: detail(q9, ms.corridorAnchorsGrounded.q9),
+        q12: detail(q12, ms.corridorAnchorsGrounded.q12),
+        counts: [ms.corridorAnchorsGrounded.q9.length, ms.corridorAnchorsGrounded.q12.length],
+      };
+    },
+    [q9Expected[0], q9Expected[1]],
+  );
+  const allGrounded = [...reground.q9, ...reground.q12];
+  ok(
+    'anchor-reground: catapults keep exact legacy offsets from Boise; Q9/Q12 escort anchors re-ground onto the true route, walkable within 64 tiles (nudges enumerated)',
+    catapultOk && reground.counts[0] === 3 && reground.counts[1] === 1 && allGrounded.every((a) => a.walkable && a.nudgePx <= 64 * 32),
+    JSON.stringify({ catapultDeltas, ...reground }),
+  );
+
+  // 3r8. spawn-zone-reground: NOTHING spawns in dissolved space — no settings
+  // anchor may sit inside the old mega-stamp scene rect under v2 — and the
+  // trigger radii are byte-unchanged (spawn zones moved, radii did not).
+  const stamp6 = {
+    x: lf6b.LEGACY_GLOBE_ORIGIN_X + Math.round((-126.96 + 180) * ws6.PX_PER_DEG_LNG),
+    y: Math.round((85 - 50.12) * ws6.PX_PER_DEG_LAT),
+    w: 1100 * 32,
+    h: 800 * 32,
+  };
+  const dissolvedOffenders = [];
+  for (const [name, v] of Object.entries(settings6)) {
+    const pts = Array.isArray(v) ? v : [v];
+    for (const e of pts) {
+      if (e && typeof e === 'object' && typeof e.x === 'number' && typeof e.y === 'number' && e.x >= 1_000_000) {
+        if (e.x >= stamp6.x && e.x < stamp6.x + stamp6.w && e.y >= stamp6.y && e.y < stamp6.y + stamp6.h) dissolvedOffenders.push(name);
+      }
+    }
+  }
+  ok(
+    'spawn-zone-reground: zero authored anchors remain inside the dissolved mega-stamp rect; ambush trigger radius unchanged',
+    dissolvedOffenders.length === 0 && settings6.AMBUSH_TRIGGER_RANGE === 300,
+    JSON.stringify({ dissolvedOffenders: dissolvedOffenders.slice(0, 8), ambushRange: settings6.AMBUSH_TRIGGER_RANGE }),
+  );
+
+  // 3r9. save-remap-v19: the three migration rules through the REAL read →
+  // migrate → apply path, plus the v17 → v18 → v19 chain. Fixture (a): a
+  // save standing at the town plaza's OLD dissolved-space coordinate lands
+  // at the SAME local offset in the re-planted stamp (= the live town
+  // spawn). Fixture (b): mid-stamp nowhere → the nearest re-planted
+  // settlement anchor, silently. Fixture (c): Munich → untouched.
+  const remapIn = await (async () => {
+    const enumPoi = (await import(new URL('../node_modules/.cache/toh-replant.mjs', import.meta.url).pathname)).REPLANT_POIS.find((p) => p.id === 'enumclaw');
+    const a = { x: enumPoi.cityTile.tx * 32 + 16, y: enumPoi.cityTile.ty * 32 + 16 };
+    const rect = { tx0: Math.max(0, enumPoi.cityTile.tx + enumPoi.footprint.dx), ty0: Math.max(0, enumPoi.cityTile.ty + enumPoi.footprint.dy) };
+    // (b): mid-stamp legacy-local point + its nearest settlement, node-derived.
+    const mid = { x: 17600, y: 12800 };
+    let bestId = null;
+    let bestD = Infinity;
+    for (const id of rp6.REPLANT_SETTLEMENTS) {
+      const p = rp6.REPLANT_POIS.find((q) => q.id === id);
+      const al = p.cityTile ? { x: p.cityTile.tx * 32 + 16, y: p.cityTile.ty * 32 + 16 } : lf6b.legacyRawToLocal(p.legacyRaw);
+      const d = Math.hypot(al.x - mid.x, al.y - mid.y);
+      if (d < bestD) {
+        bestD = d;
+        bestId = id;
+      }
+    }
+    const bg = rp6.poiGlobePx(bestId);
+    return {
+      origin: { lat: 50.12, lng: -126.96 },
+      pxLat: ws6.PX_PER_DEG_LAT,
+      pxLng: ws6.PX_PER_DEG_LNG,
+      enumRect: rect,
+      mid,
+      bSettlement: bestId,
+      bScene: { x: lf6b.LEGACY_GLOBE_ORIGIN_X + Math.round(bg.x), y: Math.round(bg.y) },
+      cLatLng: { lat: 48.1381, lng: 11.5808 },
+    };
+  })();
+  const remap = await page.evaluate(async (fx) => {
+    const ms = window.__ready();
+    const wait = (t) => new Promise((r) => setTimeout(r, t));
+    const runFixture = async (latLng, version, stripTravel) => {
+      const wrote = ms.requestSave();
+      if (!wrote) return { setup: 'save write refused' };
+      const raw = JSON.parse(localStorage.getItem('toh_save'));
+      raw.saveVersion = version;
+      raw.world.active = 'earth';
+      raw.world.latLng = { ...latLng };
+      delete raw.world.remembered?.earth;
+      if (stripTravel) {
+        delete raw.player.unlockedWaypoints;
+        delete raw.player.mountUnlocked;
+      }
+      localStorage.setItem('toh_save', JSON.stringify(raw));
+      ms.devLoadSave();
+      await wait(600);
+      ms.requestSave(); // write back → the stored save must now be v19
+      const after = JSON.parse(localStorage.getItem('toh_save'));
+      return { px: { x: ms.player.x, y: ms.player.y }, v: after.saveVersion, latLng: after.world.latLng, wp: Array.isArray(after.player.unlockedWaypoints), mount: after.player.mountUnlocked === true };
+    };
+    // (a) the town plaza's OLD dissolved coordinate.
+    const m = ms.replantStampById.get('enumclaw');
+    const b = m.bounds;
+    const lx = ms.town.spawn.x - b.x + fx.enumRect.tx0 * 32;
+    const ly = ms.town.spawn.y - b.y + fx.enumRect.ty0 * 32;
+    const aFix = { lat: fx.origin.lat - ly / fx.pxLat, lng: fx.origin.lng + lx / fx.pxLng };
+    const a = await runFixture(aFix, 18, false);
+    const aOk = a.v === 19 && Math.hypot(a.px.x - ms.town.spawn.x, a.px.y - ms.town.spawn.y) <= 40;
+    // (b) mid-stamp nowhere → nearest settlement anchor.
+    const bFix = { lat: fx.origin.lat - fx.mid.y / fx.pxLat, lng: fx.origin.lng + fx.mid.x / fx.pxLng };
+    const bRes = await runFixture(bFix, 18, false);
+    const bOk = bRes.v === 19 && Math.hypot(bRes.px.x - fx.bScene.x, bRes.px.y - fx.bScene.y) <= 80;
+    // (c) Munich → untouched (byte-equal latLng, lands at that geography).
+    const cRes = await runFixture(fx.cLatLng, 18, false);
+    const cOk = cRes.v === 19 && Math.abs(cRes.latLng.lat - fx.cLatLng.lat) < 1e-9 && Math.abs(cRes.latLng.lng - fx.cLatLng.lng) < 1e-9;
+    // Chain: a v17 save (no travel fields) through the same dissolved spot.
+    const chain = await runFixture(aFix, 17, true);
+    const chainOk = chain.v === 19 && chain.wp && chain.mount && Math.hypot(chain.px.x - ms.town.spawn.x, chain.px.y - ms.town.spawn.y) <= 40;
+    ms.applyWorldSwap('earth', { x: ms.town.spawn.x, y: ms.town.spawn.y });
+    await wait(400);
+    return { aOk, bOk, cOk, chainOk, a, b: bRes, c: cRes, chain, bSettlement: fx.bSettlement };
+  }, remapIn);
+  ok(
+    'save-remap-v19: dissolved-POI position keeps its local offset; mid-stamp lands at the nearest re-planted settlement silently; outside untouched; v17->v18->v19 chain green (travel fields + remap)',
+    remap.aOk && remap.bOk && remap.cOk && remap.chainOk,
+    JSON.stringify(remap),
+  );
 
   // 2f7. playwright drive: 60s of real keyboard autorun east at the capped
   // devspeed — chunks must load AND evict along the way, with zero page or

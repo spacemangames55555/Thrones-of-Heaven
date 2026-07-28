@@ -51,11 +51,12 @@ export class SparseWorldMap implements WorldMapLike {
     return { x: this.origin.x, y: this.origin.y, width: this.sizePx.w, height: this.sizePx.h };
   }
 
-  /** The chunk whose bounds contain the point, if any. */
+  /** The chunk whose bounds contain the point, if any. Reads the chunk's
+   *  plain fields (never the allocating `bounds` getter): Pass 6C multiplied
+   *  the chunk count by ~20, and this runs per terrain sample. */
   private chunkAt(worldX: number, worldY: number): GameMap | null {
     for (const c of this.chunks) {
-      const b = c.bounds;
-      if (worldX >= b.x && worldX < b.x + b.width && worldY >= b.y && worldY < b.y + b.height) return c;
+      if (worldX >= c.originX && worldX < c.originX + c.pixelWidth && worldY >= c.originY && worldY < c.originY + c.pixelHeight) return c;
     }
     return null;
   }
