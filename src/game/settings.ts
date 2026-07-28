@@ -1761,7 +1761,11 @@ export const EUROPE_SPAWN_ACTIVATE_MARGIN = 700;
 /** ...and DESPAWN when this far beyond it (hysteresis so gates don't thrash). */
 export const EUROPE_SPAWN_DEACTIVATE_MARGIN = 1400;
 /** Hard cap on simultaneously LIVE Europe enemies (a pack is skipped, never split). */
-export const EUROPE_ENEMY_CAP = 48;
+/** LIVE-ENEMY CAP (renamed from EUROPE_ENEMY_CAP, value unchanged): with
+ *  transient expiry (Pass 6B) freeing far-away slots, this is an EFFECTIVE
+ *  LOCAL-DENSITY cap around the player, not a planetary budget. Per-region
+ *  tuning is ledgered. */
+export const LIVE_ENEMY_CAP = 48;
 /** HEARTH RADIUS (home-city pacing): no hostile MATERIALIZES within this many
  *  px of a home city's mentor/arrival point — the mentor's feet are safe
  *  ground, always. Home cities only; corridors stay dangerous. */

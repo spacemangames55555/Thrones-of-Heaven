@@ -126,6 +126,23 @@ ruling lands, strike the entry with a pointer to the commit that resolved it.
      triggers, city gates, hearth radius, mentor/neighbor buttons,
      respawn-nearest + waypoint lists (planetary min-distance is CORRECT
      there), LoD bands, nameplate pool.
+- Simulation locality (Pass 6B): audit findings 1/2/3 (boss bar, portal
+  defense, guardian phase) are FIXED — encounters derive suspend/resume from
+  player distance (src/systems/encounters.ts), bosses take the standard
+  leash reset beyond FEEL.sim.bossLeashRadiusPx, and spawned transients
+  expire beyond FEEL.sim.transientDespawnRadiusPx. REMAINING PERF DEBT
+  (bounded, deferred): the world-band physics-body pause still enables every
+  terrestrial body planet-wide, and tick gating beyond the one-line
+  Chebyshev early-outs (added at the expiry radius in the five dense enemy
+  loops) is still residency-only. ABANDON⇒FAIL for the portal defense is a
+  pending ruling — suspension currently preserves the encounter
+  indefinitely; failing it on abandon is a design call, not shipped.
+  PER-REGION LIVE_ENEMY_CAP tuning is open (48 is the global local-density
+  value; Egypt content may want its own). BOSS PHASE-PERSISTENCE exceptions:
+  NONE found — every boss's phases are HP-gated and reset cleanly; no design
+  contradicted by the standard leash reset. FLAKE STANDING RULE: confirmed
+  flakes are logged in toh-flake-log.md; a SECOND confirmed flake on the
+  same check gets a dedicated stabilization commit — no third rerun.
 - Combat hotfix (derived in-combat): DoT ticks the player's own effects land
   still AUTO-DISMOUNT per the Pass 4 spec (dealing damage dismounts — a
   poison applied before mounting will knock the rider down on its next

@@ -45,6 +45,13 @@ const game = new Phaser.Game(gameConfig);
   buildTerrainAtlases,
   // Pass 6A: the pure map-marker projection (the gate recomputes it closed-form).
   latLngToMapPx,
+  // Pass 6B addendum: the build identity (gate: menu stamp matches the bundle).
+  get buildId() {
+    return __BUILD_ID__;
+  },
+  get buildTime() {
+    return __BUILD_TIME__;
+  },
   homeAnchors: Object.keys(MANIFEST_CLASS_FOR).map((classId) => {
     const zone = homeZoneForClass(classId);
     return { classId, zoneId: zone?.id ?? null, anchor: zone?.anchor ?? null };
@@ -57,6 +64,7 @@ const game = new Phaser.Game(gameConfig);
 // timestamp; see vite.config.ts). To verify which build is live, open the browser
 // console and look for this line.
 declare const __BUILD_ID__: string;
+declare const __BUILD_TIME__: string;
 console.log('ToH build:', __BUILD_ID__);
 
 // Read CSS env(safe-area-inset-*) via a hidden probe element.

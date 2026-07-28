@@ -462,6 +462,55 @@ const ok = (name, pass, detail = '') => {
   );
 }
 
+// 0g. SIM-LOCALITY STATIC (PASS 6B, pure Node): the rename landed (no
+// EUROPE_ENEMY_CAP identifier anywhere, LIVE_ENEMY_CAP === 48), the stale
+// zone-scan comment is gone, the FEEL.sim block carries the spec values,
+// expiry sits STRICTLY beyond the live ring math (the boot assert's own
+// relation, recomputed here from the same modules), and the flake log with
+// its standing rule exists.
+{
+  const { build } = await import('esbuild');
+  const mk = async (entry, tag) => {
+    const outfile = new URL(`../node_modules/.cache/toh-sim-${tag}.mjs`, import.meta.url).pathname;
+    await build({ entryPoints: [new URL(entry, import.meta.url).pathname], bundle: true, format: 'esm', platform: 'node', outfile, logLevel: 'silent' });
+    return import(outfile);
+  };
+  const settings = await mk('../src/game/settings.ts', 'settings');
+  const feel = await mk('../src/ui/feel-config.ts', 'feel');
+  // chunk-streamer imports Phaser (window-bound) - read KEEP_RADIUS from the
+  // live SOURCE text instead of importing the module in node.
+  const streamerSrc = readFileSync(new URL('../src/world/chunk-streamer.ts', import.meta.url).pathname, 'utf8');
+  const keepM = /export const KEEP_RADIUS = (\d+);/.exec(streamerSrc);
+  const streamer = { KEEP_RADIUS: keepM ? Number(keepM[1]) : NaN };
+  const schema = await mk('../src/world/terrain-schema.ts', 'schema');
+  const msSrc = readFileSync(new URL('../src/game/MainScene.ts', import.meta.url).pathname, 'utf8');
+  const setSrc = readFileSync(new URL('../src/game/settings.ts', import.meta.url).pathname, 'utf8');
+  const flake = (() => {
+    try {
+      return readFileSync(new URL('../toh-flake-log.md', import.meta.url).pathname, 'utf8');
+    } catch {
+      return '';
+    }
+  })();
+  const sim = feel.FEEL.sim;
+  const ringExtent = (streamer.KEEP_RADIUS + 1) * schema.CHUNK_PX;
+  const out = {
+    cap: settings.LIVE_ENEMY_CAP,
+    noOldIdent: !/export const EUROPE_ENEMY_CAP|EUROPE_ENEMY_CAP\s*[,)]/.test(msSrc) && !/export const EUROPE_ENEMY_CAP/.test(setSrc),
+    staleCommentGone: !msSrc.includes('25 distance checks'),
+    sim: [sim.encounterSuspendRadiusPx, sim.bossLeashRadiusPx, sim.transientDespawnRadiusPx],
+    ringExtent,
+    expiryBeyondRing: sim.transientDespawnRadiusPx > ringExtent,
+    leashInsideExpiry: feel.FEEL.combat.leashRadiusPx < sim.transientDespawnRadiusPx && sim.bossLeashRadiusPx < sim.transientDespawnRadiusPx,
+    flakeLog: flake.includes('STANDING RULE') && flake.includes('skill tree ux') && flake.includes('dot-on-evicted'),
+  };
+  ok(
+    'sim-locality-static: LIVE_ENEMY_CAP rename complete, stale comment gone, FEEL.sim = 4096/3072/12288, expiry strictly beyond the live ring, flake log + standing rule present',
+    out.cap === 48 && out.noOldIdent && out.staleCommentGone && out.sim.join(',') === '4096,3072,12288' && out.expiryBeyondRing && out.leashInsideExpiry && out.flakeLog,
+    JSON.stringify(out),
+  );
+}
+
 // 1) Preview server (killed on exit).
 const server = spawn('npx', ['vite', 'preview', '--port', String(PORT), '--strictPort'], { stdio: 'ignore' });
 const kill = () => {
@@ -8682,6 +8731,201 @@ try {
     bossFunnel.setup === 'ok' && bossFunnel.engaged && bossFunnel.barOn && bossFunnel.hpDown && bossFunnel.released && bossFunnel.resetFull && bossFunnel.barOff && bossFunnel.reengaged && bossFunnel.barBack,
     JSON.stringify(bossFunnel),
   );
+
+  // ── PASS 6B COMMIT 2: TRANSIENT EXPIRY + CAP LOCALITY + BUILD/PWA ─────────
+  // 2n4. expiry-transient: a wolf + a raider beyond the expiry radius are
+  // removed outright — cap slots freed, no kill credit, funnel untouched.
+  const expiryT = await page.evaluate(async () => {
+    const ms = window.__ready();
+    const wait = (t) => new Promise((r) => setTimeout(r, t));
+    const home = ms.terrestrialPxFromLatLng({ lat: 23.0, lng: 6.0 });
+    ms.player.sprite.body.reset(home.x, home.y);
+    ms.lastLandPos = undefined;
+    await wait(500);
+    const kills0 = JSON.stringify(ms.regionKillCounts);
+    const exp0 = ms.transientsExpired;
+    ms.spawnRegionEnemy('gate-expiry', 'corrupted-wildlife', home.x + 300, home.y, 0xffffff);
+    ms.spawnRegionEnemy('gate-expiry', 'evil-raiders', home.x - 300, home.y, 0xffffff);
+    await wait(300);
+    const rows0 = ms.regionLive.filter((r) => r.zoneId === 'gate-expiry').length;
+    const live0 = ms.regionLiveCount();
+    ms.player.sprite.body.reset(home.x + ms.feel.sim.transientDespawnRadiusPx + 1500, home.y);
+    ms.lastLandPos = undefined;
+    let goneRows = false;
+    for (let k = 0; k < 14 && !goneRows; k++) {
+      await wait(300);
+      goneRows = ms.regionLive.filter((r) => r.zoneId === 'gate-expiry').length === 0;
+    }
+    return {
+      setup: rows0 === 2 ? 'ok' : `spawned ${rows0}`,
+      rows0,
+      live0,
+      goneRows,
+      slotsFreed: ms.regionLiveCount() <= live0 - 2,
+      expiredDelta: ms.transientsExpired - exp0,
+      funnelClean: ms.combatEngagements().length === 0,
+      killsUntouched: JSON.stringify(ms.regionKillCounts) === kills0,
+    };
+  });
+  ok(
+    'expiry-transient: wolf + raider beyond the radius expire outright — rows gone, slots freed, zero kill credit, funnel clean',
+    expiryT.setup === 'ok' && expiryT.goneRows && expiryT.slotsFreed && expiryT.expiredDelta === 2 && expiryT.funnelClean && expiryT.killsUntouched,
+    JSON.stringify(expiryT),
+  );
+
+  // 2n5. authored-persist: authored content at the SAME distance survives —
+  // the sasquatch, the portal, and every region mentor are not transients.
+  const authoredP = await page.evaluate(() => {
+    const ms = window.__ready();
+    const d = Math.hypot(ms.sasquatch.x - ms.player.x, ms.sasquatch.y - ms.player.y);
+    return {
+      beyond: d > ms.feel.sim.transientDespawnRadiusPx,
+      sasquatchAlive: ms.sasquatch.isAlive,
+      portalAlive: ms.portal.health.max > 0 && !ms.portal.isDestroyed,
+      mentors: ms.regionMentors.length,
+    };
+  });
+  ok(
+    'authored-persist: the sasquatch, the portal, and the mentors survive at expiry distance — authored content never expires',
+    authoredP.beyond && authoredP.sasquatchAlive && authoredP.portalAlive && authoredP.mentors >= 10,
+    JSON.stringify(authoredP),
+  );
+
+  // 2n6. cap-locality: fill the cap at hotspot A, travel to B — the slots
+  // free through EXPIRY (not zone hysteresis), and spawning at B works
+  // immediately. The audit's starvation repro, now the test.
+  const capLoc = await page.evaluate(async () => {
+    const ms = window.__ready();
+    const wait = (t) => new Promise((r) => setTimeout(r, t));
+    const A = ms.terrestrialPxFromLatLng({ lat: 23.0, lng: 8.0 });
+    ms.player.sprite.body.reset(A.x, A.y);
+    ms.lastLandPos = undefined;
+    await wait(500);
+    const cap = 48;
+    for (let i = ms.regionLiveCount(); i < cap; i++) {
+      ms.spawnRegionEnemy('gate-capA', 'corrupted-wildlife', A.x + 200 + (i % 8) * 40, A.y + Math.floor(i / 8) * 40, 0xffffff);
+    }
+    await wait(200);
+    const filled = ms.regionLiveCount();
+    ms.spawnRegionPack('gate-capA2', { family: 'corrupted-wildlife', x: A.x - 400, y: A.y });
+    const refusedAtCap = ms.regionLiveCount() === filled;
+    // Travel to hotspot B, beyond the expiry radius.
+    const B = { x: A.x + ms.feel.sim.transientDespawnRadiusPx + 2000, y: A.y };
+    ms.player.sprite.body.reset(B.x, B.y);
+    ms.lastLandPos = undefined;
+    let freed = false;
+    for (let k = 0; k < 14 && !freed; k++) {
+      await wait(300);
+      freed = ms.regionLiveCount() === 0;
+    }
+    ms.spawnRegionPack('gate-capB', { family: 'corrupted-wildlife', x: B.x + 250, y: B.y });
+    await wait(200);
+    const spawnedAtB = ms.regionLive.filter((r) => r.zoneId === 'gate-capB').length;
+    // Teardown: expire the B pack too.
+    ms.player.sprite.body.reset(B.x + ms.feel.sim.transientDespawnRadiusPx + 2000, B.y);
+    ms.lastLandPos = undefined;
+    for (let k = 0; k < 14 && ms.regionLiveCount() > 0; k++) await wait(300);
+    return { setup: 'ok', filled, refusedAtCap, freed, spawnedAtB, cleaned: ms.regionLiveCount() === 0 };
+  });
+  ok(
+    'cap-locality: cap filled at A refuses more; at B the slots are free via expiry and a pack spawns immediately — no hysteresis wait',
+    capLoc.setup === 'ok' && capLoc.filled === 48 && capLoc.refusedAtCap && capLoc.freed && capLoc.spawnedAtB >= 3 && capLoc.cleaned,
+    JSON.stringify(capLoc),
+  );
+
+  // 2n7. repopulate-on-return: leaving a real zone empties it (hysteresis +
+  // expiry backstop); returning refills it through the NORMAL staged-spawn
+  // path — expiry never fights the hearth/staging logic.
+  const repop = await page.evaluate(async () => {
+    const ms = window.__ready();
+    const wait = (t) => new Promise((r) => setTimeout(r, t));
+    let zone = null;
+    for (const z of ms.regionSpawnZones) {
+      ms.player.sprite.body.reset(z.center.x, z.center.y);
+      ms.lastLandPos = undefined;
+      await wait(700);
+      if (ms.regionLive.filter((r) => r.zoneId === z.zoneId && r.entity.isAlive).length > 0) {
+        zone = z;
+        break;
+      }
+    }
+    if (!zone) return { setup: 'no zone yields live spawns' };
+    const count0 = ms.regionLive.filter((r) => r.zoneId === zone.zoneId && r.entity.isAlive).length;
+    ms.player.sprite.body.reset(zone.center.x + ms.feel.sim.transientDespawnRadiusPx + 2000, zone.center.y);
+    ms.lastLandPos = undefined;
+    let empty = false;
+    for (let k = 0; k < 14 && !empty; k++) {
+      await wait(300);
+      empty = ms.regionLive.filter((r) => r.zoneId === zone.zoneId && r.entity.isAlive).length === 0 && !zone.active;
+    }
+    ms.player.sprite.body.reset(zone.center.x, zone.center.y);
+    ms.lastLandPos = undefined;
+    let refilled = 0;
+    for (let k = 0; k < 14 && refilled === 0; k++) {
+      await wait(300);
+      refilled = ms.regionLive.filter((r) => r.zoneId === zone.zoneId && r.entity.isAlive).length;
+    }
+    return { setup: 'ok', zone: zone.zoneId, count0, empty, refilled, viaNormalPath: zone.active === true };
+  });
+  ok(
+    'repopulate-on-return: a real zone empties on leave and REFILLS through the normal activation path on return',
+    repop.setup === 'ok' && repop.count0 > 0 && repop.empty && repop.refilled > 0 && repop.viaNormalPath,
+    JSON.stringify(repop),
+  );
+
+  // 2n8. build-stamp-present: the pause-menu stamp shows the SAME id the
+  // bundle was built with — read from the page, then proven against dist.
+  const stamp = await page.evaluate(async () => {
+    const ms = window.__ready();
+    const wait = (t) => new Promise((r) => setTimeout(r, t));
+    ms.scene.launch('PauseScene');
+    ms.scene.pause();
+    await wait(500);
+    const ps = window.__game.scene.getScene('PauseScene');
+    const text = ps.children.getByName('build-stamp')?.text ?? '';
+    ps.scene.stop();
+    ms.scene.resume();
+    await wait(200);
+    return { id: window.__worldScale.buildId, time: window.__worldScale.buildTime, text };
+  });
+  const distJs = readdirSync(new URL('../dist/assets/', import.meta.url).pathname).filter((f) => f.endsWith('.js'));
+  const bundleHasId = distJs.some((f) => readFileSync(new URL(`../dist/assets/${f}`, import.meta.url).pathname, 'utf8').includes(stamp.id));
+  ok(
+    'build-stamp-present: the pause footer carries the build id + time, and the id is baked into the shipped bundle',
+    stamp.id.length >= 7 && stamp.text.includes(stamp.id) && stamp.text.includes('build') && bundleHasId && stamp.time.includes('T'),
+    JSON.stringify({ ...stamp, bundleHasId, files: distJs.length }),
+  );
+
+  // 2n9. sw-update-prompt: a (simulated) WAITING worker surfaces the toast;
+  // the tap runs the REAL activation path — skip-waiting posted, activated
+  // flagged, toast dismissed, and NO reload (the fake worker never fires
+  // controllerchange, which is the only reload trigger).
+  const swPrompt = await page.evaluate(() => {
+    const ms = window.__ready();
+    const rec = ms.pwaUpdater.simulateWaiting();
+    const toastShown = ms.pwaToast.bg.visible === true && ms.pwaToast.label.text.includes('Update ready');
+    ms.tapPwaUpdate(); // the toast's real handler
+    return {
+      toastShown,
+      activated: ms.pwaUpdater.activated,
+      msgs: rec.messages,
+      toastGone: ms.pwaToast.bg.visible === false,
+      stillAlive: typeof window.__game === 'object',
+    };
+  });
+  const swSrc = readFileSync(new URL('../dist/sw.js', import.meta.url).pathname, 'utf8');
+  ok(
+    'sw-update-prompt: waiting worker → toast → tap posts SKIP_WAITING and flags activation, no silent reload; sw.js is a no-cache beacon',
+    swPrompt.toastShown &&
+      swPrompt.activated &&
+      swPrompt.msgs.includes('SKIP_WAITING') &&
+      swPrompt.toastGone &&
+      swPrompt.stillAlive &&
+      swSrc.includes('SKIP_WAITING') &&
+      !swSrc.includes("addEventListener('fetch'"),
+    JSON.stringify({ ...swPrompt, swBytes: swSrc.length }),
+  );
+
 
   // 2f7. playwright drive: 60s of real keyboard autorun east at the capped
   // devspeed — chunks must load AND evict along the way, with zero page or
