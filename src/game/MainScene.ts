@@ -565,6 +565,9 @@ export class MainScene extends Phaser.Scene {
   /** Gate introspection: the declared POI + crossing tables. */
   readonly replantPois = REPLANT_POIS;
   readonly replantCrossings = REPLANT_CROSSINGS;
+  /** Commit 2: the corridor-interpolated escort anchors after the
+   *  nudge-to-walkable rule (v1: the authored points, untouched). */
+  corridorAnchorsGrounded: { q9: { x: number; y: number }[]; q12: { x: number; y: number }[] } = { q9: [], q12: [] };
   private player!: Player;
   private controls!: Controls;
   private readout!: DebugReadout;
@@ -9447,6 +9450,15 @@ export class MainScene extends Phaser.Scene {
     // chunk at its true position (and absorbs Luxor onto its Nile tiles).
     this.setupGlobe();
 
+    // PASS 6C COMMIT 2 — corridor anchors GROUNDED: the arc-length
+    // re-projected escort ambushes nudge to walkable ground now that the
+    // sparse world exists (v1: the authored points, untouched). Computed
+    // once; the gate enumerates every nudge.
+    this.corridorAnchorsGrounded = {
+      q9: Q9_AMBUSHES.map((p) => this.corridorAnchorWalkable(p)),
+      q12: Q12_AMBUSHES.map((p) => this.corridorAnchorWalkable(p)),
+    };
+
     // NESTED CITIES (Faiyum stamps its gate onto the now-positioned egypt map).
     this.setupCities();
     // Egypt's arrival lands just OUTSIDE the Faiyum village gate (the village
@@ -9481,6 +9493,30 @@ export class MainScene extends Phaser.Scene {
     const m = this.replantStampById.get(poiId);
     if (!m) throw new Error(`replant: poi '${poiId}' has no terrain sub-stamp`);
     return m;
+  }
+
+  /** COMMIT 2 RULE: a corridor-interpolated anchor lands on walkable ground,
+   *  nudged AT MOST 64 tiles — anything further is a hard authoring failure
+   *  (the corridor gate proved every route point rideable, so a wider miss
+   *  means the tables drifted). Spiral over the sparse world's own blocking
+   *  rule (chunk terrain where stamped, baked water in the void). Under v1
+   *  the authored points stand on authored ground — identity. */
+  private corridorAnchorWalkable(p: { x: number; y: number }): { x: number; y: number } {
+    if (!isReplantActive()) return p;
+    const g = this.globeMap!;
+    if (!g.isBlockedAtWorld(p.x, p.y)) return p;
+    const ts = 32;
+    for (let r = 1; r <= 64; r++) {
+      for (let ty = -r; ty <= r; ty++) {
+        for (let tx = -r; tx <= r; tx++) {
+          if (Math.max(Math.abs(tx), Math.abs(ty)) !== r) continue;
+          const x = p.x + tx * ts;
+          const y = p.y + ty * ts;
+          if (!g.isBlockedAtWorld(x, y)) return { x, y };
+        }
+      }
+    }
+    throw new Error(`corridor anchor unwalkable within 64 tiles of ${Math.round(p.x)},${Math.round(p.y)}`);
   }
 
   /** Terrain lookup that FOLLOWS THE DISSOLUTION: on the v2 globe the
@@ -12689,7 +12725,7 @@ export class MainScene extends Phaser.Scene {
         // Escort to Lake Chelan with three en-route ambushes (reach to complete).
         this.arcMode = 'reach';
         this.arcReach = { ...LAKE_CHELAN_POSITION };
-        this.arcAmbushes = Q9_AMBUSHES.map((p, i) => ({ x: p.x, y: p.y, lines: [Q9_AMBUSH_LINES[i] ?? Q9_AMBUSH_LINES[0]], spawned: false }));
+        this.arcAmbushes = this.corridorAnchorsGrounded.q9.map((p, i) => ({ x: p.x, y: p.y, lines: [Q9_AMBUSH_LINES[i] ?? Q9_AMBUSH_LINES[0]], spawned: false }));
         break;
       case 'bellingham-cleared':
         this.spawnArcDemons(BELLINGHAM_FARMS_POSITION, BELLINGHAM_DEMONS_COUNT);
@@ -12708,7 +12744,7 @@ export class MainScene extends Phaser.Scene {
       case 'longview-reached':
         this.arcMode = 'reach';
         this.arcReach = { ...LONGVIEW_POSITION };
-        this.arcAmbushes = Q12_AMBUSHES.map((p, i) => ({ x: p.x, y: p.y, lines: [Q12_AMBUSH_LINES[i] ?? Q12_AMBUSH_LINES[0]], spawned: false }));
+        this.arcAmbushes = this.corridorAnchorsGrounded.q12.map((p, i) => ({ x: p.x, y: p.y, lines: [Q12_AMBUSH_LINES[i] ?? Q12_AMBUSH_LINES[0]], spawned: false }));
         break;
       case 'mire-verdict':
         this.arcMode = 'none'; // deliver: Mire's verdict in Longview

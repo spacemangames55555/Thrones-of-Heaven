@@ -325,6 +325,21 @@ const ok = (name, pass, detail = '') => {
     return { id: p.id, x: lf.LEGACY_GLOBE_ORIGIN_X + Math.round(g.x), y: Math.round(g.y) };
   });
   const nearPoi = (v) => poiScene.some((s) => Math.hypot(v.x - s.x, v.y - s.y) <= 4096);
+  // Corridor-interpolated anchors (Commit 2) live BETWEEN settlements by
+  // design: their rule is proximity to the corridor POLYLINE, not to a POI.
+  const corridorScene = rp.corridorPoints().map((p) => ({ x: lf.LEGACY_GLOBE_ORIGIN_X + p.x, y: p.y }));
+  const nearCorridor = (v) => {
+    for (let i = 0; i + 1 < corridorScene.length; i++) {
+      const a = corridorScene[i];
+      const b = corridorScene[i + 1];
+      const abx = b.x - a.x;
+      const aby = b.y - a.y;
+      const t = Math.max(0, Math.min(1, ((v.x - a.x) * abx + (v.y - a.y) * aby) / (abx * abx + aby * aby || 1)));
+      if (Math.hypot(v.x - (a.x + abx * t), v.y - (a.y + aby * t)) <= 96) return true;
+    }
+    return false;
+  };
+  const CORRIDOR_ANCHOR_NAMES = new Set(['Q9_AMBUSHES', 'Q12_AMBUSHES']);
   const anchorOffenders = [];
   const radiusOffenders = [];
   let anchors = 0;
@@ -340,7 +355,8 @@ const ok = (name, pass, detail = '') => {
       for (const e of v) {
         if (e && typeof e === 'object' && typeof e.x === 'number' && e.x >= 1_000_000) {
           anchors++;
-          if (!nearPoi(e)) anchorOffenders.push(`${name}[]`);
+          const fits = CORRIDOR_ANCHOR_NAMES.has(name) ? nearCorridor(e) : nearPoi(e);
+          if (!fits) anchorOffenders.push(`${name}[]`);
         }
       }
     }
@@ -8062,8 +8078,11 @@ try {
     };
   });
   ok(
-    'save-migration v18: a v17 save gains ONLY waypoint/mount fields and reloads losslessly (class home auto-attuned)',
-    v18.setup === 'ok' && v18.d <= 0.5 && v18.v === 18 && v18.hasWp && v18.mount && v18.homeUnlocked,
+    // The fixture stands OUTSIDE the dissolved PNW stamp, so the Pass 6C v19
+    // remap is rule (c) untouched — d stays 0 and the chain lands on the
+    // CURRENT version (19 since Pass 6C Commit 2).
+    'save-migration v18: a v17 save gains ONLY waypoint/mount fields and reloads losslessly (class home auto-attuned; chain lands on the current version)',
+    v18.setup === 'ok' && v18.d <= 0.5 && v18.v === 19 && v18.hasWp && v18.mount && v18.homeUnlocked,
     JSON.stringify(v18),
   );
 
@@ -9340,6 +9359,153 @@ try {
     'heaven-portal-entry: the corrupted portal at its new high-band site transports to Heaven through the shipped flow (walkable approach), and the return lands on Earth',
     heavenEntry.inHeaven && heavenEntry.portalWalkable && heavenEntry.backOnEarth,
     JSON.stringify(heavenEntry),
+  );
+
+  // ── PASS 6C COMMIT 2: corridor anchors, spawn re-ground, save v19 ─────────
+  const settings6 = await import(new URL('../node_modules/.cache/toh-settings.mjs', import.meta.url).pathname);
+
+  // 3r7. anchor-reground: in-POI quest anchors keep their EXACT legacy local
+  // offsets (the Boise catapult trio is the fixture — authored px deltas);
+  // the corridor-interpolated escort ambushes re-ground onto the true route
+  // and land walkable within the 64-tile nudge rule, every nudge enumerated.
+  const catapultDeltas = [
+    [settings6.CATAPULT_1_POSITION.x - settings6.BOISE_POSITION.x, settings6.CATAPULT_1_POSITION.y - settings6.BOISE_POSITION.y],
+    [settings6.CATAPULT_2_POSITION.x - settings6.BOISE_POSITION.x, settings6.CATAPULT_2_POSITION.y - settings6.BOISE_POSITION.y],
+    [settings6.CATAPULT_3_POSITION.x - settings6.BOISE_POSITION.x, settings6.CATAPULT_3_POSITION.y - settings6.BOISE_POSITION.y],
+  ];
+  const catapultOk = JSON.stringify(catapultDeltas) === JSON.stringify([[-700, -650], [100, -850], [900, -600]]);
+  const q9Expected = [settings6.Q9_AMBUSHES, settings6.Q12_AMBUSHES];
+  const reground = await page.evaluate(
+    ([q9, q12]) => {
+      const ms = window.__ready();
+      const g = ms.globeMap;
+      const detail = (raw, grounded) =>
+        grounded.map((p, i) => ({
+          nudgePx: +Math.hypot(p.x - raw[i].x, p.y - raw[i].y).toFixed(1),
+          walkable: !g.isBlockedAtWorld(p.x, p.y),
+        }));
+      return {
+        q9: detail(q9, ms.corridorAnchorsGrounded.q9),
+        q12: detail(q12, ms.corridorAnchorsGrounded.q12),
+        counts: [ms.corridorAnchorsGrounded.q9.length, ms.corridorAnchorsGrounded.q12.length],
+      };
+    },
+    [q9Expected[0], q9Expected[1]],
+  );
+  const allGrounded = [...reground.q9, ...reground.q12];
+  ok(
+    'anchor-reground: catapults keep exact legacy offsets from Boise; Q9/Q12 escort anchors re-ground onto the true route, walkable within 64 tiles (nudges enumerated)',
+    catapultOk && reground.counts[0] === 3 && reground.counts[1] === 1 && allGrounded.every((a) => a.walkable && a.nudgePx <= 64 * 32),
+    JSON.stringify({ catapultDeltas, ...reground }),
+  );
+
+  // 3r8. spawn-zone-reground: NOTHING spawns in dissolved space — no settings
+  // anchor may sit inside the old mega-stamp scene rect under v2 — and the
+  // trigger radii are byte-unchanged (spawn zones moved, radii did not).
+  const stamp6 = {
+    x: lf6b.LEGACY_GLOBE_ORIGIN_X + Math.round((-126.96 + 180) * ws6.PX_PER_DEG_LNG),
+    y: Math.round((85 - 50.12) * ws6.PX_PER_DEG_LAT),
+    w: 1100 * 32,
+    h: 800 * 32,
+  };
+  const dissolvedOffenders = [];
+  for (const [name, v] of Object.entries(settings6)) {
+    const pts = Array.isArray(v) ? v : [v];
+    for (const e of pts) {
+      if (e && typeof e === 'object' && typeof e.x === 'number' && typeof e.y === 'number' && e.x >= 1_000_000) {
+        if (e.x >= stamp6.x && e.x < stamp6.x + stamp6.w && e.y >= stamp6.y && e.y < stamp6.y + stamp6.h) dissolvedOffenders.push(name);
+      }
+    }
+  }
+  ok(
+    'spawn-zone-reground: zero authored anchors remain inside the dissolved mega-stamp rect; ambush trigger radius unchanged',
+    dissolvedOffenders.length === 0 && settings6.AMBUSH_TRIGGER_RANGE === 300,
+    JSON.stringify({ dissolvedOffenders: dissolvedOffenders.slice(0, 8), ambushRange: settings6.AMBUSH_TRIGGER_RANGE }),
+  );
+
+  // 3r9. save-remap-v19: the three migration rules through the REAL read →
+  // migrate → apply path, plus the v17 → v18 → v19 chain. Fixture (a): a
+  // save standing at the town plaza's OLD dissolved-space coordinate lands
+  // at the SAME local offset in the re-planted stamp (= the live town
+  // spawn). Fixture (b): mid-stamp nowhere → the nearest re-planted
+  // settlement anchor, silently. Fixture (c): Munich → untouched.
+  const remapIn = await (async () => {
+    const enumPoi = (await import(new URL('../node_modules/.cache/toh-replant.mjs', import.meta.url).pathname)).REPLANT_POIS.find((p) => p.id === 'enumclaw');
+    const a = { x: enumPoi.cityTile.tx * 32 + 16, y: enumPoi.cityTile.ty * 32 + 16 };
+    const rect = { tx0: Math.max(0, enumPoi.cityTile.tx + enumPoi.footprint.dx), ty0: Math.max(0, enumPoi.cityTile.ty + enumPoi.footprint.dy) };
+    // (b): mid-stamp legacy-local point + its nearest settlement, node-derived.
+    const mid = { x: 17600, y: 12800 };
+    let bestId = null;
+    let bestD = Infinity;
+    for (const id of rp6.REPLANT_SETTLEMENTS) {
+      const p = rp6.REPLANT_POIS.find((q) => q.id === id);
+      const al = p.cityTile ? { x: p.cityTile.tx * 32 + 16, y: p.cityTile.ty * 32 + 16 } : lf6b.legacyRawToLocal(p.legacyRaw);
+      const d = Math.hypot(al.x - mid.x, al.y - mid.y);
+      if (d < bestD) {
+        bestD = d;
+        bestId = id;
+      }
+    }
+    const bg = rp6.poiGlobePx(bestId);
+    return {
+      origin: { lat: 50.12, lng: -126.96 },
+      pxLat: ws6.PX_PER_DEG_LAT,
+      pxLng: ws6.PX_PER_DEG_LNG,
+      enumRect: rect,
+      mid,
+      bSettlement: bestId,
+      bScene: { x: lf6b.LEGACY_GLOBE_ORIGIN_X + Math.round(bg.x), y: Math.round(bg.y) },
+      cLatLng: { lat: 48.1381, lng: 11.5808 },
+    };
+  })();
+  const remap = await page.evaluate(async (fx) => {
+    const ms = window.__ready();
+    const wait = (t) => new Promise((r) => setTimeout(r, t));
+    const runFixture = async (latLng, version, stripTravel) => {
+      const wrote = ms.requestSave();
+      if (!wrote) return { setup: 'save write refused' };
+      const raw = JSON.parse(localStorage.getItem('toh_save'));
+      raw.saveVersion = version;
+      raw.world.active = 'earth';
+      raw.world.latLng = { ...latLng };
+      delete raw.world.remembered?.earth;
+      if (stripTravel) {
+        delete raw.player.unlockedWaypoints;
+        delete raw.player.mountUnlocked;
+      }
+      localStorage.setItem('toh_save', JSON.stringify(raw));
+      ms.devLoadSave();
+      await wait(600);
+      ms.requestSave(); // write back → the stored save must now be v19
+      const after = JSON.parse(localStorage.getItem('toh_save'));
+      return { px: { x: ms.player.x, y: ms.player.y }, v: after.saveVersion, latLng: after.world.latLng, wp: Array.isArray(after.player.unlockedWaypoints), mount: after.player.mountUnlocked === true };
+    };
+    // (a) the town plaza's OLD dissolved coordinate.
+    const m = ms.replantStampById.get('enumclaw');
+    const b = m.bounds;
+    const lx = ms.town.spawn.x - b.x + fx.enumRect.tx0 * 32;
+    const ly = ms.town.spawn.y - b.y + fx.enumRect.ty0 * 32;
+    const aFix = { lat: fx.origin.lat - ly / fx.pxLat, lng: fx.origin.lng + lx / fx.pxLng };
+    const a = await runFixture(aFix, 18, false);
+    const aOk = a.v === 19 && Math.hypot(a.px.x - ms.town.spawn.x, a.px.y - ms.town.spawn.y) <= 40;
+    // (b) mid-stamp nowhere → nearest settlement anchor.
+    const bFix = { lat: fx.origin.lat - fx.mid.y / fx.pxLat, lng: fx.origin.lng + fx.mid.x / fx.pxLng };
+    const bRes = await runFixture(bFix, 18, false);
+    const bOk = bRes.v === 19 && Math.hypot(bRes.px.x - fx.bScene.x, bRes.px.y - fx.bScene.y) <= 80;
+    // (c) Munich → untouched (byte-equal latLng, lands at that geography).
+    const cRes = await runFixture(fx.cLatLng, 18, false);
+    const cOk = cRes.v === 19 && Math.abs(cRes.latLng.lat - fx.cLatLng.lat) < 1e-9 && Math.abs(cRes.latLng.lng - fx.cLatLng.lng) < 1e-9;
+    // Chain: a v17 save (no travel fields) through the same dissolved spot.
+    const chain = await runFixture(aFix, 17, true);
+    const chainOk = chain.v === 19 && chain.wp && chain.mount && Math.hypot(chain.px.x - ms.town.spawn.x, chain.px.y - ms.town.spawn.y) <= 40;
+    ms.applyWorldSwap('earth', { x: ms.town.spawn.x, y: ms.town.spawn.y });
+    await wait(400);
+    return { aOk, bOk, cOk, chainOk, a, b: bRes, c: cRes, chain, bSettlement: fx.bSettlement };
+  }, remapIn);
+  ok(
+    'save-remap-v19: dissolved-POI position keeps its local offset; mid-stamp lands at the nearest re-planted settlement silently; outside untouched; v17->v18->v19 chain green (travel fields + remap)',
+    remap.aOk && remap.bOk && remap.cOk && remap.chainOk,
+    JSON.stringify(remap),
   );
 
   // 2f7. playwright drive: 60s of real keyboard autorun east at the capped

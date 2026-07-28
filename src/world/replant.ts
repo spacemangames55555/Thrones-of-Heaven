@@ -293,6 +293,49 @@ export function corridorPoints(): { x: number; y: number; label: string }[] {
   return out;
 }
 
+/** The settlements a dissolved-space save position falls back to (Commit 2
+ *  save rule b): the towns + the corridor cities with terrain footprints.
+ *  Arrival = the settlement anchor (gate-proven walkable where it stands). */
+export const REPLANT_SETTLEMENTS: readonly string[] = ['enumclaw', 'seattle', 'portland', 'olympia', 'yakima', 'kamiah', 'boise'];
+
+/**
+ * Arc-length interpolation along the corridor SUB-PATH between two POI nodes
+ * (the first occurrence of `fromPoi` to the next occurrence of `toPoi`), in
+ * globe-local px. Pass 6C Commit 2: corridor-interpolated quest anchors
+ * (escort ambushes authored BETWEEN settlements) re-ground at the same
+ * PROPORTION of the true route they held on the legacy straight line.
+ */
+export function corridorLerp(fromPoi: string, toPoi: string, t: number): { x: number; y: number } {
+  const pts = corridorPoints();
+  const i0 = pts.findIndex((p) => p.label === fromPoi);
+  if (i0 < 0) throw new Error(`corridorLerp: '${fromPoi}' is not on the corridor`);
+  let i1 = -1;
+  for (let i = i0 + 1; i < pts.length; i++) {
+    if (pts[i].label === toPoi) {
+      i1 = i;
+      break;
+    }
+  }
+  if (i1 < 0) throw new Error(`corridorLerp: '${toPoi}' does not follow '${fromPoi}' on the corridor`);
+  const seg = pts.slice(i0, i1 + 1);
+  const lens: number[] = [];
+  let total = 0;
+  for (let i = 0; i + 1 < seg.length; i++) {
+    const l = Math.hypot(seg[i + 1].x - seg[i].x, seg[i + 1].y - seg[i].y);
+    lens.push(l);
+    total += l;
+  }
+  let want = Math.min(1, Math.max(0, t)) * total;
+  for (let i = 0; i < lens.length; i++) {
+    if (want <= lens[i] || i === lens.length - 1) {
+      const f = lens[i] === 0 ? 0 : Math.min(1, want / lens[i]);
+      return { x: seg[i].x + (seg[i + 1].x - seg[i].x) * f, y: seg[i].y + (seg[i + 1].y - seg[i].y) * f };
+    }
+    want -= lens[i];
+  }
+  return { x: seg[seg.length - 1].x, y: seg[seg.length - 1].y };
+}
+
 /** Whether the v2 world re-plants (the whole pass is v2-only). */
 export function isReplantActive(): boolean {
   return isScaleV2();

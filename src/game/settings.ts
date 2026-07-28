@@ -5,7 +5,7 @@
  * the north 500 rows, Oregon below as one continuous landmass, and IDAHO appended
  * to the east as the new columns 800–1099 — WA/OR pixels are unchanged).
  */
-import { legacyEarthPx } from '../world/legacy-frame';
+import { legacyCorridorPx, legacyEarthPx } from '../world/legacy-frame';
 
 /**
  * Player run speed, expressed in TILES PER SECOND (stable across tile-size changes;
@@ -1501,14 +1501,19 @@ export const CASCADES_POSITION = legacyEarthPx({ x: 142451, y: 92297 }, 'cascade
 export const SEATTLE_POSITION = legacyEarthPx({ x: 138163, y: 90857 }, 'seattle'); // fallback; the 'seattle' target resolves to Alder live
 export const LONGVIEW_POSITION = legacyEarthPx({ x: 138931, y: 97097 }, 'longview');
 
-/** Q9 escort ambush waypoints (Yakima → Lake Chelan), in route order. */
+/** Q9 escort ambush waypoints (Yakima → Lake Chelan), in route order.
+ *  CORRIDOR-INTERPOLATED (Pass 6C Commit 2): authored BETWEEN settlements,
+ *  so each re-grounds at its legacy arc-length proportion along the TRUE
+ *  Yakima→Chelan route (via the Vantage + Beebe causeways) — v1 identical. */
 export const Q9_AMBUSHES = [
-  legacyEarthPx({ x: 144393, y: 94197 }, 'cascades'),
-  legacyEarthPx({ x: 144705, y: 93141 }, 'cascades'),
-  legacyEarthPx({ x: 145017, y: 92085 }, 'cascades'),
+  legacyCorridorPx({ x: 144393, y: 94197 }, 'yakima', 'lake-chelan'),
+  legacyCorridorPx({ x: 144705, y: 93141 }, 'yakima', 'lake-chelan'),
+  legacyCorridorPx({ x: 145017, y: 92085 }, 'yakima', 'lake-chelan'),
 ];
-/** Q12 escort ambush waypoint (toward Longview). */
-export const Q12_AMBUSHES = [legacyEarthPx({ x: 138547, y: 93977 }, 'pells-farm')];
+/** Q12 escort ambush waypoint (toward Longview) — the legacy midpoint of the
+ *  Seattle→Longview line, re-grounded at the same proportion of the true
+ *  inland route (Renton + Nisqually vias). */
+export const Q12_AMBUSHES = [legacyCorridorPx({ x: 138547, y: 93977 }, 'seattle', 'longview')];
 /** Proximity (px) at which an en-route ambush group spawns. */
 export const AMBUSH_TRIGGER_RANGE = 300;
 
