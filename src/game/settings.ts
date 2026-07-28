@@ -1230,14 +1230,14 @@ export const SATAN = {
 // every quest. Edit positions / group sizes here; quest TEXT lives in questData.ts.
 
 /** The arc hub: where the dark patron dwells; "return to the outpost" centers here. */
-export const DARK_OUTPOST_POSITION = legacyEarthPx({ x: 144275, y: 98661 }); // N-central OR frontier, by the rift (east of Mt. Hood)
+export const DARK_OUTPOST_POSITION = legacyEarthPx({ x: 144275, y: 98661 }, 'dark-outpost'); // N-central OR frontier, by the rift (east of Mt. Hood)
 /** Oregon City — Quest 1 guardsmen + Quest 3 angels spawn here. */
-export const OREGON_CITY_POSITION = legacyEarthPx({ x: 143675, y: 99261 });
+export const OREGON_CITY_POSITION = legacyEarthPx({ x: 143675, y: 99261 }, 'oregon-city');
 /** The farm field — Quest 2 farmers + the shipment pickup. */
-export const FARM_FIELD_POSITION = legacyEarthPx({ x: 143375, y: 99461 });
+export const FARM_FIELD_POSITION = legacyEarthPx({ x: 143375, y: 99461 }, 'farm-field');
 /** Quest 4's two marked spots. */
-export const DESCENT_LOC_A = legacyEarthPx({ x: 144575, y: 99461 });
-export const DESCENT_LOC_B = legacyEarthPx({ x: 143475, y: 99711 });
+export const DESCENT_LOC_A = legacyEarthPx({ x: 144575, y: 99461 }, 'descent-a');
+export const DESCENT_LOC_B = legacyEarthPx({ x: 143475, y: 99711 }, 'descent-b');
 
 /** Proximity (px) that completes a "reach the outpost" / "travel to" objective. */
 export const REACH_OUTPOST_RANGE = 90;
@@ -1259,15 +1259,15 @@ export const DESCENT_LOC_ANGELS = 2; // Quest 4, per location
 // distinct). Edit positions / group sizes here; quest TEXT lives in questData.ts.
 
 /** 4.1 — Bend OR (SE of Oregon City): the farmers with the materials Azazel needs. */
-export const BEND_POSITION = legacyEarthPx({ x: 144275, y: 100861 }); // central OR, east of the Cascades (real Bend)
+export const BEND_POSITION = legacyEarthPx({ x: 144275, y: 100861 }, 'bend'); // central OR, east of the Cascades (real Bend)
 /** 4.2 — La Grande OR (N, the watchers' road): angels barring the way north. */
-export const LA_GRANDE_POSITION = legacyEarthPx({ x: 148675, y: 99161 }); // NE Oregon (Blue Mountains / Grande Ronde)
+export const LA_GRANDE_POSITION = legacyEarthPx({ x: 148675, y: 99161 }, 'la-grande'); // NE Oregon (Blue Mountains / Grande Ronde)
 /** 4.3 — the caravan-intercept route toward Portland (W of the corridor). */
-export const CARAVAN_ROUTE_POSITION = legacyEarthPx({ x: 141175, y: 99361 }); // Willamette corridor between the OR towns and Portland
+export const CARAVAN_ROUTE_POSITION = legacyEarthPx({ x: 141175, y: 99361 }, 'caravan-route'); // Willamette corridor between the OR towns and Portland
 /** 4.4a — Florence OR (coast, far W): the salt patches along the shore. */
-export const FLORENCE_POSITION = legacyEarthPx({ x: 130975, y: 101061 }); // the Oregon COAST (far west), mid-OR latitude
+export const FLORENCE_POSITION = legacyEarthPx({ x: 130975, y: 101061 }, 'florence'); // the Oregon COAST (far west), mid-OR latitude
 /** 4.4b — Roseburg OR (S-central): the cleric who purifies the salt. */
-export const ROSEBURG_POSITION = legacyEarthPx({ x: 140075, y: 102261 }); // SW interior OR (Umpqua valley, S of Eugene)
+export const ROSEBURG_POSITION = legacyEarthPx({ x: 140075, y: 102261 }, 'roseburg'); // SW interior OR (Umpqua valley, S of Eugene)
 
 /** 4.1 — Bend farmers (reuse the 'farmer' Townsfolk variant). */
 export const BEND_FARMERS_COUNT = 4;
@@ -1302,16 +1302,16 @@ export const ROSEBURG_HERALDS = 1;
 
 /** 4.5 — "Kamiah, ID": the patron's new outpost. Reuses the Dark Outpost coordinate so
  *  Azazel (who stands there) is reachable; it is simply called Kamiah from 4.5 on. */
-export const KAMIAH_POSITION = legacyEarthPx({ x: 156675, y: 89461 }); // north-central IDAHO (Clearwater valley, the Mt. McGuire leg)
+export const KAMIAH_POSITION = legacyEarthPx({ x: 156675, y: 89461 }, 'kamiah'); // north-central IDAHO (Clearwater valley, the Mt. McGuire leg)
 
 /** 4.6 — three river headwaters to taint (proximity "Taint the Water" action). */
-export const RIVER_1_POSITION = legacyEarthPx({ x: 158275, y: 91161 }); // north-central Idaho uplands
-export const RIVER_2_POSITION = legacyEarthPx({ x: 156675, y: 93961 }); // central-west Idaho
-export const RIVER_3_POSITION = legacyEarthPx({ x: 158675, y: 95161 }); // central Idaho
+export const RIVER_1_POSITION = legacyEarthPx({ x: 158275, y: 91161 }, 'river-1'); // north-central Idaho uplands
+export const RIVER_2_POSITION = legacyEarthPx({ x: 156675, y: 93961 }, 'river-2'); // central-west Idaho
+export const RIVER_3_POSITION = legacyEarthPx({ x: 158675, y: 95161 }, 'river-3'); // central Idaho
 /** 4.7 — three weakened Idaho cities to sack. */
-export const CITY_1_POSITION = legacyEarthPx({ x: 155675, y: 100161 }); // SW Idaho Snake River plain (Boise-ish)
-export const CITY_2_POSITION = legacyEarthPx({ x: 159975, y: 101161 }); // S-central Idaho Snake plain (Twin Falls-ish)
-export const CITY_3_POSITION = legacyEarthPx({ x: 161475, y: 99161 }); // SE Idaho (Idaho Falls-ish)
+export const CITY_1_POSITION = legacyEarthPx({ x: 155675, y: 100161 }, 'city-1'); // SW Idaho Snake River plain (Boise-ish)
+export const CITY_2_POSITION = legacyEarthPx({ x: 159975, y: 101161 }, 'city-2'); // S-central Idaho Snake plain (Twin Falls-ish)
+export const CITY_3_POSITION = legacyEarthPx({ x: 161475, y: 99161 }, 'city-3'); // SE Idaho (Idaho Falls-ish)
 
 /** 4.5b — the three neighbour men who ambush as you leave the woman's house. */
 export const OLYMPIA_NEIGHBORS_COUNT = 3;
@@ -1329,10 +1329,10 @@ export const CITY_ANGELS_WARDEN = 1;
 // 4.8 "Draw Them Down": burn Boise with three catapults (proximity "Fire the
 // Catapult" actions; each firing spawns a city-guard defender group). Boise sits
 // on the SW Idaho Snake plain, SOUTH-WEST of the 4.5–4.7 quest cluster.
-export const BOISE_POSITION = legacyEarthPx({ x: 154875, y: 100561 });
-export const CATAPULT_1_POSITION = legacyEarthPx({ x: 154175, y: 99911 }); // NW of the city walls
-export const CATAPULT_2_POSITION = legacyEarthPx({ x: 154975, y: 99711 }); // due north
-export const CATAPULT_3_POSITION = legacyEarthPx({ x: 155775, y: 99961 }); // NE of the walls
+export const BOISE_POSITION = legacyEarthPx({ x: 154875, y: 100561 }, 'boise');
+export const CATAPULT_1_POSITION = legacyEarthPx({ x: 154175, y: 99911 }, 'boise'); // NW of the city walls
+export const CATAPULT_2_POSITION = legacyEarthPx({ x: 154975, y: 99711 }, 'boise'); // due north
+export const CATAPULT_3_POSITION = legacyEarthPx({ x: 155775, y: 99961 }, 'boise'); // NE of the walls
 /** Defenders that pour out after EACH catapult fires (city-guard variant). */
 export const CATAPULT_DEFENDERS_COUNT = 4;
 
@@ -1368,7 +1368,7 @@ export const DEMON_ALLY_COUNT = 5;
 /** Portal health pool — the player loses if it hits 0. */
 export const PORTAL_MAX_HP = 300;
 /** Portal world position (Oregon, near the spirit corridor — placeholder spot). */
-export const PORTAL_POSITION = legacyEarthPx({ x: 144075, y: 99111 });
+export const PORTAL_POSITION = legacyEarthPx({ x: 144075, y: 99111 }, 'portal');
 /** Distance (px) within which a townsfolk can strike the portal. */
 export const PORTAL_ATTACK_RANGE = 56;
 
@@ -1444,13 +1444,13 @@ export const CRAB_MAX_HP = 46;
 export const CRAB_PLAYER_DAMAGE = 8;
 
 /** Olympia delivery point (Q1) — nearest walkable urban tile to the Sound-bound city. */
-export const OLYMPIA_POSITION = legacyEarthPx({ x: 136915, y: 94569 });
+export const OLYMPIA_POSITION = legacyEarthPx({ x: 136915, y: 94569 }, 'olympia');
 /** The foothills tree line E of Enumclaw (Q2 wolves). */
-export const TREE_LINE_POSITION = legacyEarthPx({ x: 139891, y: 91849 });
+export const TREE_LINE_POSITION = legacyEarthPx({ x: 139891, y: 91849 }, 'tree-line');
 /** The Tacoma shore (Q3 sea lion) — walkable urban edge beside the Sound. */
-export const TACOMA_BEACH_POSITION = legacyEarthPx({ x: 137683, y: 92489 });
+export const TACOMA_BEACH_POSITION = legacyEarthPx({ x: 137683, y: 92489 }, 'tacoma-beach');
 /** Snoqualmie Pass, E/NE in the foothills (Q4 raiders). */
-export const SNOQUALMIE_PASS_POSITION = legacyEarthPx({ x: 141491, y: 91177 });
+export const SNOQUALMIE_PASS_POSITION = legacyEarthPx({ x: 141491, y: 91177 }, 'snoqualmie-pass');
 /** Proximity (px) that completes the water-pump delivery when talking to Della in Olympia. */
 export const ACT1_DELIVERY_RANGE = 90;
 
@@ -1469,11 +1469,11 @@ export const DOGS_COUNT = 3;
 export const WHITEPASS_DEMONS_COUNT = 3;
 
 /** Old Pell's farm, SW of Enumclaw (Q5 dogs). */
-export const PELLS_FARM_POSITION = legacyEarthPx({ x: 138547, y: 92041 });
+export const PELLS_FARM_POSITION = legacyEarthPx({ x: 138547, y: 92041 }, 'pells-farm');
 /** The corrupted grove on the eastern forest slope (Q6 burn). */
-export const CORRUPTED_GROVE_POSITION = legacyEarthPx({ x: 139763, y: 92137 });
+export const CORRUPTED_GROVE_POSITION = legacyEarthPx({ x: 139763, y: 92137 }, 'corrupted-grove');
 /** The White Pass farm, SE toward the pass (Q7 demons). */
-export const WHITEPASS_FARM_POSITION = legacyEarthPx({ x: 141491, y: 93897 });
+export const WHITEPASS_FARM_POSITION = legacyEarthPx({ x: 141491, y: 93897 }, 'whitepass-farm');
 /** Proximity (px) at which the "Burn the Grove" action button shows / the burn fires. */
 export const GROVE_BURN_RANGE = 110;
 /** Proximity (px) at which an objective's "on arriving" encounter narration plays. */
@@ -1494,21 +1494,21 @@ export const CASCADES_DEMONS_COUNT = 4; // Q11 the gathering in the high country
 export const AMBUSH_DEMONS_COUNT = 2; // each en-route ambush group (Q9 ×3, Q12 ×1)
 
 /** Investigation-arc objective-marker positions (world px). */
-export const YAKIMA_POSITION = legacyEarthPx({ x: 144019, y: 95465 });
-export const LAKE_CHELAN_POSITION = legacyEarthPx({ x: 145267, y: 91241 });
-export const BELLINGHAM_FARMS_POSITION = legacyEarthPx({ x: 138355, y: 87209 });
-export const CASCADES_POSITION = legacyEarthPx({ x: 142451, y: 92297 });
-export const SEATTLE_POSITION = legacyEarthPx({ x: 138163, y: 90857 }); // fallback; the 'seattle' target resolves to Alder live
-export const LONGVIEW_POSITION = legacyEarthPx({ x: 138931, y: 97097 });
+export const YAKIMA_POSITION = legacyEarthPx({ x: 144019, y: 95465 }, 'yakima');
+export const LAKE_CHELAN_POSITION = legacyEarthPx({ x: 145267, y: 91241 }, 'lake-chelan');
+export const BELLINGHAM_FARMS_POSITION = legacyEarthPx({ x: 138355, y: 87209 }, 'bellingham-farms');
+export const CASCADES_POSITION = legacyEarthPx({ x: 142451, y: 92297 }, 'cascades');
+export const SEATTLE_POSITION = legacyEarthPx({ x: 138163, y: 90857 }, 'seattle'); // fallback; the 'seattle' target resolves to Alder live
+export const LONGVIEW_POSITION = legacyEarthPx({ x: 138931, y: 97097 }, 'longview');
 
 /** Q9 escort ambush waypoints (Yakima → Lake Chelan), in route order. */
 export const Q9_AMBUSHES = [
-  legacyEarthPx({ x: 144393, y: 94197 }),
-  legacyEarthPx({ x: 144705, y: 93141 }),
-  legacyEarthPx({ x: 145017, y: 92085 }),
+  legacyEarthPx({ x: 144393, y: 94197 }, 'cascades'),
+  legacyEarthPx({ x: 144705, y: 93141 }, 'cascades'),
+  legacyEarthPx({ x: 145017, y: 92085 }, 'cascades'),
 ];
 /** Q12 escort ambush waypoint (toward Longview). */
-export const Q12_AMBUSHES = [legacyEarthPx({ x: 138547, y: 93977 })];
+export const Q12_AMBUSHES = [legacyEarthPx({ x: 138547, y: 93977 }, 'pells-farm')];
 /** Proximity (px) at which an en-route ambush group spawns. */
 export const AMBUSH_TRIGGER_RANGE = 300;
 
@@ -1521,7 +1521,7 @@ export const AMBUSH_TRIGGER_RANGE = 300;
 // where the corruption grant now lives. Tune in playtest.
 
 /** The N-Oregon rift (Q13 target + rift-scene site), world px on a walkable foothill. */
-export const OREGON_RIFT_POSITION = legacyEarthPx({ x: 143875, y: 98911 }); // northern Oregon, just east of Mt. Hood (the source)
+export const OREGON_RIFT_POSITION = legacyEarthPx({ x: 143875, y: 98911 }, 'oregon-rift'); // northern Oregon, just east of Mt. Hood (the source)
 /** Proximity (px) at which reaching the rift BEGINS the rift scene. */
 export const RIFT_SCENE_RANGE = 120;
 /** Semyaza is HALTED (the lie cutscene fires) when his HP first drops to this ratio. */
@@ -1648,9 +1648,9 @@ export const PORTAL_SPAWN_OFFSETS: { dx: number; dy: number }[] = [
 /** The HOLY OUTPOST — the angels' door, in the Mount McGuire mountains of IDAHO,
  *  east of Azazel's Kamiah outpost (where Act IV 4.5 located it; the Act IV finale
  *  4.9 assaults it, then the endgame proceeds through its portal). */
-export const HOLY_OUTPOST_POSITION = legacyEarthPx({ x: 158675, y: 88761 }); // Mt. McGuire leg, NE of Kamiah (verified walkable + all assault points)
+export const HOLY_OUTPOST_POSITION = legacyEarthPx({ x: 158675, y: 88761 }, 'holy-outpost'); // Mt. McGuire leg, NE of Kamiah (verified walkable + all assault points)
 /** The Heaven Portal sits at the outpost centre. */
-export const HEAVEN_PORTAL_POSITION = legacyEarthPx({ x: 158675, y: 88761 }); // == Holy Outpost (the portal sits at the outpost)
+export const HEAVEN_PORTAL_POSITION = legacyEarthPx({ x: 158675, y: 88761 }, 'heaven-portal'); // == Holy Outpost (the portal sits at the outpost)
 /** Guardian spawn points, as offsets (px) from the portal (one melee, one ranged). */
 export const GUARDIAN_MELEE_OFFSET = { dx: 78, dy: 34 };
 export const GUARDIAN_RANGED_OFFSET = { dx: -78, dy: 34 };

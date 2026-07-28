@@ -1,6 +1,7 @@
 import { WORLD_CALIBRATION } from './world-calibration';
 import { earthUnificationDelta } from './world-unification';
 import { V1_ORIGIN, V1_PX_PER_DEG_LAT, V1_PX_PER_DEG_LNG } from './world-scale';
+import { isReplantActive, poiGlobePx, poiLegacyAnchor, replantPoi } from './replant';
 
 /**
  * LEGACY EARTH FRAME (WORLD SCALE V2, Pass 4): every hand-authored world-frame
@@ -45,7 +46,30 @@ const TS = 32;
 const GAP = 4096;
 export const LEGACY_GLOBE_ORIGIN_X = 1100 * TS + GAP + 720 * TS + GAP + 720 * TS + GAP + 600 * TS + GAP + 60 * TS + GAP; // 122,880
 
-export function legacyEarthPx(p: { x: number; y: number }): { x: number; y: number } {
+/** Raw authored-constant frame → washington.map.json LOCAL px. */
+export function legacyRawToLocal(q: { x: number; y: number }): { x: number; y: number } {
+  return { x: q.x - v1Delta.dx, y: q.y - v1Delta.dy };
+}
+
+/**
+ * PASS 6C: every authored constant DECLARES its POI. Under v1 the poi is
+ * ignored and this stays the exact Pass 4 identity (legacy world
+ * byte-identical). Under v2 the mega-stamp is DISSOLVED: the constant lands
+ * at its POI's TRUE Earth anchor plus the exact legacy local offset — the
+ * Luxor geometric-absorption pattern, generalized (anchors move, layouts
+ * do not; see src/world/replant.ts for the recon table).
+ */
+export function legacyEarthPx(p: { x: number; y: number }, poiId: string): { x: number; y: number } {
+  if (isReplantActive()) {
+    const poi = replantPoi(poiId);
+    const local = legacyRawToLocal(p);
+    const anchor = poiLegacyAnchor(poi, legacyRawToLocal);
+    const truePx = poiGlobePx(poiId);
+    return {
+      x: LEGACY_GLOBE_ORIGIN_X + Math.round(truePx.x) + (local.x - anchor.x),
+      y: Math.round(truePx.y) + (local.y - anchor.y),
+    };
+  }
   const active = earthUnificationDelta();
   return {
     x: p.x - v1Delta.dx + LEGACY_GLOBE_ORIGIN_X + Math.round(active.dx),

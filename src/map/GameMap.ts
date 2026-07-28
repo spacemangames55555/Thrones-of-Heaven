@@ -81,8 +81,9 @@ export class GameMap {
     return { x: this.originX, y: this.originY, width: this.pixelWidth, height: this.pixelHeight };
   }
 
-  /** Reassemble the zone chunks into a single [y][x] grid of terrain ids. */
-  private static stitchZones(data: WashingtonMap): number[][] {
+  /** Reassemble the zone chunks into a single [y][x] grid of terrain ids.
+   *  PUBLIC since Pass 6C: the re-plant slicer cuts POI footprints from it. */
+  static stitchZones(data: WashingtonMap): number[][] {
     const grid: number[][] = Array.from({ length: data.height }, () =>
       new Array<number>(data.width).fill(0),
     );

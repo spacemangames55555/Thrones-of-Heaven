@@ -62,13 +62,18 @@ export function pxToLatLngV2(x: number, y: number): { lat: number; lng: number }
 /** PASS 4 FLIP: v2 (the real Earth) is the DEFAULT. ?scale=v1 is the
  *  gate-checked escape hatch keeping the legacy world fully functional
  *  (removal ledgered, not scheduled). Node tooling follows the default. */
+/** Memoized per page load (the URL never changes inside a session): Pass 6C
+ *  put this flag on per-terrain-sample hot paths, where re-parsing
+ *  location.search every call burned ~70% of the frame (profiled). */
+let scaleV2Cache: boolean | undefined;
 export function isScaleV2(): boolean {
+  if (scaleV2Cache !== undefined) return scaleV2Cache;
   try {
-    if (typeof location === 'undefined') return true;
-    return new URLSearchParams(location.search).get('scale') !== 'v1';
+    scaleV2Cache = typeof location === 'undefined' ? true : new URLSearchParams(location.search).get('scale') !== 'v1';
   } catch {
-    return true;
+    scaleV2Cache = true;
   }
+  return scaleV2Cache;
 }
 
 /** Distance readout for travel UI: km from px through METERS_PER_PX — one
