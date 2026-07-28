@@ -51,8 +51,11 @@ import { isScaleV2, isTerrainProc, isDebugOverlay, formatKm } from '../world/wor
 import { legacyEarthPx, LEGACY_GLOBE_ORIGIN_X } from '../world/legacy-frame';
 import { MountSystem } from '../systems/mount';
 import { WaypointSystem } from '../systems/waypoints';
+import { EncounterCoordinator } from '../systems/encounters';
+import { PwaUpdater } from '../ui/pwa-update';
 import { globeSceneOriginX } from '../world/scene-origin';
-import { ChunkStreamer } from '../world/chunk-streamer';
+import { ChunkStreamer, KEEP_RADIUS } from '../world/chunk-streamer';
+import { CHUNK_PX } from '../world/terrain-schema';
 import { createProceduralSource } from '../world/terrain-procedural';
 import { ensurePlaceholderAtlas } from '../world/terrain-placeholder';
 import { applyTerrainArt } from '../world/terrain-art';
@@ -357,7 +360,7 @@ import {
   CITY_GATE_RANGE,
   EUROPE_SPAWN_ACTIVATE_MARGIN,
   EUROPE_SPAWN_DEACTIVATE_MARGIN,
-  EUROPE_ENEMY_CAP,
+  LIVE_ENEMY_CAP,
   HOME_HEARTH_RADIUS_PX,
   EUROPE_CLEAR_KILLS,
   EUROPE_HARVEST_KILLS,
@@ -547,6 +550,9 @@ export interface TrapConfig {
   countsTowardCap?: boolean;
 }
 
+declare const __BUILD_ID__: string;
+declare const __BUILD_TIME__: string;
+
 export class MainScene extends Phaser.Scene {
   private map!: GameMap;
   private player!: Player;
@@ -613,6 +619,15 @@ export class MainScene extends Phaser.Scene {
   private engagements = new Map<object, string>();
   /** When the engagement set last transitioned to empty (linger anchor). */
   private combatEmptiedAt = -1e9;
+  /** SIM LOCALITY (Pass 6B): encounters derive suspend/resume from player
+   *  distance every frame (see src/systems/encounters.ts). */
+  readonly encounters = new EncounterCoordinator();
+  /** The portal-defense wave's OWN townsfolk (encounter-owned taxonomy). */
+  private portalWave: Townsfolk[] = [];
+  /** PWA update flow (Pass 6B addendum): deploy-waiting detection + the
+   *  "Update ready" toast. Never silent-reloads - tap-driven only. */
+  readonly pwaUpdater = new PwaUpdater();
+  private pwaToast?: { bg: Phaser.GameObjects.Rectangle; label: Phaser.GameObjects.Text };
   private playerDead = false;
   /** Player-allied summons (Ice Golem, skeletons, the Dark Matter Monster) — transient, not serialized. */
   private summons!: AlliedSummonManager;
@@ -1184,7 +1199,7 @@ export class MainScene extends Phaser.Scene {
     zoneId: string;
     family: string;
     kind: 'townsfolk' | 'demon' | 'angel';
-    entity: { readonly isAlive: boolean; destroy(): void; takeHit(amount: number): number };
+    entity: { readonly isAlive: boolean; readonly x: number; readonly y: number; destroy(): void; takeHit(amount: number): number };
     counted: boolean;
   }[] = [];
   /** Kill progress per ACTIVE europe beat id (clear + eu-10 harvest counters). */
@@ -1686,9 +1701,13 @@ export class MainScene extends Phaser.Scene {
     // bar fall in the WORLD snapshot) + the wave manager that drives the encounter.
     this.portal = new DarkPortal(this, PORTAL_POSITION.x, PORTAL_POSITION.y);
     this.portalDefense = new PortalDefense();
-    this.portalDefense.aliveCount = () => this.townsfolk.length;
+    // ENCOUNTER-OWNED wave tracking (Pass 6B): the clear predicate counts THE
+    // WAVE, not every townsfolk-kind enemy on the planet (the old
+    // `townsfolk.length` became planetary at unification — a live wolf near
+    // any distant town would have held the wave open forever).
+    this.portalDefense.aliveCount = () => this.portalWave.filter((t) => t.isAlive).length;
     this.portalDefense.onSpawn = (offset) =>
-      this.spawnTownsfolk(this.portal.x + offset.dx, this.portal.y + offset.dy);
+      this.portalWave.push(this.spawnTownsfolk(this.portal.x + offset.dx, this.portal.y + offset.dy));
     this.portalDefense.onWaveStart = (wave, total) => {
       this.showBanner(`Wave ${wave} of ${total}`, 1600);
       this.portal.setWaveLabel(`  —  Wave ${wave}/${total}`);
@@ -1702,6 +1721,79 @@ export class MainScene extends Phaser.Scene {
       this.clearTownsfolk();
       this.portal.setWaveLabel('');
     };
+    // SIM LOCALITY (Pass 6B): the encounter's live state derives from player
+    // distance — beyond the radius it SUSPENDS (clock frozen, live wave
+    // despawned, zero spawns), back inside it RESUMES (same wave restarts,
+    // portal HP exactly as frozen). Pre-unification pause parity: leaving the
+    // Washington MAP used to freeze this; now leaving the NEIGHBORHOOD does.
+    this.encounters.register({
+      id: 'portal-defense',
+      anchor: () => ({ x: this.portal.x, y: this.portal.y }),
+      radiusPx: FEEL.sim.encounterSuspendRadiusPx,
+      isEngaged: () => this.portalDefense.isActive,
+      onSuspend: () => {
+        this.portalDefense.suspend(this.time.now);
+        for (const t of this.portalWave) {
+          if (t.isAlive) t.destroy();
+        }
+        this.townsfolk = this.townsfolk.filter((t) => !this.portalWave.includes(t));
+        this.portalWave = [];
+      },
+      onResume: () => this.portalDefense.resume(this.time.now),
+    });
+    // GUARDIAN ENCOUNTER: reconciles at the ENTITY leash boundary (the same
+    // 2048 px the engagement funnel deaggros at), so no zone exists where the
+    // entities are dormant but the phase still says fighting.
+    this.encounters.register({
+      id: 'guardians',
+      anchor: () => ({ x: HOLY_OUTPOST_POSITION.x, y: HOLY_OUTPOST_POSITION.y }),
+      radiusPx: FEEL.combat.leashRadiusPx,
+      isEngaged: () => this.guardianPhase === 'fighting',
+      onSuspend: () => this.resetGuardianFight(),
+      onResume: () => {
+        /* re-activation is the existing dormant-phase proximity check */
+      },
+    });
+
+    // PWA UPDATE TOAST (Pass 6B addendum): a waiting deploy surfaces a
+    // persistent tappable toast; the tap activates + reloads. NEVER silent.
+    const tw = 236;
+    const toastBg = this.add
+      .rectangle(0, 0, tw, 40, 0x14223a, 0.97)
+      .setStrokeStyle(2, 0x7ad6c8, 1)
+      .setScrollFactor(0)
+      .setDepth(1360)
+      .setVisible(false)
+      .setInteractive({ useHandCursor: true });
+    const toastLabel = this.add
+      .text(0, 0, 'Update ready — Restart', { fontFamily: 'system-ui, sans-serif', fontSize: '14px', color: '#d8fff6' })
+      .setOrigin(0.5)
+      .setScrollFactor(0)
+      .setDepth(1361)
+      .setVisible(false);
+    const layoutToast = (): void => {
+      toastBg.setPosition(tw / 2 + 14, this.scale.height - 34);
+      toastLabel.setPosition(tw / 2 + 14, this.scale.height - 34);
+    };
+    layoutToast();
+    this.scale.on(Phaser.Scale.Events.RESIZE, layoutToast);
+    toastBg.on('pointerdown', () => this.tapPwaUpdate());
+    this.pwaToast = { bg: toastBg, label: toastLabel };
+    this.pwaUpdater.onUpdateReady = () => {
+      toastBg.setVisible(true);
+      toastLabel.setVisible(true);
+    };
+    void this.pwaUpdater.register();
+
+    // ?debug=1 BUILD STAMP (Pass 6B addendum): the deployed identity in the
+    // corner of the debug overlay.
+    if (isDebugOverlay()) {
+      this.add
+        .text(6, this.scale.height - 16, `build ${__BUILD_ID__} · ${__BUILD_TIME__}`, { fontFamily: 'monospace', fontSize: '10px', color: '#9adf9a' })
+        .setScrollFactor(0)
+        .setDepth(1360)
+        .setName('debug-build-stamp');
+    }
 
     // The quest CHAIN (data-driven registry). The world objective marker lives
     // in the worldFx layer, so the main camera draws it and the UI camera ignores
@@ -2043,6 +2135,10 @@ export class MainScene extends Phaser.Scene {
     // defense, the Holy-Outpost guardian machine) stay Earth-only. Heaven is
     // empty — its only per-frame logic is the return-gate proximity. Movement,
     // dash, zoom, the HUD, regen and projectiles are world-agnostic.
+    // SIM LOCALITY (Pass 6B): encounter suspend/resume derives from player
+    // distance every frame, in EVERY world - entering a plane moves the
+    // player a whole band away, which suspends exactly like riding away.
+    this.encounters.update(this.player.x, this.player.y);
     if (this.isTerrestrial(this.activeWorld)) {
       this.checkDoors();
       this.updateArc(); // descent-arc completion watcher (before interactions so a
@@ -7024,11 +7120,11 @@ export class MainScene extends Phaser.Scene {
       const t = this.aggroState.get(e)?.targetSummon ?? null;
       return t && t.isAlive ? { x: t.x, y: t.y } : null;
     };
-    const consider = (e: { x: number; y: number; isAlive: boolean; deaggro?: () => void }, engaging: boolean, id: string): void => {
+    const consider = (e: { x: number; y: number; isAlive: boolean; deaggro?: () => void }, engaging: boolean, id: string, leashPx: number = leash): void => {
       if (!e.isAlive || !engaging || !this.isActiveWorldResident(e.x)) return;
       const st = summonTargetOf(e);
       const near =
-        Phaser.Math.Distance.Between(e.x, e.y, px, py) <= leash || (st !== null && Phaser.Math.Distance.Between(e.x, e.y, st.x, st.y) <= leash);
+        Phaser.Math.Distance.Between(e.x, e.y, px, py) <= leashPx || (st !== null && Phaser.Math.Distance.Between(e.x, e.y, st.x, st.y) <= leashPx);
       if (!near) {
         e.deaggro?.(); // LEASH-EXCEED: release the engagement AND the flag
         return;
@@ -7048,7 +7144,19 @@ export class MainScene extends Phaser.Scene {
     for (const g of this.guardians) consider(g, g.isAggro, g.id);
     for (const c of this.cherubs) consider(c, c.isAggro, c.id);
     for (const d of this.demons) consider(d, d.isAggro, d.id);
-    for (const b of this.bosses) consider(b, b.isAggro, b.id);
+    for (const b of this.bosses) {
+      // BOSS OVERRIDE (Pass 6B): bosses use the longer sim leash, and beyond
+      // it an ACTIVE boss takes the STANDARD leash reset (dormant, full HP,
+      // phase 1, home) plus adds-cleanup - not just an engagement release.
+      // Scripted freezes (the rift lie) hold the player nearby by design, so
+      // the leash cannot fire mid-cutscene.
+      if (b.isAlive && b.isActive && Phaser.Math.Distance.Between(b.x, b.y, px, py) > FEEL.sim.bossLeashRadiusPx) {
+        b.deaggro();
+        this.clearBossAdds(b.id);
+        continue;
+      }
+      consider(b, b.isAggro, b.id, FEEL.sim.bossLeashRadiusPx);
+    }
     if (this.engagements.size > 0 && next.size === 0) this.combatEmptiedAt = now;
     this.engagements = next;
   }
@@ -7297,6 +7405,7 @@ export class MainScene extends Phaser.Scene {
       for (const s of this.swarmers) s.setRevealed(sv);
     }
     for (const s of this.swarmers) {
+      if (Math.abs(s.x - this.player.x) > FEEL.sim.transientDespawnRadiusPx || Math.abs(s.y - this.player.y) > FEEL.sim.transientDespawnRadiusPx) continue; // beyond expiry = invisible
       const t = this.enemyAggroTarget(s, s.x, s.y); // continuous hierarchy aggro (summons > player)
       s.update(t.x, t.y, this.time.now);
     }
@@ -7365,6 +7474,7 @@ export class MainScene extends Phaser.Scene {
   private updateAngels(): void {
     for (const a of this.angels) {
       if (!this.isActiveWorldResident(a.x)) continue; // world-resident pause: foreign residents don't tick
+      if (Math.abs(a.x - this.player.x) > FEEL.sim.transientDespawnRadiusPx || Math.abs(a.y - this.player.y) > FEEL.sim.transientDespawnRadiusPx) continue; // beyond expiry = invisible
       const t = this.enemyAggroTarget(a, a.x, a.y); // continuous hierarchy aggro (summons > player)
       const los = this.hasLineOfSight(a.x, a.y, t.x, t.y);
       a.update(t.x, t.y, this.time.now, los);
@@ -7556,6 +7666,7 @@ export class MainScene extends Phaser.Scene {
   private updateCherubs(): void {
     for (const c of this.cherubs) {
       if (!this.isActiveWorldResident(c.x)) continue; // world-resident pause: foreign residents don't tick
+      if (Math.abs(c.x - this.player.x) > FEEL.sim.transientDespawnRadiusPx || Math.abs(c.y - this.player.y) > FEEL.sim.transientDespawnRadiusPx) continue; // beyond expiry = invisible
       const t = this.enemyAggroTarget(c, c.x, c.y);
       const los = this.hasLineOfSight(c.x, c.y, t.x, t.y);
       c.update(t.x, t.y, this.time.now, los);
@@ -7775,12 +7886,12 @@ export class MainScene extends Phaser.Scene {
   private summonForBoss(bossId: string, bx: number, by: number, bossName: string, enemy: string, count: number, cap: number): void {
     // REGION CHAMPIONS ('region-zone:<zoneId>'): adds are the ZONE's own families,
     // spawned through the pooled Europe spawner — they join regionLive (despawned
-    // with the chunk, counted by kill objectives) and respect EUROPE_ENEMY_CAP.
+    // with the chunk, counted by kill objectives) and respect LIVE_ENEMY_CAP.
     if (enemy.startsWith('region-zone:')) {
       const zoneId = enemy.slice('region-zone:'.length);
       const fams = (getZone(zoneId)?.enemyFamilies ?? []).filter((f) => f in EXISTING_FAMILY_DOMAIN);
       this.championAdds = this.championAdds.filter((a) => a.isAlive);
-      const room = Math.max(0, EUROPE_ENEMY_CAP - this.regionLiveCount());
+      const room = Math.max(0, LIVE_ENEMY_CAP - this.regionLiveCount());
       const n = Math.min(count, cap - this.championAdds.length, room, fams.length === 0 ? 0 : count);
       const map = this.activeMap();
       for (let i = 0; i < n; i++) {
@@ -7906,10 +8017,11 @@ export class MainScene extends Phaser.Scene {
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.scale.off(Phaser.Scale.Events.RESIZE, layout)); // never leak across scene restarts
   }
 
-  /** Show the bar for the boss the player is currently engaged with (active + near).
-   *  Residency-gated: a paused foreign boss's frozen isAggro must never show here. */
+  /** Show the bar for the boss the player is currently engaged with. The
+   *  visibility source is SOLELY the engagement funnel (Pass 6B) - present +
+   *  alive - never a raw aggro flag or a world-band predicate. */
   private refreshBossBar(): void {
-    const boss = this.bosses.find((b) => b.isAggro && this.isActiveWorldResident(b.x));
+    const boss = this.bosses.find((b) => b.isAlive && this.engagements.has(b));
     const show = boss !== undefined;
     this.bossBarBg.setVisible(show);
     this.bossBar.setVisible(show);
@@ -8886,6 +8998,7 @@ export class MainScene extends Phaser.Scene {
   private updateTownsfolk(): void {
     for (const t of this.townsfolk) {
       if (!this.isActiveWorldResident(t.x)) continue; // world-resident pause: foreign residents don't tick
+      if (Math.abs(t.x - this.player.x) > FEEL.sim.transientDespawnRadiusPx || Math.abs(t.y - this.player.y) > FEEL.sim.transientDespawnRadiusPx) continue; // beyond expiry = invisible
       const tgt = this.enemyAggroTarget(t, t.x, t.y);
       t.update(tgt.x, tgt.y, this.time.now);
     }
@@ -8926,6 +9039,7 @@ export class MainScene extends Phaser.Scene {
   private clearTownsfolk(): void {
     for (const t of this.townsfolk) t.destroy();
     this.townsfolk = [];
+    this.portalWave = [];
   }
 
   /** End + reset the encounter: stop waves, clear townsfolk, restore the portal. */
@@ -9012,6 +9126,16 @@ export class MainScene extends Phaser.Scene {
     this.notifyQuest('reach-holy-outpost'); // Quest 5 obj 1: reached the Holy Outpost
   }
 
+  /** LEASH RESET (Pass 6B): the FIGHT resets - swords dormant + full HP -
+   *  but quest state (portal corruption, defeat progress) is untouched. The
+   *  encounter coordinator fires this at the entity leash boundary, so the
+   *  phase can never say 'fighting' over dormant entities. */
+  private resetGuardianFight(): void {
+    if (this.guardianPhase !== 'fighting') return;
+    for (const g of this.guardians) if (g.isAlive) g.reset();
+    this.guardianPhase = 'dormant';
+  }
+
   /** RESET: swords back to dormant + full HP, the portal back to holy/uncorrupted. */
   private resetGuardianEncounter(): void {
     for (const g of this.guardians) g.reset();
@@ -9022,6 +9146,14 @@ export class MainScene extends Phaser.Scene {
 
   /** Drive the guardians + the encounter's phase transitions each frame. */
   private updateGuardianEncounter(): void {
+    // PHASE IS A PROJECTION (Pass 6B): 'fighting' can never assert itself
+    // over dormant entities - if every living sword has gone dormant (the
+    // engagement funnel leash, or any other path), the phase follows.
+    // Activation is synchronous (startGuardianFight engages before setting
+    // the phase), so this can never fire on the start frame.
+    if (this.guardianPhase === 'fighting' && this.guardians.length > 0 && this.guardians.every((g) => !g.isAlive || !g.isAggro) && this.guardians.some((g) => g.isAlive)) {
+      this.resetGuardianFight();
+    }
     // Proximity activation: nearing the outpost wakes the dormant pair. During Act IV
     // 4.9's assault they HOLD until the quest reaches the portal objective and the
     // mask-drop narration has played (see assaultHoldsGuardians).
@@ -9335,6 +9467,13 @@ export class MainScene extends Phaser.Scene {
     // of this (no worker, no atlas, no streamer).
     if (isScaleV2()) {
       ensurePlaceholderAtlas(this);
+      // SIM-LOCALITY BOOT ASSERT (Pass 6B): transient expiry must be
+      // invisible - strictly beyond the farthest chunk the keep-ring can
+      // hold loaded, derived from the LIVE ring math (never hardcoded).
+      const ringExtentPx = (KEEP_RADIUS + 1) * CHUNK_PX;
+      if (FEEL.sim.transientDespawnRadiusPx <= ringExtentPx) {
+        throw new Error(`FEEL.sim.transientDespawnRadiusPx (${FEEL.sim.transientDespawnRadiusPx}) must exceed the loaded-ring extent (${ringExtentPx})`);
+      }
       this.chunkStreamer = new ChunkStreamer(this, { originPx: { ...origin }, source: createProceduralSource(), stamps: chunkMaps });
       // PASS 3: swap to the baked real-Earth packs (async; IndexedDB-cached).
       // ?terrain=proc pins the Pass 2 procedural source as the dev fallback.
@@ -10400,8 +10539,9 @@ export class MainScene extends Phaser.Scene {
 
   /** Materialize/despawn Europe packs by player proximity (hysteresis), sweep
    *  deaths into the kill counters, and enforce the live-enemy cap. Runs every
-   *  frame ONLY while Europe is the active world (25 distance checks — trivial). */
+   *  frame in any region world (~81 zone distance checks — trivial). */
   private updateRegionSpawns(): void {
+    this.expireTransients();
     for (const z of this.regionSpawnZones) {
       const d = Phaser.Math.Distance.Between(this.player.x, this.player.y, z.center.x, z.center.y);
       if (!z.active && d < z.radiusPx + EUROPE_SPAWN_ACTIVATE_MARGIN) this.activateRegionZone(z);
@@ -10442,12 +10582,44 @@ export class MainScene extends Phaser.Scene {
     this.regionLive = this.regionLive.filter((r) => r.entity.isAlive || !r.counted);
   }
 
+  /** TRANSIENT EXPIRY (Pass 6B taxonomy): SPAWNED entities (every regionLive
+   *  row - zone packs, corridor packs, fixtures) expire beyond
+   *  FEEL.sim.transientDespawnRadiusPx: removed outright, cap slot freed,
+   *  NO kill credit (the row leaves before the death sweep can count it).
+   *  AUTHORED content (named NPCs, stamp residents, quest anchors) is never
+   *  registered here; ENCOUNTER-OWNED entities follow their encounter
+   *  (Commit 1). The leash (2048) sits far inside the expiry radius, so the
+   *  engagement funnel can never still hold an expiring entity - asserted. */
+  transientsExpired = 0;
+  private expireTransients(): void {
+    // Recompute engagements at the CURRENT position first: this sweep runs
+    // before regenTick in the frame, and on a teleport frame the map would
+    // otherwise still hold last-frame engagements - the leash release and
+    // the expiry must see the same world. (Idempotent; regenTick recomputes
+    // again a few calls later.)
+    this.recomputeEngagements();
+    const r = FEEL.sim.transientDespawnRadiusPx;
+    let expired: Set<object> | null = null;
+    for (const rec of this.regionLive) {
+      if (!rec.entity.isAlive) continue;
+      if (Math.abs(rec.entity.x - this.player.x) <= r && Math.abs(rec.entity.y - this.player.y) <= r) continue;
+      if (this.engagements.has(rec.entity)) throw new Error(`expiry: ${rec.family} still engaged beyond the expiry radius - leash broken`);
+      (expired ??= new Set()).add(rec);
+      rec.entity.destroy(); // kind arrays self-prune on !isAlive
+      this.transientsExpired++;
+    }
+    if (expired) {
+      this.regionLive = this.regionLive.filter((rec) => !expired.has(rec));
+      this.regionAmbushers = this.regionAmbushers.filter((a) => a.t.isAlive);
+    }
+  }
+
   private regionLiveCount(): number {
     return this.regionLive.filter((r) => r.entity.isAlive).length;
   }
 
   /** Spawn every mapped-family pack for one zone (cap-guarded: a pack that would
-   *  break EUROPE_ENEMY_CAP is skipped whole, never split). HOME-CITY PACING:
+   *  break LIVE_ENEMY_CAP is skipped whole, never split). HOME-CITY PACING:
    *  a home zone's HEARTH (the mentor's ground) never materializes a hostile,
    *  and STAGED families are held in pendingStaged until their beat clears. */
   private activateRegionZone(z: (typeof this.regionSpawnZones)[number]): void {
@@ -10474,7 +10646,7 @@ export class MainScene extends Phaser.Scene {
     // HOLLOWED-BRUTES: a hard 1–2-per-pack ceiling, enforced here in spawn
     // logic (not just in the pack-size data).
     const pack = Math.min(EXISTING_FAMILY_PACK[p.family] ?? 3, p.family === 'hollowed-brutes' ? BRUTE_PACK_CAP : Infinity);
-    if (this.regionLiveCount() + pack > EUROPE_ENEMY_CAP) return; // cap holds
+    if (this.regionLiveCount() + pack > LIVE_ENEMY_CAP) return; // cap holds
     const tint = DOMAIN_TINT[EXISTING_FAMILY_DOMAIN[p.family]];
     for (let i = 0; i < pack; i++) {
       const ang = (Math.PI * 2 * i) / pack;
@@ -10959,7 +11131,7 @@ export class MainScene extends Phaser.Scene {
     const melee = fams.filter((f) => f === 'corrupted-wildlife' || f === 'evil-raiders' || f === 'hollowed-brutes');
     const fam = melee[(e.wavesFired - 1) % Math.max(1, melee.length)] ?? fams[0];
     let n = fam === 'hollowed-brutes' ? Math.min(ESCORT_WAVE_SIZE, BRUTE_PACK_CAP) : ESCORT_WAVE_SIZE;
-    n = Math.min(n, Math.max(0, EUROPE_ENEMY_CAP - this.regionLiveCount()));
+    n = Math.min(n, Math.max(0, LIVE_ENEMY_CAP - this.regionLiveCount()));
     if (n <= 0) return;
     this.showBanner('Ambush!', 1400);
     const map = this.activeMap();
@@ -11180,6 +11352,7 @@ export class MainScene extends Phaser.Scene {
   private updateDemons(): void {
     for (const d of this.demons) {
       if (!this.isActiveWorldResident(d.x)) continue; // world-resident pause: foreign residents don't tick
+      if (Math.abs(d.x - this.player.x) > FEEL.sim.transientDespawnRadiusPx || Math.abs(d.y - this.player.y) > FEEL.sim.transientDespawnRadiusPx) continue; // beyond expiry = invisible
       const t = this.enemyAggroTarget(d, d.x, d.y);
       d.update(t.x, t.y, this.time.now);
     }
@@ -11745,6 +11918,14 @@ export class MainScene extends Phaser.Scene {
     this.scene.launch('WorldMapScene', { host });
     this.scene.pause();
     return true;
+  }
+
+  /** The update toast tap - the ONE reload path (activation via the waiting
+   *  worker; the reload rides controllerchange in pwa-update.ts). */
+  tapPwaUpdate(): void {
+    this.pwaToast?.bg.setVisible(false);
+    this.pwaToast?.label.setVisible(false);
+    this.pwaUpdater.activate();
   }
 
   /** Build the mount + waypoint systems, the waystone pillars (the existing

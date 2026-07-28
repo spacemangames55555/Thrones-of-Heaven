@@ -33,6 +33,11 @@ export class PortalDefense {
   private phase: 'breather' | 'fighting' = 'breather';
   private phaseEndsAt = 0; // when the current breather ends
   private waveTimeoutAt = 0; // stall-safety for a fighting wave
+  /** SIM LOCALITY (Pass 6B): suspended = the player left the encounter
+   *  radius. Timers frozen (breather remainder banked), zero spawns, and on
+   *  resume the SAME wave restarts — pre-unification pause parity. */
+  private suspended = false;
+  private breatherRemainingMs = 0;
 
   /** Spawn ONE townsfolk at the given world offset from the portal. */
   onSpawn?: (offset: { dx: number; dy: number }, indexInWave: number) => void;
@@ -57,10 +62,15 @@ export class PortalDefense {
     return PORTAL_DEFENSE_WAVES.length;
   }
 
+  get isSuspended(): boolean {
+    return this.suspended;
+  }
+
   /** Begin the encounter (no-op if already running). */
   start(time: number): void {
     if (this.state === 'active') return;
     this.state = 'active';
+    this.suspended = false;
     this.currentWave = -1;
     this.phase = 'breather';
     this.phaseEndsAt = time + PORTAL_DEFENSE_INTRO_MS;
@@ -69,8 +79,30 @@ export class PortalDefense {
   /** End + reset to idle (the scene clears townsfolk + restores the portal). */
   stop(): void {
     this.state = 'idle';
+    this.suspended = false;
     this.currentWave = -1;
     this.phase = 'breather';
+  }
+
+  /** SUSPEND (player beyond the encounter radius): freeze the clock. The
+   *  scene despawns the live wave; nothing spawns until resume. */
+  suspend(time: number): void {
+    if (this.state !== 'active' || this.suspended) return;
+    this.suspended = true;
+    this.breatherRemainingMs = this.phase === 'breather' ? Math.max(0, this.phaseEndsAt - time) : 0;
+  }
+
+  /** RESUME (player back inside): a frozen breather picks up its remainder;
+   *  a fighting wave RESTARTS as the same wave (fresh spawns, same index). */
+  resume(time: number): void {
+    if (this.state !== 'active' || !this.suspended) return;
+    this.suspended = false;
+    if (this.phase === 'breather') {
+      this.phaseEndsAt = time + this.breatherRemainingMs;
+    } else {
+      this.currentWave -= 1; // startNextWave re-increments: the SAME wave restarts
+      this.startNextWave(time);
+    }
   }
 
   /** The scene calls this the moment the portal's HP reaches 0. */
@@ -81,7 +113,7 @@ export class PortalDefense {
   }
 
   update(time: number): void {
-    if (this.state !== 'active') return;
+    if (this.state !== 'active' || this.suspended) return;
 
     if (this.phase === 'breather') {
       if (time >= this.phaseEndsAt) this.startNextWave(time);

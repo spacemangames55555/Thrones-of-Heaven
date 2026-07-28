@@ -23,6 +23,9 @@ interface SaveableScene {
  *   • Return to Title — autosaves, then returns to the start screen (New Game /
  *     Continue) so the player can exit and enter a different game (single slot).
  */
+declare const __BUILD_ID__: string;
+declare const __BUILD_TIME__: string;
+
 export class PauseScene extends Phaser.Scene {
   private toast?: Phaser.GameObjects.Text;
 
@@ -43,6 +46,16 @@ export class PauseScene extends Phaser.Scene {
     // LANDSCAPE viewport (h=428) with margin.
     const panelW = Math.min(300, w - 48);
     this.add.rectangle(cx, h / 2, panelW, 412, 0x161018, 0.98).setStrokeStyle(2, 0xffd24a, 0.9);
+    // BUILD STAMP (Pass 6B addendum): the deployed identity, always one
+    // pause away - the gate asserts this text matches the built bundle.
+    this.add
+      .text(cx, h / 2 + 196, `build ${__BUILD_ID__} · ${__BUILD_TIME__.slice(0, 16)}Z`, {
+        fontFamily: 'system-ui, sans-serif',
+        fontSize: '10px',
+        color: '#8a90a0',
+      })
+      .setOrigin(0.5)
+      .setName('build-stamp');
     this.add
       .text(cx, h / 2 - 182, 'Paused', {
         fontFamily: 'Georgia, serif',
