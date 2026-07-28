@@ -234,6 +234,16 @@ export class Boss {
     (this.sprite.body as Phaser.Physics.Arcade.Body).velocity.set(0, 0);
   }
 
+  /** STANDARD LEASH RESET (Pass 6B): beyond FEEL.sim.bossLeashRadiusPx the
+   *  fight releases for real — dormant, full HP, phase 1, home position (the
+   *  same reset Michael has always used; no boss has a phase-persistence
+   *  design that survives disengagement — phases are HP-gated). The scene
+   *  layers adds-cleanup on top (clearBossAdds). */
+  deaggro(): void {
+    if (this.state !== 'active') return;
+    this.reset();
+  }
+
   reset(): void {
     this.state = 'dormant';
     this.phaseIndex = 0;

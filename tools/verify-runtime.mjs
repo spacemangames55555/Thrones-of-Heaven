@@ -8423,6 +8423,7 @@ try {
   // Restore a gameplay zoom + tap through any arrival dialogue the travel
   // landing opened (same pattern as the waypoint-travel check above).
   await page.evaluate(() => window.__ready().zoomControls.setTarget(1));
+  await page.waitForTimeout(1200); // the smoothing lands - the sim checks below must NOT run at world-cap zoom (swiftshader frame starvation)
   for (let i = 0; i < 12; i++) {
     await page.waitForTimeout(280);
     const uiOpen = await page.evaluate(() => {
@@ -8433,6 +8434,254 @@ try {
     await page.mouse.click(214, 520);
     await page.mouse.click(214, 462);
   }
+
+  // ── PASS 6B: SIMULATION LOCALITY — ENCOUNTER LIFECYCLE ────────────────────
+  // 2n0. guardian-leash-reconcile: the audit soft-lock repro end-to-end —
+  // aggro the swords, outrun the leash, return, and re-activation is CLEAN.
+  // Phase/entity consistency asserted at every step: the phase can never say
+  // 'fighting' over dormant entities.
+  const guardianRec = await page.evaluate(async () => {
+    const ms = window.__ready();
+    const wait = (t) => new Promise((r) => setTimeout(r, t));
+    if (ms.guardians.length === 0) return { setup: 'no guardians spawned' };
+    const g0 = ms.guardians[0];
+    const outpost = { x: g0.x, y: g0.y }; // dormant swords stand at the outpost
+    ms.player.sprite.body.reset(outpost.x + 60, outpost.y + 60);
+    ms.lastLandPos = undefined;
+    await wait(600);
+    const fighting = ms.guardianPhase === 'fighting' && ms.guardians.some((g) => g.isAggro);
+    ms.guardians[0].takeHit(25); // real damage — the reset must heal this back
+    const hpAfterHit = ms.guardians[0].health.current;
+    const hpMax = ms.guardians[0].health.max;
+    // OUTRUN: beyond the entity leash (2048) — the funnel deaggros the swords
+    // and the coordinator reconciles the phase in the same breath.
+    ms.player.sprite.body.reset(outpost.x + ms.feel.combat.leashRadiusPx + 900, outpost.y);
+    ms.lastLandPos = undefined;
+    let reconciled = false;
+    for (let k = 0; k < 14 && !reconciled; k++) {
+      await wait(300);
+      reconciled = ms.guardianPhase === 'dormant' && ms.guardians.every((g) => !g.isAggro);
+    }
+    const healed = ms.guardians.every((g) => g.health.current === g.health.max);
+    const noMismatch = !(ms.guardianPhase === 'fighting' && ms.guardians.every((g) => !g.isAggro));
+    // RETURN: clean re-activation from dormant.
+    ms.player.sprite.body.reset(outpost.x + 60, outpost.y + 60);
+    ms.lastLandPos = undefined;
+    let refought = false;
+    for (let k = 0; k < 14 && !refought; k++) {
+      await wait(300);
+      refought = ms.guardianPhase === 'fighting' && ms.guardians.some((g) => g.isAggro);
+    }
+    // Leave again so later checks run clear of the fight.
+    ms.player.sprite.body.reset(outpost.x + ms.feel.combat.leashRadiusPx + 900, outpost.y);
+    ms.lastLandPos = undefined;
+    await wait(600);
+    return { setup: 'ok', fighting, hpAfterHit, hpMax, reconciled, healed, noMismatch, refought };
+  });
+  ok(
+    'guardian-leash-reconcile: aggro → outrun → dormant + healed (phase follows entities) → return → clean re-activation',
+    guardianRec.setup === 'ok' && guardianRec.fighting && guardianRec.hpAfterHit < guardianRec.hpMax && guardianRec.reconciled && guardianRec.healed && guardianRec.noMismatch && guardianRec.refought,
+    JSON.stringify(guardianRec),
+  );
+
+  // 2n1. portal-defense-suspend: frozen timer + HP, wave despawned, ZERO
+  // spawns while the clock advances, resume restarts the SAME wave with the
+  // portal HP exactly as frozen.
+  const pdSuspend = await page.evaluate(async () => {
+    const ms = window.__ready();
+    const pd = ms.portalDefense;
+    const wait = (t) => new Promise((r) => setTimeout(r, t));
+    ms.devStartPortalDefense(); // the real dev trigger: teleports to the portal + starts
+    // Let the intro breather elapse and wave 1 spawn.
+    let waveUp = false;
+    for (let k = 0; k < 30 && !waveUp; k++) {
+      await wait(400);
+      waveUp = pd.waveNumber >= 1 && pd.aliveCount() > 0;
+    }
+    if (!waveUp) return { setup: 'wave never spawned' };
+    ms.portal.takeDamage(40); // real damage so the HP freeze is observable
+    const wave0 = pd.waveNumber;
+    const hp0 = ms.portal.health.current;
+    // SUSPEND: teleport beyond the encounter radius (radius-derived — the
+    // teleport IS the test; no special case exists).
+    const far = { x: ms.portal.x + ms.feel.sim.encounterSuspendRadiusPx + 1500, y: ms.portal.y };
+    ms.player.sprite.body.reset(far.x, far.y);
+    ms.lastLandPos = undefined;
+    let suspended = false;
+    for (let k = 0; k < 10 && !suspended; k++) {
+      await wait(300);
+      suspended = pd.isSuspended && ms.encounters.isSuspended('portal-defense');
+    }
+    const waveDespawned = pd.aliveCount() === 0;
+    // ADVANCE THE CLOCK well past breather + wave timeout: zero spawns, zero
+    // wave movement, HP frozen.
+    await wait(4200);
+    const stillFrozen = pd.isSuspended && pd.aliveCount() === 0 && pd.waveNumber === wave0 && ms.portal.health.current === hp0;
+    // RESUME: return — the SAME wave restarts, HP exactly as frozen.
+    ms.player.sprite.body.reset(ms.portal.x + 200, ms.portal.y + 120);
+    ms.lastLandPos = undefined;
+    let resumed = false;
+    for (let k = 0; k < 12 && !resumed; k++) {
+      await wait(300);
+      resumed = !pd.isSuspended && pd.aliveCount() > 0;
+    }
+    const sameWave = pd.waveNumber === wave0;
+    const hpKept = ms.portal.health.current === hp0;
+    ms.resetPortalDefense(); // clean fixture teardown
+    return { setup: 'ok', wave0, hp0, suspended, waveDespawned, stillFrozen, resumed, sameWave, hpKept };
+  });
+  ok(
+    'portal-defense-suspend: beyond the radius the clock freezes (wave despawned, zero spawns under an advanced clock, HP frozen); return restarts the SAME wave with HP retained',
+    pdSuspend.setup === 'ok' && pdSuspend.suspended && pdSuspend.waveDespawned && pdSuspend.stillFrozen && pdSuspend.resumed && pdSuspend.sameWave && pdSuspend.hpKept,
+    JSON.stringify(pdSuspend),
+  );
+
+  // 2n2. portal-defense-waystone: the same suspend through the REAL waystone
+  // travel path — travel is just a big teleport, and radius-derivation must
+  // not care.
+  const pdWaystone = await page.evaluate(async () => {
+    const ms = window.__ready();
+    const pd = ms.portalDefense;
+    const wp = ms.waypointSys;
+    const wait = (t) => new Promise((r) => setTimeout(r, t));
+    // PRECONDITION through the REAL path: attune wp-olympia by walking into
+    // its discovery radius (loud setup failure if the scan does not unlock).
+    if (!wp.unlocked.has('wp-olympia')) {
+      const oly = wp.nodes.find((n) => n.id === 'wp-olympia');
+      ms.player.sprite.body.reset(oly.x + 100, oly.y);
+      ms.lastLandPos = undefined;
+      await wait(1000); // two discovery scans
+      if (!wp.unlocked.has('wp-olympia')) return { setup: 'olympia discovery failed' };
+    }
+    ms.devStartPortalDefense();
+    let waveUp = false;
+    for (let k = 0; k < 30 && !waveUp; k++) {
+      await wait(400);
+      waveUp = pd.waveNumber >= 1 && pd.aliveCount() > 0;
+    }
+    if (!waveUp) return { setup: 'wave never spawned' };
+    const wave0 = pd.waveNumber;
+    // The un-suspended wave keeps striking the portal DURING the 3 s travel
+    // cast (real gameplay, not the contract under test) - top the portal up
+    // so the incidental chew cannot LOSE the encounter mid-cast. The
+    // frozen-HP contract is measured AT suspension, below.
+    ms.portal.health.full();
+    // REAL waystone travel away (~120k px from the portal - far beyond the radius).
+    const started = wp.startTravel('wp-olympia');
+    await wait(4600); // 3 s cast + fade
+    let suspended = false;
+    for (let k = 0; k < 10 && !suspended; k++) {
+      await wait(300);
+      suspended = pd.isSuspended;
+    }
+    const awayFromPortal = Math.hypot(ms.player.x - ms.portal.x, ms.player.y - ms.portal.y) > ms.feel.sim.encounterSuspendRadiusPx;
+    // THE CONTRACT: HP freezes at suspension and stays frozen while away.
+    const hpFrozen = ms.portal.health.current;
+    await wait(900);
+    const hpStaysFrozen = ms.portal.health.current === hpFrozen;
+    // Return by teleport (the mechanism under test is the radius, not the
+    // ride). The RESUME poll happens in a second evaluate: the landing can
+    // open arrival dialogue, which freezes the update loop until tapped
+    // through like a player (below).
+    ms.player.sprite.body.reset(ms.portal.x + 200, ms.portal.y + 120);
+    ms.lastLandPos = undefined;
+    return { setup: 'ok', started, awayFromPortal, suspended, hpStaysFrozen, wave0, hpFrozen };
+  });
+  for (let i = 0; i < 12; i++) {
+    await page.waitForTimeout(280);
+    const uiOpen = await page.evaluate(() => {
+      const ms = window.__game.scene.getScene('MainScene');
+      return ms.dialogue.isOpen() || ms.choice.isOpen();
+    });
+    if (!uiOpen) break;
+    await page.mouse.click(214, 520);
+    await page.mouse.click(214, 462);
+  }
+  const pdWaystone2 = await page.evaluate(async (fixture) => {
+    const ms = window.__ready();
+    const pd = ms.portalDefense;
+    const wait = (t) => new Promise((r) => setTimeout(r, t));
+    let resumed = false;
+    for (let k = 0; k < 12 && !resumed; k++) {
+      await wait(300);
+      resumed = !pd.isSuspended && pd.aliveCount() > 0;
+    }
+    const sameWave = pd.waveNumber === fixture.wave0;
+    const hpKept = ms.portal.health.current === fixture.hpFrozen;
+    ms.resetPortalDefense();
+    return { resumed, sameWave, hpKept };
+  }, pdWaystone.setup === 'ok' ? { wave0: pdWaystone.wave0, hpFrozen: pdWaystone.hpFrozen } : { wave0: -9, hpFrozen: -9 });
+  ok(
+    'portal-defense-waystone: the REAL waystone travel path suspends the encounter exactly like any other distance; return resumes the same wave + HP',
+    pdWaystone.setup === 'ok' && pdWaystone.started && pdWaystone.awayFromPortal && pdWaystone.suspended && pdWaystone.hpStaysFrozen && pdWaystone2.resumed && pdWaystone2.sameWave && pdWaystone2.hpKept,
+    JSON.stringify({ ...pdWaystone, ...pdWaystone2 }),
+  );
+
+  // The waystone landing (2n2) can open arrival UI, which freezes the whole
+  // update loop (funnel included) — tap through it like a player before the
+  // boss check, exactly as after every other travel in this gate.
+  for (let i = 0; i < 12; i++) {
+    await page.waitForTimeout(280);
+    const uiOpen = await page.evaluate(() => {
+      const ms = window.__game.scene.getScene('MainScene');
+      return ms.dialogue.isOpen() || ms.choice.isOpen();
+    });
+    if (!uiOpen) break;
+    await page.mouse.click(214, 520);
+    await page.mouse.click(214, 462);
+  }
+
+  // 2n3. boss-funnel: bar on engage; beyond the boss leash the boss takes the
+  // STANDARD reset (dormant, full HP) and the bar hides — funnel
+  // introspection agrees in both directions.
+  const bossFunnel = await page.evaluate(async () => {
+    const ms = window.__ready();
+    const wait = (t) => new Promise((r) => setTimeout(r, t));
+    // HARNESS CONTRACT: a frozen update loop would vacuously fail everything
+    // downstream — assert the precondition LOUDLY instead.
+    if (ms.dialogue.isOpen() || ms.choice.isOpen()) return { setup: 'dialogue open - update loop frozen' };
+    const home = ms.terrestrialPxFromLatLng({ lat: 23.0, lng: 4.0 });
+    ms.player.sprite.body.reset(home.x, home.y);
+    ms.lastLandPos = undefined;
+    await wait(500);
+    const b = ms.spawnBoss(ms.michael.def, home.x + 140, home.y, ms.activeMap().layer);
+    b.activate();
+    b.takeHit(30); // real damage: the leash reset must heal it back
+    let engaged = false;
+    for (let k = 0; k < 12 && !engaged; k++) {
+      await wait(300);
+      engaged = ms.combatEngagements().includes(b.id);
+    }
+    const barOn = ms.bossBarBg.visible === true;
+    const hpDown = b.health.current < b.health.max;
+    // Beyond the BOSS leash (3072 — wider than the entity leash).
+    ms.player.sprite.body.reset(home.x + ms.feel.sim.bossLeashRadiusPx + 1200, home.y);
+    ms.lastLandPos = undefined;
+    let released = false;
+    for (let k = 0; k < 12 && !released; k++) {
+      await wait(300);
+      released = !ms.combatEngagements().includes(b.id) && !b.isActive;
+    }
+    const resetFull = b.isAlive && b.health.current === b.health.max && !b.isAggro;
+    const barOff = ms.bossBarBg.visible === false;
+    // Return: re-activation through the standard activation range.
+    ms.player.sprite.body.reset(home.x + 100, home.y);
+    ms.lastLandPos = undefined;
+    let reengaged = false;
+    for (let k = 0; k < 12 && !reengaged; k++) {
+      await wait(300);
+      reengaged = ms.combatEngagements().includes(b.id);
+    }
+    const barBack = ms.bossBarBg.visible === true;
+    ms.removeDevBosses(); // fixture teardown (preserves Michael + Sin bosses)
+    await wait(300);
+    return { setup: 'ok', engaged, barOn, hpDown, released, resetFull, barOff, reengaged, barBack };
+  });
+  ok(
+    'boss-funnel: bar on engage; beyond the 3072 boss leash the boss standard-resets (dormant, full HP) and the bar hides; re-approach re-engages — funnel agrees throughout',
+    bossFunnel.setup === 'ok' && bossFunnel.engaged && bossFunnel.barOn && bossFunnel.hpDown && bossFunnel.released && bossFunnel.resetFull && bossFunnel.barOff && bossFunnel.reengaged && bossFunnel.barBack,
+    JSON.stringify(bossFunnel),
+  );
 
   // 2f7. playwright drive: 60s of real keyboard autorun east at the capped
   // devspeed — chunks must load AND evict along the way, with zero page or

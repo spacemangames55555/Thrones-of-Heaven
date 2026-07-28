@@ -98,6 +98,19 @@ export const FEEL = {
     lingerMs: 2500, // grace after the engagement set empties (mount stays blocked)
   },
 
+  /** SIMULATION LOCALITY (Pass 6B): geography is planetary, simulation is
+   *  radius-derived around the player. Encounters suspend, bosses leash-reset,
+   *  spawned transients expire — all pure distance functions, so teleports
+   *  need no special case. */
+  sim: {
+    encounterSuspendRadiusPx: 4096, // encounters (portal defense) freeze beyond this
+    bossLeashRadiusPx: 3072, // boss override of the combat leash: full standard reset
+    /** Spawned (non-authored) entities expire beyond this. MUST exceed the
+     *  loaded-ring extent so expiry is never visible — boot-asserted against
+     *  the LIVE ring math (never hardcode the relationship). */
+    transientDespawnRadiusPx: 12288,
+  },
+
   /** WAYPOINT travel (the "Waystone" network — display name is TODO-lore). */
   waypoint: {
     castMs: 3000, // travel cast — interrupted by damage

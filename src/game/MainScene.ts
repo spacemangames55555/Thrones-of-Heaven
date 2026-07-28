@@ -51,8 +51,10 @@ import { isScaleV2, isTerrainProc, isDebugOverlay, formatKm } from '../world/wor
 import { legacyEarthPx, LEGACY_GLOBE_ORIGIN_X } from '../world/legacy-frame';
 import { MountSystem } from '../systems/mount';
 import { WaypointSystem } from '../systems/waypoints';
+import { EncounterCoordinator } from '../systems/encounters';
 import { globeSceneOriginX } from '../world/scene-origin';
-import { ChunkStreamer } from '../world/chunk-streamer';
+import { ChunkStreamer, KEEP_RADIUS } from '../world/chunk-streamer';
+import { CHUNK_PX } from '../world/terrain-schema';
 import { createProceduralSource } from '../world/terrain-procedural';
 import { ensurePlaceholderAtlas } from '../world/terrain-placeholder';
 import { applyTerrainArt } from '../world/terrain-art';
@@ -613,6 +615,11 @@ export class MainScene extends Phaser.Scene {
   private engagements = new Map<object, string>();
   /** When the engagement set last transitioned to empty (linger anchor). */
   private combatEmptiedAt = -1e9;
+  /** SIM LOCALITY (Pass 6B): encounters derive suspend/resume from player
+   *  distance every frame (see src/systems/encounters.ts). */
+  readonly encounters = new EncounterCoordinator();
+  /** The portal-defense wave's OWN townsfolk (encounter-owned taxonomy). */
+  private portalWave: Townsfolk[] = [];
   private playerDead = false;
   /** Player-allied summons (Ice Golem, skeletons, the Dark Matter Monster) — transient, not serialized. */
   private summons!: AlliedSummonManager;
@@ -1686,9 +1693,13 @@ export class MainScene extends Phaser.Scene {
     // bar fall in the WORLD snapshot) + the wave manager that drives the encounter.
     this.portal = new DarkPortal(this, PORTAL_POSITION.x, PORTAL_POSITION.y);
     this.portalDefense = new PortalDefense();
-    this.portalDefense.aliveCount = () => this.townsfolk.length;
+    // ENCOUNTER-OWNED wave tracking (Pass 6B): the clear predicate counts THE
+    // WAVE, not every townsfolk-kind enemy on the planet (the old
+    // `townsfolk.length` became planetary at unification — a live wolf near
+    // any distant town would have held the wave open forever).
+    this.portalDefense.aliveCount = () => this.portalWave.filter((t) => t.isAlive).length;
     this.portalDefense.onSpawn = (offset) =>
-      this.spawnTownsfolk(this.portal.x + offset.dx, this.portal.y + offset.dy);
+      this.portalWave.push(this.spawnTownsfolk(this.portal.x + offset.dx, this.portal.y + offset.dy));
     this.portalDefense.onWaveStart = (wave, total) => {
       this.showBanner(`Wave ${wave} of ${total}`, 1600);
       this.portal.setWaveLabel(`  —  Wave ${wave}/${total}`);
@@ -1702,6 +1713,39 @@ export class MainScene extends Phaser.Scene {
       this.clearTownsfolk();
       this.portal.setWaveLabel('');
     };
+    // SIM LOCALITY (Pass 6B): the encounter's live state derives from player
+    // distance — beyond the radius it SUSPENDS (clock frozen, live wave
+    // despawned, zero spawns), back inside it RESUMES (same wave restarts,
+    // portal HP exactly as frozen). Pre-unification pause parity: leaving the
+    // Washington MAP used to freeze this; now leaving the NEIGHBORHOOD does.
+    this.encounters.register({
+      id: 'portal-defense',
+      anchor: () => ({ x: this.portal.x, y: this.portal.y }),
+      radiusPx: FEEL.sim.encounterSuspendRadiusPx,
+      isEngaged: () => this.portalDefense.isActive,
+      onSuspend: () => {
+        this.portalDefense.suspend(this.time.now);
+        for (const t of this.portalWave) {
+          if (t.isAlive) t.destroy();
+        }
+        this.townsfolk = this.townsfolk.filter((t) => !this.portalWave.includes(t));
+        this.portalWave = [];
+      },
+      onResume: () => this.portalDefense.resume(this.time.now),
+    });
+    // GUARDIAN ENCOUNTER: reconciles at the ENTITY leash boundary (the same
+    // 2048 px the engagement funnel deaggros at), so no zone exists where the
+    // entities are dormant but the phase still says fighting.
+    this.encounters.register({
+      id: 'guardians',
+      anchor: () => ({ x: HOLY_OUTPOST_POSITION.x, y: HOLY_OUTPOST_POSITION.y }),
+      radiusPx: FEEL.combat.leashRadiusPx,
+      isEngaged: () => this.guardianPhase === 'fighting',
+      onSuspend: () => this.resetGuardianFight(),
+      onResume: () => {
+        /* re-activation is the existing dormant-phase proximity check */
+      },
+    });
 
     // The quest CHAIN (data-driven registry). The world objective marker lives
     // in the worldFx layer, so the main camera draws it and the UI camera ignores
@@ -2043,6 +2087,10 @@ export class MainScene extends Phaser.Scene {
     // defense, the Holy-Outpost guardian machine) stay Earth-only. Heaven is
     // empty — its only per-frame logic is the return-gate proximity. Movement,
     // dash, zoom, the HUD, regen and projectiles are world-agnostic.
+    // SIM LOCALITY (Pass 6B): encounter suspend/resume derives from player
+    // distance every frame, in EVERY world - entering a plane moves the
+    // player a whole band away, which suspends exactly like riding away.
+    this.encounters.update(this.player.x, this.player.y);
     if (this.isTerrestrial(this.activeWorld)) {
       this.checkDoors();
       this.updateArc(); // descent-arc completion watcher (before interactions so a
@@ -7024,11 +7072,11 @@ export class MainScene extends Phaser.Scene {
       const t = this.aggroState.get(e)?.targetSummon ?? null;
       return t && t.isAlive ? { x: t.x, y: t.y } : null;
     };
-    const consider = (e: { x: number; y: number; isAlive: boolean; deaggro?: () => void }, engaging: boolean, id: string): void => {
+    const consider = (e: { x: number; y: number; isAlive: boolean; deaggro?: () => void }, engaging: boolean, id: string, leashPx: number = leash): void => {
       if (!e.isAlive || !engaging || !this.isActiveWorldResident(e.x)) return;
       const st = summonTargetOf(e);
       const near =
-        Phaser.Math.Distance.Between(e.x, e.y, px, py) <= leash || (st !== null && Phaser.Math.Distance.Between(e.x, e.y, st.x, st.y) <= leash);
+        Phaser.Math.Distance.Between(e.x, e.y, px, py) <= leashPx || (st !== null && Phaser.Math.Distance.Between(e.x, e.y, st.x, st.y) <= leashPx);
       if (!near) {
         e.deaggro?.(); // LEASH-EXCEED: release the engagement AND the flag
         return;
@@ -7048,7 +7096,19 @@ export class MainScene extends Phaser.Scene {
     for (const g of this.guardians) consider(g, g.isAggro, g.id);
     for (const c of this.cherubs) consider(c, c.isAggro, c.id);
     for (const d of this.demons) consider(d, d.isAggro, d.id);
-    for (const b of this.bosses) consider(b, b.isAggro, b.id);
+    for (const b of this.bosses) {
+      // BOSS OVERRIDE (Pass 6B): bosses use the longer sim leash, and beyond
+      // it an ACTIVE boss takes the STANDARD leash reset (dormant, full HP,
+      // phase 1, home) plus adds-cleanup - not just an engagement release.
+      // Scripted freezes (the rift lie) hold the player nearby by design, so
+      // the leash cannot fire mid-cutscene.
+      if (b.isAlive && b.isActive && Phaser.Math.Distance.Between(b.x, b.y, px, py) > FEEL.sim.bossLeashRadiusPx) {
+        b.deaggro();
+        this.clearBossAdds(b.id);
+        continue;
+      }
+      consider(b, b.isAggro, b.id, FEEL.sim.bossLeashRadiusPx);
+    }
     if (this.engagements.size > 0 && next.size === 0) this.combatEmptiedAt = now;
     this.engagements = next;
   }
@@ -7906,10 +7966,11 @@ export class MainScene extends Phaser.Scene {
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.scale.off(Phaser.Scale.Events.RESIZE, layout)); // never leak across scene restarts
   }
 
-  /** Show the bar for the boss the player is currently engaged with (active + near).
-   *  Residency-gated: a paused foreign boss's frozen isAggro must never show here. */
+  /** Show the bar for the boss the player is currently engaged with. The
+   *  visibility source is SOLELY the engagement funnel (Pass 6B) - present +
+   *  alive - never a raw aggro flag or a world-band predicate. */
   private refreshBossBar(): void {
-    const boss = this.bosses.find((b) => b.isAggro && this.isActiveWorldResident(b.x));
+    const boss = this.bosses.find((b) => b.isAlive && this.engagements.has(b));
     const show = boss !== undefined;
     this.bossBarBg.setVisible(show);
     this.bossBar.setVisible(show);
@@ -8926,6 +8987,7 @@ export class MainScene extends Phaser.Scene {
   private clearTownsfolk(): void {
     for (const t of this.townsfolk) t.destroy();
     this.townsfolk = [];
+    this.portalWave = [];
   }
 
   /** End + reset the encounter: stop waves, clear townsfolk, restore the portal. */
@@ -9012,6 +9074,16 @@ export class MainScene extends Phaser.Scene {
     this.notifyQuest('reach-holy-outpost'); // Quest 5 obj 1: reached the Holy Outpost
   }
 
+  /** LEASH RESET (Pass 6B): the FIGHT resets - swords dormant + full HP -
+   *  but quest state (portal corruption, defeat progress) is untouched. The
+   *  encounter coordinator fires this at the entity leash boundary, so the
+   *  phase can never say 'fighting' over dormant entities. */
+  private resetGuardianFight(): void {
+    if (this.guardianPhase !== 'fighting') return;
+    for (const g of this.guardians) if (g.isAlive) g.reset();
+    this.guardianPhase = 'dormant';
+  }
+
   /** RESET: swords back to dormant + full HP, the portal back to holy/uncorrupted. */
   private resetGuardianEncounter(): void {
     for (const g of this.guardians) g.reset();
@@ -9022,6 +9094,14 @@ export class MainScene extends Phaser.Scene {
 
   /** Drive the guardians + the encounter's phase transitions each frame. */
   private updateGuardianEncounter(): void {
+    // PHASE IS A PROJECTION (Pass 6B): 'fighting' can never assert itself
+    // over dormant entities - if every living sword has gone dormant (the
+    // engagement funnel leash, or any other path), the phase follows.
+    // Activation is synchronous (startGuardianFight engages before setting
+    // the phase), so this can never fire on the start frame.
+    if (this.guardianPhase === 'fighting' && this.guardians.length > 0 && this.guardians.every((g) => !g.isAlive || !g.isAggro) && this.guardians.some((g) => g.isAlive)) {
+      this.resetGuardianFight();
+    }
     // Proximity activation: nearing the outpost wakes the dormant pair. During Act IV
     // 4.9's assault they HOLD until the quest reaches the portal objective and the
     // mask-drop narration has played (see assaultHoldsGuardians).
@@ -9335,6 +9415,13 @@ export class MainScene extends Phaser.Scene {
     // of this (no worker, no atlas, no streamer).
     if (isScaleV2()) {
       ensurePlaceholderAtlas(this);
+      // SIM-LOCALITY BOOT ASSERT (Pass 6B): transient expiry must be
+      // invisible - strictly beyond the farthest chunk the keep-ring can
+      // hold loaded, derived from the LIVE ring math (never hardcoded).
+      const ringExtentPx = (KEEP_RADIUS + 1) * CHUNK_PX;
+      if (FEEL.sim.transientDespawnRadiusPx <= ringExtentPx) {
+        throw new Error(`FEEL.sim.transientDespawnRadiusPx (${FEEL.sim.transientDespawnRadiusPx}) must exceed the loaded-ring extent (${ringExtentPx})`);
+      }
       this.chunkStreamer = new ChunkStreamer(this, { originPx: { ...origin }, source: createProceduralSource(), stamps: chunkMaps });
       // PASS 3: swap to the baked real-Earth packs (async; IndexedDB-cached).
       // ?terrain=proc pins the Pass 2 procedural source as the dev fallback.
