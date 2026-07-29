@@ -13,7 +13,18 @@
       "rivers": "regions/pnw-rivers.json",
       "bytes": 19152658,
       "sha256": "14c4ab4de9690edba81e06a2482d085358af557f65c4b68a1b7ff2a0ffda9ff1",
-      "version": 1
+      "version": 1,
+      "map": {
+        "file": "regions/pnw-map.png",
+        "w": 2048,
+        "h": 1656,
+        "bytes": 3253950,
+        "sha256": "6b834e3e344d748255b6d056961a1a0136e0ff76496f3306643cb9a35223b999",
+        "downscaledFrom": {
+          "w": 3441,
+          "h": 2783
+        }
+      }
     }
   ],
   "worldmap": {

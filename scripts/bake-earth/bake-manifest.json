@@ -46,13 +46,18 @@
     },
     {
       "file": "public/world/regions.json",
-      "bytes": 576,
-      "sha256": "37040dae6dd1f8b9a20f8ad5a8907c3cdb7ba2e00626638ce0f33add3e0cd31e"
+      "bytes": 868,
+      "sha256": "3507e5caa67d87128571b2c3ca75f8d0965710d1439a4430e7252eea3e0704dd"
     },
     {
       "file": "public/world/worldmap.png",
       "bytes": 928586,
       "sha256": "a0152b866bb5627b4f80954cc64f8444c37b7a9465118ae18367cf55112f96c4"
+    },
+    {
+      "file": "public/world/regions/pnw-map.png",
+      "bytes": 3253950,
+      "sha256": "6b834e3e344d748255b6d056961a1a0136e0ff76496f3306643cb9a35223b999"
     }
   ],
   "derivedBiomes": true,

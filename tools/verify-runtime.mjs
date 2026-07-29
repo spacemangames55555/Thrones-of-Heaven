@@ -293,6 +293,84 @@ const ok = (name, pass, detail = '') => {
   );
 }
 
+// 0c3. REGIONMAP-PARITY (PASS 6D, pure Node): every baked regional map image
+// must agree with the region pack it renders — dims match the pack grid (or
+// the manifest STATES the downscale), manifest sha, the 6 MB budget, and
+// probe pixels resolving to the correct MAP_PALETTE classes at real places
+// (Puget Sound water, Rainier high band, the baked Columbia near Vantage
+// searched as a box exactly like the geo-truth river probe, Olympic forest).
+{
+  const { PNG } = await import('pngjs');
+  const vis = await import(new URL('../node_modules/.cache/toh-wmp-vis.mjs', import.meta.url).pathname);
+  const schema2 = await import(new URL('../node_modules/.cache/toh-wmp-schema.mjs', import.meta.url).pathname);
+  const B = schema2.Biome;
+  const regions2 = JSON.parse(readFileSync(new URL('../public/world/regions.json', import.meta.url).pathname));
+  const pnwR = regions2.regions.find((r) => r.id === 'pnw');
+  const mapEntry = pnwR?.map;
+  let out = { hasEntry: !!mapEntry };
+  if (mapEntry) {
+    const bytes = readFileSync(new URL(`../public/world/${mapEntry.file}`, import.meta.url).pathname);
+    const png = PNG.sync.read(bytes);
+    const pack = readFileSync(new URL(`../public/world/${pnwR.file}`, import.meta.url).pathname);
+    const gw = pack.readUInt32LE(8);
+    const gh = pack.readUInt32LE(12);
+    const native = png.width === gw && png.height === gh;
+    const statedDown = !!mapEntry.downscaledFrom && mapEntry.downscaledFrom.w === gw && mapEntry.downscaledFrom.h === gh && Math.max(png.width, png.height) === 2048;
+    const bb = pnwR.bbox;
+    const classAt = (lat, lng) => {
+      const x = Math.min(png.width - 1, Math.max(0, Math.floor(((lng - bb.lngMin) / (bb.lngMax - bb.lngMin)) * png.width)));
+      const y = Math.min(png.height - 1, Math.max(0, Math.floor(((bb.latMax - lat) / (bb.latMax - bb.latMin)) * png.height)));
+      const o = (y * png.width + x) * 4;
+      const r = png.data[o];
+      const g = png.data[o + 1];
+      const b2 = png.data[o + 2];
+      const lum = (r + g + b2) / 3 || 1;
+      let best = -1;
+      let bd = Infinity;
+      for (const [id, v] of Object.entries(vis.MAP_PALETTE)) {
+        const pr = (v >> 16) & 255;
+        const pg = (v >> 8) & 255;
+        const pb = v & 255;
+        const pl = (pr + pg + pb) / 3;
+        const d = (r / lum - pr / pl) ** 2 + (g / lum - pg / pl) ** 2 + (b2 / lum - pb / pl) ** 2;
+        if (d < bd) {
+          bd = d;
+          best = Number(id);
+        }
+      }
+      return best;
+    };
+    // The Columbia near Vantage: box search (the bake shifts channels a hair
+    // off survey — the same reason the geo-truth river probe scans a radius).
+    let vantageRiver = false;
+    for (let la = 46.84; la <= 47.04 && !vantageRiver; la += 0.005) {
+      for (let ln = -120.08; ln <= -119.88 && !vantageRiver; ln += 0.005) {
+        if (classAt(la, ln) === B.FRESHWATER) vantageRiver = true;
+      }
+    }
+    out = {
+      hasEntry: true,
+      w: png.width,
+      h: png.height,
+      gridW: gw,
+      gridH: gh,
+      dimsOk: native || statedDown,
+      mb: +(bytes.length / 1048576).toFixed(2),
+      sizeOk: bytes.length <= 6 * 1024 * 1024,
+      shaOk: mapEntry.sha256 === createHash('sha256').update(bytes).digest('hex') && mapEntry.bytes === bytes.length,
+      puget: [B.OCEAN, B.FRESHWATER].includes(classAt(47.6, -122.4)),
+      rainier: [B.SNOW, B.ROCK].includes(classAt(46.85, -121.76)),
+      vantageRiver,
+      olympic: [B.FOREST, B.TAIGA, B.GRASS].includes(classAt(47.8, -123.7)),
+    };
+  }
+  ok(
+    'regionmap-parity: pnw-map.png dims match the pack grid (or a STATED 2048 downscale); <= 6 MB; manifest sha matches; Puget water / Rainier high band / Columbia-at-Vantage river / Olympic forest probe classes correct',
+    out.hasEntry && out.dimsOk && out.sizeOk && out.shaOk && out.puget && out.rainier && out.vantageRiver && out.olympic,
+    JSON.stringify(out),
+  );
+}
+
 // 0d. REPLANT-TRUE-COORDS (PASS 6C, pure Node — replaces quest-anchor-sanity's
 // inside-the-mega-stamp rule, which the dissolution retires BY DESIGN): under
 // the v2 default every Acts I–IV authored anchor re-plants at its declared
@@ -8729,6 +8807,104 @@ try {
       JSON.stringify(rest),
     );
   }
+  // 3t0. map-lod-swap (PASS 6D COMMIT 2): with the player inside the PNW
+  // bbox, map mode's REGIONAL TIER engages above the threshold (crossfaded,
+  // never a pop), stays planet-only below it, aligns to the shared equirect
+  // projection at 4 fixture points, and lifts the max zoom to 2 screen px
+  // per region-image px over the region — planet cap away from it. A route
+  // counter proves the image is fetched at most once per session.
+  let regionMapFetches = 0;
+  await page.route('**/world/regions/pnw-map.png', (route) => {
+    regionMapFetches++;
+    void route.continue();
+  });
+  {
+    let opened = false;
+    for (let k = 0; k < 8 && !opened; k++) {
+      opened = await page.evaluate(() => window.__ready().openWorldMap());
+      if (!opened) await page.waitForTimeout(600);
+    }
+    const lod = await page.evaluate(async () => {
+      const wms = window.__game.scene.getScene('WorldMapScene');
+      const wait = (t) => new Promise((r) => setTimeout(r, t));
+      for (let k = 0; k < 30 && wms.regionTier[0]?.state !== 'ready'; k++) await wait(300);
+      const t = wms.regionTier[0];
+      if (!t || t.state !== 'ready') return { setup: `tier ${t?.state ?? 'missing'}` };
+      // Center over the PNW so the region governs the view.
+      const cx = t.rect.x + t.rect.w / 2;
+      const cy = t.rect.y + t.rect.h / 2;
+      wms.viewScale = 2;
+      wms.applyView(cx, cy);
+      await wait(200);
+      const visAbove = t.img?.visible === true && t.img.alpha === 1;
+      const capOverRegion = wms.maxScale();
+      const capExpected = (2 * t.imgW) / t.rect.w;
+      // Mid-band: the crossfade is PARTIAL (no pop).
+      wms.viewScale = 1.15;
+      wms.applyView(cx, cy);
+      await wait(200);
+      const midAlpha = t.img?.alpha ?? -1;
+      // Below the threshold: planet-only, as today.
+      wms.viewScale = 0.6;
+      wms.applyView(cx, cy);
+      await wait(200);
+      const hiddenBelow = t.img?.visible === false;
+      // Away from the region (mid-Atlantic) the planet cap answers.
+      wms.viewScale = 6;
+      wms.applyView(1024, 709);
+      await wait(200);
+      const capAway = wms.maxScale();
+      // Projection fixtures: the region image placement must land each
+      // lat/lng on the SAME planet-image px the closed form gives.
+      const bb = { latMin: 41.5, latMax: 49.5, lngMin: -125, lngMax: -110.5 };
+      const fixtures = [
+        [47.606, -122.332],
+        [46.6, -120.5],
+        [43.615, -116.202],
+        [49.0, -123.0],
+      ];
+      const errs = fixtures.map(([lat, lng]) => {
+        const planet = { x: ((lng + 180) / 360) * 2048, y: ((85 - lat) / 170) * 1418 };
+        const via = {
+          x: t.img.x + ((lng - bb.lngMin) / (bb.lngMax - bb.lngMin)) * t.img.displayWidth,
+          y: t.img.y + ((bb.latMax - lat) / (bb.latMax - bb.latMin)) * t.img.displayHeight,
+        };
+        return Math.hypot(planet.x - via.x, planet.y - via.y);
+      });
+      // Cycle the threshold once more — the state machine must not refetch.
+      wms.viewScale = 2;
+      wms.applyView(cx, cy);
+      await wait(200);
+      window.__game.scene.getScene('WorldMapScene').close();
+      await wait(300);
+      return {
+        setup: 'ok',
+        from: t.from,
+        visAbove,
+        midAlpha: +midAlpha.toFixed(2),
+        hiddenBelow,
+        capOverRegion: +capOverRegion.toFixed(2),
+        capExpected: +capExpected.toFixed(2),
+        capAway,
+        maxErr: +Math.max(...errs).toFixed(3),
+      };
+    });
+    ok(
+      'map-lod-swap: region tier engages over the PNW above the threshold (partial alpha mid-band, hidden below), projection fixtures exact, max zoom 2 px per region px over the region and the planet cap away',
+      lod.setup === 'ok' &&
+        lod.visAbove &&
+        lod.midAlpha > 0.05 &&
+        lod.midAlpha < 0.95 &&
+        lod.hiddenBelow &&
+        Math.abs(lod.capOverRegion - lod.capExpected) < 1e-6 &&
+        lod.capAway === 12 &&
+        lod.maxErr < 0.5 &&
+        regionMapFetches <= 1,
+      JSON.stringify({ ...lod, fetches: regionMapFetches }),
+    );
+  }
+  await page.unroute('**/world/regions/pnw-map.png');
+
   // Leave the session exactly as the pre-6D flow did: gameplay zoom restored,
   // any arrival UI tapped through (the sim checks below need a live funnel).
   await page.waitForTimeout(600);
@@ -10158,6 +10334,7 @@ try {
   // arriving at a live earth source.
   await page.route('**/world/planet.bin', (route) => route.abort());
   await page.route('**/world/worldmap.png', (route) => route.abort()); // Pass 6A: the map image must ride the same cache
+  await page.route('**/world/regions/pnw-map.png', (route) => route.abort()); // Pass 6D: the region map tier rides it too
   await page.goto(`http://localhost:${PORT}/?scale=v2`, { waitUntil: 'load' });
   await page.waitForFunction(() => !!window.__game && window.__game.scene.isActive('TitleScene'), null, { timeout: 25000 });
   await page.evaluate(() => window.__game.scene.getScene('TitleScene').scene.start('MainScene', { mode: 'continue' }));
@@ -10168,12 +10345,40 @@ try {
     const st = window.__game.scene.getScene('MainScene').chunkStreamer;
     return { planetFrom: st.packOrigin.planet, worldmapFrom: st.packOrigin.worldmap, worldmapBytes: st.worldmapBuf?.byteLength ?? 0, source: st.activeSourceLabel };
   });
+  // PASS 6D: this fresh page has NO warm texture — the region tier must build
+  // entirely from the IndexedDB copy with its network route still blocked.
+  await page.waitForFunction(() => (window.__game.scene.getScene('MainScene').chunkStreamer?.regionMapEntries()?.length ?? 0) > 0, null, { timeout: 30000 });
+  let offOpened = false;
+  for (let k = 0; k < 8 && !offOpened; k++) {
+    offOpened = await page.evaluate(() => window.__game.scene.getScene('MainScene').openWorldMap());
+    if (!offOpened) await page.waitForTimeout(600);
+  }
+  const offlineRegion = await page.evaluate(async () => {
+    const wms = window.__game.scene.getScene('WorldMapScene');
+    const wait = (t) => new Promise((r) => setTimeout(r, t));
+    const t = wms.regionTier[0];
+    if (!t) return { setup: 'no tier' };
+    // Stand the view over the PNW past the threshold — the engage condition.
+    wms.viewScale = 2;
+    wms.applyView(t.rect.x + t.rect.w / 2, t.rect.y + t.rect.h / 2);
+    for (let k = 0; k < 30 && t.state !== 'ready' && t.state !== 'failed'; k++) await wait(300);
+    const out = { setup: 'ok', state: t.state, from: t.from, visible: t.img?.visible === true };
+    wms.close();
+    await wait(300);
+    return out;
+  });
   await page.unroute('**/world/planet.bin');
   await page.unroute('**/world/worldmap.png');
+  await page.unroute('**/world/regions/pnw-map.png');
   ok(
     'offline-cache: second v2 boot serves planet.bin AND worldmap.png from IndexedDB with the network routes blocked',
     offlineCache.planetFrom === 'idb' && offlineCache.worldmapFrom === 'idb' && offlineCache.worldmapBytes > 100000 && offlineCache.source === 'earth',
     JSON.stringify(offlineCache),
+  );
+  ok(
+    'lazy-fetch+cache: the region-map tier on a fresh page builds from IndexedDB with its network route blocked (fetch-once per session proven by the map-lod-swap route counter)',
+    offlineRegion.setup === 'ok' && offlineRegion.state === 'ready' && offlineRegion.from === 'idb' && offlineRegion.visible === true,
+    JSON.stringify(offlineRegion),
   );
 
   // ── PASS 4 COMMIT 2: THE FLIP ─────────────────────────────────────────────

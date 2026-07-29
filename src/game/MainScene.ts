@@ -220,6 +220,7 @@ import type { Interactable } from '../entities/Interactable';
 import type { PlayerPath } from '../story/playerPath';
 import { getInsets, UI_MARGIN, DEPTH_HUD_BUTTONS, DEPTH_HUD_TEXTBOX } from '../ui/uiLayout';
 import { registerButtonChrome } from '../ui/chrome';
+import { loadPack } from '../world/terrain-earth';
 import {
   CAMERA_ZOOM,
   PLAYER_ATTACK_RANGE,
@@ -12136,6 +12137,10 @@ export class MainScene extends Phaser.Scene {
           km: formatKm(Math.hypot(t.x - this.player.x, t.y - this.player.y)),
         };
       },
+      // Pass 6D REGIONAL MAP TIER: baked region images from the pack
+      // manifest, fetched through the same IndexedDB-cached pack pipeline.
+      regionMaps: () => this.chunkStreamer?.regionMapEntries() ?? [],
+      fetchRegionMap: (file: string) => loadPack(file),
       // The EXISTING waypoint travel flow — same rules, cast, and cancels.
       startTravel: (id: string) => wp.startTravel(id),
       onClosed: () => {

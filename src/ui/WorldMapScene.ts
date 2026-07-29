@@ -23,10 +23,22 @@ export interface WorldMapHost {
   /** The EXISTING waypoint travel flow — same rules, same cast, same cancels. */
   startTravel(id: string): boolean;
   onClosed(): void;
+  /** Pass 6D REGIONAL MAP TIER: regions with a baked map image (from the
+   *  pack manifest; empty until it decodes / when no region ships one). */
+  regionMaps(): { id: string; bbox: { latMin: number; latMax: number; lngMin: number; lngMax: number }; file: string; w: number; h: number }[];
+  /** Fetch a region-map image through the pack pipeline (IndexedDB-cached);
+   *  resolves the bytes and where they came from (gate-observable). */
+  fetchRegionMap(file: string): Promise<{ buf: ArrayBuffer; from: 'idb' | 'network' }>;
 }
 
 const MAX_SCALE = 12;
 const TAP_SLOP_PX = 12;
+/** REGIONAL TIER thresholds (Pass 6D): the planet image's native resolution
+ *  is 2048 px / 360° ≈ 0.051 px per km — on screen that is viewScale × 0.051,
+ *  which passes the image's own native px-per-km exactly at viewScale 1. The
+ *  region layer fades in across [1.0, 1.3] so there is never a pop. */
+const REGION_TIER_MIN = 1.0;
+const REGION_TIER_FULL = 1.3;
 
 /**
  * WORLD MAP MODE (Pass 6A): fullscreen pan/pinch over the baked worldmap.png.
@@ -46,6 +58,19 @@ export class WorldMapScene extends Phaser.Scene {
   private toastUntil = 0;
   // Gate-observable: the waystone marker registry (id → attuned + map px).
   waystoneMarkers: { id: string; label: string; attuned: boolean; mx: number; my: number }[] = [];
+  /** Pass 6D REGIONAL TIER state (gate-observable): one row per region with
+   *  a baked map image; `rect` is its bbox in PLANET-image px (the shared
+   *  equirect projection — markers never change layers). */
+  regionTier: {
+    id: string;
+    file: string;
+    imgW: number;
+    imgH: number;
+    rect: { x: number; y: number; w: number; h: number };
+    state: 'idle' | 'fetching' | 'ready' | 'failed';
+    from?: 'idb' | 'network';
+    img?: Phaser.GameObjects.Image;
+  }[] = [];
   // Pan/pinch state.
   private downAt: { x: number; y: number; vx: number; vy: number; moved: boolean } | null = null;
   private pinchStart: { dist: number; scale: number } | null = null;
@@ -68,6 +93,22 @@ export class WorldMapScene extends Phaser.Scene {
     this.minScale = Math.min(sw / this.imgW, sh / this.imgH) * 0.95; // whole Earth fits with a hair of margin
     this.view = this.add.container(0, 0).setDepth(1);
     this.view.add(this.add.image(0, 0, WORLDMAP_TEXTURE_KEY).setOrigin(0, 0));
+    // Pass 6D regional tier: each baked region image occupies its bbox rect
+    // in PLANET-image px through the shared equirect projection (lazy-fetched
+    // on the first threshold crossing; drawn above the planet, below markers).
+    this.regionTier = this.host.regionMaps().map((r) => ({
+      id: r.id,
+      file: r.file,
+      imgW: r.w,
+      imgH: r.h,
+      rect: {
+        x: ((r.bbox.lngMin + 180) / 360) * this.imgW,
+        y: ((85 - r.bbox.latMax) / 170) * this.imgH,
+        w: ((r.bbox.lngMax - r.bbox.lngMin) / 360) * this.imgW,
+        h: ((r.bbox.latMax - r.bbox.latMin) / 170) * this.imgH,
+      },
+      state: 'idle' as const,
+    }));
     this.buildMarkers();
     // Open CENTERED ON THE PLAYER at a readable regional scale — at least 2×
     // the COVER scale, so the map overfills the screen in both axes and the
@@ -92,7 +133,7 @@ export class WorldMapScene extends Phaser.Scene {
         // fit closes the map (the zoom handoff in reverse).
         const dist = Phaser.Math.Distance.Between(p1.x, p1.y, p2.x, p2.y);
         if (!this.pinchStart) this.pinchStart = { dist, scale: this.viewScale };
-        const next = Phaser.Math.Clamp((this.pinchStart.scale * dist) / this.pinchStart.dist, this.minScale * 0.85, MAX_SCALE);
+        const next = Phaser.Math.Clamp((this.pinchStart.scale * dist) / this.pinchStart.dist, this.minScale * 0.85, this.maxScale());
         const mid = { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 };
         this.zoomAbout(next, mid.x, mid.y);
         if (next <= this.minScale * 0.88) this.close();
@@ -113,7 +154,7 @@ export class WorldMapScene extends Phaser.Scene {
     this.input.on(
       Phaser.Input.Events.POINTER_WHEEL,
       (ptr: Phaser.Input.Pointer, _o: unknown, _dx: number, dy: number) => {
-        const next = Phaser.Math.Clamp(this.viewScale * (dy < 0 ? 1.18 : 1 / 1.18), this.minScale, MAX_SCALE);
+        const next = Phaser.Math.Clamp(this.viewScale * (dy < 0 ? 1.18 : 1 / 1.18), this.minScale, this.maxScale());
         this.zoomAbout(next, ptr.x, ptr.y);
       },
     );
@@ -153,19 +194,99 @@ export class WorldMapScene extends Phaser.Scene {
     if (this.toast?.visible && this.time.now > this.toastUntil) this.toast.setVisible(false);
     // Grey each map zoom button at its end of the SHARED clamp.
     if (this.zoomBtns) {
-      this.zoomBtns.plus.bg.setAlpha(this.viewScale >= MAX_SCALE - 1e-6 ? 0.45 : 0.96);
+      this.zoomBtns.plus.bg.setAlpha(this.viewScale >= this.maxScale() - 1e-6 ? 0.45 : 0.96);
       this.zoomBtns.minus.bg.setAlpha(this.viewScale <= this.minScale + 1e-6 ? 0.45 : 0.96);
     }
+    this.updateRegionTier();
+  }
+
+  /** Pass 6D: the max map zoom — 2 screen px per REGION-image px while a
+   *  region tier intersects the viewport, else the planet cap (as today). */
+  maxScale(): number {
+    let cap = MAX_SCALE;
+    const vx0 = (0 - this.view.x) / this.viewScale;
+    const vy0 = (0 - this.view.y) / this.viewScale;
+    const vx1 = (this.scale.width - this.view.x) / this.viewScale;
+    const vy1 = (this.scale.height - this.view.y) / this.viewScale;
+    for (const t of this.regionTier) {
+      const r = t.rect;
+      if (r.x < vx1 && r.x + r.w > vx0 && r.y < vy1 && r.y + r.h > vy0) cap = Math.max(cap, (2 * t.imgW) / r.w);
+    }
+    return cap;
+  }
+
+  /** Drive the regional tier: fade across the threshold band (never a pop),
+   *  lazily fetching + decoding each region image on its FIRST crossing —
+   *  and only while that region's bbox is actually IN VIEW (zooming into
+   *  Egypt never fetches the PNW). */
+  private updateRegionTier(): void {
+    const a = Phaser.Math.Clamp((this.viewScale - REGION_TIER_MIN) / (REGION_TIER_FULL - REGION_TIER_MIN), 0, 1);
+    const vx0 = (0 - this.view.x) / this.viewScale;
+    const vy0 = (0 - this.view.y) / this.viewScale;
+    const vx1 = (this.scale.width - this.view.x) / this.viewScale;
+    const vy1 = (this.scale.height - this.view.y) / this.viewScale;
+    for (const t of this.regionTier) {
+      const r = t.rect;
+      const inView = r.x < vx1 && r.x + r.w > vx0 && r.y < vy1 && r.y + r.h > vy0;
+      if (a <= 0 || !inView) {
+        t.img?.setVisible(false); // below the threshold / off-view: planet-only, as today
+        continue;
+      }
+      if (t.state === 'idle') {
+        if (this.textures.exists(`regionmap-${t.id}`)) {
+          this.placeRegionImage(t); // decoded earlier this session — never refetch
+        } else {
+          t.state = 'fetching';
+          this.host
+            .fetchRegionMap(t.file)
+            .then(({ buf, from }) => this.decodeRegionImage(t, buf, from))
+            .catch(() => {
+              t.state = 'failed'; // planet-only carries the session (never fatal)
+            });
+        }
+      }
+      if (t.img) t.img.setVisible(true).setAlpha(a);
+    }
+  }
+
+  private placeRegionImage(t: (typeof this.regionTier)[number], from?: 'idb' | 'network'): void {
+    if (!this.scene.isActive()) return; // closed while decoding — next open redraws
+    const img = this.add.image(t.rect.x, t.rect.y, `regionmap-${t.id}`).setOrigin(0, 0);
+    img.setDisplaySize(t.rect.w, t.rect.h);
+    this.view.addAt(img, 1); // above the planet image, below every marker
+    t.img = img;
+    t.state = 'ready';
+    if (from) t.from = from;
+  }
+
+  private decodeRegionImage(t: (typeof this.regionTier)[number], buf: ArrayBuffer, from: 'idb' | 'network'): void {
+    const key = `regionmap-${t.id}`;
+    if (this.textures.exists(key)) {
+      this.placeRegionImage(t, from);
+      return;
+    }
+    const url = URL.createObjectURL(new Blob([buf], { type: 'image/png' }));
+    const el = new Image();
+    el.onload = () => {
+      if (!this.textures.exists(key)) this.textures.addImage(key, el);
+      URL.revokeObjectURL(url);
+      this.placeRegionImage(t, from);
+    };
+    el.onerror = () => {
+      URL.revokeObjectURL(url);
+      t.state = 'failed';
+    };
+    el.src = url;
   }
 
   /** MAP ZOOM BUTTONS (Pass 6D): +/− in the gameplay cluster's spot — one
    *  ~1.4× step per tap about the screen center, hard-clamped to the SAME
-   *  range the pinch uses (planet-fit … MAX_SCALE; taps never pinch-close). */
+   *  range the pinch uses (planet-fit … maxScale; taps never pinch-close). */
   private zoomBtns?: { plus: { bg: Phaser.GameObjects.Rectangle; label: Phaser.GameObjects.Text }; minus: { bg: Phaser.GameObjects.Rectangle; label: Phaser.GameObjects.Text } };
 
   /** The one button-zoom step (the gate drives this exact path). */
   buttonZoom(dir: 'in' | 'out'): void {
-    const next = Phaser.Math.Clamp(this.viewScale * (dir === 'in' ? 1.4 : 1 / 1.4), this.minScale, MAX_SCALE);
+    const next = Phaser.Math.Clamp(this.viewScale * (dir === 'in' ? 1.4 : 1 / 1.4), this.minScale, this.maxScale());
     this.zoomAbout(next, this.scale.width / 2, this.scale.height / 2);
   }
 

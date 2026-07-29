@@ -86,7 +86,16 @@ export class ChunkStreamer {
   // Earth pack state.
   private planetGrids?: PlanetGrids;
   private readonly regionsRef: RegionGrids[] = [];
-  private regionManifest?: { regions: { id: string; bbox: { latMin: number; latMax: number; lngMin: number; lngMax: number }; file: string; version: number }[] };
+  private regionManifest?: {
+    regions: {
+      id: string;
+      bbox: { latMin: number; latMax: number; lngMin: number; lngMax: number };
+      file: string;
+      version: number;
+      /** Pass 6D: the baked regional map-tier image, when the bake emitted one. */
+      map?: { file: string; w: number; h: number; bytes: number; sha256: string };
+    }[];
+  };
   private readonly regionFetching = new Set<string>();
   // Gate-observable state.
   chunksLoaded = 0;
@@ -376,6 +385,14 @@ export class ChunkStreamer {
   /** Gate probe: a cached chunk's precomputed visual data (fringe/scatter). */
   chunkVisuals(cx: number, cy: number): ChunkVisuals | null {
     return this.chunks.get(key(cx, cy))?.visuals ?? null;
+  }
+
+  /** Pass 6D: regions whose manifest entries carry a baked map-tier image
+   *  (map mode's regional tier — empty until the manifest decodes). */
+  regionMapEntries(): { id: string; bbox: { latMin: number; latMax: number; lngMin: number; lngMax: number }; file: string; w: number; h: number }[] {
+    return (this.regionManifest?.regions ?? [])
+      .filter((r) => r.map)
+      .map((r) => ({ id: r.id, bbox: r.bbox, file: `/world/${r.map!.file}`, w: r.map!.w, h: r.map!.h }));
   }
 
   destroy(): void {
