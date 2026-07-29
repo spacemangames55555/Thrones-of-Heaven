@@ -1,4 +1,6 @@
 import Phaser from 'phaser';
+import { getInsets, UI_MARGIN } from './uiLayout';
+import { registerButtonChrome, registerChrome, unregisterChrome } from './chrome';
 
 export const WORLDMAP_TEXTURE_KEY = 'worldmap';
 
@@ -116,24 +118,76 @@ export class WorldMapScene extends Phaser.Scene {
       },
     );
     this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.ESC).on('down', () => this.close());
-    // X close button (top-right).
-    const bx = sw - 30;
-    this.add.rectangle(bx, 30, 40, 40, 0x14223a, 0.96).setStrokeStyle(3, 0xffd24a, 1).setDepth(3).setInteractive({ useHandCursor: true }).on('pointerdown', () => this.close());
-    this.add.text(bx, 30, '✕', { fontFamily: 'system-ui, sans-serif', fontSize: '20px', color: '#ffe9a8' }).setOrigin(0.5).setDepth(4);
-    this.add
-      .text(sw / 2, 16, 'WORLD MAP', { fontFamily: 'system-ui, sans-serif', fontSize: '14px', color: '#ffe9a8' })
+    // ── fixed chrome (Pass 6D): everything inside the SAFE AREA, 44 pt hit
+    // targets, and registered for the gate's safe-area enumeration ─────────
+    const insets = getInsets(this);
+    // X close button (top-right, clear of the status bar).
+    const bx = sw - insets.right - UI_MARGIN - 20;
+    const by = insets.top + UI_MARGIN + 20;
+    const closeBg = this.add.rectangle(bx, by, 40, 40, 0x14223a, 0.96).setStrokeStyle(3, 0xffd24a, 1).setDepth(3);
+    registerButtonChrome('map-close', closeBg);
+    closeBg.on('pointerdown', () => this.close());
+    this.add.text(bx, by, '✕', { fontFamily: 'system-ui, sans-serif', fontSize: '20px', color: '#ffe9a8' }).setOrigin(0.5).setDepth(4);
+    const title = this.add
+      .text(sw / 2, insets.top + 16, 'WORLD MAP', { fontFamily: 'system-ui, sans-serif', fontSize: '14px', color: '#ffe9a8' })
       .setOrigin(0.5, 0)
       .setDepth(3)
       .setAlpha(0.9);
+    registerChrome('map-title', false, () => (title.scene ? { x: title.x - title.width / 2, y: title.y, w: title.width, h: title.height } : null), () => title.visible);
     this.toast = this.add
-      .text(sw / 2, sh - 46, '', { fontFamily: 'system-ui, sans-serif', fontSize: '14px', color: '#ffe9a8', backgroundColor: '#14223aee', padding: { x: 10, y: 6 } })
+      .text(sw / 2, sh - insets.bottom - 46, '', { fontFamily: 'system-ui, sans-serif', fontSize: '14px', color: '#ffe9a8', backgroundColor: '#14223aee', padding: { x: 10, y: 6 } })
       .setOrigin(0.5)
       .setDepth(5)
       .setVisible(false);
+    const toastRef = this.toast;
+    registerChrome('map-toast', false, () => (toastRef.scene ? { x: toastRef.x - toastRef.width / 2, y: toastRef.y - toastRef.height / 2, w: toastRef.width, h: toastRef.height } : null), () => toastRef.visible);
+    // MAP ZOOM BUTTONS: the gameplay cluster's position and size, the same
+    // clamp the pinch uses. − greys at planet-fit; + greys at max map zoom.
+    this.buildZoomButtons(insets);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      for (const id of ['map-close', 'map-title', 'map-toast', 'map-zoom-in', 'map-zoom-out']) unregisterChrome(id);
+    });
   }
 
   override update(): void {
     if (this.toast?.visible && this.time.now > this.toastUntil) this.toast.setVisible(false);
+    // Grey each map zoom button at its end of the SHARED clamp.
+    if (this.zoomBtns) {
+      this.zoomBtns.plus.bg.setAlpha(this.viewScale >= MAX_SCALE - 1e-6 ? 0.45 : 0.96);
+      this.zoomBtns.minus.bg.setAlpha(this.viewScale <= this.minScale + 1e-6 ? 0.45 : 0.96);
+    }
+  }
+
+  /** MAP ZOOM BUTTONS (Pass 6D): +/− in the gameplay cluster's spot — one
+   *  ~1.4× step per tap about the screen center, hard-clamped to the SAME
+   *  range the pinch uses (planet-fit … MAX_SCALE; taps never pinch-close). */
+  private zoomBtns?: { plus: { bg: Phaser.GameObjects.Rectangle; label: Phaser.GameObjects.Text }; minus: { bg: Phaser.GameObjects.Rectangle; label: Phaser.GameObjects.Text } };
+
+  /** The one button-zoom step (the gate drives this exact path). */
+  buttonZoom(dir: 'in' | 'out'): void {
+    const next = Phaser.Math.Clamp(this.viewScale * (dir === 'in' ? 1.4 : 1 / 1.4), this.minScale, MAX_SCALE);
+    this.zoomAbout(next, this.scale.width / 2, this.scale.height / 2);
+  }
+
+  private buildZoomButtons(insets: { top: number; right: number; bottom: number; left: number }): void {
+    const BTN = 31;
+    const GAP = 8;
+    const x = this.scale.width - insets.right - 2 - BTN / 2;
+    const cy = this.scale.height / 2;
+    const mk = (glyph: string, y: number, onTap: () => void): { bg: Phaser.GameObjects.Rectangle; label: Phaser.GameObjects.Text } => {
+      const bg = this.add.rectangle(x, y, BTN, BTN, 0x14223a, 0.96).setStrokeStyle(3, 0xffd24a, 1).setDepth(3);
+      registerButtonChrome(glyph === '+' ? 'map-zoom-in' : 'map-zoom-out', bg);
+      bg.on(Phaser.Input.Events.GAMEOBJECT_POINTER_DOWN, onTap);
+      const label = this.add
+        .text(x, y, glyph, { fontFamily: 'system-ui, sans-serif', fontSize: '20px', color: '#ffe9a8', fontStyle: 'bold' })
+        .setOrigin(0.5)
+        .setDepth(4);
+      return { bg, label };
+    };
+    this.zoomBtns = {
+      plus: mk('+', cy - (BTN / 2 + GAP / 2), () => this.buttonZoom('in')),
+      minus: mk('−', cy + (BTN / 2 + GAP / 2), () => this.buttonZoom('out')),
+    };
   }
 
   /** Gate probe: the map-image px currently at the screen center. */

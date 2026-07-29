@@ -219,6 +219,7 @@ import type { SpiritEntity } from '../spirit/SpiritEntity';
 import type { Interactable } from '../entities/Interactable';
 import type { PlayerPath } from '../story/playerPath';
 import { getInsets, UI_MARGIN, DEPTH_HUD_BUTTONS, DEPTH_HUD_TEXTBOX } from '../ui/uiLayout';
+import { registerButtonChrome } from '../ui/chrome';
 import {
   CAMERA_ZOOM,
   PLAYER_ATTACK_RANGE,
@@ -1813,11 +1814,16 @@ export class MainScene extends Phaser.Scene {
       .setDepth(1361)
       .setVisible(false);
     const layoutToast = (): void => {
-      toastBg.setPosition(tw / 2 + 14, this.scale.height - 34);
-      toastLabel.setPosition(tw / 2 + 14, this.scale.height - 34);
+      // Pass 6D: the toast respects the safe area (home indicator + notch).
+      const ins = getInsets(this);
+      const tx = ins.left + tw / 2 + 14;
+      const ty = this.scale.height - ins.bottom - 34;
+      toastBg.setPosition(tx, ty);
+      toastLabel.setPosition(tx, ty);
     };
     layoutToast();
     this.scale.on(Phaser.Scale.Events.RESIZE, layoutToast);
+    registerButtonChrome('update-toast', toastBg);
     toastBg.on('pointerdown', () => this.tapPwaUpdate());
     this.pwaToast = { bg: toastBg, label: toastLabel };
     this.pwaUpdater.onUpdateReady = () => {
@@ -2444,6 +2450,7 @@ export class MainScene extends Phaser.Scene {
       onAimMove: (_slot, dx, dy) => { this.aimingDir = { dx, dy }; }, // drag → show the indicator (drawn each frame)
       onAimRelease: (slot, dx, dy) => this.fireAimedSlot(slot, dx, dy),
     });
+    this.skillBar.registerChrome(); // Pass 6D: the hotbar rect joins the safe-area enumeration
     // Re-apply effects + refresh the bar whenever points/unlocks/loadout change. The
     // starting loadout (forced first-skill pick vs. floor) is decided in
     // requireStartingSkill(), called after any "Continue" save has been restored.
@@ -8993,6 +9000,8 @@ export class MainScene extends Phaser.Scene {
       .setStroke('#0a1a0a', 4)
       .setDepth(depth + 1)
       .setVisible(false);
+    // Pass 6D: 44 pt hit target (visual size unchanged) + chrome registry.
+    registerButtonChrome('pause', bg);
     bg.on(Phaser.Input.Events.GAMEOBJECT_POINTER_DOWN, () => this.openPauseMenu());
 
     const layout = (): void => {
@@ -12129,9 +12138,16 @@ export class MainScene extends Phaser.Scene {
       },
       // The EXISTING waypoint travel flow — same rules, cast, and cancels.
       startTravel: (id: string) => wp.startTravel(id),
-      onClosed: () => this.scene.resume(),
+      onClosed: () => {
+        // Pass 6D chrome swap back: the gameplay zoom cluster returns.
+        this.zoomControls.setChromeVisible(true);
+        this.scene.resume();
+      },
     };
     this.scene.launch('WorldMapScene', { host });
+    // Pass 6D chrome swap: map mode owns the screen — the gameplay zoom
+    // cluster hides (restored in onClosed; the chrome-restore gate proves both).
+    this.zoomControls.setChromeVisible(false);
     this.scene.pause();
     return true;
   }

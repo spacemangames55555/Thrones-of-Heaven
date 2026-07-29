@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { getInsets, UI_MARGIN, LEFT_TAB_W, LEFT_TAB_H, leftTabPos } from './uiLayout';
+import { registerChrome } from './chrome';
 import { DRAG_AIM_THRESHOLD } from '../game/settings';
 import { FEEL } from './feel-config';
 
@@ -219,5 +220,25 @@ export class LoadoutBar {
     const skills = leftTabPos(this.scene, 2);
     this.openBg.setPosition(skills.x, skills.y);
     this.openLabel.setPosition(skills.x, skills.y);
+  }
+
+  /** Pass 6D chrome registry: the hotbar GRID's screen rect (each slot is
+   *  larger than the 44 pt target already; the grid registers as one). */
+  registerChrome(): void {
+    registerChrome(
+      'hotbar',
+      true,
+      () => {
+        const first = this.slots[0]?.bg;
+        const last = this.slots[this.slots.length - 1]?.bg;
+        if (!first?.scene || !last?.scene) return null;
+        const x0 = Math.min(first.x, last.x) - SIZE / 2;
+        const y0 = Math.min(first.y, last.y) - SIZE / 2;
+        const x1 = Math.max(first.x, last.x) + SIZE / 2;
+        const y1 = Math.max(first.y, last.y) + SIZE / 2;
+        return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+      },
+      () => this.slots[0]?.bg.visible === true,
+    );
   }
 }

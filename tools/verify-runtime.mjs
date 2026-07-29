@@ -8392,8 +8392,9 @@ try {
 
   // ── PASS 6A: WORLD MAP MODE + ZOOM HANDOFF (same live v2 session) ─────────
   // 2m0. zoom-range-ui: the zoom-out control bottoms out EXACTLY at the
-  // achievable cap (the v2 floor) — the cap reads as full zoom-out, and the
-  // − button visibly dims there. No dead range in the control.
+  // achievable cap (the v2 floor) — the cap reads as full zoom-out. PASS 6D
+  // retired the dim-at-cap: with a map handoff the button stays LIVE at full
+  // alpha and its glyph becomes the map diamond (the cap is the map door).
   const zoomRange = await page.evaluate(async () => {
     const ms = window.__ready();
     const zc = ms.zoomControls;
@@ -8407,13 +8408,14 @@ try {
       atCap: ms.cameras.main.zoom === zc.outLimit,
       floorBinding: Math.abs(zc.outLimit - Math.max(floor, 0)) < 1e-9 || zc.outLimit >= floor,
       floor,
-      outDimmed: zc.outBtn.bg.alpha === 0.45,
+      outLiveAtCap: zc.outBtn.bg.alpha > 0.9,
+      outGlyph: zc.outBtn.label.text,
       mapBtnLive: zc.mapBtn !== undefined,
     };
   });
   ok(
-    'zoom-range-ui: the out control reaches EXACTLY the cap (v2 floor binding), dims there, and the map button is live',
-    zoomRange.atCap && zoomRange.floorBinding && zoomRange.outDimmed && zoomRange.mapBtnLive && zoomRange.outLimit >= zoomRange.floor - 1e-9,
+    'zoom-range-ui: the out control reaches EXACTLY the cap (v2 floor binding), stays LIVE there with the map-diamond glyph (Pass 6D), and the map button is live',
+    zoomRange.atCap && zoomRange.floorBinding && zoomRange.outLiveAtCap && zoomRange.outGlyph === '◈' && zoomRange.mapBtnLive && zoomRange.outLimit >= zoomRange.floor - 1e-9,
     JSON.stringify(zoomRange),
   );
 
@@ -8562,6 +8564,174 @@ try {
   // landing opened (same pattern as the waypoint-travel check above).
   await page.evaluate(() => window.__ready().zoomControls.setTarget(1));
   await page.waitForTimeout(1200); // the smoothing lands - the sim checks below must NOT run at world-cap zoom (swiftshader frame starvation)
+  for (let i = 0; i < 12; i++) {
+    await page.waitForTimeout(280);
+    const uiOpen = await page.evaluate(() => {
+      const ms = window.__game.scene.getScene('MainScene');
+      return ms.dialogue.isOpen() || ms.choice.isOpen();
+    });
+    if (!uiOpen) break;
+    await page.mouse.click(214, 520);
+    await page.mouse.click(214, 462);
+  }
+
+  // ── PASS 6D COMMIT 1: SAFE AREAS + CONTROLS + BUTTON HANDOFF ──────────────
+  // 3s0. safe-area-chrome: the harness injects two iPhone inset profiles into
+  // the :root --safe-* props (the ONE source the game reads); under EACH, all
+  // registered gameplay chrome must lay out inside the safe viewport, and map
+  // mode — opened via the REAL button path with the profile active — must lay
+  // its chrome out inside it too. Offenders enumerated.
+  const P6D_PROFILES = [
+    { name: 'portrait', top: 59, right: 0, bottom: 34, left: 0 },
+    { name: 'landscape', top: 0, right: 59, bottom: 21, left: 59 },
+  ];
+  const setSafeProfile = (p) =>
+    page.evaluate((q) => {
+      const st = document.documentElement.style;
+      st.setProperty('--safe-top', q.top + 'px');
+      st.setProperty('--safe-right', q.right + 'px');
+      st.setProperty('--safe-bottom', q.bottom + 'px');
+      st.setProperty('--safe-left', q.left + 'px');
+      window.__chrome.refreshSafeInsets();
+    }, p);
+  const saOffenders = [];
+  let saGameplayIds = [];
+  let saMapButtonOpens = 0;
+  let saGlyphOk = true;
+  let saAlphaOk = true;
+  for (const prof of P6D_PROFILES) {
+    await setSafeProfile(prof);
+    await page.waitForTimeout(600);
+    const g = await page.evaluate((q) => {
+      const rects = window.__chrome.rects().filter((r) => !r.id.startsWith('map-'));
+      const w = window.__game.scale.width;
+      const h = window.__game.scale.height;
+      const bad = rects.filter((r) => r.x < q.left - 0.5 || r.y < q.top - 0.5 || r.x + r.w > w - q.right + 0.5 || r.y + r.h > h - q.bottom + 0.5);
+      return { ids: rects.map((r) => r.id).sort(), bad: bad.map((r) => `${r.id}@${r.x.toFixed(0)},${r.y.toFixed(0)}`) };
+    }, prof);
+    saGameplayIds = g.ids;
+    for (const b of g.bad) saOffenders.push(`${prof.name}:${b}`);
+    // Open map mode via the REAL out-button at the cap (icon must be the map
+    // diamond at FULL alpha — the disabled state at cap is gone).
+    await page.evaluate(() => window.__ready().zoomControls.setTarget(0.0001));
+    await page.waitForTimeout(1300);
+    const capState = await page.evaluate(() => {
+      const zc = window.__game.scene.getScene('MainScene').zoomControls;
+      return { glyph: zc.outBtn.label.text, alpha: zc.outBtn.bg.alpha, x: zc.outBtn.bg.x, y: zc.outBtn.bg.y };
+    });
+    saGlyphOk = saGlyphOk && capState.glyph === '◈';
+    saAlphaOk = saAlphaOk && capState.alpha > 0.9;
+    let opened = false;
+    for (let k = 0; k < 8 && !opened; k++) {
+      await page.mouse.click(capState.x, capState.y);
+      await page.waitForTimeout(700);
+      opened = await page.evaluate(() => window.__game.scene.isActive('WorldMapScene'));
+    }
+    if (opened) saMapButtonOpens++;
+    const m = await page.evaluate((q) => {
+      const rects = window.__chrome.rects().filter((r) => r.id.startsWith('map-'));
+      const w = window.__game.scale.width;
+      const h = window.__game.scale.height;
+      const bad = rects.filter((r) => r.x < q.left - 0.5 || r.y < q.top - 0.5 || r.x + r.w > w - q.right + 0.5 || r.y + r.h > h - q.bottom + 0.5);
+      return { count: rects.length, bad: bad.map((r) => `${r.id}@${r.x.toFixed(0)},${r.y.toFixed(0)}`) };
+    }, prof);
+    if (m.count !== 5) saOffenders.push(`${prof.name}:map-count=${m.count}`);
+    for (const b of m.bad) saOffenders.push(`${prof.name}:${b}`);
+    await page.evaluate(() => window.__game.scene.getScene('WorldMapScene')?.close());
+    await page.waitForTimeout(400);
+  }
+  await setSafeProfile({ top: 0, right: 0, bottom: 0, left: 0 });
+  await page.waitForTimeout(400);
+  const SA_EXPECTED = ['hotbar', 'pause', 'quest-tracker', 'update-toast', 'zoom-in', 'zoom-map', 'zoom-out'];
+  ok(
+    'safe-area-chrome: under both injected iPhone inset profiles every registered chrome rect (gameplay + map mode) lays out inside the safe viewport',
+    saOffenders.length === 0 && SA_EXPECTED.every((id) => saGameplayIds.includes(id)),
+    JSON.stringify({ ids: saGameplayIds, offenders: saOffenders.slice(0, 10) }),
+  );
+
+  // 3s1. map-open-via-button: at the gameplay cap the out button swapped to
+  // the map glyph at FULL alpha and a REAL tap opened map mode — proven under
+  // BOTH profiles above. The pinch path was re-proven by map-open-at-cap
+  // earlier in this same session.
+  ok(
+    'map-open-via-button: at the cap the out button shows the map glyph at full alpha (no disabled state) and a real tap opens map mode (both profiles; pinch path re-proven by map-open-at-cap)',
+    saMapButtonOpens === 2 && saGlyphOk && saAlphaOk,
+    JSON.stringify({ opens: saMapButtonOpens, glyphOk: saGlyphOk, alphaOk: saAlphaOk }),
+  );
+
+  // 3s2. tap-targets: every INTERACTIVE chrome element presents a >= 44 pt
+  // hit target (map open so its buttons register too).
+  {
+    let opened = false;
+    for (let k = 0; k < 8 && !opened; k++) {
+      opened = await page.evaluate(() => window.__ready().openWorldMap());
+      if (!opened) await page.waitForTimeout(600);
+    }
+    const taps = await page.evaluate(() => {
+      const rects = window.__chrome.rects().filter((r) => r.interactive);
+      const bad = rects.filter((r) => !r.hit || r.hit.w < 44 || r.hit.h < 44);
+      return { total: rects.length, ids: rects.map((r) => r.id).sort(), bad: bad.map((r) => `${r.id}:${r.hit ? `${r.hit.w}x${r.hit.h}` : 'none'}`) };
+    });
+    ok(
+      'tap-targets: every interactive chrome element presents a >= 44 pt hit target (visual sizes unchanged)',
+      taps.total >= 9 && taps.bad.length === 0,
+      JSON.stringify(taps),
+    );
+
+    // 3s3. map-zoom-buttons: one ~1.4x step per tap about the screen center,
+    // hard-clamped to the SAME range the pinch uses — the minus button greys
+    // at planet-fit (and NEVER pinch-closes), the plus greys at max map zoom.
+    const mz = await page.evaluate(async () => {
+      const wms = window.__game.scene.getScene('WorldMapScene');
+      const wait = (t) => new Promise((r) => setTimeout(r, t));
+      const s0 = wms.viewScale;
+      wms.buttonZoom('in');
+      const ratio = wms.viewScale / s0;
+      for (let i = 0; i < 40; i++) wms.buttonZoom('out');
+      await wait(250);
+      const atMin = Math.abs(wms.viewScale - wms.minScale) < 1e-9;
+      const minGrey = wms.zoomBtns.minus.bg.alpha < 0.6;
+      const plusLiveAtMin = wms.zoomBtns.plus.bg.alpha > 0.9;
+      const stillOpenAtMin = window.__game.scene.isActive('WorldMapScene');
+      for (let i = 0; i < 60; i++) wms.buttonZoom('in');
+      await wait(250);
+      const atMax = Math.abs(wms.viewScale - 12) < 1e-9;
+      const maxGrey = wms.zoomBtns.plus.bg.alpha < 0.6;
+      const minusLiveAtMax = wms.zoomBtns.minus.bg.alpha > 0.9;
+      return { ratio: +ratio.toFixed(4), atMin, minGrey, plusLiveAtMin, stillOpenAtMin, atMax, maxGrey, minusLiveAtMax };
+    });
+    ok(
+      'map-zoom-buttons: 1.4x per tap, clamp shared with pinch — minus greys at planet-fit without closing, plus greys at max map zoom',
+      Math.abs(mz.ratio - 1.4) < 1e-3 && mz.atMin && mz.minGrey && mz.plusLiveAtMin && mz.stillOpenAtMin && mz.atMax && mz.maxGrey && mz.minusLiveAtMax,
+      JSON.stringify(mz),
+    );
+
+    // 3s4. chrome-restore: the gameplay zoom cluster hides while map mode is
+    // open and returns on close; the out-button glyph tracks the cap state in
+    // both directions (map diamond at the cap, minus off it).
+    const rest = await page.evaluate(async () => {
+      const ms = window.__game.scene.getScene('MainScene');
+      const wait = (t) => new Promise((r) => setTimeout(r, t));
+      const hiddenWhileOpen = ms.zoomControls.outBtn.bg.visible === false && ms.zoomControls.inBtn.bg.visible === false;
+      window.__game.scene.getScene('WorldMapScene').close();
+      await wait(400);
+      const restored = ms.zoomControls.outBtn.bg.visible === true && ms.zoomControls.inBtn.bg.visible === true;
+      const resumed = !ms.scene.isPaused();
+      const glyphAtCap = ms.zoomControls.outBtn.label.text;
+      ms.zoomControls.setTarget(1);
+      await wait(900);
+      const glyphOffCap = ms.zoomControls.outBtn.label.text;
+      return { hiddenWhileOpen, restored, resumed, glyphAtCap, glyphOffCap };
+    });
+    ok(
+      'chrome-restore: gameplay zoom cluster hidden in map mode, restored on close; the out glyph is the map diamond at the cap and the minus sign off it',
+      rest.hiddenWhileOpen && rest.restored && rest.resumed && rest.glyphAtCap === '◈' && rest.glyphOffCap === '−',
+      JSON.stringify(rest),
+    );
+  }
+  // Leave the session exactly as the pre-6D flow did: gameplay zoom restored,
+  // any arrival UI tapped through (the sim checks below need a live funnel).
+  await page.waitForTimeout(600);
   for (let i = 0; i < 12; i++) {
     await page.waitForTimeout(280);
     const uiOpen = await page.evaluate(() => {

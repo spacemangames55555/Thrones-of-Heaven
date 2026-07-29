@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { getInsets, UI_MARGIN, DEPTH_HUD_TEXTBOX, DEPTH_HUD_ARROW } from './uiLayout';
+import { registerChrome } from './chrome';
 
 // Sits TOP-CENTER, dropped below the top HUD row so it never overlaps the
 // top-left health bar + debug readout or the top-right dev button.
@@ -47,6 +48,14 @@ export class QuestTracker {
       .setOrigin(0.5, 0)
       .setScrollFactor(0)
       .setDepth(depth + 1);
+    // Pass 6D chrome registry: the tracker panel's layout rect (informational
+    // chrome — not interactive; must still sit inside the safe viewport).
+    registerChrome(
+      'quest-tracker',
+      false,
+      () => (this.bg.scene ? { x: this.bg.x - this.bg.width / 2, y: this.bg.y, w: this.bg.width, h: this.bg.height } : null),
+      () => this.shown,
+    );
     this.titleText = scene.add
       .text(0, 0, '', {
         fontFamily: 'system-ui, sans-serif',
@@ -154,8 +163,16 @@ export class QuestTracker {
 
   private layout(): void {
     const insets = getInsets(this.scene);
-    const cx = this.scene.scale.width / 2;
+    const w = this.scene.scale.width;
+    // Pass 6D: the panel lives INSIDE the safe span — when the insets pinch
+    // it (landscape notch), it shrinks and recentres rather than poking past
+    // them. The border draws 2 px outside the panel; the 4 px margin covers it.
+    const safeW = Math.max(120, w - insets.left - insets.right - 8);
+    const panelW = Math.min(PANEL_W, safeW);
+    const cx = insets.left + 4 + (w - insets.left - insets.right - 8) / 2;
     const top = insets.top + UI_MARGIN + TOP_OFFSET;
+    this.titleText.setWordWrapWidth(panelW - PAD * 2);
+    this.objText.setWordWrapWidth(panelW - PAD * 2);
 
     // Stack the texts, then size the panel to fit them.
     const titleY = top + PAD;
@@ -164,7 +181,7 @@ export class QuestTracker {
     this.objText.setPosition(cx, objY);
     const panelH = PAD + this.titleText.height + TITLE_GAP + this.objText.height + PAD;
 
-    this.bg.setPosition(cx, top).setSize(PANEL_W, panelH);
-    this.border.setPosition(cx, top - 2).setSize(PANEL_W + 4, panelH + 4);
+    this.bg.setPosition(cx, top).setSize(panelW, panelH);
+    this.border.setPosition(cx, top - 2).setSize(panelW + 4, panelH + 4);
   }
 }
