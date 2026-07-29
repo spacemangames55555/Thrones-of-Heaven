@@ -14,6 +14,7 @@
     "gen:sprites": "node scripts/gen-sprites.mjs",
     "bake:earth": "node scripts/bake-earth/bake.mjs",
     "bake:worldmap": "node scripts/bake-earth/worldmap.mjs",
+    "bake:regionmaps": "node scripts/bake-earth/regionmap.mjs",
     "lint:terrain-art": "node tools/lint-terrain-art.mjs",
     "convert:terrain": "node tools/convert-terrain-art.mjs"
   },

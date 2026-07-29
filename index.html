@@ -18,6 +18,16 @@
     <link rel="apple-touch-icon" href="/icons/icon-180.png" />
     <title>Thrones of Heaven — Washington</title>
     <style>
+      /* SAFE-AREA PROPS (Pass 6D): the one source the game reads its insets
+         from. env() carries the real device values under viewport-fit=cover;
+         the runtime gate overrides these props with phone profiles to prove
+         every piece of chrome lays out inside the safe viewport. */
+      :root {
+        --safe-top: env(safe-area-inset-top, 0px);
+        --safe-right: env(safe-area-inset-right, 0px);
+        --safe-bottom: env(safe-area-inset-bottom, 0px);
+        --safe-left: env(safe-area-inset-left, 0px);
+      }
       html,
       body {
         margin: 0;

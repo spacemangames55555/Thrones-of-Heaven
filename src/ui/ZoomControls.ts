@@ -7,6 +7,7 @@ import {
   ZOOM_OUT_MARGIN,
 } from '../game/settings';
 import { getInsets } from './uiLayout';
+import { registerButtonChrome } from './chrome';
 
 const BTN = 31; // half-size zoom buttons, snug against the mid-right edge
 const GAP = 8;
@@ -77,6 +78,10 @@ export class ZoomControls {
     this.inBtn = this.makeButton('+', (p) => this.press('in', p));
     this.outBtn = this.makeButton('−', (p) => this.press('out', p)); // − (minus sign)
     if (onMapHandoff) this.mapBtn = this.makeButton('◈', () => onMapHandoff());
+    // Pass 6D chrome registry: 44 pt hit targets (visual size unchanged).
+    registerButtonChrome('zoom-in', this.inBtn.bg);
+    registerButtonChrome('zoom-out', this.outBtn.bg);
+    if (this.mapBtn) registerButtonChrome('zoom-map', this.mapBtn.bg);
 
     // Keyboard: '=' / '+' and numpad-add zoom in; '-' / '_' and numpad-sub out.
     const KC = Phaser.Input.Keyboard.KeyCodes;
@@ -134,9 +139,30 @@ export class ZoomControls {
     if (Math.abs(z - this.target) < 0.0005) z = this.target;
     this.cam.setZoom(z);
 
-    // Dim a button when its limit is reached.
+    // Dim a button when its limit is reached — EXCEPT the out button when a
+    // map handoff exists (Pass 6D): the cap is not a dead end there, so the
+    // button never greys; its glyph becomes the map diamond and one more tap
+    // opens map mode (the same push-past-the-cap path the pinch uses). v1
+    // has no handoff and keeps the shipped grey-at-cap.
     this.inBtn.bg.setAlpha(this.target >= ZOOM_IN_LIMIT - 1e-4 ? 0.45 : 0.96);
-    this.outBtn.bg.setAlpha(this.target <= this.outLimit + 1e-4 ? 0.45 : 0.96);
+    const atCap = this.target <= this.outLimit + 1e-4;
+    if (this.onMapHandoff) {
+      this.outBtn.bg.setAlpha(0.96);
+      const glyph = atCap ? '◈' : '−';
+      if (this.outBtn.label.text !== glyph) this.outBtn.label.setText(glyph);
+    } else {
+      this.outBtn.bg.setAlpha(atCap ? 0.45 : 0.96);
+    }
+  }
+
+  /** Pass 6D: hide the gameplay zoom cluster while map mode owns the screen
+   *  (restored on close — the chrome-restore gate proves both directions). */
+  setChromeVisible(v: boolean): void {
+    for (const b of [this.inBtn, this.outBtn, this.mapBtn]) {
+      if (!b) continue;
+      b.bg.setVisible(v);
+      b.label.setVisible(v);
+    }
   }
 
   // --- input ----------------------------------------------------------------

@@ -169,3 +169,14 @@ ruling lands, strike the entry with a pointer to the commit that resolved it.
   markers (Spokane and the other non-POI names) have no host chunk and do
   not render; restoring them as map-layer labels at true coordinates is a
   small follow-up when wanted.
+- PASS 6D (map + chrome UX): EGYPT REGION MAP - the regionmap bake emits one
+  image per manifest region automatically, so egypt-map.png folds into the
+  Egypt pass the moment its region pack lands (zero new tooling).
+  FOG-OF-DISCOVERY on the map tiers stays open, as does the
+  PARCHMENT/ATLAS RESTYLE (MAP_PALETTE is the single swap point). A
+  LANDSCAPE-ORIENTATION ON-DEVICE SWEEP of all registered chrome is owed:
+  the gate proves the two injected inset profiles geometrically, but a real
+  rotated device (keyboard, URL bar, visualViewport quirks) has not been
+  walked. The regional tier ships at a 2048 long edge (native 3441x2783
+  render broke the 6 MB budget at 6.86 MB); if map-mode zoom ever wants the
+  native crispness, the budget conversation reopens.

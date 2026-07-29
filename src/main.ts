@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { gameConfig } from './game/config';
 import { viewportSize, type Insets } from './ui/uiLayout';
+import { chromeRects } from './ui/chrome';
 import * as worldScale from './world/world-scale';
 import * as terrainSchema from './world/terrain-schema';
 import { createProceduralSource, sampleRecord, tileRecord } from './world/terrain-procedural';
@@ -72,10 +73,12 @@ let probe: HTMLDivElement | null = null;
 function readSafeInsets(): Insets {
   if (!probe) {
     probe = document.createElement('div');
+    // Pass 6D: read through the :root --safe-* props (defined in index.html
+    // from env(safe-area-inset-*)) so the runtime gate can inject phone
+    // profiles by overriding the props — one source for device and harness.
     probe.style.cssText =
       'position:fixed;top:0;left:0;width:0;height:0;visibility:hidden;pointer-events:none;' +
-      'padding:env(safe-area-inset-top) env(safe-area-inset-right) ' +
-      'env(safe-area-inset-bottom) env(safe-area-inset-left);';
+      'padding:var(--safe-top, 0px) var(--safe-right, 0px) var(--safe-bottom, 0px) var(--safe-left, 0px);';
     document.body.appendChild(probe);
   }
   const s = getComputedStyle(probe);
@@ -99,6 +102,14 @@ function applySize(force = false): void {
   game.registry.set('safeInsets', readSafeInsets());
   game.scale.resize(w, h); // emits RESIZE → cameras + every UI element re-layout
 }
+
+// Pass 6D gate handles: the chrome registry enumeration + a forced safe-area
+// re-read (the harness sets --safe-* props, then calls refresh). Invisible to
+// players; no UI, no behavior — do not remove.
+(window as unknown as { __chrome: unknown }).__chrome = {
+  rects: chromeRects,
+  refreshSafeInsets: () => applySize(true),
+};
 
 game.events.once(Phaser.Core.Events.READY, () => applySize(true));
 window.addEventListener('resize', () => applySize());

@@ -293,6 +293,84 @@ const ok = (name, pass, detail = '') => {
   );
 }
 
+// 0c3. REGIONMAP-PARITY (PASS 6D, pure Node): every baked regional map image
+// must agree with the region pack it renders — dims match the pack grid (or
+// the manifest STATES the downscale), manifest sha, the 6 MB budget, and
+// probe pixels resolving to the correct MAP_PALETTE classes at real places
+// (Puget Sound water, Rainier high band, the baked Columbia near Vantage
+// searched as a box exactly like the geo-truth river probe, Olympic forest).
+{
+  const { PNG } = await import('pngjs');
+  const vis = await import(new URL('../node_modules/.cache/toh-wmp-vis.mjs', import.meta.url).pathname);
+  const schema2 = await import(new URL('../node_modules/.cache/toh-wmp-schema.mjs', import.meta.url).pathname);
+  const B = schema2.Biome;
+  const regions2 = JSON.parse(readFileSync(new URL('../public/world/regions.json', import.meta.url).pathname));
+  const pnwR = regions2.regions.find((r) => r.id === 'pnw');
+  const mapEntry = pnwR?.map;
+  let out = { hasEntry: !!mapEntry };
+  if (mapEntry) {
+    const bytes = readFileSync(new URL(`../public/world/${mapEntry.file}`, import.meta.url).pathname);
+    const png = PNG.sync.read(bytes);
+    const pack = readFileSync(new URL(`../public/world/${pnwR.file}`, import.meta.url).pathname);
+    const gw = pack.readUInt32LE(8);
+    const gh = pack.readUInt32LE(12);
+    const native = png.width === gw && png.height === gh;
+    const statedDown = !!mapEntry.downscaledFrom && mapEntry.downscaledFrom.w === gw && mapEntry.downscaledFrom.h === gh && Math.max(png.width, png.height) === 2048;
+    const bb = pnwR.bbox;
+    const classAt = (lat, lng) => {
+      const x = Math.min(png.width - 1, Math.max(0, Math.floor(((lng - bb.lngMin) / (bb.lngMax - bb.lngMin)) * png.width)));
+      const y = Math.min(png.height - 1, Math.max(0, Math.floor(((bb.latMax - lat) / (bb.latMax - bb.latMin)) * png.height)));
+      const o = (y * png.width + x) * 4;
+      const r = png.data[o];
+      const g = png.data[o + 1];
+      const b2 = png.data[o + 2];
+      const lum = (r + g + b2) / 3 || 1;
+      let best = -1;
+      let bd = Infinity;
+      for (const [id, v] of Object.entries(vis.MAP_PALETTE)) {
+        const pr = (v >> 16) & 255;
+        const pg = (v >> 8) & 255;
+        const pb = v & 255;
+        const pl = (pr + pg + pb) / 3;
+        const d = (r / lum - pr / pl) ** 2 + (g / lum - pg / pl) ** 2 + (b2 / lum - pb / pl) ** 2;
+        if (d < bd) {
+          bd = d;
+          best = Number(id);
+        }
+      }
+      return best;
+    };
+    // The Columbia near Vantage: box search (the bake shifts channels a hair
+    // off survey — the same reason the geo-truth river probe scans a radius).
+    let vantageRiver = false;
+    for (let la = 46.84; la <= 47.04 && !vantageRiver; la += 0.005) {
+      for (let ln = -120.08; ln <= -119.88 && !vantageRiver; ln += 0.005) {
+        if (classAt(la, ln) === B.FRESHWATER) vantageRiver = true;
+      }
+    }
+    out = {
+      hasEntry: true,
+      w: png.width,
+      h: png.height,
+      gridW: gw,
+      gridH: gh,
+      dimsOk: native || statedDown,
+      mb: +(bytes.length / 1048576).toFixed(2),
+      sizeOk: bytes.length <= 6 * 1024 * 1024,
+      shaOk: mapEntry.sha256 === createHash('sha256').update(bytes).digest('hex') && mapEntry.bytes === bytes.length,
+      puget: [B.OCEAN, B.FRESHWATER].includes(classAt(47.6, -122.4)),
+      rainier: [B.SNOW, B.ROCK].includes(classAt(46.85, -121.76)),
+      vantageRiver,
+      olympic: [B.FOREST, B.TAIGA, B.GRASS].includes(classAt(47.8, -123.7)),
+    };
+  }
+  ok(
+    'regionmap-parity: pnw-map.png dims match the pack grid (or a STATED 2048 downscale); <= 6 MB; manifest sha matches; Puget water / Rainier high band / Columbia-at-Vantage river / Olympic forest probe classes correct',
+    out.hasEntry && out.dimsOk && out.sizeOk && out.shaOk && out.puget && out.rainier && out.vantageRiver && out.olympic,
+    JSON.stringify(out),
+  );
+}
+
 // 0d. REPLANT-TRUE-COORDS (PASS 6C, pure Node — replaces quest-anchor-sanity's
 // inside-the-mega-stamp rule, which the dissolution retires BY DESIGN): under
 // the v2 default every Acts I–IV authored anchor re-plants at its declared
@@ -8392,8 +8470,9 @@ try {
 
   // ── PASS 6A: WORLD MAP MODE + ZOOM HANDOFF (same live v2 session) ─────────
   // 2m0. zoom-range-ui: the zoom-out control bottoms out EXACTLY at the
-  // achievable cap (the v2 floor) — the cap reads as full zoom-out, and the
-  // − button visibly dims there. No dead range in the control.
+  // achievable cap (the v2 floor) — the cap reads as full zoom-out. PASS 6D
+  // retired the dim-at-cap: with a map handoff the button stays LIVE at full
+  // alpha and its glyph becomes the map diamond (the cap is the map door).
   const zoomRange = await page.evaluate(async () => {
     const ms = window.__ready();
     const zc = ms.zoomControls;
@@ -8407,13 +8486,14 @@ try {
       atCap: ms.cameras.main.zoom === zc.outLimit,
       floorBinding: Math.abs(zc.outLimit - Math.max(floor, 0)) < 1e-9 || zc.outLimit >= floor,
       floor,
-      outDimmed: zc.outBtn.bg.alpha === 0.45,
+      outLiveAtCap: zc.outBtn.bg.alpha > 0.9,
+      outGlyph: zc.outBtn.label.text,
       mapBtnLive: zc.mapBtn !== undefined,
     };
   });
   ok(
-    'zoom-range-ui: the out control reaches EXACTLY the cap (v2 floor binding), dims there, and the map button is live',
-    zoomRange.atCap && zoomRange.floorBinding && zoomRange.outDimmed && zoomRange.mapBtnLive && zoomRange.outLimit >= zoomRange.floor - 1e-9,
+    'zoom-range-ui: the out control reaches EXACTLY the cap (v2 floor binding), stays LIVE there with the map-diamond glyph (Pass 6D), and the map button is live',
+    zoomRange.atCap && zoomRange.floorBinding && zoomRange.outLiveAtCap && zoomRange.outGlyph === '◈' && zoomRange.mapBtnLive && zoomRange.outLimit >= zoomRange.floor - 1e-9,
     JSON.stringify(zoomRange),
   );
 
@@ -8562,6 +8642,272 @@ try {
   // landing opened (same pattern as the waypoint-travel check above).
   await page.evaluate(() => window.__ready().zoomControls.setTarget(1));
   await page.waitForTimeout(1200); // the smoothing lands - the sim checks below must NOT run at world-cap zoom (swiftshader frame starvation)
+  for (let i = 0; i < 12; i++) {
+    await page.waitForTimeout(280);
+    const uiOpen = await page.evaluate(() => {
+      const ms = window.__game.scene.getScene('MainScene');
+      return ms.dialogue.isOpen() || ms.choice.isOpen();
+    });
+    if (!uiOpen) break;
+    await page.mouse.click(214, 520);
+    await page.mouse.click(214, 462);
+  }
+
+  // ── PASS 6D COMMIT 1: SAFE AREAS + CONTROLS + BUTTON HANDOFF ──────────────
+  // 3s0. safe-area-chrome: the harness injects two iPhone inset profiles into
+  // the :root --safe-* props (the ONE source the game reads); under EACH, all
+  // registered gameplay chrome must lay out inside the safe viewport, and map
+  // mode — opened via the REAL button path with the profile active — must lay
+  // its chrome out inside it too. Offenders enumerated.
+  const P6D_PROFILES = [
+    { name: 'portrait', top: 59, right: 0, bottom: 34, left: 0 },
+    { name: 'landscape', top: 0, right: 59, bottom: 21, left: 59 },
+  ];
+  const setSafeProfile = (p) =>
+    page.evaluate((q) => {
+      const st = document.documentElement.style;
+      st.setProperty('--safe-top', q.top + 'px');
+      st.setProperty('--safe-right', q.right + 'px');
+      st.setProperty('--safe-bottom', q.bottom + 'px');
+      st.setProperty('--safe-left', q.left + 'px');
+      window.__chrome.refreshSafeInsets();
+    }, p);
+  const saOffenders = [];
+  let saGameplayIds = [];
+  let saMapButtonOpens = 0;
+  let saGlyphOk = true;
+  let saAlphaOk = true;
+  for (const prof of P6D_PROFILES) {
+    await setSafeProfile(prof);
+    await page.waitForTimeout(600);
+    const g = await page.evaluate((q) => {
+      const rects = window.__chrome.rects().filter((r) => !r.id.startsWith('map-'));
+      const w = window.__game.scale.width;
+      const h = window.__game.scale.height;
+      const bad = rects.filter((r) => r.x < q.left - 0.5 || r.y < q.top - 0.5 || r.x + r.w > w - q.right + 0.5 || r.y + r.h > h - q.bottom + 0.5);
+      return { ids: rects.map((r) => r.id).sort(), bad: bad.map((r) => `${r.id}@${r.x.toFixed(0)},${r.y.toFixed(0)}`) };
+    }, prof);
+    saGameplayIds = g.ids;
+    for (const b of g.bad) saOffenders.push(`${prof.name}:${b}`);
+    // Open map mode via the REAL out-button at the cap (icon must be the map
+    // diamond at FULL alpha — the disabled state at cap is gone).
+    await page.evaluate(() => window.__ready().zoomControls.setTarget(0.0001));
+    await page.waitForTimeout(1300);
+    const capState = await page.evaluate(() => {
+      const zc = window.__game.scene.getScene('MainScene').zoomControls;
+      return { glyph: zc.outBtn.label.text, alpha: zc.outBtn.bg.alpha, x: zc.outBtn.bg.x, y: zc.outBtn.bg.y };
+    });
+    saGlyphOk = saGlyphOk && capState.glyph === '◈';
+    saAlphaOk = saAlphaOk && capState.alpha > 0.9;
+    let opened = false;
+    for (let k = 0; k < 8 && !opened; k++) {
+      await page.mouse.click(capState.x, capState.y);
+      await page.waitForTimeout(700);
+      opened = await page.evaluate(() => window.__game.scene.isActive('WorldMapScene'));
+    }
+    if (opened) saMapButtonOpens++;
+    const m = await page.evaluate((q) => {
+      const rects = window.__chrome.rects().filter((r) => r.id.startsWith('map-'));
+      const w = window.__game.scale.width;
+      const h = window.__game.scale.height;
+      const bad = rects.filter((r) => r.x < q.left - 0.5 || r.y < q.top - 0.5 || r.x + r.w > w - q.right + 0.5 || r.y + r.h > h - q.bottom + 0.5);
+      return { count: rects.length, bad: bad.map((r) => `${r.id}@${r.x.toFixed(0)},${r.y.toFixed(0)}`) };
+    }, prof);
+    if (m.count !== 5) saOffenders.push(`${prof.name}:map-count=${m.count}`);
+    for (const b of m.bad) saOffenders.push(`${prof.name}:${b}`);
+    await page.evaluate(() => window.__game.scene.getScene('WorldMapScene')?.close());
+    await page.waitForTimeout(400);
+  }
+  await setSafeProfile({ top: 0, right: 0, bottom: 0, left: 0 });
+  await page.waitForTimeout(400);
+  const SA_EXPECTED = ['hotbar', 'pause', 'quest-tracker', 'update-toast', 'zoom-in', 'zoom-map', 'zoom-out'];
+  ok(
+    'safe-area-chrome: under both injected iPhone inset profiles every registered chrome rect (gameplay + map mode) lays out inside the safe viewport',
+    saOffenders.length === 0 && SA_EXPECTED.every((id) => saGameplayIds.includes(id)),
+    JSON.stringify({ ids: saGameplayIds, offenders: saOffenders.slice(0, 10) }),
+  );
+
+  // 3s1. map-open-via-button: at the gameplay cap the out button swapped to
+  // the map glyph at FULL alpha and a REAL tap opened map mode — proven under
+  // BOTH profiles above. The pinch path was re-proven by map-open-at-cap
+  // earlier in this same session.
+  ok(
+    'map-open-via-button: at the cap the out button shows the map glyph at full alpha (no disabled state) and a real tap opens map mode (both profiles; pinch path re-proven by map-open-at-cap)',
+    saMapButtonOpens === 2 && saGlyphOk && saAlphaOk,
+    JSON.stringify({ opens: saMapButtonOpens, glyphOk: saGlyphOk, alphaOk: saAlphaOk }),
+  );
+
+  // 3s2. tap-targets: every INTERACTIVE chrome element presents a >= 44 pt
+  // hit target (map open so its buttons register too).
+  {
+    let opened = false;
+    for (let k = 0; k < 8 && !opened; k++) {
+      opened = await page.evaluate(() => window.__ready().openWorldMap());
+      if (!opened) await page.waitForTimeout(600);
+    }
+    const taps = await page.evaluate(() => {
+      const rects = window.__chrome.rects().filter((r) => r.interactive);
+      const bad = rects.filter((r) => !r.hit || r.hit.w < 44 || r.hit.h < 44);
+      return { total: rects.length, ids: rects.map((r) => r.id).sort(), bad: bad.map((r) => `${r.id}:${r.hit ? `${r.hit.w}x${r.hit.h}` : 'none'}`) };
+    });
+    ok(
+      'tap-targets: every interactive chrome element presents a >= 44 pt hit target (visual sizes unchanged)',
+      taps.total >= 9 && taps.bad.length === 0,
+      JSON.stringify(taps),
+    );
+
+    // 3s3. map-zoom-buttons: one ~1.4x step per tap about the screen center,
+    // hard-clamped to the SAME range the pinch uses — the minus button greys
+    // at planet-fit (and NEVER pinch-closes), the plus greys at max map zoom.
+    const mz = await page.evaluate(async () => {
+      const wms = window.__game.scene.getScene('WorldMapScene');
+      const wait = (t) => new Promise((r) => setTimeout(r, t));
+      const s0 = wms.viewScale;
+      wms.buttonZoom('in');
+      const ratio = wms.viewScale / s0;
+      for (let i = 0; i < 40; i++) wms.buttonZoom('out');
+      await wait(250);
+      const atMin = Math.abs(wms.viewScale - wms.minScale) < 1e-9;
+      const minGrey = wms.zoomBtns.minus.bg.alpha < 0.6;
+      const plusLiveAtMin = wms.zoomBtns.plus.bg.alpha > 0.9;
+      const stillOpenAtMin = window.__game.scene.isActive('WorldMapScene');
+      for (let i = 0; i < 60; i++) wms.buttonZoom('in');
+      await wait(250);
+      const atMax = Math.abs(wms.viewScale - 12) < 1e-9;
+      const maxGrey = wms.zoomBtns.plus.bg.alpha < 0.6;
+      const minusLiveAtMax = wms.zoomBtns.minus.bg.alpha > 0.9;
+      return { ratio: +ratio.toFixed(4), atMin, minGrey, plusLiveAtMin, stillOpenAtMin, atMax, maxGrey, minusLiveAtMax };
+    });
+    ok(
+      'map-zoom-buttons: 1.4x per tap, clamp shared with pinch — minus greys at planet-fit without closing, plus greys at max map zoom',
+      Math.abs(mz.ratio - 1.4) < 1e-3 && mz.atMin && mz.minGrey && mz.plusLiveAtMin && mz.stillOpenAtMin && mz.atMax && mz.maxGrey && mz.minusLiveAtMax,
+      JSON.stringify(mz),
+    );
+
+    // 3s4. chrome-restore: the gameplay zoom cluster hides while map mode is
+    // open and returns on close; the out-button glyph tracks the cap state in
+    // both directions (map diamond at the cap, minus off it).
+    const rest = await page.evaluate(async () => {
+      const ms = window.__game.scene.getScene('MainScene');
+      const wait = (t) => new Promise((r) => setTimeout(r, t));
+      const hiddenWhileOpen = ms.zoomControls.outBtn.bg.visible === false && ms.zoomControls.inBtn.bg.visible === false;
+      window.__game.scene.getScene('WorldMapScene').close();
+      await wait(400);
+      const restored = ms.zoomControls.outBtn.bg.visible === true && ms.zoomControls.inBtn.bg.visible === true;
+      const resumed = !ms.scene.isPaused();
+      const glyphAtCap = ms.zoomControls.outBtn.label.text;
+      ms.zoomControls.setTarget(1);
+      await wait(900);
+      const glyphOffCap = ms.zoomControls.outBtn.label.text;
+      return { hiddenWhileOpen, restored, resumed, glyphAtCap, glyphOffCap };
+    });
+    ok(
+      'chrome-restore: gameplay zoom cluster hidden in map mode, restored on close; the out glyph is the map diamond at the cap and the minus sign off it',
+      rest.hiddenWhileOpen && rest.restored && rest.resumed && rest.glyphAtCap === '◈' && rest.glyphOffCap === '−',
+      JSON.stringify(rest),
+    );
+  }
+  // 3t0. map-lod-swap (PASS 6D COMMIT 2): with the player inside the PNW
+  // bbox, map mode's REGIONAL TIER engages above the threshold (crossfaded,
+  // never a pop), stays planet-only below it, aligns to the shared equirect
+  // projection at 4 fixture points, and lifts the max zoom to 2 screen px
+  // per region-image px over the region — planet cap away from it. A route
+  // counter proves the image is fetched at most once per session.
+  let regionMapFetches = 0;
+  await page.route('**/world/regions/pnw-map.png', (route) => {
+    regionMapFetches++;
+    void route.continue();
+  });
+  {
+    let opened = false;
+    for (let k = 0; k < 8 && !opened; k++) {
+      opened = await page.evaluate(() => window.__ready().openWorldMap());
+      if (!opened) await page.waitForTimeout(600);
+    }
+    const lod = await page.evaluate(async () => {
+      const wms = window.__game.scene.getScene('WorldMapScene');
+      const wait = (t) => new Promise((r) => setTimeout(r, t));
+      for (let k = 0; k < 30 && wms.regionTier[0]?.state !== 'ready'; k++) await wait(300);
+      const t = wms.regionTier[0];
+      if (!t || t.state !== 'ready') return { setup: `tier ${t?.state ?? 'missing'}` };
+      // Center over the PNW so the region governs the view.
+      const cx = t.rect.x + t.rect.w / 2;
+      const cy = t.rect.y + t.rect.h / 2;
+      wms.viewScale = 2;
+      wms.applyView(cx, cy);
+      await wait(200);
+      const visAbove = t.img?.visible === true && t.img.alpha === 1;
+      const capOverRegion = wms.maxScale();
+      const capExpected = (2 * t.imgW) / t.rect.w;
+      // Mid-band: the crossfade is PARTIAL (no pop).
+      wms.viewScale = 1.15;
+      wms.applyView(cx, cy);
+      await wait(200);
+      const midAlpha = t.img?.alpha ?? -1;
+      // Below the threshold: planet-only, as today.
+      wms.viewScale = 0.6;
+      wms.applyView(cx, cy);
+      await wait(200);
+      const hiddenBelow = t.img?.visible === false;
+      // Away from the region (mid-Atlantic) the planet cap answers.
+      wms.viewScale = 6;
+      wms.applyView(1024, 709);
+      await wait(200);
+      const capAway = wms.maxScale();
+      // Projection fixtures: the region image placement must land each
+      // lat/lng on the SAME planet-image px the closed form gives.
+      const bb = { latMin: 41.5, latMax: 49.5, lngMin: -125, lngMax: -110.5 };
+      const fixtures = [
+        [47.606, -122.332],
+        [46.6, -120.5],
+        [43.615, -116.202],
+        [49.0, -123.0],
+      ];
+      const errs = fixtures.map(([lat, lng]) => {
+        const planet = { x: ((lng + 180) / 360) * 2048, y: ((85 - lat) / 170) * 1418 };
+        const via = {
+          x: t.img.x + ((lng - bb.lngMin) / (bb.lngMax - bb.lngMin)) * t.img.displayWidth,
+          y: t.img.y + ((bb.latMax - lat) / (bb.latMax - bb.latMin)) * t.img.displayHeight,
+        };
+        return Math.hypot(planet.x - via.x, planet.y - via.y);
+      });
+      // Cycle the threshold once more — the state machine must not refetch.
+      wms.viewScale = 2;
+      wms.applyView(cx, cy);
+      await wait(200);
+      window.__game.scene.getScene('WorldMapScene').close();
+      await wait(300);
+      return {
+        setup: 'ok',
+        from: t.from,
+        visAbove,
+        midAlpha: +midAlpha.toFixed(2),
+        hiddenBelow,
+        capOverRegion: +capOverRegion.toFixed(2),
+        capExpected: +capExpected.toFixed(2),
+        capAway,
+        maxErr: +Math.max(...errs).toFixed(3),
+      };
+    });
+    ok(
+      'map-lod-swap: region tier engages over the PNW above the threshold (partial alpha mid-band, hidden below), projection fixtures exact, max zoom 2 px per region px over the region and the planet cap away',
+      lod.setup === 'ok' &&
+        lod.visAbove &&
+        lod.midAlpha > 0.05 &&
+        lod.midAlpha < 0.95 &&
+        lod.hiddenBelow &&
+        Math.abs(lod.capOverRegion - lod.capExpected) < 1e-6 &&
+        lod.capAway === 12 &&
+        lod.maxErr < 0.5 &&
+        regionMapFetches <= 1,
+      JSON.stringify({ ...lod, fetches: regionMapFetches }),
+    );
+  }
+  await page.unroute('**/world/regions/pnw-map.png');
+
+  // Leave the session exactly as the pre-6D flow did: gameplay zoom restored,
+  // any arrival UI tapped through (the sim checks below need a live funnel).
+  await page.waitForTimeout(600);
   for (let i = 0; i < 12; i++) {
     await page.waitForTimeout(280);
     const uiOpen = await page.evaluate(() => {
@@ -9988,6 +10334,7 @@ try {
   // arriving at a live earth source.
   await page.route('**/world/planet.bin', (route) => route.abort());
   await page.route('**/world/worldmap.png', (route) => route.abort()); // Pass 6A: the map image must ride the same cache
+  await page.route('**/world/regions/pnw-map.png', (route) => route.abort()); // Pass 6D: the region map tier rides it too
   await page.goto(`http://localhost:${PORT}/?scale=v2`, { waitUntil: 'load' });
   await page.waitForFunction(() => !!window.__game && window.__game.scene.isActive('TitleScene'), null, { timeout: 25000 });
   await page.evaluate(() => window.__game.scene.getScene('TitleScene').scene.start('MainScene', { mode: 'continue' }));
@@ -9998,12 +10345,40 @@ try {
     const st = window.__game.scene.getScene('MainScene').chunkStreamer;
     return { planetFrom: st.packOrigin.planet, worldmapFrom: st.packOrigin.worldmap, worldmapBytes: st.worldmapBuf?.byteLength ?? 0, source: st.activeSourceLabel };
   });
+  // PASS 6D: this fresh page has NO warm texture — the region tier must build
+  // entirely from the IndexedDB copy with its network route still blocked.
+  await page.waitForFunction(() => (window.__game.scene.getScene('MainScene').chunkStreamer?.regionMapEntries()?.length ?? 0) > 0, null, { timeout: 30000 });
+  let offOpened = false;
+  for (let k = 0; k < 8 && !offOpened; k++) {
+    offOpened = await page.evaluate(() => window.__game.scene.getScene('MainScene').openWorldMap());
+    if (!offOpened) await page.waitForTimeout(600);
+  }
+  const offlineRegion = await page.evaluate(async () => {
+    const wms = window.__game.scene.getScene('WorldMapScene');
+    const wait = (t) => new Promise((r) => setTimeout(r, t));
+    const t = wms.regionTier[0];
+    if (!t) return { setup: 'no tier' };
+    // Stand the view over the PNW past the threshold — the engage condition.
+    wms.viewScale = 2;
+    wms.applyView(t.rect.x + t.rect.w / 2, t.rect.y + t.rect.h / 2);
+    for (let k = 0; k < 30 && t.state !== 'ready' && t.state !== 'failed'; k++) await wait(300);
+    const out = { setup: 'ok', state: t.state, from: t.from, visible: t.img?.visible === true };
+    wms.close();
+    await wait(300);
+    return out;
+  });
   await page.unroute('**/world/planet.bin');
   await page.unroute('**/world/worldmap.png');
+  await page.unroute('**/world/regions/pnw-map.png');
   ok(
     'offline-cache: second v2 boot serves planet.bin AND worldmap.png from IndexedDB with the network routes blocked',
     offlineCache.planetFrom === 'idb' && offlineCache.worldmapFrom === 'idb' && offlineCache.worldmapBytes > 100000 && offlineCache.source === 'earth',
     JSON.stringify(offlineCache),
+  );
+  ok(
+    'lazy-fetch+cache: the region-map tier on a fresh page builds from IndexedDB with its network route blocked (fetch-once per session proven by the map-lod-swap route counter)',
+    offlineRegion.setup === 'ok' && offlineRegion.state === 'ready' && offlineRegion.from === 'idb' && offlineRegion.visible === true,
+    JSON.stringify(offlineRegion),
   );
 
   // ── PASS 4 COMMIT 2: THE FLIP ─────────────────────────────────────────────
