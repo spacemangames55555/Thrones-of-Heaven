@@ -344,13 +344,42 @@ async function idbPut(key: string, buf: ArrayBuffer): Promise<void> {
 /** Fetch a pack with the IndexedDB cache (keyed by path + PACK_VERSION).
  *  Returns where the bytes actually came from — the gate asserts a second
  *  boot serves planet.bin from 'idb' with the network blocked. */
+/** PASS 7: grid packs ship GZIP-COMPRESSED (.gz paths). The REQUIREMENT is
+ *  loud and named — there is NO silent fallback path when the platform
+ *  cannot decompress (every supported browser since 2020 can). */
+function requireDecompression(): void {
+  if (typeof DecompressionStream === 'undefined') {
+    throw new Error('ToH boot requirement missing: DecompressionStream (gzip) is unavailable in this browser — the world packs cannot be decompressed. No fallback exists.');
+  }
+}
+
+async function gunzip(buf: ArrayBuffer): Promise<ArrayBuffer> {
+  const stream = new Blob([buf]).stream().pipeThrough(new DecompressionStream('gzip'));
+  return new Response(stream).arrayBuffer();
+}
+
+/** Whether these bytes are still gzip-compressed (magic 1f 8b). Hosts differ
+ *  on .gz assets: static CDNs deliver the compressed bytes as-is, while some
+ *  dev servers mark them Content-Encoding gzip and the browser TRANSPORT-
+ *  decodes before the page ever sees them — the sniff serves both. */
+function isGzipBytes(buf: ArrayBuffer): boolean {
+  const u = new Uint8Array(buf, 0, Math.min(2, buf.byteLength));
+  return u.length === 2 && u[0] === 0x1f && u[1] === 0x8b;
+}
+
+/** Load a pack: IndexedDB-cached (the cache stores exactly what the wire
+ *  delivered — compressed bytes where the host served them raw; the magic
+ *  sniff decompresses on every read). The DecompressionStream REQUIREMENT is
+ *  uniform for .gz paths regardless of host behavior — one loud contract. */
 export async function loadPack(path: string): Promise<{ buf: ArrayBuffer; from: 'idb' | 'network' }> {
+  const gz = path.endsWith('.gz');
+  if (gz) requireDecompression();
   const key = `${path}@v${PACK_VERSION}`;
   const cached = await idbGet(key);
-  if (cached) return { buf: cached, from: 'idb' };
+  if (cached) return { buf: gz && isGzipBytes(cached) ? await gunzip(cached) : cached, from: 'idb' };
   const res = await fetch(path);
   if (!res.ok) throw new Error(`loadPack ${path}: ${res.status}`);
   const buf = await res.arrayBuffer();
   await idbPut(key, buf);
-  return { buf, from: 'network' };
+  return { buf: gz && isGzipBytes(buf) ? await gunzip(buf) : buf, from: 'network' };
 }

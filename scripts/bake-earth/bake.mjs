@@ -55,10 +55,50 @@ const PBH = Math.ceil(WORLD_TILES_Y / PLANET_BIOME_STEP); // 3697
 const PEW = Math.ceil(WORLD_TILES_X / PLANET_ELEV_STEP); // 2670
 const PEH = Math.ceil(WORLD_TILES_Y / PLANET_ELEV_STEP); // 1849
 
-const PNW = { latMin: 41.5, latMax: 49.5, lngMin: -125.0, lngMax: -110.5 };
 const REGION_STEP = 16; // tiles per sample (512 px ≈ 320 m)
-const RW = Math.ceil(((PNW.lngMax - PNW.lngMin) * PX_PER_DEG_LNG) / (REGION_STEP * TILE_PX)); // 3440
-const RH = Math.ceil(((PNW.latMax - PNW.latMin) * PX_PER_DEG_LAT) / (REGION_STEP * TILE_PX)); // 2783
+
+/** THE REGION TABLE (Pass 7): every detailed region bakes through ONE path.
+ *  mustRivers throws when a required river is missing from the NE clip;
+ *  mustLakes throws when a required lake fails to land at grid scale;
+ *  minRiverClass pins a named river's width class (the Nile must be 3). */
+const REGIONS = [
+  {
+    id: 'pnw',
+    bbox: { latMin: 41.5, latMax: 49.5, lngMin: -125.0, lngMax: -110.5 },
+    mustRivers: ['Columbia', 'Snake'],
+    mustLakes: [],
+    minRiverClass: {},
+    // FROZEN shipped classifier (strokeweig — null across NE 10m, so every
+    // pnw river baked class 1): decode parity with the 6C-proven truth is
+    // pinned; reclassifying pnw is LEDGERED for a sanctioned re-bake.
+    widthClassifier: 'strokeweig',
+  },
+  {
+    id: 'egypt',
+    bbox: { latMin: 21.5, latMax: 32.5, lngMin: 24.5, lngMax: 36.5 },
+    mustRivers: ['Nile'],
+    mustLakes: [
+      { name: 'Lake Qarun', lat: 29.45, lng: 30.58 },
+      { name: 'Lake Nasser', lat: 23.0, lng: 32.9 },
+    ],
+    minRiverClass: { Nile: 3 },
+    // NE 10m carries NO strokeweig values (null on every feature probed);
+    // scalerank is the real signal it does carry (1 = the largest rivers).
+    // Egypt classifies by scalerank: 1–2 → class 3, 3–5 → 2, else 1.
+    widthClassifier: 'scalerank',
+    // DEM-DERIVED LAKES (stated fallback, Pass 3 precedent): Lake Qarun is
+    // ABSENT from NE 10m lakes (verified — Egypt carries only Nasser, the
+    // Bitter Lakes and the Dead Sea), and every alternative host probed
+    // (Overpass, Nominatim, hydro data providers) is blocked at the build
+    // proxy. The REAL terrarium DEM shows the lake unmistakably: a coherent
+    // −40…−47 m surface across its true extent (surveyed surface ≈ −43 m).
+    // Derivation: flood the depression below the stated surface level INSIDE
+    // this tight window only — the Qattara Depression (−133 m, land) and the
+    // delta lagoons are far outside it and stay untouched. Labeled in
+    // bake-manifest.demLakesNote.
+    demLakes: [{ name: 'Lake Qarun', window: { latMin: 29.38, latMax: 29.6, lngMin: 30.33, lngMax: 30.9 }, surfaceBelowM: -40 }],
+  },
+];
 
 const SIZE_GUARD_TOTAL = 60 * 1024 * 1024;
 const SIZE_GUARD_FILE = 45 * 1024 * 1024;
@@ -328,101 +368,160 @@ for (let j = 0; j < PBH; j++) {
   }
 }
 
-// 4) PNW REGION GRID (land/lakes @10m, elevation z9, derived biomes, rivers).
-console.log('bake-earth: rasterizing PNW region…');
-const rLngOf = (i) => PNW.lngMin + (((i + 0.5) * REGION_STEP * TILE_PX) / PX_PER_DEG_LNG);
-const rLatOf = (j) => PNW.latMax - (((j + 0.5) * REGION_STEP * TILE_PX) / PX_PER_DEG_LAT);
-const inBbox = (ring) => ring.some(([x, y]) => x >= PNW.lngMin - 1 && x <= PNW.lngMax + 1 && y >= PNW.latMin - 1 && y <= PNW.latMax + 1);
-const regionLand = new Uint8Array(RW * RH);
-const regionLake = new Uint8Array(RW * RH);
-rasterizeMask(landRings.filter(inBbox), RW, RH, rLngOf, rLatOf, regionLand);
-rasterizeMask(lakeRings.filter(inBbox), RW, RH, rLngOf, rLatOf, regionLake);
-
-console.log('bake-earth: sampling PNW elevation (terrarium z9)…');
+// 4+5) REGION GRIDS (land/lakes @10m, elevation z9, derived biomes, rivers)
+//      — ONE path for every region in the table (Pass 7).
 const z9 = new TerrariumSampler(9);
-const regionElev = new Uint8Array(RW * RH);
-for (let j = 0; j < RH; j++) {
-  const lat = rLatOf(j);
-  for (let i = 0; i < RW; i++) regionElev[j * RW + i] = elevBand(await z9.metersAt(lat, rLngOf(i)));
-  if (j % 300 === 0) console.log(`  elev row ${j}/${RH} (tiles fetched ${z9.fetched})`);
-}
 
-const regionBiome = new Uint8Array(RW * RH);
-for (let j = 0; j < RH; j++) {
-  const lat = rLatOf(j);
-  for (let i = 0; i < RW; i++) {
-    const o = j * RW + i;
-    if (regionLake[o]) regionBiome[o] = B.FRESHWATER; // lakes ≥ grid scale
-    else if (!regionLand[o]) regionBiome[o] = B.OCEAN;
-    else {
-      const tileX = Math.round(((rLngOf(i) + 180) * PX_PER_DEG_LNG) / TILE_PX);
-      const tileY = Math.round(((85 - lat) * PX_PER_DEG_LAT) / TILE_PX);
-      regionBiome[o] = derivedLandBiome(lat, tileX, tileY, regionElev[o]);
+async function bakeRegion(region) {
+  const bb = region.bbox;
+  const W = Math.ceil(((bb.lngMax - bb.lngMin) * PX_PER_DEG_LNG) / (REGION_STEP * TILE_PX));
+  const H = Math.ceil(((bb.latMax - bb.latMin) * PX_PER_DEG_LAT) / (REGION_STEP * TILE_PX));
+  console.log(`bake-earth: rasterizing ${region.id} region (${W}×${H})…`);
+  const rLngOf = (i) => bb.lngMin + (((i + 0.5) * REGION_STEP * TILE_PX) / PX_PER_DEG_LNG);
+  const rLatOf = (j) => bb.latMax - (((j + 0.5) * REGION_STEP * TILE_PX) / PX_PER_DEG_LAT);
+  const inBbox = (ring) => ring.some(([x, y]) => x >= bb.lngMin - 1 && x <= bb.lngMax + 1 && y >= bb.latMin - 1 && y <= bb.latMax + 1);
+  const regionLand = new Uint8Array(W * H);
+  const regionLake = new Uint8Array(W * H);
+  rasterizeMask(landRings.filter(inBbox), W, H, rLngOf, rLatOf, regionLand);
+  rasterizeMask(lakeRings.filter(inBbox), W, H, rLngOf, rLatOf, regionLake);
+
+  console.log(`bake-earth: sampling ${region.id} elevation (terrarium z9)…`);
+  const regionElev = new Uint8Array(W * H);
+  const demLake = new Uint8Array(W * H);
+  for (let j = 0; j < H; j++) {
+    const lat = rLatOf(j);
+    for (let i = 0; i < W; i++) {
+      const lng = rLngOf(i);
+      const m = await z9.metersAt(lat, lng);
+      regionElev[j * W + i] = elevBand(m);
+      // DEM-derived lakes (stated fallback — see the region table note).
+      for (const dl of region.demLakes ?? []) {
+        const w = dl.window;
+        if (lat >= w.latMin && lat <= w.latMax && lng >= w.lngMin && lng <= w.lngMax && m < dl.surfaceBelowM) demLake[j * W + i] = 1;
+      }
+    }
+    if (j % 300 === 0) console.log(`  elev row ${j}/${H} (tiles fetched ${z9.fetched})`);
+  }
+
+  const regionBiome = new Uint8Array(W * H);
+  for (let j = 0; j < H; j++) {
+    const lat = rLatOf(j);
+    for (let i = 0; i < W; i++) {
+      const o = j * W + i;
+      if (regionLake[o] || demLake[o]) regionBiome[o] = B.FRESHWATER; // lakes ≥ grid scale (NE + stated DEM derivations)
+      else if (!regionLand[o]) regionBiome[o] = B.OCEAN;
+      else {
+        const tileX = Math.round(((rLngOf(i) + 180) * PX_PER_DEG_LNG) / TILE_PX);
+        const tileY = Math.round(((85 - lat) * PX_PER_DEG_LAT) / TILE_PX);
+        regionBiome[o] = derivedLandBiome(lat, tileX, tileY, regionElev[o]);
+      }
     }
   }
-}
 
-// 5) RIVERS: clip NE centerlines to the bbox, classify width 1–3 by NE rank,
-//    stamp FRESHWATER into the region grid, and ship the polylines as JSON.
-console.log('bake-earth: rivers…');
-const riverFeatures = [];
-for (const f of riversGeo.features) {
-  const g = f.geometry;
-  if (!g) continue;
-  const lines = g.type === 'LineString' ? [g.coordinates] : g.type === 'MultiLineString' ? g.coordinates : [];
-  const sw = Number(f.properties?.strokeweig ?? 0.1);
-  const widthClass = sw >= 0.7 ? 3 : sw >= 0.3 ? 2 : 1;
-  const name = f.properties?.name ?? null;
-  for (const line of lines) {
-    // Clip to bbox by splitting into inside runs (endpoints clamped is fine
-    // at 320 m grid scale — these are centerlines, not authoritative banks).
-    let run = [];
-    for (const [x, y] of line) {
-      const inside = x >= PNW.lngMin && x <= PNW.lngMax && y >= PNW.latMin && y <= PNW.latMax;
-      if (inside) run.push([+x.toFixed(5), +y.toFixed(5)]);
-      else if (run.length > 1) {
-        riverFeatures.push({ name, widthClass, points: run });
-        run = [];
-      } else run = [];
+  // Required lakes must LAND at grid scale (Qarun + Nasser for Egypt) —
+  // real-data-or-report: a missing lake fails the bake, never fakes it.
+  for (const lk of region.mustLakes) {
+    const i = Math.round(((lk.lng - bb.lngMin) * PX_PER_DEG_LNG) / (REGION_STEP * TILE_PX) - 0.5);
+    const j = Math.round(((bb.latMax - lk.lat) * PX_PER_DEG_LAT) / (REGION_STEP * TILE_PX) - 0.5);
+    let wet = false;
+    for (let dj = -3; dj <= 3 && !wet; dj++) {
+      for (let di = -3; di <= 3 && !wet; di++) {
+        const o = (j + dj) * W + (i + di);
+        if (o >= 0 && o < W * H && regionBiome[o] === B.FRESHWATER) wet = true;
+      }
     }
-    if (run.length > 1) riverFeatures.push({ name, widthClass, points: run });
+    if (!wet) throw new Error(`bake-earth: ${region.id} requires ${lk.name} FRESHWATER at (${lk.lat}, ${lk.lng}) — not in the rasterized lakes`);
   }
-}
-const riverNames = new Set(riverFeatures.map((r) => r.name).filter(Boolean));
-if (!riverNames.has('Columbia') || !riverNames.has('Snake')) {
-  throw new Error(`bake-earth: PNW rivers must include Columbia and Snake — got ${[...riverNames].join(', ')}`);
-}
-// Stamp rivers into the region biome grid (radius by width class, land only).
-let riverSamples = 0;
-for (const r of riverFeatures) {
-  const rad = r.widthClass - 1; // samples: 0 / 1 / 2 → ~320 / 960 / 1600 m swaths
-  for (let k = 0; k + 1 < r.points.length; k++) {
-    const [ax, ay] = r.points[k];
-    const [bx, by] = r.points[k + 1];
-    const ai = ((ax - PNW.lngMin) * PX_PER_DEG_LNG) / (REGION_STEP * TILE_PX) - 0.5;
-    const aj = ((PNW.latMax - ay) * PX_PER_DEG_LAT) / (REGION_STEP * TILE_PX) - 0.5;
-    const bi = ((bx - PNW.lngMin) * PX_PER_DEG_LNG) / (REGION_STEP * TILE_PX) - 0.5;
-    const bj = ((PNW.latMax - by) * PX_PER_DEG_LAT) / (REGION_STEP * TILE_PX) - 0.5;
-    const steps = Math.max(1, Math.ceil(Math.max(Math.abs(bi - ai), Math.abs(bj - aj)) * 2));
-    for (let s = 0; s <= steps; s++) {
-      const ci = Math.round(ai + ((bi - ai) * s) / steps);
-      const cj = Math.round(aj + ((bj - aj) * s) / steps);
-      for (let dj = -rad; dj <= rad; dj++) {
-        for (let di = -rad; di <= rad; di++) {
-          const i = ci + di;
-          const j = cj + dj;
-          if (i < 0 || j < 0 || i >= RW || j >= RH) continue;
-          const o = j * RW + i;
-          if (regionLand[o] && regionBiome[o] !== B.FRESHWATER) {
-            regionBiome[o] = B.FRESHWATER;
-            riverSamples++;
+
+  // RIVERS: clip NE centerlines to the bbox, classify width 1–3 by NE rank,
+  // stamp FRESHWATER into the region grid, and ship the polylines as JSON.
+  console.log(`bake-earth: ${region.id} rivers…`);
+  const riverFeatures = [];
+  for (const f of riversGeo.features) {
+    const g = f.geometry;
+    if (!g) continue;
+    const lines = g.type === 'LineString' ? [g.coordinates] : g.type === 'MultiLineString' ? g.coordinates : [];
+    let widthClass;
+    if (region.widthClassifier === 'scalerank') {
+      const sr = Number(f.properties?.scalerank ?? 9);
+      widthClass = sr <= 2 ? 3 : sr <= 5 ? 2 : 1;
+    } else {
+      const sw = Number(f.properties?.strokeweig ?? 0.1);
+      widthClass = sw >= 0.7 ? 3 : sw >= 0.3 ? 2 : 1;
+    }
+    const name = f.properties?.name ?? null;
+    for (const line of lines) {
+      // Clip to bbox by splitting into inside runs (endpoints clamped is fine
+      // at 320 m grid scale — these are centerlines, not authoritative banks).
+      let run = [];
+      for (const [x, y] of line) {
+        const inside = x >= bb.lngMin && x <= bb.lngMax && y >= bb.latMin && y <= bb.latMax;
+        if (inside) run.push([+x.toFixed(5), +y.toFixed(5)]);
+        else if (run.length > 1) {
+          riverFeatures.push({ name, widthClass, points: run });
+          run = [];
+        } else run = [];
+      }
+      if (run.length > 1) riverFeatures.push({ name, widthClass, points: run });
+    }
+  }
+  const riverNames = new Set(riverFeatures.map((r) => r.name).filter(Boolean));
+  for (const need of region.mustRivers) {
+    if (!riverNames.has(need)) throw new Error(`bake-earth: ${region.id} rivers must include ${need} — got ${[...riverNames].join(', ')}`);
+  }
+  for (const [name, minClass] of Object.entries(region.minRiverClass)) {
+    const best = Math.max(...riverFeatures.filter((r) => r.name === name).map((r) => r.widthClass));
+    if (best < minClass) throw new Error(`bake-earth: ${region.id} river ${name} width class ${best} < required ${minClass}`);
+  }
+  // Stamp rivers into the region biome grid (radius by width class, land only).
+  let riverSamples = 0;
+  for (const r of riverFeatures) {
+    const rad = r.widthClass - 1; // samples: 0 / 1 / 2 → ~320 / 960 / 1600 m swaths
+    for (let k = 0; k + 1 < r.points.length; k++) {
+      const [ax, ay] = r.points[k];
+      const [bx, by] = r.points[k + 1];
+      const ai = ((ax - bb.lngMin) * PX_PER_DEG_LNG) / (REGION_STEP * TILE_PX) - 0.5;
+      const aj = ((bb.latMax - ay) * PX_PER_DEG_LAT) / (REGION_STEP * TILE_PX) - 0.5;
+      const bi = ((bx - bb.lngMin) * PX_PER_DEG_LNG) / (REGION_STEP * TILE_PX) - 0.5;
+      const bj = ((bb.latMax - by) * PX_PER_DEG_LAT) / (REGION_STEP * TILE_PX) - 0.5;
+      const steps = Math.max(1, Math.ceil(Math.max(Math.abs(bi - ai), Math.abs(bj - aj)) * 2));
+      for (let s = 0; s <= steps; s++) {
+        const ci = Math.round(ai + ((bi - ai) * s) / steps);
+        const cj = Math.round(aj + ((bj - aj) * s) / steps);
+        for (let dj = -rad; dj <= rad; dj++) {
+          for (let di = -rad; di <= rad; di++) {
+            const i = ci + di;
+            const j = cj + dj;
+            if (i < 0 || j < 0 || i >= W || j >= H) continue;
+            const o = j * W + i;
+            if (regionLand[o] && regionBiome[o] !== B.FRESHWATER) {
+              regionBiome[o] = B.FRESHWATER;
+              riverSamples++;
+            }
           }
         }
       }
     }
   }
+  console.log(`  rivers: ${riverFeatures.length} clipped polylines, ${riverSamples} samples stamped`);
+  // Suez Canal fidelity (Egypt): NE rivers_lake_centerlines is a RIVER
+  // dataset — if no canal feature lands, STATE the gap (ledgered), never
+  // hand-draw one.
+  if (region.id === 'egypt') {
+    const hasSuez = [...riverNames].some((n) => /suez/i.test(n ?? ''));
+    region.suezNote = hasSuez
+      ? 'Suez Canal present in NE centerlines.'
+      : 'Suez Canal ABSENT from NE rivers_lake_centerlines (a rivers dataset) — fidelity gap stated, not hand-drawn (ledgered).';
+    console.log(`  ${region.suezNote}`);
+  }
+  if (region.demLakes?.length) {
+    region.demLakeNote = `DEM-derived lakes (NE 10m absent; alternative hosts proxy-blocked): ${region.demLakes
+      .map((dl) => `${dl.name} = terrarium z9 depression below ${dl.surfaceBelowM} m inside [${dl.window.latMin}..${dl.window.latMax}, ${dl.window.lngMin}..${dl.window.lngMax}]`)
+      .join('; ')}.`;
+    console.log(`  ${region.demLakeNote}`);
+  }
+  return { W, H, biome: regionBiome, elev: regionElev, riverFeatures };
 }
-console.log(`  rivers: ${riverFeatures.length} clipped polylines, ${riverSamples} samples stamped`);
 
 // 6) COAST-TRUTH: 300 seeded-random global points, land/water from the FULL
 //    precision NE polygons (never the grids).
@@ -473,60 +572,86 @@ const planetHeader = Buffer.concat([
 const planetBin = Buffer.concat([planetHeader, Buffer.from(planetBiome), Buffer.from(planetElev)]);
 writeFileSync(join(OUT, 'planet.bin'), planetBin);
 
-// pnw.bin: 'TOHR' v1 | W H step | bbox f64×4 | interleaved [biome, elev] per sample
-const pnwHeader = Buffer.concat([
-  Buffer.from('TOHR'),
-  U32(1),
-  U32(RW),
-  U32(RH),
-  U32(REGION_STEP),
-  F64(PNW.latMin),
-  F64(PNW.latMax),
-  F64(PNW.lngMin),
-  F64(PNW.lngMax),
-]);
-const inter = Buffer.alloc(RW * RH * 2);
-for (let o = 0; o < RW * RH; o++) {
-  inter[o * 2] = regionBiome[o];
-  inter[o * 2 + 1] = regionElev[o];
-}
-const pnwBin = Buffer.concat([pnwHeader, inter]);
-writeFileSync(join(OUT, 'regions', 'pnw.bin'), pnwBin);
+// GZIP EMISSION (Pass 7): grid packs ship COMPRESSED (.bin.gz) — PNGs and
+// small JSONs stay as-is (already compressed / tiny). Manifest rows carry
+// gzBytes (the committed size the guards count) plus bytes + sha256 of the
+// DECOMPRESSED truth — decoded bytes stay byte-identical to the raw bake.
+const { gzipSync, rmSync } = await (async () => {
+  const zlib = await import('node:zlib');
+  const fs = await import('node:fs');
+  return { gzipSync: zlib.gzipSync, rmSync: fs.rmSync };
+})();
+const gzWrite = (relFile, raw) => {
+  const gz = gzipSync(raw, { level: 9 });
+  writeFileSync(join(OUT, `${relFile}.gz`), gz);
+  rmSync(join(OUT, relFile), { force: true }); // the raw twin never ships
+  return gz;
+};
+const planetGz = gzWrite('planet.bin', planetBin);
+manifest.outputs.push({ file: 'public/world/planet.bin.gz', gzBytes: planetGz.length, bytes: planetBin.length, sha256: sha256(planetBin) });
 
-const riversJson = Buffer.from(JSON.stringify({ region: 'pnw', bbox: PNW, source: 'Natural Earth rivers_lake_centerlines', rivers: riverFeatures }));
-writeFileSync(join(OUT, 'regions', 'pnw-rivers.json'), riversJson);
+// Region packs: 'TOHR' v1 | W H step | bbox f64×4 | interleaved [biome, elev].
+const regionEntries = [];
+for (const region of REGIONS) {
+  const g = await bakeRegion(region);
+  const header = Buffer.concat([
+    Buffer.from('TOHR'),
+    U32(1),
+    U32(g.W),
+    U32(g.H),
+    U32(REGION_STEP),
+    F64(region.bbox.latMin),
+    F64(region.bbox.latMax),
+    F64(region.bbox.lngMin),
+    F64(region.bbox.lngMax),
+  ]);
+  const inter = Buffer.alloc(g.W * g.H * 2);
+  for (let o = 0; o < g.W * g.H; o++) {
+    inter[o * 2] = g.biome[o];
+    inter[o * 2 + 1] = g.elev[o];
+  }
+  const bin = Buffer.concat([header, inter]);
+  const gz = gzWrite(`regions/${region.id}.bin`, bin);
+  const riversJson = Buffer.from(JSON.stringify({ region: region.id, bbox: region.bbox, source: 'Natural Earth rivers_lake_centerlines', rivers: g.riverFeatures }));
+  writeFileSync(join(OUT, 'regions', `${region.id}-rivers.json`), riversJson);
+  regionEntries.push({
+    id: region.id,
+    bbox: region.bbox,
+    file: `regions/${region.id}.bin.gz`,
+    rivers: `regions/${region.id}-rivers.json`,
+    bytes: bin.length,
+    gzBytes: gz.length,
+    sha256: sha256(bin),
+    version: 1,
+  });
+  manifest.outputs.push({ file: `public/world/regions/${region.id}.bin.gz`, gzBytes: gz.length, bytes: bin.length, sha256: sha256(bin) });
+  manifest.outputs.push({ file: `public/world/regions/${region.id}-rivers.json`, bytes: riversJson.length, sha256: sha256(riversJson) });
+  if (region.suezNote) manifest.suezCanalNote = region.suezNote;
+  if (region.demLakeNote) manifest.demLakesNote = region.demLakeNote;
+}
+
 const coastJson = Buffer.from(JSON.stringify({ seed: '0x7a2e5eed', source: 'Natural Earth land + lakes (full precision)', points: coastTruth }));
 writeFileSync(join(OUT, 'coast-truth.json'), coastJson);
+manifest.outputs.push({ file: 'public/world/coast-truth.json', bytes: coastJson.length, sha256: sha256(coastJson) });
 
-const regionsManifest = {
-  version: 1,
-  regions: [
-    {
-      id: 'pnw',
-      bbox: PNW,
-      file: 'regions/pnw.bin',
-      rivers: 'regions/pnw-rivers.json',
-      bytes: pnwBin.length,
-      sha256: sha256(pnwBin),
-      version: 1,
-    },
-  ],
-};
-const regionsJson = Buffer.from(JSON.stringify(regionsManifest, null, 2));
-writeFileSync(join(OUT, 'regions.json'), regionsJson);
-
-for (const [file, buf] of [
-  ['planet.bin', planetBin],
-  ['regions/pnw.bin', pnwBin],
-  ['regions/pnw-rivers.json', riversJson],
-  ['coast-truth.json', coastJson],
-  ['regions.json', regionsJson],
-]) {
-  manifest.outputs.push({ file: `public/world/${file}`, bytes: buf.length, sha256: sha256(buf) });
+// regions.json: PRESERVE bake-external entries (worldmap from worldmap.mjs,
+// per-region map images from regionmap.mjs) when re-baking.
+const regionsFile = join(OUT, 'regions.json');
+const prior = existsSync(regionsFile) ? JSON.parse(readFileSync(regionsFile, 'utf8')) : {};
+for (const e of regionEntries) {
+  const old = (prior.regions ?? []).find((r) => r.id === e.id);
+  if (old?.map) e.map = old.map;
 }
-const total = manifest.outputs.reduce((a, o) => a + o.bytes, 0);
+const regionsManifest = { version: 1, regions: regionEntries, ...(prior.worldmap ? { worldmap: prior.worldmap } : {}) };
+const regionsJson = Buffer.from(JSON.stringify(regionsManifest, null, 2));
+writeFileSync(regionsFile, regionsJson);
+manifest.outputs.push({ file: 'public/world/regions.json', bytes: regionsJson.length, sha256: sha256(regionsJson) });
+
+// SIZE GUARDS count COMMITTED bytes (gzBytes where compressed) — unchanged
+// thresholds, never weakened.
+const total = manifest.outputs.reduce((a, o) => a + (o.gzBytes ?? o.bytes), 0);
 if (total > SIZE_GUARD_TOTAL) throw new Error(`bake-earth: total packs ${total} exceed ${SIZE_GUARD_TOTAL}`);
-for (const o of manifest.outputs) if (o.bytes > SIZE_GUARD_FILE) throw new Error(`bake-earth: ${o.file} exceeds single-file guard`);
+for (const o of manifest.outputs) if ((o.gzBytes ?? o.bytes) > SIZE_GUARD_FILE) throw new Error(`bake-earth: ${o.file} exceeds single-file guard`);
 
 manifest.derivedBiomesNote =
   'Biomes are DERIVED (fallback 3): Pass 2 latitude+moisture bands masked by REAL Natural Earth land/ocean/lakes and pushed by REAL terrarium elevation. WWF ecoregions and Koppen-Geiger GeoTIFF were attempted first; their hosts are unreachable from the build environment.';

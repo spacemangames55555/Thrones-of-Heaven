@@ -170,21 +170,31 @@ const ok = (name, pass, detail = '') => {
     await build({ entryPoints: [new URL('../src/world/world-scale.ts', import.meta.url).pathname], bundle: true, format: 'esm', platform: 'node', outfile, logLevel: 'silent' });
     return import(outfile);
   })();
+  const { gunzipSync } = await import('node:zlib');
   const read = (f) => readFileSync(join(worldDir, f));
-  const planet = read('planet.bin');
-  const pnw = read('regions/pnw.bin');
+  // PASS 7: grid packs ship GZIP — decode truth is the DECOMPRESSED bytes
+  // (manifest sha256 = decompressed; gzBytes = the committed wire size).
+  const planet = gunzipSync(read('planet.bin.gz'));
+  const pnw = gunzipSync(read('regions/pnw.bin.gz'));
+  const egypt = gunzipSync(read('regions/egypt.bin.gz'));
   const regions = JSON.parse(read('regions.json'));
   const rivers = JSON.parse(read('regions/pnw-rivers.json'));
+  const eRivers = JSON.parse(read('regions/egypt-rivers.json'));
   const coast = JSON.parse(read('coast-truth.json'));
   const bakeManifest = JSON.parse(readFileSync(new URL('../scripts/bake-earth/bake-manifest.json', import.meta.url).pathname));
   const sha = (buf) => createHash('sha256').update(buf).digest('hex');
-  // Manifest checksums (regions.json AND bake-manifest) vs committed bytes.
+  // Manifest checksums (regions.json AND bake-manifest) vs committed bytes:
+  // gz rows verify gzBytes (committed) AND the decompressed sha; raw rows as before.
   const pnwEntry = regions.regions.find((r) => r.id === 'pnw');
+  const egyptEntry = regions.regions.find((r) => r.id === 'egypt');
   const manifestShaOk =
     pnwEntry.sha256 === sha(pnw) &&
+    egyptEntry.sha256 === sha(egypt) &&
     bakeManifest.outputs.every((o) => {
       const rel = o.file.replace('public/world/', '');
-      return sha(read(rel)) === o.sha256;
+      const committed = read(rel);
+      if (rel.endsWith('.gz')) return o.gzBytes === committed.length && sha(gunzipSync(committed)) === o.sha256;
+      return sha(committed) === o.sha256;
     });
   // Headers vs the LIVE schema/scale constants.
   const worldTilesX = (360 * ws.PX_PER_DEG_LNG) / 32;
@@ -202,28 +212,52 @@ const ok = (name, pass, detail = '') => {
     u32(planet, 32) === schema.ELEV_BAND_OFFSET_M &&
     u32(planet, 36) === schema.ELEV_BAND_STEP_M &&
     planet.length === 40 + Math.ceil(worldTilesX / 256) * Math.ceil(worldTilesY / 256) + Math.ceil(worldTilesX / 512) * Math.ceil(worldTilesY / 512);
-  const rw = u32(pnw, 8);
-  const rh = u32(pnw, 12);
-  const pnwHeaderOk =
-    pnw.toString('latin1', 0, 4) === 'TOHR' &&
-    u32(pnw, 4) === 1 &&
-    u32(pnw, 16) === 16 &&
-    pnw.readDoubleLE(20) === 41.5 &&
-    pnw.readDoubleLE(28) === 49.5 &&
-    pnw.readDoubleLE(36) === -125.0 &&
-    pnw.readDoubleLE(44) === -110.5 &&
-    pnw.length === 52 + rw * rh * 2;
-  const totalBytes = bakeManifest.outputs.reduce((a, o) => a + o.bytes, 0);
-  const sizeOk = totalBytes <= 60 * 1024 * 1024 && bakeManifest.outputs.every((o) => o.bytes <= 45 * 1024 * 1024);
+  const regionHeaderOk = (buf, bb) => {
+    const rw = u32(buf, 8);
+    const rh = u32(buf, 12);
+    return (
+      buf.toString('latin1', 0, 4) === 'TOHR' &&
+      u32(buf, 4) === 1 &&
+      u32(buf, 16) === 16 &&
+      buf.readDoubleLE(20) === bb[0] &&
+      buf.readDoubleLE(28) === bb[1] &&
+      buf.readDoubleLE(36) === bb[2] &&
+      buf.readDoubleLE(44) === bb[3] &&
+      buf.length === 52 + rw * rh * 2
+    );
+  };
+  const pnwHeaderOk = regionHeaderOk(pnw, [41.5, 49.5, -125.0, -110.5]);
+  const egyptHeaderOk = regionHeaderOk(egypt, [21.5, 32.5, 24.5, 36.5]);
+  // Size guards count COMMITTED bytes (gz where compressed) — thresholds unchanged.
+  const totalBytes = bakeManifest.outputs.reduce((a, o) => a + (o.gzBytes ?? o.bytes), 0);
+  const sizeOk = totalBytes <= 60 * 1024 * 1024 && bakeManifest.outputs.every((o) => (o.gzBytes ?? o.bytes) <= 45 * 1024 * 1024);
   const gitignoreOk = readFileSync(new URL('../.gitignore', import.meta.url).pathname, 'utf8').includes('scripts/bake-earth/.cache/');
   const riverNames = new Set(rivers.rivers.map((r) => r.name));
   const riversOk = riverNames.has('Columbia') && riverNames.has('Snake') && rivers.rivers.every((r) => r.widthClass >= 1 && r.widthClass <= 3);
+  // Egypt: the Nile must ship at width class 3; the Suez Canal's presence or
+  // STATED absence is recorded in the bake manifest (fidelity gap, ledgered).
+  const nile = eRivers.rivers.filter((r) => r.name === 'Nile');
+  const egyptRiversOk = nile.length > 0 && Math.max(...nile.map((r) => r.widthClass)) === 3;
+  const suezStated = typeof bakeManifest.suezCanalNote === 'string' && bakeManifest.suezCanalNote.length > 0;
   const coastOk = coast.points.length === 300 && coast.points.every((p) => typeof p.water === 'boolean');
   const sourcesOk = Array.isArray(bakeManifest.sources) && bakeManifest.sources.length >= 3 && bakeManifest.sources.every((s) => s.url && s.sha256);
   ok(
-    'pack-integrity: manifest checksums match committed packs; headers agree with the live schema; size guards hold; cache gitignored; Columbia+Snake shipped; 300 coast-truth points',
-    manifestShaOk && planetHeaderOk && pnwHeaderOk && sizeOk && gitignoreOk && riversOk && coastOk && sourcesOk,
-    JSON.stringify({ manifestShaOk, planetHeaderOk, pnwHeaderOk, totalMB: +(totalBytes / 1048576).toFixed(1), sizeOk, gitignoreOk, riversOk, coastOk, sourcesOk, derivedBiomes: bakeManifest.derivedBiomes === true }),
+    'pack-integrity: gz packs decode to manifest-matching truth; headers (pnw + egypt) agree with the live schema; committed-size guards hold; Columbia+Snake and a class-3 Nile shipped; Suez Canal presence stated; 300 coast-truth points',
+    manifestShaOk && planetHeaderOk && pnwHeaderOk && egyptHeaderOk && sizeOk && gitignoreOk && riversOk && egyptRiversOk && suezStated && coastOk && sourcesOk,
+    JSON.stringify({ manifestShaOk, planetHeaderOk, pnwHeaderOk, egyptHeaderOk, totalMB: +(totalBytes / 1048576).toFixed(1), sizeOk, gitignoreOk, riversOk, egyptRiversOk, suez: bakeManifest.suezCanalNote, coastOk, sourcesOk, derivedBiomes: bakeManifest.derivedBiomes === true }),
+  );
+
+  // 0c1b. GZ-PARITY (PASS 7): decoded pack truth is BYTE-IDENTICAL to the
+  // pre-compression bake — the planet + pnw decompressed sha256 are PINNED
+  // from the last raw decode (the values the whole 6-series gate ran on).
+  const PRE_COMPRESSION_PINS = {
+    planet: '9e881e73761fef15f30510b406f756316100680e4607e3b8eff88f9b9252544d',
+    pnw: '14c4ab4de9690edba81e06a2482d085358af557f65c4b68a1b7ff2a0ffda9ff1',
+  };
+  ok(
+    'gz-parity: decompressed planet + pnw packs are byte-identical to the pinned pre-compression decode; egypt decompresses to its manifest sha',
+    sha(planet) === PRE_COMPRESSION_PINS.planet && sha(pnw) === PRE_COMPRESSION_PINS.pnw && sha(egypt) === egyptEntry.sha256,
+    JSON.stringify({ planet: sha(planet).slice(0, 12), pnw: sha(pnw).slice(0, 12), egypt: sha(egypt).slice(0, 12) }),
   );
 }
 
@@ -304,71 +338,92 @@ const ok = (name, pass, detail = '') => {
   const vis = await import(new URL('../node_modules/.cache/toh-wmp-vis.mjs', import.meta.url).pathname);
   const schema2 = await import(new URL('../node_modules/.cache/toh-wmp-schema.mjs', import.meta.url).pathname);
   const B = schema2.Biome;
+  const { gunzipSync: gunzip0c3 } = await import('node:zlib');
   const regions2 = JSON.parse(readFileSync(new URL('../public/world/regions.json', import.meta.url).pathname));
-  const pnwR = regions2.regions.find((r) => r.id === 'pnw');
-  const mapEntry = pnwR?.map;
-  let out = { hasEntry: !!mapEntry };
-  if (mapEntry) {
-    const bytes = readFileSync(new URL(`../public/world/${mapEntry.file}`, import.meta.url).pathname);
-    const png = PNG.sync.read(bytes);
-    const pack = readFileSync(new URL(`../public/world/${pnwR.file}`, import.meta.url).pathname);
-    const gw = pack.readUInt32LE(8);
-    const gh = pack.readUInt32LE(12);
-    const native = png.width === gw && png.height === gh;
-    const statedDown = !!mapEntry.downscaledFrom && mapEntry.downscaledFrom.w === gw && mapEntry.downscaledFrom.h === gh && Math.max(png.width, png.height) === 2048;
-    const bb = pnwR.bbox;
-    const classAt = (lat, lng) => {
-      const x = Math.min(png.width - 1, Math.max(0, Math.floor(((lng - bb.lngMin) / (bb.lngMax - bb.lngMin)) * png.width)));
-      const y = Math.min(png.height - 1, Math.max(0, Math.floor(((bb.latMax - lat) / (bb.latMax - bb.latMin)) * png.height)));
-      const o = (y * png.width + x) * 4;
-      const r = png.data[o];
-      const g = png.data[o + 1];
-      const b2 = png.data[o + 2];
-      const lum = (r + g + b2) / 3 || 1;
-      let best = -1;
-      let bd = Infinity;
-      for (const [id, v] of Object.entries(vis.MAP_PALETTE)) {
-        const pr = (v >> 16) & 255;
-        const pg = (v >> 8) & 255;
-        const pb = v & 255;
-        const pl = (pr + pg + pb) / 3;
-        const d = (r / lum - pr / pl) ** 2 + (g / lum - pg / pl) ** 2 + (b2 / lum - pb / pl) ** 2;
-        if (d < bd) {
-          bd = d;
-          best = Number(id);
+  // Per-region probe tables (box entries search a window — bakes shift
+  // channels a hair off survey, the geo-truth river-probe discipline).
+  const REGION_PROBES = {
+    pnw: [
+      { name: 'puget', classes: [B.OCEAN, B.FRESHWATER], at: [47.6, -122.4] },
+      { name: 'rainier', classes: [B.SNOW, B.ROCK], at: [46.85, -121.76] },
+      { name: 'vantageRiver', classes: [B.FRESHWATER], box: [46.84, 47.04, -120.08, -119.88] },
+      { name: 'olympic', classes: [B.FOREST, B.TAIGA, B.GRASS], at: [47.8, -123.7] },
+    ],
+    egypt: [
+      { name: 'medWater', classes: [B.OCEAN], at: [31.8, 29.5] },
+      { name: 'nileLuxor', classes: [B.FRESHWATER], box: [25.6, 25.8, 32.5, 32.76] },
+      { name: 'qarun', classes: [B.FRESHWATER], box: [29.38, 29.55, 30.4, 30.8] },
+      // Derived-biome speckle at this latitude (stated fallback): box probe.
+      { name: 'interiorDesert', classes: [B.DESERT], box: [26.8, 27.2, 26.8, 27.2] },
+    ],
+  };
+  for (const rid of ['pnw', 'egypt']) {
+    const rEntry = regions2.regions.find((r) => r.id === rid);
+    const mapEntry = rEntry?.map;
+    let out = { hasEntry: !!mapEntry };
+    if (mapEntry) {
+      const bytes = readFileSync(new URL(`../public/world/${mapEntry.file}`, import.meta.url).pathname);
+      const png = PNG.sync.read(bytes);
+      const packRaw = readFileSync(new URL(`../public/world/${rEntry.file}`, import.meta.url).pathname);
+      const pack = rEntry.file.endsWith('.gz') ? gunzip0c3(packRaw) : packRaw;
+      const gw = pack.readUInt32LE(8);
+      const gh = pack.readUInt32LE(12);
+      const native = png.width === gw && png.height === gh;
+      const statedDown = !!mapEntry.downscaledFrom && mapEntry.downscaledFrom.w === gw && mapEntry.downscaledFrom.h === gh && Math.max(png.width, png.height) === 2048;
+      const bb = rEntry.bbox;
+      const classAt = (lat, lng) => {
+        const x = Math.min(png.width - 1, Math.max(0, Math.floor(((lng - bb.lngMin) / (bb.lngMax - bb.lngMin)) * png.width)));
+        const y = Math.min(png.height - 1, Math.max(0, Math.floor(((bb.latMax - lat) / (bb.latMax - bb.latMin)) * png.height)));
+        const o = (y * png.width + x) * 4;
+        const r = png.data[o];
+        const g = png.data[o + 1];
+        const b2 = png.data[o + 2];
+        const lum = (r + g + b2) / 3 || 1;
+        let best = -1;
+        let bd = Infinity;
+        for (const [id, v] of Object.entries(vis.MAP_PALETTE)) {
+          const pr = (v >> 16) & 255;
+          const pg = (v >> 8) & 255;
+          const pb = v & 255;
+          const pl = (pr + pg + pb) / 3;
+          const d = (r / lum - pr / pl) ** 2 + (g / lum - pg / pl) ** 2 + (b2 / lum - pb / pl) ** 2;
+          if (d < bd) {
+            bd = d;
+            best = Number(id);
+          }
+        }
+        return best;
+      };
+      out = {
+        hasEntry: true,
+        w: png.width,
+        h: png.height,
+        gridW: gw,
+        gridH: gh,
+        dimsOk: native || statedDown,
+        mb: +(bytes.length / 1048576).toFixed(2),
+        sizeOk: bytes.length <= 6 * 1024 * 1024,
+        shaOk: mapEntry.sha256 === createHash('sha256').update(bytes).digest('hex') && mapEntry.bytes === bytes.length,
+      };
+      for (const p of REGION_PROBES[rid]) {
+        if (p.at) out[p.name] = p.classes.includes(classAt(p.at[0], p.at[1]));
+        else {
+          let hit = false;
+          for (let la = p.box[0]; la <= p.box[1] && !hit; la += 0.005) {
+            for (let ln = p.box[2]; ln <= p.box[3] && !hit; ln += 0.005) {
+              if (p.classes.includes(classAt(la, ln))) hit = true;
+            }
+          }
+          out[p.name] = hit;
         }
       }
-      return best;
-    };
-    // The Columbia near Vantage: box search (the bake shifts channels a hair
-    // off survey — the same reason the geo-truth river probe scans a radius).
-    let vantageRiver = false;
-    for (let la = 46.84; la <= 47.04 && !vantageRiver; la += 0.005) {
-      for (let ln = -120.08; ln <= -119.88 && !vantageRiver; ln += 0.005) {
-        if (classAt(la, ln) === B.FRESHWATER) vantageRiver = true;
-      }
     }
-    out = {
-      hasEntry: true,
-      w: png.width,
-      h: png.height,
-      gridW: gw,
-      gridH: gh,
-      dimsOk: native || statedDown,
-      mb: +(bytes.length / 1048576).toFixed(2),
-      sizeOk: bytes.length <= 6 * 1024 * 1024,
-      shaOk: mapEntry.sha256 === createHash('sha256').update(bytes).digest('hex') && mapEntry.bytes === bytes.length,
-      puget: [B.OCEAN, B.FRESHWATER].includes(classAt(47.6, -122.4)),
-      rainier: [B.SNOW, B.ROCK].includes(classAt(46.85, -121.76)),
-      vantageRiver,
-      olympic: [B.FOREST, B.TAIGA, B.GRASS].includes(classAt(47.8, -123.7)),
-    };
+    ok(
+      `${rid === 'pnw' ? 'regionmap' : 'egyptmap'}-parity: ${rid}-map.png dims match the pack grid (or a STATED 2048 downscale); <= 6 MB; manifest sha matches; probe classes correct`,
+      out.hasEntry && out.dimsOk && out.sizeOk && out.shaOk && REGION_PROBES[rid].every((p) => out[p.name]),
+      JSON.stringify(out),
+    );
   }
-  ok(
-    'regionmap-parity: pnw-map.png dims match the pack grid (or a STATED 2048 downscale); <= 6 MB; manifest sha matches; Puget water / Rainier high band / Columbia-at-Vantage river / Olympic forest probe classes correct',
-    out.hasEntry && out.dimsOk && out.sizeOk && out.shaOk && out.puget && out.rainier && out.vantageRiver && out.olympic,
-    JSON.stringify(out),
-  );
 }
 
 // 0d. REPLANT-TRUE-COORDS (PASS 6C, pure Node — replaces quest-anchor-sanity's
@@ -8091,6 +8146,101 @@ try {
     JSON.stringify(regionRefine),
   );
 
+  // 2g3b. EGYPT GEO-TRUTH + REGION-REFINEMENT (PASS 7): stand at Faiyum — the
+  // egypt pack lazy-loads on ring proximity, the source version bumps, and
+  // the arrival ring repaints — then probe the COMPOSED source at real
+  // places (river/lake probes are box searches, the geo-truth discipline).
+  const egyptTruth = await (async () => {
+    const seattleSpot = await page.evaluate(() => {
+      const ms = window.__ready();
+      const spot = { x: ms.player.x, y: ms.player.y };
+      const p = ms.terrestrialPxFromLatLng({ lat: 29.31, lng: 30.84 });
+      ms.player.sprite.body.reset(p.x, p.y);
+      ms.lastLandPos = undefined;
+      return spot;
+    });
+    await page.waitForFunction(
+      () => {
+        const ms = window.__game.scene.getScene('MainScene');
+        const st = ms.chunkStreamer;
+        if (!st.regionsRef.some((r) => r.id === 'egypt')) return false;
+        const pcx = Math.floor((ms.player.x - st.originPx.x) / 2048);
+        const pcy = Math.floor((ms.player.y - st.originPx.y) / 2048);
+        for (let dy = -2; dy <= 2; dy++) {
+          for (let dx = -2; dx <= 2; dx++) {
+            if (st.chunkVersion(pcx + dx, pcy + dy) !== st.sourceVersion) return false;
+          }
+        }
+        return true;
+      },
+      null,
+      { timeout: 120000 },
+    );
+    const r = await page.evaluate(() => {
+      const ms = window.__game.scene.getScene('MainScene');
+      const st = ms.chunkStreamer;
+      const B = window.__worldScale.schema.Biome;
+      const s = (lat, lng) => st.earthSample(lat, lng);
+      const boxHasFresh = (lat, lng, tiles) => {
+        for (let dj = -tiles; dj <= tiles; dj += 4) {
+          for (let di = -tiles; di <= tiles; di += 4) {
+            if (s(lat - (dj * 32) / 178112, lng + (di * 32) / 121472)[0] === B.FRESHWATER) return true;
+          }
+        }
+        return false;
+      };
+      const red = s(27.0, 34.5);
+      let musaBand = 0;
+      for (let la = 28.52; la <= 28.56; la += 0.004) {
+        for (let ln = 33.95; ln <= 33.99; ln += 0.004) {
+          const q = s(la, ln);
+          if (q[0] !== B.OCEAN && q[0] !== B.FRESHWATER && q[1] > musaBand) musaBand = q[1];
+        }
+      }
+      // Deep Sahara: the derived-biome model (stated Pass 3 fallback)
+      // speckles desert/savanna at this latitude — probe the 1° box
+      // MAJORITY, the same discipline as the Himalaya box probe.
+      const census = {};
+      for (let a = -10; a <= 10; a++) {
+        for (let b2 = -10; b2 <= 10; b2++) {
+          const q = s(27 + a * 0.05, 27 + b2 * 0.05);
+          census[q[0]] = (census[q[0]] ?? 0) + 1;
+        }
+      }
+      const saharaMajority = Number(Object.entries(census).sort((x, y) => y[1] - x[1])[0][0]) === B.DESERT;
+      const pcx = Math.floor((ms.player.x - st.originPx.x) / 2048);
+      const pcy = Math.floor((ms.player.y - st.originPx.y) / 2048);
+      const full = st.synthesizeDirect(pcx, pcy);
+      const po = st.fillPlanetOnly(pcx, pcy);
+      let diff = 0;
+      for (let i = 0; i < full.length; i++) if (full[i] !== po[i]) diff++;
+      return {
+        nileLuxor: boxHasFresh(25.7, 32.63, 40),
+        qarun: boxHasFresh(29.45, 30.58, 40),
+        nasser: boxHasFresh(23.0, 32.9, 40),
+        redSea: red[0] === B.OCEAN && (red[3] & 1) === 0,
+        musaBand,
+        sahara: saharaMajority,
+        egyptLoaded: st.regionsRef.some((r2) => r2.id === 'egypt'),
+        version: st.sourceVersion,
+        regions: st.stats().regions,
+        diff,
+      };
+    });
+    await page.evaluate((spot) => {
+      const ms = window.__ready();
+      ms.player.sprite.body.reset(spot.x, spot.y);
+      ms.lastLandPos = undefined;
+    }, seattleSpot);
+    await page.waitForTimeout(800);
+    return r;
+  })();
+  ok(
+    'egypt geo-truth + region-refinement: Nile at Luxor / Qarun / Nasser FRESHWATER (40-tile boxes), Red Sea non-walkable OCEAN, Jebel Musa band >= 55, deep Sahara DESERT; egypt pack refined the Faiyum arrival (version bump + repaint + planet-only diff)',
+    egyptTruth.nileLuxor && egyptTruth.qarun && egyptTruth.nasser && egyptTruth.redSea && egyptTruth.musaBand >= 55 && egyptTruth.sahara && egyptTruth.egyptLoaded && egyptTruth.version >= 4 && egyptTruth.diff > 1000,
+    JSON.stringify(egyptTruth),
+  );
+
   // ── PASS 4: TRAVEL SYSTEMS (v2 session; player still at the Seattle spot) ─
   // 2h0. travel-distance-ui: the km readout matches the px math exactly for
   // two fixtures (8,000 px = 5.0 km one-decimal; 40,000 px = 25 km whole).
@@ -10332,7 +10482,7 @@ try {
   // 2g4. offline-cache: a SECOND v2 boot must serve planet.bin from
   // IndexedDB — proven by BLOCKING the network route for it and still
   // arriving at a live earth source.
-  await page.route('**/world/planet.bin', (route) => route.abort());
+  await page.route('**/world/planet.bin.gz', (route) => route.abort()); // Pass 7: the pack ships gzip
   await page.route('**/world/worldmap.png', (route) => route.abort()); // Pass 6A: the map image must ride the same cache
   await page.route('**/world/regions/pnw-map.png', (route) => route.abort()); // Pass 6D: the region map tier rides it too
   await page.goto(`http://localhost:${PORT}/?scale=v2`, { waitUntil: 'load' });
@@ -10367,11 +10517,11 @@ try {
     await wait(300);
     return out;
   });
-  await page.unroute('**/world/planet.bin');
+  await page.unroute('**/world/planet.bin.gz');
   await page.unroute('**/world/worldmap.png');
   await page.unroute('**/world/regions/pnw-map.png');
   ok(
-    'offline-cache: second v2 boot serves planet.bin AND worldmap.png from IndexedDB with the network routes blocked',
+    'offline-cache: second v2 boot serves planet.bin.gz (decompressed on read) AND worldmap.png from IndexedDB with the network routes blocked',
     offlineCache.planetFrom === 'idb' && offlineCache.worldmapFrom === 'idb' && offlineCache.worldmapBytes > 100000 && offlineCache.source === 'earth',
     JSON.stringify(offlineCache),
   );
@@ -10380,6 +10530,37 @@ try {
     offlineRegion.setup === 'ok' && offlineRegion.state === 'ready' && offlineRegion.from === 'idb' && offlineRegion.visible === true,
     JSON.stringify(offlineRegion),
   );
+
+  // 2g5. decompression-unavailable (PASS 7): a platform WITHOUT
+  // DecompressionStream must fail the boot LOUDLY with the requirement named
+  // — never a silent procedural session. Isolated page (init scripts are
+  // page-scoped; the main session is untouched).
+  {
+    const ctx2 = await browser.newContext({ viewport: { width: 428, height: 926 } });
+    const p2 = await ctx2.newPage();
+    const p2Errors = [];
+    p2.on('pageerror', (e) => p2Errors.push(e.message));
+    await p2.addInitScript(() => {
+      // Simulate an old platform: the constructor is absent entirely.
+      delete window.DecompressionStream;
+    });
+    await p2.goto(`http://localhost:${PORT}/?scale=v2`, { waitUntil: 'load' });
+    await p2.waitForFunction(() => !!window.__game && window.__game.scene.isActive('TitleScene'), null, { timeout: 25000 });
+    await p2.evaluate(() => window.__game.scene.getScene('TitleScene').scene.start('MainScene', { mode: 'new', classId: 'blacksmith' }));
+    await p2.waitForFunction(() => window.__game.scene.isActive('MainScene'), null, { timeout: 30000 });
+    let named = false;
+    for (let k = 0; k < 25 && !named; k++) {
+      await p2.waitForTimeout(400);
+      named = p2Errors.some((m) => m.includes('DecompressionStream'));
+    }
+    const silentEarth = await p2.evaluate(() => window.__game.scene.getScene('MainScene').chunkStreamer?.activeSourceLabel === 'earth');
+    await ctx2.close();
+    ok(
+      'decompression-unavailable: a platform without DecompressionStream fails LOUDLY with the requirement named — and never silently reaches an earth session',
+      named && !silentEarth,
+      JSON.stringify({ named, silentEarth, firstError: p2Errors.find((m) => m.includes('DecompressionStream'))?.slice(0, 140) ?? p2Errors[0]?.slice(0, 140) ?? null }),
+    );
+  }
 
   // ── PASS 4 COMMIT 2: THE FLIP ─────────────────────────────────────────────
   // 2i0. flip-default: a page with NO param is v2 — streamer live, the earth

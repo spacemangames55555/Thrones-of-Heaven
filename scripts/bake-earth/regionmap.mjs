@@ -11,6 +11,7 @@
 // Run: npm run bake:regionmaps  (requires the committed region packs).
 import { readFileSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
+import { gunzipSync } from 'node:zlib';
 import { PNG } from 'pngjs';
 import { build } from 'esbuild';
 
@@ -34,7 +35,9 @@ const manifest = JSON.parse(readFileSync(manifestFile, 'utf8'));
 
 function renderRegion(entry) {
   const packPath = new URL(`../../public/world/${entry.file}`, import.meta.url).pathname;
-  const raw = readFileSync(packPath);
+  // Pass 7: committed packs are gzip; decode truth is the DECOMPRESSED bytes.
+  const rawFile = readFileSync(packPath);
+  const raw = entry.file.endsWith('.gz') ? gunzipSync(rawFile) : rawFile;
   const g = earth.decodeRegionPack(entry.id, raw.buffer.slice(raw.byteOffset, raw.byteOffset + raw.byteLength));
   console.log(`${entry.id}: grid ${g.w}×${g.h} (${g.stepTiles} tiles/cell) — rendering…`);
   const png = new PNG({ width: g.w, height: g.h, colorType: 2, deflateLevel: 9 });
@@ -118,5 +121,5 @@ if (rj) {
   rj.sha256 = createHash('sha256').update(regionsOut).digest('hex');
 }
 writeFileSync(manifestFile, JSON.stringify(manifest, null, 2) + '\n');
-const total = manifest.outputs.reduce((a, o) => a + o.bytes, 0);
+const total = manifest.outputs.reduce((a, o) => a + (o.gzBytes ?? o.bytes), 0); // committed bytes (gz where compressed)
 console.log(`manifests updated — pack total now ${(total / 1048576).toFixed(1)} MB`);

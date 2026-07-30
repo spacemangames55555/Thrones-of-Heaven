@@ -5,9 +5,10 @@
 // are ledgered) and colored via MAP_PALETTE (terrain-visuals-config) with a
 // bake-time hillshade from the real elevation plane. Updates bake-manifest
 // outputs + the regions.json worldmap entry (bytes + sha256) in place.
-// Run: npm run bake:worldmap  (requires the committed planet.bin).
+// Run: npm run bake:worldmap  (requires the committed planet.bin.gz).
 import { readFileSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
+import { gunzipSync } from 'node:zlib';
 import { PNG } from 'pngjs';
 import { build } from 'esbuild';
 
@@ -23,8 +24,9 @@ const vis = await mod('../../src/world/terrain-visuals-config.ts', 'vis');
 const ws = await mod('../../src/world/world-scale.ts', 'scale');
 const schema = await mod('../../src/world/terrain-schema.ts', 'schema');
 
-const planetFile = new URL('../../public/world/planet.bin', import.meta.url).pathname;
-const raw = readFileSync(planetFile);
+// Pass 7: the committed pack is gzip; decode truth is the DECOMPRESSED bytes.
+const planetFile = new URL('../../public/world/planet.bin.gz', import.meta.url).pathname;
+const raw = gunzipSync(readFileSync(planetFile));
 const planet = earth.decodePlanetPack(raw.buffer.slice(raw.byteOffset, raw.byteOffset + raw.byteLength));
 
 const W = vis.WORLDMAP_WIDTH;
@@ -150,5 +152,5 @@ if (rj) {
   rj.sha256 = createHash('sha256').update(regionsOut).digest('hex');
 }
 writeFileSync(manifestFile, JSON.stringify(manifest, null, 2) + '\n');
-const total = manifest.outputs.reduce((a, o) => a + o.bytes, 0);
+const total = manifest.outputs.reduce((a, o) => a + (o.gzBytes ?? o.bytes), 0); // committed bytes (gz where compressed)
 console.log(`manifests updated — pack total now ${(total / 1048576).toFixed(1)} MB`);

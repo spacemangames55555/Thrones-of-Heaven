@@ -1,5 +1,5 @@
 {
-  "bakedAt": "2026-07-26T21:40:29.638Z",
+  "bakedAt": "2026-07-30T15:06:55.189Z",
   "sources": [
     {
       "name": "land",
@@ -25,12 +25,14 @@
   ],
   "outputs": [
     {
-      "file": "public/world/planet.bin",
+      "file": "public/world/planet.bin.gz",
+      "gzBytes": 1755561,
       "bytes": 24675153,
       "sha256": "9e881e73761fef15f30510b406f756316100680e4607e3b8eff88f9b9252544d"
     },
     {
-      "file": "public/world/regions/pnw.bin",
+      "file": "public/world/regions/pnw.bin.gz",
+      "gzBytes": 4724332,
       "bytes": 19152658,
       "sha256": "14c4ab4de9690edba81e06a2482d085358af557f65c4b68a1b7ff2a0ffda9ff1"
     },
@@ -40,14 +42,25 @@
       "sha256": "cbe488163a605c3e97916fd2feb62583bfaa9055dcf767b005546f642e5950a1"
     },
     {
+      "file": "public/world/regions/egypt.bin.gz",
+      "gzBytes": 2047819,
+      "bytes": 21790990,
+      "sha256": "580d949b9486958fd253d4583a1b14b7c55a66d841e77aab525f8cd0506b1b8e"
+    },
+    {
+      "file": "public/world/regions/egypt-rivers.json",
+      "bytes": 18661,
+      "sha256": "fbcddca44765894eba78348d8652cf42ce21ac2f6d4a429574dc9317afae5700"
+    },
+    {
       "file": "public/world/coast-truth.json",
       "bytes": 14023,
       "sha256": "f53b36df0c00574239e6e6372ac8de7135ad5cf41ea1d72c204017246abfc128"
     },
     {
       "file": "public/world/regions.json",
-      "bytes": 868,
-      "sha256": "3507e5caa67d87128571b2c3ca75f8d0965710d1439a4430e7252eea3e0704dd"
+      "bytes": 1502,
+      "sha256": "a7ed1962cb3d0e399f0132f0c6a4da347189794360108b9cb0658a6abd7eed75"
     },
     {
       "file": "public/world/worldmap.png",
@@ -58,8 +71,15 @@
       "file": "public/world/regions/pnw-map.png",
       "bytes": 3253950,
       "sha256": "6b834e3e344d748255b6d056961a1a0136e0ff76496f3306643cb9a35223b999"
+    },
+    {
+      "file": "public/world/regions/egypt-map.png",
+      "bytes": 2052869,
+      "sha256": "c042e41121bf8e528c4c13d64165b305795c4d6b7aa9c9a69e5dd22ccc4f293b"
     }
   ],
   "derivedBiomes": true,
-  "derivedBiomesNote": "Biomes are DERIVED (fallback 3): Pass 2 latitude+moisture bands masked by REAL Natural Earth land/ocean/lakes and pushed by REAL terrarium elevation. WWF ecoregions and Koppen-Geiger GeoTIFF were attempted first; their hosts are unreachable from the build environment."
+  "derivedBiomesNote": "Biomes are DERIVED (fallback 3): Pass 2 latitude+moisture bands masked by REAL Natural Earth land/ocean/lakes and pushed by REAL terrarium elevation. WWF ecoregions and Koppen-Geiger GeoTIFF were attempted first; their hosts are unreachable from the build environment.",
+  "suezCanalNote": "Suez Canal present in NE centerlines.",
+  "demLakesNote": "DEM-derived lakes (NE 10m absent; alternative hosts proxy-blocked): Lake Qarun = terrarium z9 depression below -40 m inside [29.38..29.6, 30.33..30.9]."
 }
