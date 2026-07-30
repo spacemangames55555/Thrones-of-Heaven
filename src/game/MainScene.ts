@@ -417,7 +417,9 @@ import {
 } from './settings';
 import { TOWN_TILES, TownTileId } from '../town/townTiles';
 import { buildTown, type TownFeatures, type DoorFeature } from '../town/TownBuilder';
-import { PORTLAND_TOWN, PORTLAND_NPC_LINES, SEATTLE_DRUID_TOWN } from '../town/townData';
+import { PORTLAND_TOWN, PORTLAND_NPC_LINES, SEATTLE_DRUID_TOWN, TOWN_LEGEND } from '../town/townData';
+import { SETTLEMENTS } from '../settlements/registry';
+import type { SettlementDef } from '../settlements/types';
 import type { TerrainType, WashingtonMap } from '../map/mapTypes';
 import washingtonMap from '../map/washington.map.json';
 import egyptMapJson from '../map/egypt.map.json';
@@ -570,6 +572,8 @@ export class MainScene extends Phaser.Scene {
   /** Commit 2: the corridor-interpolated escort anchors after the
    *  nudge-to-walkable rule (v1: the authored points, untouched). */
   corridorAnchorsGrounded: { q9: { x: number; y: number }[]; q12: { x: number; y: number }[] } = { q9: [], q12: [] };
+  /** PASS 7 — village-tier settlements (v2 only; gate-observable). */
+  readonly settlementStamps: { def: SettlementDef; map: GameMap; spawn: { x: number; y: number }; hearth: { x: number; y: number }; npcs: Npc[] }[] = [];
   private player!: Player;
   private controls!: Controls;
   private readout!: DebugReadout;
@@ -1525,6 +1529,10 @@ export class MainScene extends Phaser.Scene {
         this.regionColliders.push({ c: this.physics.add.collider(this.player.sprite, m.layer), worldId: WORLD_EARTH });
       }
     }
+
+    // PASS 7 — VILLAGE-TIER SETTLEMENTS (v2 only): every registry entry
+    // stamps at its TRUE coordinate through the 6C sub-stamp machinery.
+    if (isScaleV2()) this.buildSettlements(data);
 
     // A plain Enumclaw townsperson in the plaza (flavor only). The old opening
     // quest ('corruption-at-the-gates') is RETIRED — the corruption beat now lives
@@ -7087,6 +7095,8 @@ export class MainScene extends Phaser.Scene {
       // on the Nile respawns at Faiyum's gate and dying in the PNW at the
       // Enumclaw square, not a distant generated zone.
       if (this.activeWorld === WORLD_EARTH) candidates.push(this.egyptArrivalPos, { x: this.town.spawn.x, y: this.town.spawn.y });
+      // PASS 7: respawn-to-nearest includes respawn-eligible settlements.
+      if (this.activeWorld === WORLD_EARTH) for (const st of this.settlementStamps) if (st.def.respawnEligible) candidates.push(st.spawn);
     } else {
       const w = this.worlds[this.activeWorld];
       if (w?.defaultArrival) candidates.push(w.defaultArrival);
@@ -9621,6 +9631,73 @@ export class MainScene extends Phaser.Scene {
     }
   }
 
+  /**
+   * PASS 7 — build every village-tier settlement (v2 only): a small authored
+   * stamp from the EXISTING town legend, planted with its CENTER at the true
+   * lat/lng through the 6C sub-stamp machinery (streamer stamps + colliders
+   * + chunk registration happen where the replant stamps register). Plain
+   * Npc instances at spawn-relative offsets; the hearth (the spawn cell)
+   * suppresses region spawn points exactly like a home city's mentor ground.
+   */
+  private buildSettlements(data: WashingtonMap): void {
+    const ts = 32;
+    for (const def of SETTLEMENTS) {
+      const w = def.rows[0].length;
+      const h = def.rows.length;
+      const tiles: number[][] = [];
+      let spawnCell = { tx: Math.floor(w / 2), ty: Math.floor(h / 2) };
+      for (let ty = 0; ty < h; ty++) {
+        const row: number[] = [];
+        for (let tx = 0; tx < w; tx++) {
+          const ch = def.rows[ty][tx];
+          const id = TOWN_LEGEND[ch];
+          if (id === undefined) throw new Error(`settlement ${def.id}: unknown cell '${ch}'`);
+          row.push(id);
+          if (ch === 's') spawnCell = { tx, ty };
+        }
+        tiles.push(row);
+      }
+      const sub: WashingtonMap = {
+        name: `settlement-${def.id}`,
+        generated: data.generated,
+        tileSize: ts,
+        width: w,
+        height: h,
+        zoneSize: Math.max(w, h),
+        zonesX: 1,
+        zonesY: 1,
+        terrain: data.terrain,
+        spawn: { x: spawnCell.tx, y: spawnCell.ty },
+        cities: [],
+        zones: [{ id: `settlement-${def.id}`, zx: 0, zy: 0, x: 0, y: 0, width: w, height: h, tiles }],
+      };
+      const g = latLngGlobePx(def.lat, def.lng);
+      const origin = {
+        x: LEGACY_GLOBE_ORIGIN_X + Math.round(g.x) - Math.floor(w / 2) * ts,
+        y: Math.round(g.y) - Math.floor(h / 2) * ts,
+      };
+      const map = new GameMap(this, sub, TOWN_TILES, origin, { forceCpuLayer: true });
+      const spawn = map.tileToWorldCenter(spawnCell.tx, spawnCell.ty);
+      const npcs = def.npcs.map((n) => {
+        const npc = new Npc(this, spawn.x + n.offset.tx * ts, spawn.y + n.offset.ty * ts, [...n.lines]);
+        this.physics.add.collider(this.player.sprite, npc.sprite);
+        return npc;
+      });
+      this.regionColliders.push({ c: this.physics.add.collider(this.player.sprite, map.layer), worldId: WORLD_EARTH });
+      this.addTownLabel({ x: spawn.x, y: origin.y - 6, text: def.displayName });
+      this.settlementStamps.push({ def, map, spawn, hearth: { ...spawn }, npcs });
+    }
+  }
+
+  /** PASS 7: is this point inside any settlement's hearth circle? Reuses the
+   *  generalized home-city pacing constant (HOME_HEARTH_RADIUS_PX — no fork). */
+  private isSettlementHearthAt(x: number, y: number): boolean {
+    for (const s of this.settlementStamps) {
+      if (Phaser.Math.Distance.Between(x, y, s.hearth.x, s.hearth.y) < HOME_HEARTH_RADIUS_PX) return true;
+    }
+    return false;
+  }
+
   /** PASS 6C gate probe: where each POI's legacy anchor ACTUALLY lands in the
    *  live world vs its declared true Earth anchor (must agree to the pixel).
    *  Raw-anchored POIs probe through legacyEarthPx (the whole re-projection
@@ -9676,6 +9753,8 @@ export class MainScene extends Phaser.Scene {
     // POI sub-stamps (+ crossing causeways) are the PNW's chunks; real baked
     // terrain streams everywhere between them. v1 keeps the legacy stamp.
     const chunkMaps: GameMap[] = isReplantActive() ? [...this.replantStamps, this.egyptMap] : [this.map, this.egyptMap];
+    // PASS 7: settlement stamps are globe chunks too (v2-only by construction).
+    chunkMaps.push(...this.settlementStamps.map((s) => s.map));
     const built = new Map<string, { chunk: BuiltChunk; map: GameMap }>();
     for (const id of zoneIds) this.stampRegionZoneChunk(WORLD_EARTH, rw, origin, id, chunkMaps, built, ABSORBED_ZONE_HOSTS[id] ? this.egyptMap : undefined);
     this.buildRegionGates(WORLD_EARTH, origin, built);
@@ -10856,6 +10935,8 @@ export class MainScene extends Phaser.Scene {
     const hearth = zone?.homeClass ? (this.regionMentors.find((m) => m.zoneId === z.zoneId)?.pos ?? this.regionZoneArrivals[z.zoneId] ?? null) : null;
     for (const p of z.points) {
       if (hearth && Phaser.Math.Distance.Between(p.x, p.y, hearth.x, hearth.y) < HOME_HEARTH_RADIUS_PX) continue;
+      // PASS 7: settlement hearths suppress exactly like home hearths (same constant).
+      if (this.isSettlementHearthAt(p.x, p.y)) continue;
       // STAGED SPAWNS: a staged family waits until its beat is behind the
       // CURRENT character (wildlife spawns from minute one, untouched).
       const gate = zone?.spawnStaging?.[p.family];
@@ -13360,6 +13441,7 @@ export class MainScene extends Phaser.Scene {
       ...this.act2Givers,
       ...this.invGivers,
       ...this.deliverNpcs.map((d) => d.npc), // Olympia / Greta / Alder / Mire recipients
+      ...this.settlementStamps.flatMap((st) => st.npcs), // Pass 7 village NPCs
     ];
     if (this.spirit.isActive()) candidates.push(...this.spirit.entities);
 

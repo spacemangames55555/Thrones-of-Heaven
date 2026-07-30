@@ -8146,6 +8146,12 @@ try {
     JSON.stringify(regionRefine),
   );
 
+  // PASS 7 pre-capture for 3u1: read the faiyum attunement flag NOW, before
+  // ANY teleport near Faiyum — 2g3b and 3u0 both park the player inside the
+  // 8-tile discovery radius, which legitimately attunes the waystone through
+  // the real discovery scan; reading the flag after that proves nothing.
+  const faiyumPreAttuned = await page.evaluate(() => window.__ready().waypointSys.unlocked.has('faiyum'));
+
   // 2g3b. EGYPT GEO-TRUTH + REGION-REFINEMENT (PASS 7): stand at Faiyum — the
   // egypt pack lazy-loads on ring proximity, the source version bumps, and
   // the arrival ring repaints — then probe the COMPOSED source at real
@@ -8241,6 +8247,178 @@ try {
     JSON.stringify(egyptTruth),
   );
 
+  // ── PASS 7 COMMIT 2: SETTLEMENT FRAMEWORK + FAIYUM ────────────────────────
+  // 3u0. settlement-contract: the registry validates in Node (footprint cap,
+  // NPC count, home-city disjointness); the LIVE Faiyum stamp sits centered
+  // on its true coordinate, its hearth suppresses spawn points through the
+  // SAME home-city constant, and both NPCs are genuinely interactable
+  // through the real talk path.
+  const settlements6 = await (async () => {
+    const { build } = await import('esbuild');
+    const outfile = new URL('../node_modules/.cache/toh-settlements.mjs', import.meta.url).pathname;
+    await build({ entryPoints: [new URL('../src/settlements/registry.ts', import.meta.url).pathname], bundle: true, format: 'esm', platform: 'node', outfile, logLevel: 'silent' });
+    return import(outfile); // module-load validation throws on a contract breach
+  })();
+  const homeZoneIds = Object.keys(await page.evaluate(() => window.__worldScale.zoneAnchors));
+  const contractNode = {
+    count: settlements6.SETTLEMENTS.length,
+    capsOk: settlements6.SETTLEMENTS.every((s) => s.rows.length <= 48 && s.rows[0].length <= 48 && s.npcs.length >= 1 && s.npcs.length <= 3),
+    disjoint: settlements6.SETTLEMENTS.every((s) => !homeZoneIds.includes(s.id)),
+  };
+  const contractLive = await page.evaluate(async () => {
+    const ms = window.__ready();
+    const wait = (t) => new Promise((r) => setTimeout(r, t));
+    const st = ms.settlementStamps.find((s) => s.def.id === 'faiyum');
+    if (!st) return { setup: 'no faiyum stamp' };
+    const want = ms.terrestrialPxFromLatLng({ lat: 29.31, lng: 30.84 });
+    const b = st.map.bounds;
+    const centerErr = Math.hypot(b.x + b.width / 2 - want.x, b.y + b.height / 2 - want.y);
+    const hearthIn = ms.isSettlementHearthAt(st.hearth.x + 100, st.hearth.y);
+    const hearthOut = !ms.isSettlementHearthAt(st.hearth.x + 260 + 200, st.hearth.y);
+    // REAL talk path: stand beside Sefu — auto-dialogue or the Talk button.
+    const prev = { x: ms.player.x, y: ms.player.y };
+    ms.player.sprite.body.reset(st.npcs[0].sprite.x + 50, st.npcs[0].sprite.y);
+    ms.lastLandPos = undefined;
+    let opened = false;
+    for (let k = 0; k < 12 && !opened; k++) {
+      await wait(300);
+      if (ms.dialogue.isOpen()) opened = true;
+      else if (ms.talkButton.isVisible) {
+        ms.tryTalk();
+        await wait(300);
+        opened = ms.dialogue.isOpen();
+      }
+    }
+    // Step OUT of talk range BEFORE the tap-through: the update loop freezes
+    // while a dialogue is open, and a player left within NPC_AUTO_RANGE would
+    // re-open it the moment it closes — freezing every later check.
+    ms.player.sprite.body.reset(prev.x, prev.y);
+    ms.lastLandPos = undefined;
+    return { setup: 'ok', centerErr: +centerErr.toFixed(1), hearthIn, hearthOut, npcs: st.npcs.length, opened, prev, chunkRegistered: ms.earthChunkMaps.includes(st.map) };
+  });
+  for (let i = 0; i < 12; i++) {
+    await page.waitForTimeout(280);
+    const uiOpen = await page.evaluate(() => {
+      const ms = window.__game.scene.getScene('MainScene');
+      return ms.dialogue.isOpen() || ms.choice.isOpen();
+    });
+    if (!uiOpen) break;
+    await page.mouse.click(214, 520);
+    await page.mouse.click(214, 462);
+  }
+  // The dialogue MUST be closed now — an open dialogue freezes the update
+  // loop (discovery scans, travel casts) for every check after this one.
+  const talkClosed = await page.evaluate(() => {
+    const ms = window.__game.scene.getScene('MainScene');
+    return !ms.dialogue.isOpen() && !ms.choice.isOpen();
+  });
+  ok(
+    'settlement-contract: registry validates (cap, 1-3 NPCs, disjoint from home zones); the live Faiyum stamp is centered on its true coordinate, chunk-registered, hearth suppresses inside (same home constant) and not outside, both NPCs talk through the real path (and the dialogue closed cleanly)',
+    contractNode.count >= 1 && contractNode.capsOk && contractNode.disjoint && contractLive.setup === 'ok' && contractLive.centerErr <= 32 && contractLive.hearthIn && contractLive.hearthOut && contractLive.npcs === 2 && contractLive.opened && contractLive.chunkRegistered && talkClosed,
+    JSON.stringify({ ...contractNode, ...contractLive, talkClosed }),
+  );
+
+  // 3u1. waystone-faiyum: DISCOVERY-based (never pre-attuned) — walking into
+  // the radius attunes it; attunement survives the real save/load path. The
+  // pre-attunement flag was captured BEFORE 2g3b (the first Faiyum-adjacent
+  // teleport); by now the suite has legitimately attuned the node, so clear
+  // it here to prove the walk-in scan re-attunes from a cold state.
+  const wsFaiyum = await page.evaluate(async () => {
+    const ms = window.__ready();
+    const wp = ms.waypointSys;
+    const wait = (t) => new Promise((r) => setTimeout(r, t));
+    const node = wp.nodes.find((n) => n.id === 'faiyum');
+    if (!node) return { setup: 'no faiyum node' };
+    wp.unlocked.delete('faiyum');
+    // +200: inside the 8-tile (256 px) discovery radius but OUTSIDE the NPC
+    // talk/auto ranges — standing beside Naila would auto-open her dialogue,
+    // which freezes the update loop and with it the discovery scan.
+    ms.player.sprite.body.reset(node.x + 200, node.y);
+    ms.lastLandPos = undefined;
+    let unlocked = false;
+    for (let k = 0; k < 10 && !unlocked; k++) {
+      await wait(400);
+      unlocked = wp.unlocked.has('faiyum');
+    }
+    if (!ms.requestSave()) return { setup: 'save refused' };
+    ms.devLoadSave();
+    await wait(600);
+    const persisted = ms.waypointSys.unlocked.has('faiyum');
+    return { setup: 'ok', unlocked, persisted };
+  });
+  ok(
+    'waystone-faiyum: not pre-attuned (flag captured before any Faiyum approach); walk-in discovery attunes from a cold state; attunement survives the real save/load',
+    faiyumPreAttuned === false && wsFaiyum.setup === 'ok' && wsFaiyum.unlocked && wsFaiyum.persisted,
+    JSON.stringify({ preAttuned: faiyumPreAttuned, ...wsFaiyum }),
+  );
+
+  // 3u2. respawn-includes-settlements: a death NEAR Faiyum respawns AT
+  // Faiyum (respawn-eligible), never across the desert at the Cairo entry.
+  const faiyumDeath = await page.evaluate(async () => {
+    const ms = window.__ready();
+    const wait = (t) => new Promise((r) => setTimeout(r, t));
+    const st = ms.settlementStamps.find((s) => s.def.id === 'faiyum');
+    ms.player.sprite.body.reset(st.spawn.x + 1500, st.spawn.y + 400);
+    ms.lastLandPos = undefined;
+    await wait(400);
+    const from = { x: ms.player.x, y: ms.player.y };
+    ms.playerHealth.shield = 0;
+    ms.playerHealth.current = 1;
+    ms.onProjectileHitPlayer(10); // the real death funnel
+    // SCENE-TIME over wall-clock: poll for the respawn instead of a fixed
+    // wait (the death-banner delay stretches under swiftshader stalls).
+    let alive = false;
+    for (let k = 0; k < 30 && !alive; k++) {
+      await wait(400);
+      alive = !ms.playerDead;
+    }
+    const dFaiyum = Math.hypot(ms.player.x - st.spawn.x, ms.player.y - st.spawn.y);
+    const dCairo = Math.hypot(ms.player.x - ms.egyptArrivalPos.x, ms.player.y - ms.egyptArrivalPos.y);
+    return { alive, from, dFaiyum: +dFaiyum.toFixed(0), dCairo: +dCairo.toFixed(0) };
+  });
+  ok(
+    'respawn-includes-settlements: death near Faiyum respawns at the Faiyum spawn (respawn-eligible), not at the Cairo entry',
+    faiyumDeath.alive && faiyumDeath.dFaiyum <= 40 && faiyumDeath.dCairo > 10000,
+    JSON.stringify(faiyumDeath),
+  );
+
+  // 3u3. home-cities-untouched: the 14 home cities are READ-ONLY referenced —
+  // 14 home waypoint nodes stand, every home arrival still resolves onto its
+  // canon zone anchor geography, and no settlement id collides with a zone.
+  const homesUntouched = await page.evaluate(() => {
+    const ms = window.__ready();
+    const anchors = window.__worldScale.zoneAnchors;
+    const homes = ms.waypointSys.nodes.filter((n) => n.zoneId);
+    const drifts = [];
+    for (const n of homes) {
+      const a = anchors[n.zoneId];
+      if (!a) {
+        drifts.push(`${n.zoneId}:no-anchor`);
+        continue;
+      }
+      const p = ms.terrestrialPxFromLatLng(a);
+      // The RESOLVED node position IS the live arrival (the full resolution
+      // chain: Cairo mentor / stamped-zone arrivals / zone mentor / the
+      // re-planted NA towns — regionZoneArrivals alone misses NA homes).
+      if (Math.hypot(n.x - p.x, n.y - p.y) > 6000) drifts.push(`${n.zoneId}:${Math.hypot(n.x - p.x, n.y - p.y).toFixed(0)}px`);
+    }
+    return { homes: homes.length, drifts, settlementIds: ms.settlementStamps.map((s) => s.def.id) };
+  });
+  ok(
+    'home-cities-untouched: 14 home nodes stand, every home arrival resolves on its canon anchor geography, settlement ids disjoint',
+    homesUntouched.homes === 14 && homesUntouched.drifts.length === 0 && homesUntouched.settlementIds.every((id) => !homeZoneIds.includes(id)),
+    JSON.stringify(homesUntouched),
+  );
+  // Return the player to the pre-settlement-suite spot (the travel checks
+  // below expect the Seattle fixture neighborhood).
+  await page.evaluate(() => {
+    const ms = window.__ready();
+    const spot = ms.terrestrialPxFromLatLng({ lat: 47.61, lng: -122.33 });
+    ms.player.sprite.body.reset(spot.x, spot.y);
+    ms.lastLandPos = undefined;
+  });
+  await page.waitForTimeout(800);
+
   // ── PASS 4: TRAVEL SYSTEMS (v2 session; player still at the Seattle spot) ─
   // 2h0. travel-distance-ui: the km readout matches the px math exactly for
   // two fixtures (8,000 px = 5.0 km one-decimal; 40,000 px = 25 km whole).
@@ -8269,13 +8447,13 @@ try {
     return { setup: 'ok', total: wp.nodes.length, homes, fixed, validated: wp.validated, walkable, maxNudge, nudged };
   });
   ok(
-    'waypoint-registry: 17 nodes resolve on existing anchors, all walkable post-validation, nudges within 64 tiles',
+    'waypoint-registry: 18 nodes resolve on existing anchors (14 homes + 3 fixed + the Faiyum settlement waystone), all walkable post-validation, nudges within 64 tiles',
     wpRegistry.setup === 'ok' &&
-      wpRegistry.total === 17 &&
+      wpRegistry.total === 18 &&
       wpRegistry.homes === 14 &&
-      wpRegistry.fixed.join(',') === 'wp-boise,wp-kamiah,wp-olympia' &&
+      wpRegistry.fixed.join(',') === 'faiyum,wp-boise,wp-kamiah,wp-olympia' &&
       wpRegistry.validated === true &&
-      wpRegistry.walkable === 17 &&
+      wpRegistry.walkable === 18 &&
       wpRegistry.maxNudge <= 64,
     JSON.stringify(wpRegistry),
   );
@@ -8672,8 +8850,8 @@ try {
     return { active, paused: ms.scene.isPaused(), centerErr: +Math.hypot(c.x - pm.x, c.y - pm.y).toFixed(2), markers: wms.waystoneMarkers.length };
   });
   ok(
-    'map-open-at-cap: pinching past the cap opens map mode centered on the player (MainScene paused, 17 waystone markers live)',
-    mapOpen.active === true && mapOpen.paused === true && mapOpen.centerErr <= 2 && mapOpen.markers === 17,
+    'map-open-at-cap: pinching past the cap opens map mode centered on the player (MainScene paused, 18 waystone markers live: 14 homes + 3 NA fixed + faiyum)',
+    mapOpen.active === true && mapOpen.paused === true && mapOpen.centerErr <= 2 && mapOpen.markers === 18,
     JSON.stringify(mapOpen),
   );
 

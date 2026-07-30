@@ -1,5 +1,9 @@
 import { MANIFEST_CLASS_FOR, homeZoneForClass } from './class-canon';
 import { BOISE_POSITION, KAMIAH_POSITION, OLYMPIA_POSITION } from '../game/settings';
+import { SETTLEMENTS } from '../settlements/registry';
+import { isScaleV2 } from './world-scale';
+import { latLngGlobePx } from './replant';
+import { LEGACY_GLOBE_ORIGIN_X } from './legacy-frame';
 
 /**
  * WAYPOINT REGISTRY (WORLD SCALE V2, Pass 4). Code name is `waypoint`; the
@@ -43,5 +47,15 @@ export function buildWaypointRegistry(): WaypointDef[] {
   nodes.push({ id: 'wp-olympia', label: 'Olympia Waystone', continent: 'North America', fixed: { ...OLYMPIA_POSITION } });
   nodes.push({ id: 'wp-boise', label: 'Boise Waystone', continent: 'North America', fixed: { ...BOISE_POSITION } });
   nodes.push({ id: 'wp-kamiah', label: 'Kamiah Camp Waystone', continent: 'North America', fixed: { ...KAMIAH_POSITION } });
+  // PASS 7: settlement waystones (v2-only — settlements stamp on the
+  // true-coordinate world) — placeholder pillar, DISCOVERY-based, never
+  // pre-attuned (nothing here touches the unlocked set).
+  if (isScaleV2()) {
+    for (const s of SETTLEMENTS) {
+      if (!s.waystone) continue;
+      const g = latLngGlobePx(s.lat, s.lng);
+      nodes.push({ id: s.waystone.nodeId, label: s.waystone.label, continent: 'Africa', fixed: { x: LEGACY_GLOBE_ORIGIN_X + Math.round(g.x), y: Math.round(g.y) } });
+    }
+  }
   return nodes;
 }
