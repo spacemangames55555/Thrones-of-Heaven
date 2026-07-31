@@ -9,9 +9,10 @@
         "lngMin": -125,
         "lngMax": -110.5
       },
-      "file": "regions/pnw.bin",
+      "file": "regions/pnw.bin.gz",
       "rivers": "regions/pnw-rivers.json",
       "bytes": 19152658,
+      "gzBytes": 4724332,
       "sha256": "14c4ab4de9690edba81e06a2482d085358af557f65c4b68a1b7ff2a0ffda9ff1",
       "version": 1,
       "map": {
@@ -24,6 +25,28 @@
           "w": 3441,
           "h": 2783
         }
+      }
+    },
+    {
+      "id": "egypt",
+      "bbox": {
+        "latMin": 21.5,
+        "latMax": 32.5,
+        "lngMin": 24.5,
+        "lngMax": 36.5
+      },
+      "file": "regions/egypt.bin.gz",
+      "rivers": "regions/egypt-rivers.json",
+      "bytes": 21790990,
+      "gzBytes": 2047819,
+      "sha256": "580d949b9486958fd253d4583a1b14b7c55a66d841e77aab525f8cd0506b1b8e",
+      "version": 1,
+      "map": {
+        "file": "regions/egypt-map.png",
+        "w": 2847,
+        "h": 3827,
+        "bytes": 2052869,
+        "sha256": "c042e41121bf8e528c4c13d64165b305795c4d6b7aa9c9a69e5dd22ccc4f293b"
       }
     }
   ],

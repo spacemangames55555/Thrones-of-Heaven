@@ -180,3 +180,41 @@ ruling lands, strike the entry with a pointer to the commit that resolved it.
   walked. The regional tier ships at a 2048 long edge (native 3441x2783
   render broke the 6 MB budget at 6.86 MB); if map-mode zoom ever wants the
   native crispness, the budget conversation reopens.
+- PASS 7 (Egypt: gzip packs + region bake + Faiyum + Sinai corridor):
+  PER-REGION PROP PALETTES are owed — the scatter/prop vocabulary is still
+  the PNW set everywhere; Egypt wants desert scrub BEFORE cactus (explicit
+  Casey ruling) and a palette hook per region pack. TODO-LORE INVENTORY for
+  this pass: the five egypt-corridor beat titles/objective lines/banners
+  (questData.ts, all marked), the sealed-portal refusal line
+  (MainScene.enterSinaiPortal), the Faiyum NPC names + every line (Sefu the
+  fisherman, Naila the potter - TODO-lore-approve), the Faiyum/Sinai-camp
+  waystone display names, and the Sinai Foot Camp display name.
+  SECOND-PORTAL NARRATIVE RECONCILIATION: the game now has TWO Heaven
+  portals (the Sawtooth gate crossed corrupted at the Act IV climax; the
+  Sinai gate unsealed by rite) - how the two gates relate, why the Sinai
+  seal answers the mountain rites, and whether crossing state is shared is
+  a lore question Casey owns before hardening. EGYPT SPAWN-DENSITY AUDIT
+  at true scale is owed (same debt as the PNW corridor): the gate prints
+  ADVISORY per-leg mounted minutes for the egypt corridor; nothing spawns
+  along it outside the Suez beat today. SETTLEMENT/HOME-CITY UNIFICATION:
+  village-tier settlements (settlements/*.ts) and the 14 home cities run on
+  parallel machinery (registry stamps vs zone chunks); folding homes onto
+  the settlement contract is deliberate future work, done only as a
+  sanctioned migration. FAIYUM + CAMP ART UPGRADES: both render from the
+  existing town legend (mudbrick/tents are flavor text only) - obvious art
+  drop-in slots. SUEZ CANAL FIDELITY: NO gap to record - the canal is
+  PRESENT in the NE 10m source (scalerank 6) and baked; the Ahmed Hamdi
+  causeway crosses the baked channel at the real tunnel site.
+  FOG-OF-DISCOVERY now spans TWO mapped regions (pnw + egypt) when it
+  lands - the map-tier fog design must handle multi-region reveal from the
+  start. PNW RIVER RECLASSIFICATION: the pnw pack keeps its FROZEN
+  strokeweig classifier (every NE river there classed 1 via the null
+  fallback - shipped decode truth); reclassifying onto scalerank happens
+  only at the next sanctioned pnw re-bake (also noted in bake.mjs).
+  HARNESS (scheduled for the next harness housekeeping commit): drive
+  fixtures may PRE-SEED the pack cache from committed files - only
+  offline-cache, lazy-fetch, and decompression-unavailable own the real
+  network path (every other fresh-session boot re-downloads packs today,
+  e.g. the isolated egypt-corridor fixture). Pairs with the timing-flake
+  clock rule: long setup waits under frame pressure are exactly where
+  wall-clock assertions die.

@@ -144,13 +144,16 @@ export class ChunkStreamer {
    *  source carries the session until (or unless) the packs arrive. */
   async loadEarthPacks(): Promise<void> {
     try {
-      const planet = await loadPack('/world/planet.bin');
+      const planet = await loadPack('/world/planet.bin.gz'); // Pass 7: packs ship gzip
       this.packOrigin.planet = planet.from;
       const manifest = await loadPack('/world/regions.json');
       this.packOrigin.regions = manifest.from;
       this.regionManifest = JSON.parse(new TextDecoder().decode(manifest.buf));
       this.setEarthGrids(decodePlanetPack(planet.buf));
     } catch (e) {
+      // Pass 7: a missing DECOMPRESSION capability is a HARD BOOT ERROR
+      // naming the requirement — never a silent procedural session.
+      if (e instanceof Error && e.message.includes('DecompressionStream')) throw e;
       console.warn('ToH: earth packs unavailable — staying on procedural terrain:', e);
     }
     // Pass 6A: the world-map image, cached like the packs — its failure never

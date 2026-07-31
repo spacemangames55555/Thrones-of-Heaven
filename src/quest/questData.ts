@@ -85,7 +85,14 @@ export type ObjectiveTrigger =
   // The Hell gauntlet (Quest 7) — fired off EXISTING events (onSinDefeated, the
   // lair-entry that starts the Trinity):
   | 'sin-defeated'
-  | 'entered-lair';
+  | 'entered-lair'
+  // THE EGYPT CORRIDOR (Pass 7) — the five-beat Faiyum → Sinai chain. Display
+  // text is minimal + TODO-lore; the final crossing reuses 'entered-heaven'.
+  | 'egypt-sefu-opener' // beat 1: talk with Sefu at Faiyum (the hearth offers the quest)
+  | 'egypt-cairo-mentor' // beat 2: reach the Cairo mentor (existing anchor BY ID)
+  | 'suez-cleared' // beat 3: defeat the Suez road pack (existing families only)
+  | 'reach-sinai-camp' // beat 4: reach the foot camp below Jebel Musa
+  | 'summit-unsealed'; // beat 5a: the proximity unseal ritual at the summit
 
 /** Which world thing the objective marker points at (resolved to a position by the scene). */
 export type TargetKind =
@@ -143,7 +150,13 @@ export type TargetKind =
   | 'throne' // Heaven — God's throne (judgment site)
   | 'hell-portal' // Heaven — the Hell portal that opens at the throne
   | 'current-sin' // Hell — the gauntlet's CURRENT undefeated Sin (resolved live)
-  | 'satan-lair'; // Hell — Satan's Lair (the Unholy Trinity)
+  | 'satan-lair' // Hell — Satan's Lair (the Unholy Trinity)
+  // THE EGYPT CORRIDOR (Pass 7) locations — all on Earth (v2 true coordinates):
+  | 'faiyum-village' // the Faiyum settlement spawn (registry id 'faiyum')
+  | 'cairo-crown' // the Cairo mentor (existing anchor, referenced BY ID)
+  | 'suez-gate' // the road at Suez (EGYPT_BEATS.suez)
+  | 'sinai-camp' // the foot camp stamp below Jebel Musa
+  | 'sinai-summit'; // the Jebel Musa summit — the sealed Heaven portal
 
 /**
  * The WORLD each marker target lives in. The scene only shows the gold beacon +
@@ -198,6 +211,11 @@ export const TARGET_WORLD: Record<TargetKind, WorldId> = {
   'hell-portal': WORLD_HEAVEN,
   'current-sin': WORLD_HELL,
   'satan-lair': WORLD_HELL,
+  'faiyum-village': WORLD_EARTH,
+  'cairo-crown': WORLD_EARTH,
+  'suez-gate': WORLD_EARTH,
+  'sinai-camp': WORLD_EARTH,
+  'sinai-summit': WORLD_EARTH,
 };
 
 export interface ObjectiveDef {
@@ -1470,6 +1488,79 @@ export const QUEST_7_THE_SEVEN_SINS: QuestDef = {
  * (Add a new ObjectiveTrigger/TargetKind above + handle it in MainScene only if
  *  the objective needs a brand-new completion condition or marker target.)
  */
+/**
+ * ============================================================================
+ * THE EGYPT CORRIDOR (Pass 7) — five beats, Faiyum → the Sinai summit. Every
+ * display line is a MINIMAL placeholder marked TODO-lore (Casey writes the
+ * real text). Beat 1 is offered by the Faiyum HEARTH (walking into the
+ * village offers it; talking with Sefu completes it); beats 2–5 auto-flow.
+ * The chain ends by crossing the UNSEALED Sinai portal into the same Heaven
+ * plane as Idaho ('entered-heaven' reused).
+ * ============================================================================
+ */
+export const EGYPT_CORRIDOR_1: QuestDef = {
+  id: 'egypt-corridor-1',
+  title: 'The Lake Road (TODO-lore)',
+  prerequisites: [],
+  objectives: [{ text: 'Speak with Sefu of Faiyum. (TODO-lore)', trigger: 'egypt-sefu-opener', target: 'faiyum-village' }],
+  npcInactiveLines: ['Sefu: You came in off the sand. Sit, drink, and listen a moment. (TODO-lore)'],
+  npcActiveLines: ['Sefu: Find me by the plaza when you are ready. (TODO-lore)'],
+  npcCompleteLines: [],
+  preAcceptHint: 'Enter Faiyum village',
+  reward: { healToFull: true, xp: QUEST_XP_REWARD, banner: 'The lake road opens east. (TODO-lore)' },
+};
+export const EGYPT_CORRIDOR_2: QuestDef = {
+  id: 'egypt-corridor-2',
+  title: 'The Nile Crown (TODO-lore)',
+  prerequisites: ['egypt-corridor-1'],
+  autoActivate: true,
+  objectives: [{ text: 'Seek the Keeper at Cairo. (TODO-lore)', trigger: 'egypt-cairo-mentor', target: 'cairo-crown' }],
+  npcInactiveLines: ['Word of a Keeper at the Nile Crown reaches you. (TODO-lore)'],
+  npcActiveLines: [],
+  npcCompleteLines: [],
+  preAcceptHint: '',
+  reward: { healToFull: true, xp: QUEST_XP_REWARD, banner: 'The Keeper points you toward Suez. (TODO-lore)' },
+};
+export const EGYPT_CORRIDOR_3: QuestDef = {
+  id: 'egypt-corridor-3',
+  title: 'The Road at Suez (TODO-lore)',
+  prerequisites: ['egypt-corridor-2'],
+  autoActivate: true,
+  objectives: [{ text: 'Clear the road at Suez. (TODO-lore)', trigger: 'suez-cleared', target: 'suez-gate' }],
+  npcInactiveLines: ['Something bars the road where the gulf meets the canal. (TODO-lore)'],
+  npcActiveLines: [],
+  npcCompleteLines: [],
+  preAcceptHint: '',
+  reward: { healToFull: true, xp: QUEST_XP_REWARD, banner: 'The crossing to Sinai stands open. (TODO-lore)' },
+};
+export const EGYPT_CORRIDOR_4: QuestDef = {
+  id: 'egypt-corridor-4',
+  title: 'The Foot of the Mountain (TODO-lore)',
+  prerequisites: ['egypt-corridor-3'],
+  autoActivate: true,
+  objectives: [{ text: 'Reach the camp below the holy mountain. (TODO-lore)', trigger: 'reach-sinai-camp', target: 'sinai-camp' }],
+  npcInactiveLines: ['The mountain of the Law rises beyond the causeway. (TODO-lore)'],
+  npcActiveLines: [],
+  npcCompleteLines: [],
+  preAcceptHint: '',
+  reward: { healToFull: true, xp: QUEST_XP_REWARD, banner: 'The camp fires burn below the summit. (TODO-lore)' },
+};
+export const EGYPT_CORRIDOR_5: QuestDef = {
+  id: 'egypt-corridor-5',
+  title: 'The Sealed Gate (TODO-lore)',
+  prerequisites: ['egypt-corridor-4'],
+  autoActivate: true,
+  objectives: [
+    { text: 'Unseal the gate on the summit. (TODO-lore)', trigger: 'summit-unsealed', target: 'sinai-summit' },
+    { text: 'Step through into Heaven. (TODO-lore)', trigger: 'entered-heaven', target: 'sinai-summit' },
+  ],
+  npcInactiveLines: ['At the summit a second gate stands sealed. (TODO-lore)'],
+  npcActiveLines: [],
+  npcCompleteLines: [],
+  preAcceptHint: '',
+  reward: { healToFull: true, xp: QUEST_XP_REWARD, banner: 'The Sinai gate stands open. (TODO-lore)' },
+};
+
 export const QUEST_REGISTRY: readonly QuestDef[] = [
   // Act I — the Enumclaw opening (front of the chain).
   ACT1_HONEST_DAYS_WORK,
@@ -1507,4 +1598,12 @@ export const QUEST_REGISTRY: readonly QuestDef[] = [
   // The endgame — UNCHANGED from climax-judgment onward (now gated on 4.10).
   QUEST_6_JUDGMENT,
   QUEST_7_THE_SEVEN_SINS,
+  // THE EGYPT CORRIDOR (Pass 7) — a side chain off the Faiyum hearth; beats
+  // 2-5 auto-flow. Appended LAST so firstAvailableAuto never prefers it over
+  // the main spine (registry order is the scan order).
+  EGYPT_CORRIDOR_1,
+  EGYPT_CORRIDOR_2,
+  EGYPT_CORRIDOR_3,
+  EGYPT_CORRIDOR_4,
+  EGYPT_CORRIDOR_5,
 ];

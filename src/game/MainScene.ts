@@ -50,6 +50,7 @@ import { WORLD_CALIBRATION, WORLD_SPAN_DEGREES, latLngToPixels } from '../world/
 import { isScaleV2, isTerrainProc, isDebugOverlay, formatKm } from '../world/world-scale';
 import { legacyEarthPx, legacyRawToLocal, LEGACY_GLOBE_ORIGIN_X } from '../world/legacy-frame';
 import { isReplantActive, latLngGlobePx, poiGlobePx, poiLegacyAnchor, REPLANT_CROSSINGS, REPLANT_POIS } from '../world/replant';
+import { EGYPT_BEATS, EGYPT_CROSSINGS, SINAI_CAMP_STAMP, SUEZ_SPAWN_SET, egyptCorridorPoints } from '../world/egypt-corridor';
 import { MountSystem } from '../systems/mount';
 import { WaypointSystem } from '../systems/waypoints';
 import { EncounterCoordinator } from '../systems/encounters';
@@ -417,7 +418,9 @@ import {
 } from './settings';
 import { TOWN_TILES, TownTileId } from '../town/townTiles';
 import { buildTown, type TownFeatures, type DoorFeature } from '../town/TownBuilder';
-import { PORTLAND_TOWN, PORTLAND_NPC_LINES, SEATTLE_DRUID_TOWN } from '../town/townData';
+import { PORTLAND_TOWN, PORTLAND_NPC_LINES, SEATTLE_DRUID_TOWN, TOWN_LEGEND } from '../town/townData';
+import { SETTLEMENTS } from '../settlements/registry';
+import type { SettlementDef } from '../settlements/types';
 import type { TerrainType, WashingtonMap } from '../map/mapTypes';
 import washingtonMap from '../map/washington.map.json';
 import egyptMapJson from '../map/egypt.map.json';
@@ -570,6 +573,19 @@ export class MainScene extends Phaser.Scene {
   /** Commit 2: the corridor-interpolated escort anchors after the
    *  nudge-to-walkable rule (v1: the authored points, untouched). */
   corridorAnchorsGrounded: { q9: { x: number; y: number }[]; q12: { x: number; y: number }[] } = { q9: [], q12: [] };
+  /** PASS 7 — village-tier settlements (v2 only; gate-observable). */
+  readonly settlementStamps: { def: SettlementDef; map: GameMap; spawn: { x: number; y: number }; hearth: { x: number; y: number }; npcs: Npc[] }[] = [];
+  /** PASS 7 COMMIT 3 — the egypt-corridor stamps by id (the sinai-camp stamp
+   *  + the authored canal causeway; gate-observable). */
+  readonly egyptCorridorStampById = new Map<string, GameMap>();
+  /** The Sinai foot-camp spawn (scene px; the reach beat + waystone anchor). */
+  sinaiCampSpawn?: { x: number; y: number };
+  /** The SECOND Heaven-portal instance (Jebel Musa summit) — same prop, same
+   *  plane-entry mechanics as Idaho; SEALED until the egypt-corridor unseal. */
+  sinaiPortal?: HeavenPortal;
+  private sinaiEnterButton!: TouchButton;
+  /** Last-applied sealed-dim state (alpha set only on change, not per frame). */
+  private sinaiSealedApplied?: boolean;
   private player!: Player;
   private controls!: Controls;
   private readout!: DebugReadout;
@@ -1344,6 +1360,8 @@ export class MainScene extends Phaser.Scene {
   // spawns for the current objective; arcMode picks the completion test. (The old
   // placeholder DESCENT arc was RETIRED by the Act IV finale — 4.8–4.10 replace it.)
   private readonly ACT1_IDS = new Set(['honest-days-work', 'wolves-tree-line', 'shallows', 'the-pass']);
+  /** PASS 7 — the egypt-corridor beats run on the same arc machinery. */
+  private readonly EGYPT_IDS = new Set(['egypt-corridor-1', 'egypt-corridor-2', 'egypt-corridor-3', 'egypt-corridor-4', 'egypt-corridor-5']);
   private readonly ACT2_IDS = new Set(['whats-gotten-into-them', 'the-blight', 'the-thing-at-white-pass']);
   private readonly INV_IDS = new Set(['word-to-yakima', 'the-iron-road', 'the-northern-farms', 'what-the-dark-ones-carry', 'the-exile-of-longview']);
   // Act IV: the Necromancer's corrupted arc, given by Azazel (4.1 → 4.10).
@@ -1524,6 +1542,17 @@ export class MainScene extends Phaser.Scene {
         if (m === this.replantStampById.get('enumclaw')) continue;
         this.regionColliders.push({ c: this.physics.add.collider(this.player.sprite, m.layer), worldId: WORLD_EARTH });
       }
+    }
+
+    // PASS 7 — VILLAGE-TIER SETTLEMENTS (v2 only): every registry entry
+    // stamps at its TRUE coordinate through the 6C sub-stamp machinery.
+    if (isScaleV2()) this.buildSettlements(data);
+    // PASS 7 COMMIT 3 — THE EGYPT CORRIDOR (v2 only): the Sinai foot-camp
+    // stamp + the authored canal causeway, then the SEALED second
+    // Heaven-portal instance on the Jebel Musa summit.
+    if (isScaleV2()) {
+      this.buildEgyptCorridorStamps(data);
+      this.setupSinaiPortal();
     }
 
     // A plain Enumclaw townsperson in the plaza (flavor only). The old opening
@@ -1961,6 +1990,10 @@ export class MainScene extends Phaser.Scene {
     // the ending's one-way home) keep their established walk-in behavior.
     this.enterHeavenButton = new TouchButton(this, 'Enter Heaven', () => this.enterHeavenPortal());
     this.returnEarthButton = new TouchButton(this, 'Return to Earth', () => this.returnToEarthPortal());
+    // PASS 7 — the Sinai portal's explicit-crossing button (same rule as the
+    // Idaho gate: crossing is a BUTTON, never a walk-in). While the portal is
+    // SEALED the tap refuses with the placeholder line instead of traveling.
+    this.sinaiEnterButton = new TouchButton(this, 'Enter Heaven', () => this.enterSinaiPortal());
     // NESTED CITIES: the shared Enter/Leave gate button (same contextual slot;
     // proximity-gated in updateCityGates, so it never contends with Talk).
     this.cityGateButton = new TouchButton(this, 'Enter Village', () => this.cityGateAction?.());
@@ -2195,6 +2228,14 @@ export class MainScene extends Phaser.Scene {
       else this.checkInteractions();
       this.updateCityGates(); // AFTER interactions: Talk keeps the shared slot
       this.updateTravelSystems(); // Pass 4: mount + waystones
+      // PASS 7: the Sinai portal + the Faiyum hearth-triggered opener (both
+      // exist only under v2 — the guards are the object/quest states).
+      if (this.activeWorld === WORLD_EARTH) {
+        this.updateSinaiPortal();
+        this.updateEgyptCorridorHooks();
+      } else {
+        this.sinaiEnterButton?.setVisible(false);
+      }
       if (this.regionWorldIds.has(this.activeWorld)) {
         this.updateRegionSpawns(); // per-chunk packs (any region world)
         this.groundLayers.get(this.activeWorld)?.update(this.cameras.main); // continents under the camera
@@ -7087,6 +7128,8 @@ export class MainScene extends Phaser.Scene {
       // on the Nile respawns at Faiyum's gate and dying in the PNW at the
       // Enumclaw square, not a distant generated zone.
       if (this.activeWorld === WORLD_EARTH) candidates.push(this.egyptArrivalPos, { x: this.town.spawn.x, y: this.town.spawn.y });
+      // PASS 7: respawn-to-nearest includes respawn-eligible settlements.
+      if (this.activeWorld === WORLD_EARTH) for (const st of this.settlementStamps) if (st.def.respawnEligible) candidates.push(st.spawn);
     } else {
       const w = this.worlds[this.activeWorld];
       if (w?.defaultArrival) candidates.push(w.defaultArrival);
@@ -9621,6 +9664,258 @@ export class MainScene extends Phaser.Scene {
     }
   }
 
+  /**
+   * PASS 7 — build every village-tier settlement (v2 only): a small authored
+   * stamp from the EXISTING town legend, planted with its CENTER at the true
+   * lat/lng through the 6C sub-stamp machinery (streamer stamps + colliders
+   * + chunk registration happen where the replant stamps register). Plain
+   * Npc instances at spawn-relative offsets; the hearth (the spawn cell)
+   * suppresses region spawn points exactly like a home city's mentor ground.
+   */
+  private buildSettlements(data: WashingtonMap): void {
+    const ts = 32;
+    for (const def of SETTLEMENTS) {
+      const w = def.rows[0].length;
+      const h = def.rows.length;
+      const tiles: number[][] = [];
+      let spawnCell = { tx: Math.floor(w / 2), ty: Math.floor(h / 2) };
+      for (let ty = 0; ty < h; ty++) {
+        const row: number[] = [];
+        for (let tx = 0; tx < w; tx++) {
+          const ch = def.rows[ty][tx];
+          const id = TOWN_LEGEND[ch];
+          if (id === undefined) throw new Error(`settlement ${def.id}: unknown cell '${ch}'`);
+          row.push(id);
+          if (ch === 's') spawnCell = { tx, ty };
+        }
+        tiles.push(row);
+      }
+      const sub: WashingtonMap = {
+        name: `settlement-${def.id}`,
+        generated: data.generated,
+        tileSize: ts,
+        width: w,
+        height: h,
+        zoneSize: Math.max(w, h),
+        zonesX: 1,
+        zonesY: 1,
+        terrain: data.terrain,
+        spawn: { x: spawnCell.tx, y: spawnCell.ty },
+        cities: [],
+        zones: [{ id: `settlement-${def.id}`, zx: 0, zy: 0, x: 0, y: 0, width: w, height: h, tiles }],
+      };
+      const g = latLngGlobePx(def.lat, def.lng);
+      const origin = {
+        x: LEGACY_GLOBE_ORIGIN_X + Math.round(g.x) - Math.floor(w / 2) * ts,
+        y: Math.round(g.y) - Math.floor(h / 2) * ts,
+      };
+      const map = new GameMap(this, sub, TOWN_TILES, origin, { forceCpuLayer: true });
+      const spawn = map.tileToWorldCenter(spawnCell.tx, spawnCell.ty);
+      const npcs = def.npcs.map((n) => {
+        const npc = new Npc(this, spawn.x + n.offset.tx * ts, spawn.y + n.offset.ty * ts, [...n.lines]);
+        this.physics.add.collider(this.player.sprite, npc.sprite);
+        return npc;
+      });
+      this.regionColliders.push({ c: this.physics.add.collider(this.player.sprite, map.layer), worldId: WORLD_EARTH });
+      this.addTownLabel({ x: spawn.x, y: origin.y - 6, text: def.displayName });
+      this.settlementStamps.push({ def, map, spawn, hearth: { ...spawn }, npcs });
+    }
+  }
+
+  /** PASS 7: is this point inside any settlement's hearth circle? Reuses the
+   *  generalized home-city pacing constant (HOME_HEARTH_RADIUS_PX — no fork). */
+  private isSettlementHearthAt(x: number, y: number): boolean {
+    for (const s of this.settlementStamps) {
+      if (Phaser.Math.Distance.Between(x, y, s.hearth.x, s.hearth.y) < HOME_HEARTH_RADIUS_PX) return true;
+    }
+    return false;
+  }
+
+  /** A true coordinate as scene px (the settlement/waystone planting rule). */
+  private scenePxFromLatLng(lat: number, lng: number): { x: number; y: number } {
+    const g = latLngGlobePx(lat, lng);
+    return { x: LEGACY_GLOBE_ORIGIN_X + Math.round(g.x), y: Math.round(g.y) };
+  }
+
+  /**
+   * PASS 7 COMMIT 3 — the egypt-corridor stamps (v2 only): the Sinai foot
+   * camp (a camp STAMP from the existing town legend — NOT a settlement: no
+   * registry entry, no NPCs, no hearth) and the authored canal causeway at
+   * the Ahmed Hamdi site, both through the 6C sub-stamp machinery.
+   */
+  private buildEgyptCorridorStamps(data: WashingtonMap): void {
+    const ts = 32;
+    // The camp: rows → tiles exactly like a settlement stamp.
+    const cw = SINAI_CAMP_STAMP.rows[0].length;
+    const ch = SINAI_CAMP_STAMP.rows.length;
+    const tiles: number[][] = [];
+    let spawnCell = { tx: Math.floor(cw / 2), ty: Math.floor(ch / 2) };
+    for (let ty = 0; ty < ch; ty++) {
+      const row: number[] = [];
+      for (let tx = 0; tx < cw; tx++) {
+        const cch = SINAI_CAMP_STAMP.rows[ty][tx];
+        const id = TOWN_LEGEND[cch];
+        if (id === undefined) throw new Error(`egypt-corridor camp: unknown cell '${cch}'`);
+        row.push(id);
+        if (cch === 's') spawnCell = { tx, ty };
+      }
+      tiles.push(row);
+    }
+    const campSub: WashingtonMap = {
+      name: `corridor-${SINAI_CAMP_STAMP.id}`,
+      generated: data.generated,
+      tileSize: ts,
+      width: cw,
+      height: ch,
+      zoneSize: Math.max(cw, ch),
+      zonesX: 1,
+      zonesY: 1,
+      terrain: data.terrain,
+      spawn: { x: spawnCell.tx, y: spawnCell.ty },
+      cities: [],
+      zones: [{ id: `corridor-${SINAI_CAMP_STAMP.id}`, zx: 0, zy: 0, x: 0, y: 0, width: cw, height: ch, tiles }],
+    };
+    const campCenter = this.scenePxFromLatLng(SINAI_CAMP_STAMP.lat, SINAI_CAMP_STAMP.lng);
+    const campOrigin = { x: campCenter.x - Math.floor(cw / 2) * ts, y: campCenter.y - Math.floor(ch / 2) * ts };
+    const campMap = new GameMap(this, campSub, TOWN_TILES, campOrigin, { forceCpuLayer: true });
+    this.sinaiCampSpawn = campMap.tileToWorldCenter(spawnCell.tx, spawnCell.ty);
+    this.regionColliders.push({ c: this.physics.add.collider(this.player.sprite, campMap.layer), worldId: WORLD_EARTH });
+    this.addTownLabel({ x: this.sinaiCampSpawn.x, y: campOrigin.y - 6, text: SINAI_CAMP_STAMP.displayName });
+    this.egyptCorridorStampById.set(SINAI_CAMP_STAMP.id, campMap);
+    // The causeways: the 6C crossing-stamp rule verbatim (road tiles spanning
+    // the baked channel at the real site; authored stamps win over terrain).
+    for (const c of EGYPT_CROSSINGS) {
+      const w = c.dir === 'ew' ? c.tiles : 3;
+      const h = c.dir === 'ew' ? 3 : c.tiles;
+      const roadTiles = Array.from({ length: h }, () => new Array<number>(w).fill(TownTileId.road));
+      const sub: WashingtonMap = {
+        name: `crossing-${c.id}`,
+        generated: data.generated,
+        tileSize: ts,
+        width: w,
+        height: h,
+        zoneSize: Math.max(w, h),
+        zonesX: 1,
+        zonesY: 1,
+        terrain: data.terrain,
+        spawn: { x: Math.floor(w / 2), y: Math.floor(h / 2) },
+        cities: [],
+        zones: [{ id: `crossing-${c.id}`, zx: 0, zy: 0, x: 0, y: 0, width: w, height: h, tiles: roadTiles }],
+      };
+      const px = this.scenePxFromLatLng(c.lat, c.lng);
+      const origin = { x: px.x - Math.floor(w / 2) * ts, y: px.y - Math.floor(h / 2) * ts };
+      const m = new GameMap(this, sub, TOWN_TILES, origin, { forceCpuLayer: true });
+      this.egyptCorridorStampById.set(`crossing-${c.id}`, m);
+    }
+  }
+
+  /** The corridor polyline in SCENE px — beats + vias from data, Cairo BY ID
+   *  through the live mentor anchor (gate + segment advisory both read this). */
+  egyptCorridorScenePoints(): { x: number; y: number; label: string }[] {
+    return egyptCorridorPoints(() => ({ x: this.cairoMentorPos.x - LEGACY_GLOBE_ORIGIN_X, y: this.cairoMentorPos.y })).map((p) => ({
+      x: LEGACY_GLOBE_ORIGIN_X + p.x,
+      y: p.y,
+      label: p.label,
+    }));
+  }
+
+  /** PASS 7 COMMIT 3 — the SECOND Heaven-portal instance on the Jebel Musa
+   *  summit: the same portal prop, SEALED until the egypt-corridor unseal
+   *  ritual (state derives from the persisted quest chain — no new save
+   *  field). Crossing is an explicit button, exactly like Idaho. */
+  private setupSinaiPortal(): void {
+    const pos = this.scenePxFromLatLng(EGYPT_BEATS.summit.lat, EGYPT_BEATS.summit.lng);
+    this.sinaiPortal = new HeavenPortal(this, pos.x, pos.y);
+  }
+
+  /** sealed | active — derived: the unseal ritual (egypt-corridor-5, first
+   *  objective) or the completed chain activates the gate. Persists through
+   *  the existing quest-chain save path. */
+  sinaiPortalState(): 'sealed' | 'active' {
+    if (this.chain.status('egypt-corridor-5') === 'complete') return 'active';
+    if (this.chain.activeQuest?.id === 'egypt-corridor-5' && this.chain.activeObjectiveIndex >= 1) return 'active';
+    return 'sealed';
+  }
+
+  /** Per-frame Sinai-portal upkeep (Earth + v2 only): the sealed gate reads
+   *  dim; the crossing button shows in range (same contextual-slot rules as
+   *  the Idaho portal button). */
+  private updateSinaiPortal(): void {
+    if (!this.sinaiPortal) return;
+    const sealed = this.sinaiPortalState() === 'sealed';
+    // Dim only on a state CHANGE (a per-frame set would fight the pulse tween).
+    if (sealed !== this.sinaiSealedApplied) {
+      this.sinaiSealedApplied = sealed;
+      for (const o of this.sinaiPortal.objects()) (o as unknown as { setAlpha(a: number): void }).setAlpha(sealed ? 0.55 : 1);
+    }
+    if (this.transitioning || this.time.now < this.worldCooldownUntil || this.dialogue.isOpen() || this.choice.isOpen()) {
+      this.sinaiEnterButton.setVisible(false);
+      return;
+    }
+    const d = Phaser.Math.Distance.Between(this.player.x, this.player.y, this.sinaiPortal.x, this.sinaiPortal.y);
+    this.sinaiEnterButton.setVisible(d <= PORTAL_CORRUPT_RANGE);
+  }
+
+  /** The Sinai crossing button: SEALED refuses with the placeholder line;
+   *  ACTIVE crosses into the SAME Heaven plane as the Idaho gate. */
+  private enterSinaiPortal(): void {
+    if (!this.sinaiPortal || this.transitioning || this.time.now < this.worldCooldownUntil) return;
+    if (this.dialogue.isOpen()) return;
+    const d = Phaser.Math.Distance.Between(this.player.x, this.player.y, this.sinaiPortal.x, this.sinaiPortal.y);
+    if (d > PORTAL_CORRUPT_RANGE) return;
+    this.sinaiEnterButton.setVisible(false);
+    if (this.sinaiPortalState() === 'sealed') {
+      this.controls.setEnabled(false);
+      this.player.setDirection(0, 0);
+      this.dialogue.open(['The gate is sealed. Whatever holds it shut does not answer to strength. (TODO-lore)'], () => {
+        this.reenableControls = true;
+      });
+      return;
+    }
+    this.travelToWorld(WORLD_HEAVEN, this.heavenArrivalPos);
+  }
+
+  /** PASS 7 COMMIT 3 — the hearth-triggered opener: stepping into the FAIYUM
+   *  hearth with a free quest slot offers/accepts beat 1 (Sefu's talk then
+   *  completes it through the real dialogue path). */
+  private updateEgyptCorridorHooks(): void {
+    if (this.chain.activeQuest || this.chain.status('egypt-corridor-1') !== 'available') return;
+    const st = this.settlementStamps.find((s) => s.def.id === 'faiyum');
+    if (!st) return;
+    if (Phaser.Math.Distance.Between(this.player.x, this.player.y, st.hearth.x, st.hearth.y) >= HOME_HEARTH_RADIUS_PX) return;
+    this.acceptQuest('egypt-corridor-1');
+    this.showBanner('Quest started: The Lake Road (TODO-lore)', 2600);
+  }
+
+  /** The Suez road pack (beat 3): EXISTING families through their existing
+   *  spawners with canon domain tints, registered as ARC enemies (the defeat
+   *  watcher owns them — never the zone/expiry machinery). */
+  private spawnSuezPack(): void {
+    const center = this.scenePxFromLatLng(EGYPT_BEATS.suez.lat, EGYPT_BEATS.suez.lng);
+    const total = SUEZ_SPAWN_SET.reduce((a, s) => a + s.count, 0);
+    let i = 0;
+    for (const s of SUEZ_SPAWN_SET) {
+      const domain = EXISTING_FAMILY_DOMAIN[s.family];
+      if (!domain) throw new Error(`suez-spawn-set: '${s.family}' is not an existing live-spawnable family`);
+      const tint = DOMAIN_TINT[domain];
+      for (let k = 0; k < s.count; k++, i++) {
+        const a = (Math.PI * 2 * i) / total;
+        const spot = this.activeMap().nearestWalkableWorld(center.x + Math.cos(a) * 130, center.y + Math.sin(a) * 100);
+        if (s.family === 'lesser-evil-scouts') {
+          const d = this.spawnDemon(spot.x, spot.y, this.activeMap().layer);
+          d.setBaseTint(tint);
+          this.applyFamilyTexture(d.sprite, s.family);
+          this.arcEnemies.push(d);
+        } else {
+          const t = this.spawnTownsfolk(spot.x, spot.y, null, s.family === 'corrupted-wildlife' ? 'wolf' : 'raider');
+          t.setBaseTint(tint);
+          this.applyFamilyTexture(t.sprite, s.family);
+          this.arcEnemies.push(t);
+        }
+      }
+    }
+  }
+
   /** PASS 6C gate probe: where each POI's legacy anchor ACTUALLY lands in the
    *  live world vs its declared true Earth anchor (must agree to the pixel).
    *  Raw-anchored POIs probe through legacyEarthPx (the whole re-projection
@@ -9676,6 +9971,10 @@ export class MainScene extends Phaser.Scene {
     // POI sub-stamps (+ crossing causeways) are the PNW's chunks; real baked
     // terrain streams everywhere between them. v1 keeps the legacy stamp.
     const chunkMaps: GameMap[] = isReplantActive() ? [...this.replantStamps, this.egyptMap] : [this.map, this.egyptMap];
+    // PASS 7: settlement stamps are globe chunks too (v2-only by construction).
+    chunkMaps.push(...this.settlementStamps.map((s) => s.map));
+    // PASS 7 COMMIT 3: so are the egypt-corridor stamps (camp + causeway).
+    chunkMaps.push(...this.egyptCorridorStampById.values());
     const built = new Map<string, { chunk: BuiltChunk; map: GameMap }>();
     for (const id of zoneIds) this.stampRegionZoneChunk(WORLD_EARTH, rw, origin, id, chunkMaps, built, ABSORBED_ZONE_HOSTS[id] ? this.egyptMap : undefined);
     this.buildRegionGates(WORLD_EARTH, origin, built);
@@ -10856,6 +11155,8 @@ export class MainScene extends Phaser.Scene {
     const hearth = zone?.homeClass ? (this.regionMentors.find((m) => m.zoneId === z.zoneId)?.pos ?? this.regionZoneArrivals[z.zoneId] ?? null) : null;
     for (const p of z.points) {
       if (hearth && Phaser.Math.Distance.Between(p.x, p.y, hearth.x, hearth.y) < HOME_HEARTH_RADIUS_PX) continue;
+      // PASS 7: settlement hearths suppress exactly like home hearths (same constant).
+      if (this.isSettlementHearthAt(p.x, p.y)) continue;
       // STAGED SPAWNS: a staged family waits until its beat is behind the
       // CURRENT character (wildlife spawns from minute one, untouched).
       const gate = zone?.spawnStaging?.[p.family];
@@ -12693,7 +12994,7 @@ export class MainScene extends Phaser.Scene {
   private isArcQuest(id?: string): boolean {
     return (
       id !== undefined &&
-      (this.ACT1_IDS.has(id) || this.ACT2_IDS.has(id) || this.INV_IDS.has(id) || this.ACTIV_IDS.has(id))
+      (this.ACT1_IDS.has(id) || this.ACT2_IDS.has(id) || this.INV_IDS.has(id) || this.ACTIV_IDS.has(id) || this.EGYPT_IDS.has(id))
     );
   }
 
@@ -12931,9 +13232,35 @@ export class MainScene extends Phaser.Scene {
         }
         this.arcMode = 'none';
         break;
+      // --- THE EGYPT CORRIDOR (Pass 7) ---
+      case 'egypt-sefu-opener':
+        // Beat 1 — completes through the real Sefu talk (openDialogueWith hook).
+        this.arcMode = 'none';
+        break;
+      case 'egypt-cairo-mentor':
+        // Beat 2 — reach the EXISTING Cairo anchor, referenced BY ID.
+        this.arcMode = 'reach';
+        this.arcReach = { ...this.cairoMentorPos };
+        break;
+      case 'suez-cleared':
+        // Beat 3 — the road pack at Suez (existing families, domain tints).
+        this.spawnSuezPack();
+        this.arcMode = 'defeat';
+        break;
+      case 'reach-sinai-camp':
+        // Beat 4 — the foot camp below Jebel Musa (the camp stamp's spawn).
+        this.arcMode = 'reach';
+        this.arcReach = this.sinaiCampSpawn ? { ...this.sinaiCampSpawn } : { ...this.egyptArrivalPos };
+        break;
+      case 'summit-unsealed':
+        // Beat 5a — the proximity unseal ritual at the sealed gate.
+        this.beginArcAction(this.sinaiPortal ? { x: this.sinaiPortal.x, y: this.sinaiPortal.y } : { ...this.egyptArrivalPos }, 'Unseal the Gate');
+        break;
       // 4.9 objs 4–5 ('portal-corrupted' / 'entered-heaven') fall through to the
       // default: the EXISTING Holy-Outpost portal machine drives those actions and
-      // fires the triggers — the quest only CONSUMES them.
+      // fires the triggers — the quest only CONSUMES them. The egypt-corridor
+      // crossing (5's last objective, also 'entered-heaven') rides the same rule:
+      // the Sinai portal button fires it through travelToWorld.
       default:
         this.arcMode = 'none';
     }
@@ -13360,6 +13687,7 @@ export class MainScene extends Phaser.Scene {
       ...this.act2Givers,
       ...this.invGivers,
       ...this.deliverNpcs.map((d) => d.npc), // Olympia / Greta / Alder / Mire recipients
+      ...this.settlementStamps.flatMap((st) => st.npcs), // Pass 7 village NPCs
     ];
     if (this.spirit.isActive()) candidates.push(...this.spirit.entities);
 
@@ -13425,6 +13753,19 @@ export class MainScene extends Phaser.Scene {
     const giver = this.questGivers.find((g) => g.entity === target);
     if (giver) {
       this.openQuestGiverDialogue(giver);
+      return;
+    }
+
+    // PASS 7 (egypt-corridor beat 1): talking with SEFU while the opener is
+    // active completes it through this real dialogue path — his normal lines
+    // play; the trigger fires when the conversation closes.
+    const faiyumStamp = this.settlementStamps.find((st) => st.def.id === 'faiyum');
+    const sefuIndex = faiyumStamp?.def.npcs.findIndex((n) => n.name === 'Sefu') ?? -1;
+    if (faiyumStamp && sefuIndex >= 0 && target === faiyumStamp.npcs[sefuIndex] && this.chain.activeTrigger === 'egypt-sefu-opener') {
+      this.dialogue.open(target.lines, () => {
+        this.notifyQuest('egypt-sefu-opener');
+        this.reenableControls = true;
+      });
       return;
     }
 
@@ -14704,6 +15045,22 @@ export class MainScene extends Phaser.Scene {
         const o = this.hellMap.bounds;
         return { x: o.x + SATAN_LAIR.x, y: o.y + SATAN_LAIR.y, label: '' };
       }
+      // --- THE EGYPT CORRIDOR (Pass 7) locations ---
+      case 'faiyum-village': {
+        const st = this.settlementStamps.find((s) => s.def.id === 'faiyum');
+        return st ? { x: st.spawn.x, y: st.spawn.y, label: '' } : null;
+      }
+      case 'cairo-crown':
+        // The EXISTING Cairo anchor, BY ID (the mentor at cairo-nile-crown).
+        return { x: this.cairoMentorPos.x, y: this.cairoMentorPos.y, label: '' };
+      case 'suez-gate': {
+        const p = this.scenePxFromLatLng(EGYPT_BEATS.suez.lat, EGYPT_BEATS.suez.lng);
+        return { x: p.x, y: p.y, label: '' };
+      }
+      case 'sinai-camp':
+        return this.sinaiCampSpawn ? { x: this.sinaiCampSpawn.x, y: this.sinaiCampSpawn.y, label: '' } : null;
+      case 'sinai-summit':
+        return this.sinaiPortal ? { x: this.sinaiPortal.x, y: this.sinaiPortal.y, label: '' } : null;
     }
   }
 

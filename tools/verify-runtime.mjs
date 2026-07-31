@@ -170,21 +170,31 @@ const ok = (name, pass, detail = '') => {
     await build({ entryPoints: [new URL('../src/world/world-scale.ts', import.meta.url).pathname], bundle: true, format: 'esm', platform: 'node', outfile, logLevel: 'silent' });
     return import(outfile);
   })();
+  const { gunzipSync } = await import('node:zlib');
   const read = (f) => readFileSync(join(worldDir, f));
-  const planet = read('planet.bin');
-  const pnw = read('regions/pnw.bin');
+  // PASS 7: grid packs ship GZIP — decode truth is the DECOMPRESSED bytes
+  // (manifest sha256 = decompressed; gzBytes = the committed wire size).
+  const planet = gunzipSync(read('planet.bin.gz'));
+  const pnw = gunzipSync(read('regions/pnw.bin.gz'));
+  const egypt = gunzipSync(read('regions/egypt.bin.gz'));
   const regions = JSON.parse(read('regions.json'));
   const rivers = JSON.parse(read('regions/pnw-rivers.json'));
+  const eRivers = JSON.parse(read('regions/egypt-rivers.json'));
   const coast = JSON.parse(read('coast-truth.json'));
   const bakeManifest = JSON.parse(readFileSync(new URL('../scripts/bake-earth/bake-manifest.json', import.meta.url).pathname));
   const sha = (buf) => createHash('sha256').update(buf).digest('hex');
-  // Manifest checksums (regions.json AND bake-manifest) vs committed bytes.
+  // Manifest checksums (regions.json AND bake-manifest) vs committed bytes:
+  // gz rows verify gzBytes (committed) AND the decompressed sha; raw rows as before.
   const pnwEntry = regions.regions.find((r) => r.id === 'pnw');
+  const egyptEntry = regions.regions.find((r) => r.id === 'egypt');
   const manifestShaOk =
     pnwEntry.sha256 === sha(pnw) &&
+    egyptEntry.sha256 === sha(egypt) &&
     bakeManifest.outputs.every((o) => {
       const rel = o.file.replace('public/world/', '');
-      return sha(read(rel)) === o.sha256;
+      const committed = read(rel);
+      if (rel.endsWith('.gz')) return o.gzBytes === committed.length && sha(gunzipSync(committed)) === o.sha256;
+      return sha(committed) === o.sha256;
     });
   // Headers vs the LIVE schema/scale constants.
   const worldTilesX = (360 * ws.PX_PER_DEG_LNG) / 32;
@@ -202,28 +212,52 @@ const ok = (name, pass, detail = '') => {
     u32(planet, 32) === schema.ELEV_BAND_OFFSET_M &&
     u32(planet, 36) === schema.ELEV_BAND_STEP_M &&
     planet.length === 40 + Math.ceil(worldTilesX / 256) * Math.ceil(worldTilesY / 256) + Math.ceil(worldTilesX / 512) * Math.ceil(worldTilesY / 512);
-  const rw = u32(pnw, 8);
-  const rh = u32(pnw, 12);
-  const pnwHeaderOk =
-    pnw.toString('latin1', 0, 4) === 'TOHR' &&
-    u32(pnw, 4) === 1 &&
-    u32(pnw, 16) === 16 &&
-    pnw.readDoubleLE(20) === 41.5 &&
-    pnw.readDoubleLE(28) === 49.5 &&
-    pnw.readDoubleLE(36) === -125.0 &&
-    pnw.readDoubleLE(44) === -110.5 &&
-    pnw.length === 52 + rw * rh * 2;
-  const totalBytes = bakeManifest.outputs.reduce((a, o) => a + o.bytes, 0);
-  const sizeOk = totalBytes <= 60 * 1024 * 1024 && bakeManifest.outputs.every((o) => o.bytes <= 45 * 1024 * 1024);
+  const regionHeaderOk = (buf, bb) => {
+    const rw = u32(buf, 8);
+    const rh = u32(buf, 12);
+    return (
+      buf.toString('latin1', 0, 4) === 'TOHR' &&
+      u32(buf, 4) === 1 &&
+      u32(buf, 16) === 16 &&
+      buf.readDoubleLE(20) === bb[0] &&
+      buf.readDoubleLE(28) === bb[1] &&
+      buf.readDoubleLE(36) === bb[2] &&
+      buf.readDoubleLE(44) === bb[3] &&
+      buf.length === 52 + rw * rh * 2
+    );
+  };
+  const pnwHeaderOk = regionHeaderOk(pnw, [41.5, 49.5, -125.0, -110.5]);
+  const egyptHeaderOk = regionHeaderOk(egypt, [21.5, 32.5, 24.5, 36.5]);
+  // Size guards count COMMITTED bytes (gz where compressed) — thresholds unchanged.
+  const totalBytes = bakeManifest.outputs.reduce((a, o) => a + (o.gzBytes ?? o.bytes), 0);
+  const sizeOk = totalBytes <= 60 * 1024 * 1024 && bakeManifest.outputs.every((o) => (o.gzBytes ?? o.bytes) <= 45 * 1024 * 1024);
   const gitignoreOk = readFileSync(new URL('../.gitignore', import.meta.url).pathname, 'utf8').includes('scripts/bake-earth/.cache/');
   const riverNames = new Set(rivers.rivers.map((r) => r.name));
   const riversOk = riverNames.has('Columbia') && riverNames.has('Snake') && rivers.rivers.every((r) => r.widthClass >= 1 && r.widthClass <= 3);
+  // Egypt: the Nile must ship at width class 3; the Suez Canal's presence or
+  // STATED absence is recorded in the bake manifest (fidelity gap, ledgered).
+  const nile = eRivers.rivers.filter((r) => r.name === 'Nile');
+  const egyptRiversOk = nile.length > 0 && Math.max(...nile.map((r) => r.widthClass)) === 3;
+  const suezStated = typeof bakeManifest.suezCanalNote === 'string' && bakeManifest.suezCanalNote.length > 0;
   const coastOk = coast.points.length === 300 && coast.points.every((p) => typeof p.water === 'boolean');
   const sourcesOk = Array.isArray(bakeManifest.sources) && bakeManifest.sources.length >= 3 && bakeManifest.sources.every((s) => s.url && s.sha256);
   ok(
-    'pack-integrity: manifest checksums match committed packs; headers agree with the live schema; size guards hold; cache gitignored; Columbia+Snake shipped; 300 coast-truth points',
-    manifestShaOk && planetHeaderOk && pnwHeaderOk && sizeOk && gitignoreOk && riversOk && coastOk && sourcesOk,
-    JSON.stringify({ manifestShaOk, planetHeaderOk, pnwHeaderOk, totalMB: +(totalBytes / 1048576).toFixed(1), sizeOk, gitignoreOk, riversOk, coastOk, sourcesOk, derivedBiomes: bakeManifest.derivedBiomes === true }),
+    'pack-integrity: gz packs decode to manifest-matching truth; headers (pnw + egypt) agree with the live schema; committed-size guards hold; Columbia+Snake and a class-3 Nile shipped; Suez Canal presence stated; 300 coast-truth points',
+    manifestShaOk && planetHeaderOk && pnwHeaderOk && egyptHeaderOk && sizeOk && gitignoreOk && riversOk && egyptRiversOk && suezStated && coastOk && sourcesOk,
+    JSON.stringify({ manifestShaOk, planetHeaderOk, pnwHeaderOk, egyptHeaderOk, totalMB: +(totalBytes / 1048576).toFixed(1), sizeOk, gitignoreOk, riversOk, egyptRiversOk, suez: bakeManifest.suezCanalNote, coastOk, sourcesOk, derivedBiomes: bakeManifest.derivedBiomes === true }),
+  );
+
+  // 0c1b. GZ-PARITY (PASS 7): decoded pack truth is BYTE-IDENTICAL to the
+  // pre-compression bake — the planet + pnw decompressed sha256 are PINNED
+  // from the last raw decode (the values the whole 6-series gate ran on).
+  const PRE_COMPRESSION_PINS = {
+    planet: '9e881e73761fef15f30510b406f756316100680e4607e3b8eff88f9b9252544d',
+    pnw: '14c4ab4de9690edba81e06a2482d085358af557f65c4b68a1b7ff2a0ffda9ff1',
+  };
+  ok(
+    'gz-parity: decompressed planet + pnw packs are byte-identical to the pinned pre-compression decode; egypt decompresses to its manifest sha',
+    sha(planet) === PRE_COMPRESSION_PINS.planet && sha(pnw) === PRE_COMPRESSION_PINS.pnw && sha(egypt) === egyptEntry.sha256,
+    JSON.stringify({ planet: sha(planet).slice(0, 12), pnw: sha(pnw).slice(0, 12), egypt: sha(egypt).slice(0, 12) }),
   );
 }
 
@@ -304,71 +338,92 @@ const ok = (name, pass, detail = '') => {
   const vis = await import(new URL('../node_modules/.cache/toh-wmp-vis.mjs', import.meta.url).pathname);
   const schema2 = await import(new URL('../node_modules/.cache/toh-wmp-schema.mjs', import.meta.url).pathname);
   const B = schema2.Biome;
+  const { gunzipSync: gunzip0c3 } = await import('node:zlib');
   const regions2 = JSON.parse(readFileSync(new URL('../public/world/regions.json', import.meta.url).pathname));
-  const pnwR = regions2.regions.find((r) => r.id === 'pnw');
-  const mapEntry = pnwR?.map;
-  let out = { hasEntry: !!mapEntry };
-  if (mapEntry) {
-    const bytes = readFileSync(new URL(`../public/world/${mapEntry.file}`, import.meta.url).pathname);
-    const png = PNG.sync.read(bytes);
-    const pack = readFileSync(new URL(`../public/world/${pnwR.file}`, import.meta.url).pathname);
-    const gw = pack.readUInt32LE(8);
-    const gh = pack.readUInt32LE(12);
-    const native = png.width === gw && png.height === gh;
-    const statedDown = !!mapEntry.downscaledFrom && mapEntry.downscaledFrom.w === gw && mapEntry.downscaledFrom.h === gh && Math.max(png.width, png.height) === 2048;
-    const bb = pnwR.bbox;
-    const classAt = (lat, lng) => {
-      const x = Math.min(png.width - 1, Math.max(0, Math.floor(((lng - bb.lngMin) / (bb.lngMax - bb.lngMin)) * png.width)));
-      const y = Math.min(png.height - 1, Math.max(0, Math.floor(((bb.latMax - lat) / (bb.latMax - bb.latMin)) * png.height)));
-      const o = (y * png.width + x) * 4;
-      const r = png.data[o];
-      const g = png.data[o + 1];
-      const b2 = png.data[o + 2];
-      const lum = (r + g + b2) / 3 || 1;
-      let best = -1;
-      let bd = Infinity;
-      for (const [id, v] of Object.entries(vis.MAP_PALETTE)) {
-        const pr = (v >> 16) & 255;
-        const pg = (v >> 8) & 255;
-        const pb = v & 255;
-        const pl = (pr + pg + pb) / 3;
-        const d = (r / lum - pr / pl) ** 2 + (g / lum - pg / pl) ** 2 + (b2 / lum - pb / pl) ** 2;
-        if (d < bd) {
-          bd = d;
-          best = Number(id);
+  // Per-region probe tables (box entries search a window — bakes shift
+  // channels a hair off survey, the geo-truth river-probe discipline).
+  const REGION_PROBES = {
+    pnw: [
+      { name: 'puget', classes: [B.OCEAN, B.FRESHWATER], at: [47.6, -122.4] },
+      { name: 'rainier', classes: [B.SNOW, B.ROCK], at: [46.85, -121.76] },
+      { name: 'vantageRiver', classes: [B.FRESHWATER], box: [46.84, 47.04, -120.08, -119.88] },
+      { name: 'olympic', classes: [B.FOREST, B.TAIGA, B.GRASS], at: [47.8, -123.7] },
+    ],
+    egypt: [
+      { name: 'medWater', classes: [B.OCEAN], at: [31.8, 29.5] },
+      { name: 'nileLuxor', classes: [B.FRESHWATER], box: [25.6, 25.8, 32.5, 32.76] },
+      { name: 'qarun', classes: [B.FRESHWATER], box: [29.38, 29.55, 30.4, 30.8] },
+      // Derived-biome speckle at this latitude (stated fallback): box probe.
+      { name: 'interiorDesert', classes: [B.DESERT], box: [26.8, 27.2, 26.8, 27.2] },
+    ],
+  };
+  for (const rid of ['pnw', 'egypt']) {
+    const rEntry = regions2.regions.find((r) => r.id === rid);
+    const mapEntry = rEntry?.map;
+    let out = { hasEntry: !!mapEntry };
+    if (mapEntry) {
+      const bytes = readFileSync(new URL(`../public/world/${mapEntry.file}`, import.meta.url).pathname);
+      const png = PNG.sync.read(bytes);
+      const packRaw = readFileSync(new URL(`../public/world/${rEntry.file}`, import.meta.url).pathname);
+      const pack = rEntry.file.endsWith('.gz') ? gunzip0c3(packRaw) : packRaw;
+      const gw = pack.readUInt32LE(8);
+      const gh = pack.readUInt32LE(12);
+      const native = png.width === gw && png.height === gh;
+      const statedDown = !!mapEntry.downscaledFrom && mapEntry.downscaledFrom.w === gw && mapEntry.downscaledFrom.h === gh && Math.max(png.width, png.height) === 2048;
+      const bb = rEntry.bbox;
+      const classAt = (lat, lng) => {
+        const x = Math.min(png.width - 1, Math.max(0, Math.floor(((lng - bb.lngMin) / (bb.lngMax - bb.lngMin)) * png.width)));
+        const y = Math.min(png.height - 1, Math.max(0, Math.floor(((bb.latMax - lat) / (bb.latMax - bb.latMin)) * png.height)));
+        const o = (y * png.width + x) * 4;
+        const r = png.data[o];
+        const g = png.data[o + 1];
+        const b2 = png.data[o + 2];
+        const lum = (r + g + b2) / 3 || 1;
+        let best = -1;
+        let bd = Infinity;
+        for (const [id, v] of Object.entries(vis.MAP_PALETTE)) {
+          const pr = (v >> 16) & 255;
+          const pg = (v >> 8) & 255;
+          const pb = v & 255;
+          const pl = (pr + pg + pb) / 3;
+          const d = (r / lum - pr / pl) ** 2 + (g / lum - pg / pl) ** 2 + (b2 / lum - pb / pl) ** 2;
+          if (d < bd) {
+            bd = d;
+            best = Number(id);
+          }
+        }
+        return best;
+      };
+      out = {
+        hasEntry: true,
+        w: png.width,
+        h: png.height,
+        gridW: gw,
+        gridH: gh,
+        dimsOk: native || statedDown,
+        mb: +(bytes.length / 1048576).toFixed(2),
+        sizeOk: bytes.length <= 6 * 1024 * 1024,
+        shaOk: mapEntry.sha256 === createHash('sha256').update(bytes).digest('hex') && mapEntry.bytes === bytes.length,
+      };
+      for (const p of REGION_PROBES[rid]) {
+        if (p.at) out[p.name] = p.classes.includes(classAt(p.at[0], p.at[1]));
+        else {
+          let hit = false;
+          for (let la = p.box[0]; la <= p.box[1] && !hit; la += 0.005) {
+            for (let ln = p.box[2]; ln <= p.box[3] && !hit; ln += 0.005) {
+              if (p.classes.includes(classAt(la, ln))) hit = true;
+            }
+          }
+          out[p.name] = hit;
         }
       }
-      return best;
-    };
-    // The Columbia near Vantage: box search (the bake shifts channels a hair
-    // off survey — the same reason the geo-truth river probe scans a radius).
-    let vantageRiver = false;
-    for (let la = 46.84; la <= 47.04 && !vantageRiver; la += 0.005) {
-      for (let ln = -120.08; ln <= -119.88 && !vantageRiver; ln += 0.005) {
-        if (classAt(la, ln) === B.FRESHWATER) vantageRiver = true;
-      }
     }
-    out = {
-      hasEntry: true,
-      w: png.width,
-      h: png.height,
-      gridW: gw,
-      gridH: gh,
-      dimsOk: native || statedDown,
-      mb: +(bytes.length / 1048576).toFixed(2),
-      sizeOk: bytes.length <= 6 * 1024 * 1024,
-      shaOk: mapEntry.sha256 === createHash('sha256').update(bytes).digest('hex') && mapEntry.bytes === bytes.length,
-      puget: [B.OCEAN, B.FRESHWATER].includes(classAt(47.6, -122.4)),
-      rainier: [B.SNOW, B.ROCK].includes(classAt(46.85, -121.76)),
-      vantageRiver,
-      olympic: [B.FOREST, B.TAIGA, B.GRASS].includes(classAt(47.8, -123.7)),
-    };
+    ok(
+      `${rid === 'pnw' ? 'regionmap' : 'egyptmap'}-parity: ${rid}-map.png dims match the pack grid (or a STATED 2048 downscale); <= 6 MB; manifest sha matches; probe classes correct`,
+      out.hasEntry && out.dimsOk && out.sizeOk && out.shaOk && REGION_PROBES[rid].every((p) => out[p.name]),
+      JSON.stringify(out),
+    );
   }
-  ok(
-    'regionmap-parity: pnw-map.png dims match the pack grid (or a STATED 2048 downscale); <= 6 MB; manifest sha matches; Puget water / Rainier high band / Columbia-at-Vantage river / Olympic forest probe classes correct',
-    out.hasEntry && out.dimsOk && out.sizeOk && out.shaOk && out.puget && out.rainier && out.vantageRiver && out.olympic,
-    JSON.stringify(out),
-  );
 }
 
 // 0d. REPLANT-TRUE-COORDS (PASS 6C, pure Node — replaces quest-anchor-sanity's
@@ -8091,6 +8146,279 @@ try {
     JSON.stringify(regionRefine),
   );
 
+  // PASS 7 pre-capture for 3u1: read the faiyum attunement flag NOW, before
+  // ANY teleport near Faiyum — 2g3b and 3u0 both park the player inside the
+  // 8-tile discovery radius, which legitimately attunes the waystone through
+  // the real discovery scan; reading the flag after that proves nothing.
+  const faiyumPreAttuned = await page.evaluate(() => window.__ready().waypointSys.unlocked.has('faiyum'));
+
+  // 2g3b. EGYPT GEO-TRUTH + REGION-REFINEMENT (PASS 7): stand at Faiyum — the
+  // egypt pack lazy-loads on ring proximity, the source version bumps, and
+  // the arrival ring repaints — then probe the COMPOSED source at real
+  // places (river/lake probes are box searches, the geo-truth discipline).
+  const egyptTruth = await (async () => {
+    const seattleSpot = await page.evaluate(() => {
+      const ms = window.__ready();
+      const spot = { x: ms.player.x, y: ms.player.y };
+      const p = ms.terrestrialPxFromLatLng({ lat: 29.31, lng: 30.84 });
+      ms.player.sprite.body.reset(p.x, p.y);
+      ms.lastLandPos = undefined;
+      return spot;
+    });
+    await page.waitForFunction(
+      () => {
+        const ms = window.__game.scene.getScene('MainScene');
+        const st = ms.chunkStreamer;
+        if (!st.regionsRef.some((r) => r.id === 'egypt')) return false;
+        const pcx = Math.floor((ms.player.x - st.originPx.x) / 2048);
+        const pcy = Math.floor((ms.player.y - st.originPx.y) / 2048);
+        for (let dy = -2; dy <= 2; dy++) {
+          for (let dx = -2; dx <= 2; dx++) {
+            if (st.chunkVersion(pcx + dx, pcy + dy) !== st.sourceVersion) return false;
+          }
+        }
+        return true;
+      },
+      null,
+      { timeout: 120000 },
+    );
+    const r = await page.evaluate(() => {
+      const ms = window.__game.scene.getScene('MainScene');
+      const st = ms.chunkStreamer;
+      const B = window.__worldScale.schema.Biome;
+      const s = (lat, lng) => st.earthSample(lat, lng);
+      const boxHasFresh = (lat, lng, tiles) => {
+        for (let dj = -tiles; dj <= tiles; dj += 4) {
+          for (let di = -tiles; di <= tiles; di += 4) {
+            if (s(lat - (dj * 32) / 178112, lng + (di * 32) / 121472)[0] === B.FRESHWATER) return true;
+          }
+        }
+        return false;
+      };
+      const red = s(27.0, 34.5);
+      let musaBand = 0;
+      for (let la = 28.52; la <= 28.56; la += 0.004) {
+        for (let ln = 33.95; ln <= 33.99; ln += 0.004) {
+          const q = s(la, ln);
+          if (q[0] !== B.OCEAN && q[0] !== B.FRESHWATER && q[1] > musaBand) musaBand = q[1];
+        }
+      }
+      // Deep Sahara: the derived-biome model (stated Pass 3 fallback)
+      // speckles desert/savanna at this latitude — probe the 1° box
+      // MAJORITY, the same discipline as the Himalaya box probe.
+      const census = {};
+      for (let a = -10; a <= 10; a++) {
+        for (let b2 = -10; b2 <= 10; b2++) {
+          const q = s(27 + a * 0.05, 27 + b2 * 0.05);
+          census[q[0]] = (census[q[0]] ?? 0) + 1;
+        }
+      }
+      const saharaMajority = Number(Object.entries(census).sort((x, y) => y[1] - x[1])[0][0]) === B.DESERT;
+      const pcx = Math.floor((ms.player.x - st.originPx.x) / 2048);
+      const pcy = Math.floor((ms.player.y - st.originPx.y) / 2048);
+      const full = st.synthesizeDirect(pcx, pcy);
+      const po = st.fillPlanetOnly(pcx, pcy);
+      let diff = 0;
+      for (let i = 0; i < full.length; i++) if (full[i] !== po[i]) diff++;
+      return {
+        nileLuxor: boxHasFresh(25.7, 32.63, 40),
+        qarun: boxHasFresh(29.45, 30.58, 40),
+        nasser: boxHasFresh(23.0, 32.9, 40),
+        redSea: red[0] === B.OCEAN && (red[3] & 1) === 0,
+        musaBand,
+        sahara: saharaMajority,
+        egyptLoaded: st.regionsRef.some((r2) => r2.id === 'egypt'),
+        version: st.sourceVersion,
+        regions: st.stats().regions,
+        diff,
+      };
+    });
+    await page.evaluate((spot) => {
+      const ms = window.__ready();
+      ms.player.sprite.body.reset(spot.x, spot.y);
+      ms.lastLandPos = undefined;
+    }, seattleSpot);
+    await page.waitForTimeout(800);
+    return r;
+  })();
+  ok(
+    'egypt geo-truth + region-refinement: Nile at Luxor / Qarun / Nasser FRESHWATER (40-tile boxes), Red Sea non-walkable OCEAN, Jebel Musa band >= 55, deep Sahara DESERT; egypt pack refined the Faiyum arrival (version bump + repaint + planet-only diff)',
+    egyptTruth.nileLuxor && egyptTruth.qarun && egyptTruth.nasser && egyptTruth.redSea && egyptTruth.musaBand >= 55 && egyptTruth.sahara && egyptTruth.egyptLoaded && egyptTruth.version >= 4 && egyptTruth.diff > 1000,
+    JSON.stringify(egyptTruth),
+  );
+
+  // ── PASS 7 COMMIT 2: SETTLEMENT FRAMEWORK + FAIYUM ────────────────────────
+  // 3u0. settlement-contract: the registry validates in Node (footprint cap,
+  // NPC count, home-city disjointness); the LIVE Faiyum stamp sits centered
+  // on its true coordinate, its hearth suppresses spawn points through the
+  // SAME home-city constant, and both NPCs are genuinely interactable
+  // through the real talk path.
+  const settlements6 = await (async () => {
+    const { build } = await import('esbuild');
+    const outfile = new URL('../node_modules/.cache/toh-settlements.mjs', import.meta.url).pathname;
+    await build({ entryPoints: [new URL('../src/settlements/registry.ts', import.meta.url).pathname], bundle: true, format: 'esm', platform: 'node', outfile, logLevel: 'silent' });
+    return import(outfile); // module-load validation throws on a contract breach
+  })();
+  const homeZoneIds = Object.keys(await page.evaluate(() => window.__worldScale.zoneAnchors));
+  const contractNode = {
+    count: settlements6.SETTLEMENTS.length,
+    capsOk: settlements6.SETTLEMENTS.every((s) => s.rows.length <= 48 && s.rows[0].length <= 48 && s.npcs.length >= 1 && s.npcs.length <= 3),
+    disjoint: settlements6.SETTLEMENTS.every((s) => !homeZoneIds.includes(s.id)),
+  };
+  const contractLive = await page.evaluate(async () => {
+    const ms = window.__ready();
+    const wait = (t) => new Promise((r) => setTimeout(r, t));
+    const st = ms.settlementStamps.find((s) => s.def.id === 'faiyum');
+    if (!st) return { setup: 'no faiyum stamp' };
+    const want = ms.terrestrialPxFromLatLng({ lat: 29.31, lng: 30.84 });
+    const b = st.map.bounds;
+    const centerErr = Math.hypot(b.x + b.width / 2 - want.x, b.y + b.height / 2 - want.y);
+    const hearthIn = ms.isSettlementHearthAt(st.hearth.x + 100, st.hearth.y);
+    const hearthOut = !ms.isSettlementHearthAt(st.hearth.x + 260 + 200, st.hearth.y);
+    // REAL talk path: stand beside Sefu — auto-dialogue or the Talk button.
+    const prev = { x: ms.player.x, y: ms.player.y };
+    ms.player.sprite.body.reset(st.npcs[0].sprite.x + 50, st.npcs[0].sprite.y);
+    ms.lastLandPos = undefined;
+    let opened = false;
+    for (let k = 0; k < 12 && !opened; k++) {
+      await wait(300);
+      if (ms.dialogue.isOpen()) opened = true;
+      else if (ms.talkButton.isVisible) {
+        ms.tryTalk();
+        await wait(300);
+        opened = ms.dialogue.isOpen();
+      }
+    }
+    // Step OUT of talk range BEFORE the tap-through: the update loop freezes
+    // while a dialogue is open, and a player left within NPC_AUTO_RANGE would
+    // re-open it the moment it closes — freezing every later check.
+    ms.player.sprite.body.reset(prev.x, prev.y);
+    ms.lastLandPos = undefined;
+    return { setup: 'ok', centerErr: +centerErr.toFixed(1), hearthIn, hearthOut, npcs: st.npcs.length, opened, prev, chunkRegistered: ms.earthChunkMaps.includes(st.map) };
+  });
+  for (let i = 0; i < 12; i++) {
+    await page.waitForTimeout(280);
+    const uiOpen = await page.evaluate(() => {
+      const ms = window.__game.scene.getScene('MainScene');
+      return ms.dialogue.isOpen() || ms.choice.isOpen();
+    });
+    if (!uiOpen) break;
+    await page.mouse.click(214, 520);
+    await page.mouse.click(214, 462);
+  }
+  // The dialogue MUST be closed now — an open dialogue freezes the update
+  // loop (discovery scans, travel casts) for every check after this one.
+  const talkClosed = await page.evaluate(() => {
+    const ms = window.__game.scene.getScene('MainScene');
+    return !ms.dialogue.isOpen() && !ms.choice.isOpen();
+  });
+  ok(
+    'settlement-contract: registry validates (cap, 1-3 NPCs, disjoint from home zones); the live Faiyum stamp is centered on its true coordinate, chunk-registered, hearth suppresses inside (same home constant) and not outside, both NPCs talk through the real path (and the dialogue closed cleanly)',
+    contractNode.count >= 1 && contractNode.capsOk && contractNode.disjoint && contractLive.setup === 'ok' && contractLive.centerErr <= 32 && contractLive.hearthIn && contractLive.hearthOut && contractLive.npcs === 2 && contractLive.opened && contractLive.chunkRegistered && talkClosed,
+    JSON.stringify({ ...contractNode, ...contractLive, talkClosed }),
+  );
+
+  // 3u1. waystone-faiyum: DISCOVERY-based (never pre-attuned) — walking into
+  // the radius attunes it; attunement survives the real save/load path. The
+  // pre-attunement flag was captured BEFORE 2g3b (the first Faiyum-adjacent
+  // teleport); by now the suite has legitimately attuned the node, so clear
+  // it here to prove the walk-in scan re-attunes from a cold state.
+  const wsFaiyum = await page.evaluate(async () => {
+    const ms = window.__ready();
+    const wp = ms.waypointSys;
+    const wait = (t) => new Promise((r) => setTimeout(r, t));
+    const node = wp.nodes.find((n) => n.id === 'faiyum');
+    if (!node) return { setup: 'no faiyum node' };
+    wp.unlocked.delete('faiyum');
+    // +200: inside the 8-tile (256 px) discovery radius but OUTSIDE the NPC
+    // talk/auto ranges — standing beside Naila would auto-open her dialogue,
+    // which freezes the update loop and with it the discovery scan.
+    ms.player.sprite.body.reset(node.x + 200, node.y);
+    ms.lastLandPos = undefined;
+    let unlocked = false;
+    for (let k = 0; k < 10 && !unlocked; k++) {
+      await wait(400);
+      unlocked = wp.unlocked.has('faiyum');
+    }
+    if (!ms.requestSave()) return { setup: 'save refused' };
+    ms.devLoadSave();
+    await wait(600);
+    const persisted = ms.waypointSys.unlocked.has('faiyum');
+    return { setup: 'ok', unlocked, persisted };
+  });
+  ok(
+    'waystone-faiyum: not pre-attuned (flag captured before any Faiyum approach); walk-in discovery attunes from a cold state; attunement survives the real save/load',
+    faiyumPreAttuned === false && wsFaiyum.setup === 'ok' && wsFaiyum.unlocked && wsFaiyum.persisted,
+    JSON.stringify({ preAttuned: faiyumPreAttuned, ...wsFaiyum }),
+  );
+
+  // 3u2. respawn-includes-settlements: a death NEAR Faiyum respawns AT
+  // Faiyum (respawn-eligible), never across the desert at the Cairo entry.
+  const faiyumDeath = await page.evaluate(async () => {
+    const ms = window.__ready();
+    const wait = (t) => new Promise((r) => setTimeout(r, t));
+    const st = ms.settlementStamps.find((s) => s.def.id === 'faiyum');
+    ms.player.sprite.body.reset(st.spawn.x + 1500, st.spawn.y + 400);
+    ms.lastLandPos = undefined;
+    await wait(400);
+    const from = { x: ms.player.x, y: ms.player.y };
+    ms.playerHealth.shield = 0;
+    ms.playerHealth.current = 1;
+    ms.onProjectileHitPlayer(10); // the real death funnel
+    // SCENE-TIME over wall-clock: poll for the respawn instead of a fixed
+    // wait (the death-banner delay stretches under swiftshader stalls).
+    let alive = false;
+    for (let k = 0; k < 30 && !alive; k++) {
+      await wait(400);
+      alive = !ms.playerDead;
+    }
+    const dFaiyum = Math.hypot(ms.player.x - st.spawn.x, ms.player.y - st.spawn.y);
+    const dCairo = Math.hypot(ms.player.x - ms.egyptArrivalPos.x, ms.player.y - ms.egyptArrivalPos.y);
+    return { alive, from, dFaiyum: +dFaiyum.toFixed(0), dCairo: +dCairo.toFixed(0) };
+  });
+  ok(
+    'respawn-includes-settlements: death near Faiyum respawns at the Faiyum spawn (respawn-eligible), not at the Cairo entry',
+    faiyumDeath.alive && faiyumDeath.dFaiyum <= 40 && faiyumDeath.dCairo > 10000,
+    JSON.stringify(faiyumDeath),
+  );
+
+  // 3u3. home-cities-untouched: the 14 home cities are READ-ONLY referenced —
+  // 14 home waypoint nodes stand, every home arrival still resolves onto its
+  // canon zone anchor geography, and no settlement id collides with a zone.
+  const homesUntouched = await page.evaluate(() => {
+    const ms = window.__ready();
+    const anchors = window.__worldScale.zoneAnchors;
+    const homes = ms.waypointSys.nodes.filter((n) => n.zoneId);
+    const drifts = [];
+    for (const n of homes) {
+      const a = anchors[n.zoneId];
+      if (!a) {
+        drifts.push(`${n.zoneId}:no-anchor`);
+        continue;
+      }
+      const p = ms.terrestrialPxFromLatLng(a);
+      // The RESOLVED node position IS the live arrival (the full resolution
+      // chain: Cairo mentor / stamped-zone arrivals / zone mentor / the
+      // re-planted NA towns — regionZoneArrivals alone misses NA homes).
+      if (Math.hypot(n.x - p.x, n.y - p.y) > 6000) drifts.push(`${n.zoneId}:${Math.hypot(n.x - p.x, n.y - p.y).toFixed(0)}px`);
+    }
+    return { homes: homes.length, drifts, settlementIds: ms.settlementStamps.map((s) => s.def.id) };
+  });
+  ok(
+    'home-cities-untouched: 14 home nodes stand, every home arrival resolves on its canon anchor geography, settlement ids disjoint',
+    homesUntouched.homes === 14 && homesUntouched.drifts.length === 0 && homesUntouched.settlementIds.every((id) => !homeZoneIds.includes(id)),
+    JSON.stringify(homesUntouched),
+  );
+  // Return the player to the pre-settlement-suite spot (the travel checks
+  // below expect the Seattle fixture neighborhood).
+  await page.evaluate(() => {
+    const ms = window.__ready();
+    const spot = ms.terrestrialPxFromLatLng({ lat: 47.61, lng: -122.33 });
+    ms.player.sprite.body.reset(spot.x, spot.y);
+    ms.lastLandPos = undefined;
+  });
+  await page.waitForTimeout(800);
+
   // ── PASS 4: TRAVEL SYSTEMS (v2 session; player still at the Seattle spot) ─
   // 2h0. travel-distance-ui: the km readout matches the px math exactly for
   // two fixtures (8,000 px = 5.0 km one-decimal; 40,000 px = 25 km whole).
@@ -8104,9 +8432,9 @@ try {
   }));
   ok('travel-distance-ui: km readout matches px math (5.0 km / 25 km fixtures)', kmUi.a === '5.0 km' && kmUi.b === '25 km', JSON.stringify(kmUi));
 
-  // 2h1. waypoint-registry: 17 nodes (14 class homes by zone id + Olympia +
-  // Boise + the Kamiah staging camp), every anchor walkable post-validation,
-  // every nudge within the 64-tile rule.
+  // 2h1. waypoint-registry: 19 nodes (14 class homes by zone id + Olympia +
+  // Boise + the Kamiah staging camp + the Faiyum and Sinai-camp waystones),
+  // every anchor walkable post-validation, every nudge within the 64-tile rule.
   const wpRegistry = await page.evaluate(() => {
     const ms = window.__game.scene.getScene('MainScene');
     const wp = ms.waypointSys;
@@ -8119,13 +8447,13 @@ try {
     return { setup: 'ok', total: wp.nodes.length, homes, fixed, validated: wp.validated, walkable, maxNudge, nudged };
   });
   ok(
-    'waypoint-registry: 17 nodes resolve on existing anchors, all walkable post-validation, nudges within 64 tiles',
+    'waypoint-registry: 19 nodes resolve on existing anchors (14 homes + 3 NA fixed + the Faiyum settlement waystone + the Sinai camp waystone), all walkable post-validation, nudges within 64 tiles',
     wpRegistry.setup === 'ok' &&
-      wpRegistry.total === 17 &&
+      wpRegistry.total === 19 &&
       wpRegistry.homes === 14 &&
-      wpRegistry.fixed.join(',') === 'wp-boise,wp-kamiah,wp-olympia' &&
+      wpRegistry.fixed.join(',') === 'faiyum,sinai-camp,wp-boise,wp-kamiah,wp-olympia' &&
       wpRegistry.validated === true &&
-      wpRegistry.walkable === 17 &&
+      wpRegistry.walkable === 19 &&
       wpRegistry.maxNudge <= 64,
     JSON.stringify(wpRegistry),
   );
@@ -8522,8 +8850,8 @@ try {
     return { active, paused: ms.scene.isPaused(), centerErr: +Math.hypot(c.x - pm.x, c.y - pm.y).toFixed(2), markers: wms.waystoneMarkers.length };
   });
   ok(
-    'map-open-at-cap: pinching past the cap opens map mode centered on the player (MainScene paused, 17 waystone markers live)',
-    mapOpen.active === true && mapOpen.paused === true && mapOpen.centerErr <= 2 && mapOpen.markers === 17,
+    'map-open-at-cap: pinching past the cap opens map mode centered on the player (MainScene paused, 19 waystone markers live: 14 homes + 3 NA fixed + faiyum + sinai-camp)',
+    mapOpen.active === true && mapOpen.paused === true && mapOpen.centerErr <= 2 && mapOpen.markers === 19,
     JSON.stringify(mapOpen),
   );
 
@@ -10332,7 +10660,7 @@ try {
   // 2g4. offline-cache: a SECOND v2 boot must serve planet.bin from
   // IndexedDB — proven by BLOCKING the network route for it and still
   // arriving at a live earth source.
-  await page.route('**/world/planet.bin', (route) => route.abort());
+  await page.route('**/world/planet.bin.gz', (route) => route.abort()); // Pass 7: the pack ships gzip
   await page.route('**/world/worldmap.png', (route) => route.abort()); // Pass 6A: the map image must ride the same cache
   await page.route('**/world/regions/pnw-map.png', (route) => route.abort()); // Pass 6D: the region map tier rides it too
   await page.goto(`http://localhost:${PORT}/?scale=v2`, { waitUntil: 'load' });
@@ -10367,11 +10695,11 @@ try {
     await wait(300);
     return out;
   });
-  await page.unroute('**/world/planet.bin');
+  await page.unroute('**/world/planet.bin.gz');
   await page.unroute('**/world/worldmap.png');
   await page.unroute('**/world/regions/pnw-map.png');
   ok(
-    'offline-cache: second v2 boot serves planet.bin AND worldmap.png from IndexedDB with the network routes blocked',
+    'offline-cache: second v2 boot serves planet.bin.gz (decompressed on read) AND worldmap.png from IndexedDB with the network routes blocked',
     offlineCache.planetFrom === 'idb' && offlineCache.worldmapFrom === 'idb' && offlineCache.worldmapBytes > 100000 && offlineCache.source === 'earth',
     JSON.stringify(offlineCache),
   );
@@ -10380,6 +10708,437 @@ try {
     offlineRegion.setup === 'ok' && offlineRegion.state === 'ready' && offlineRegion.from === 'idb' && offlineRegion.visible === true,
     JSON.stringify(offlineRegion),
   );
+
+  // 2g5. decompression-unavailable (PASS 7): a platform WITHOUT
+  // DecompressionStream must fail the boot LOUDLY with the requirement named
+  // — never a silent procedural session. Isolated page (init scripts are
+  // page-scoped; the main session is untouched).
+  {
+    const ctx2 = await browser.newContext({ viewport: { width: 428, height: 926 } });
+    const p2 = await ctx2.newPage();
+    const p2Errors = [];
+    p2.on('pageerror', (e) => p2Errors.push(e.message));
+    await p2.addInitScript(() => {
+      // Simulate an old platform: the constructor is absent entirely.
+      delete window.DecompressionStream;
+    });
+    await p2.goto(`http://localhost:${PORT}/?scale=v2`, { waitUntil: 'load' });
+    await p2.waitForFunction(() => !!window.__game && window.__game.scene.isActive('TitleScene'), null, { timeout: 25000 });
+    await p2.evaluate(() => window.__game.scene.getScene('TitleScene').scene.start('MainScene', { mode: 'new', classId: 'blacksmith' }));
+    await p2.waitForFunction(() => window.__game.scene.isActive('MainScene'), null, { timeout: 30000 });
+    let named = false;
+    for (let k = 0; k < 25 && !named; k++) {
+      await p2.waitForTimeout(400);
+      named = p2Errors.some((m) => m.includes('DecompressionStream'));
+    }
+    const silentEarth = await p2.evaluate(() => window.__game.scene.getScene('MainScene').chunkStreamer?.activeSourceLabel === 'earth');
+    await ctx2.close();
+    ok(
+      'decompression-unavailable: a platform without DecompressionStream fails LOUDLY with the requirement named — and never silently reaches an earth session',
+      named && !silentEarth,
+      JSON.stringify({ named, silentEarth, firstError: p2Errors.find((m) => m.includes('DecompressionStream'))?.slice(0, 140) ?? p2Errors[0]?.slice(0, 140) ?? null }),
+    );
+  }
+
+  // ── PASS 7 COMMIT 3: THE EGYPT CORRIDOR + THE SEALED SINAI PORTAL ─────────
+  // A dedicated fresh druid session in its OWN CONTEXT drives the whole
+  // five-beat chain from a cold state (deterministic — the main travel
+  // session may have side-started beat 1 through the Faiyum hearth). The
+  // isolated BROWSER PROCESS gets its own renderer tree (the fixture is
+  // heavy, and three prior runs died at its tail from end-of-suite memory
+  // pressure — a shared-process context was not enough) and its own
+  // storage — the travel session's save slot is never touched. The main
+  // page parks on about:blank first, releasing its world session's memory
+  // (flip-default re-navigates it regardless).
+  const egc = await (async () => {
+    const { build } = await import('esbuild');
+    const outfile = new URL('../node_modules/.cache/toh-egypt-corridor.mjs', import.meta.url).pathname;
+    await build({ entryPoints: [new URL('../src/world/egypt-corridor.ts', import.meta.url).pathname], bundle: true, format: 'esm', platform: 'node', outfile, logLevel: 'silent' });
+    return import(outfile);
+  })();
+  const rosterB = await (async () => {
+    const { build } = await import('esbuild');
+    const outfile = new URL('../node_modules/.cache/toh-enemy-roster.mjs', import.meta.url).pathname;
+    await build({ entryPoints: [new URL('../src/world/enemy-roster.ts', import.meta.url).pathname], bundle: true, format: 'esm', platform: 'node', outfile, logLevel: 'silent' });
+    return import(outfile);
+  })();
+  // 3w0. suez-spawn-set (Node half): every declared family is an EXISTING
+  // live-spawnable family with a canon domain (no new family ships here).
+  const suezNode = {
+    entries: egc.SUEZ_SPAWN_SET.length,
+    total: egc.SUEZ_SPAWN_SET.reduce((a, s) => a + s.count, 0),
+    allExisting: egc.SUEZ_SPAWN_SET.every((s) => s.family in rosterB.EXISTING_FAMILY_DOMAIN),
+    tints: Object.fromEntries(egc.SUEZ_SPAWN_SET.map((s) => [s.family, rosterB.DOMAIN_TINT[rosterB.EXISTING_FAMILY_DOMAIN[s.family]]])),
+  };
+  await page.goto('about:blank'); // release the main page's world memory
+  const browser3 = await chromium.launch({
+    executablePath: EXE,
+    headless: true,
+    args: ['--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--use-gl=swiftshader', '--enable-unsafe-swiftshader'],
+  });
+  const ctx3 = await browser3.newContext({ viewport: { width: 428, height: 926 } });
+  const p3 = await ctx3.newPage();
+  p3.on('pageerror', (e) => pageErrors.push(`corridor: ${e.message}`));
+  await p3.addInitScript(() => {
+    Object.defineProperty(document, 'hidden', { get: () => false });
+    Object.defineProperty(document, 'visibilityState', { get: () => 'visible' });
+  });
+  await p3.addInitScript(() => {
+    window.__ready = () => {
+      const ms = window.__game.scene.getScene('MainScene');
+      if (ms.playerDead) ms.respawnPlayer();
+      ms.playerHealth.full();
+      ms.playerHealth.shield = 1e9;
+      return ms;
+    };
+  });
+  await p3.goto(`http://localhost:${PORT}/?scale=v2&devspeed=99`, { waitUntil: 'load' });
+  await p3.waitForFunction(() => !!window.__game && window.__game.scene.isActive('TitleScene'), null, { timeout: 25000 });
+  await p3.evaluate(() => window.__game.scene.getScene('TitleScene').scene.start('MainScene', { mode: 'new', classId: 'druid' }));
+  await p3.waitForFunction(() => window.__game.scene.isActive('MainScene'), null, { timeout: 60000 });
+  await p3.waitForTimeout(2500);
+  if (await p3.evaluate(() => window.__game.scene.isActive('FirstSkillScene'))) {
+    await p3.mouse.click(214, 462);
+    await p3.waitForTimeout(600);
+  }
+  // Stand at Faiyum; the egypt pack lazy-loads; the HEARTH offers beat 1.
+  await p3.evaluate(() => {
+    const ms = window.__ready();
+    const p = ms.terrestrialPxFromLatLng({ lat: 29.31, lng: 30.84 });
+    ms.player.sprite.body.reset(p.x, p.y);
+    ms.lastLandPos = undefined;
+  });
+  await p3.waitForFunction(
+    () => {
+      const ms = window.__game.scene.getScene('MainScene');
+      return ms.chunkStreamer && ms.chunkStreamer.regionsRef.some((r) => r.id === 'egypt');
+    },
+    null,
+    { timeout: 120000 },
+  );
+  let hearthOffered = false;
+  for (let k = 0; k < 25 && !hearthOffered; k++) {
+    await p3.waitForTimeout(400);
+    hearthOffered = await p3.evaluate(() => window.__game.scene.getScene('MainScene').chain.status('egypt-corridor-1') === 'active');
+  }
+
+  // 3w1. corridor-anchor-sanity: every beat anchor stands on COMPOSED-truth
+  // walkable ground; Cairo enters the polyline BY ID (the b:cairo point IS
+  // the live mentor anchor); the fallback ring buffer is untouched.
+  const egAnchors = await p3.evaluate(() => {
+    const ms = window.__ready();
+    const F = ms.map.constructor;
+    const pts = ms.egyptCorridorScenePoints();
+    const byLabel = Object.fromEntries(pts.map((p) => [p.label, p]));
+    const beatWalkable = {};
+    for (const label of ['faiyum', 'b:cairo', 'suez', 'sinaiCamp', 'summit']) {
+      const p = byLabel[label];
+      beatWalkable[label] = p ? ms.composedTravelWalkable(p.x, p.y) === true : 'missing';
+    }
+    const cairoById = byLabel['b:cairo'] && byLabel['b:cairo'].x === ms.cairoMentorPos.x && byLabel['b:cairo'].y === ms.cairoMentorPos.y;
+    return { beatWalkable, cairoById, fallbacks: F.walkableFallbacks.length, sealedAtBoot: ms.sinaiPortalState() };
+  });
+  ok(
+    'corridor-anchor-sanity: all five beat anchors walkable on the composed source, Cairo referenced BY ID (polyline point === live mentor anchor), zero walkable-fallback engagements, portal born sealed',
+    Object.values(egAnchors.beatWalkable).every((v) => v === true) && egAnchors.cairoById === true && egAnchors.fallbacks === 0 && egAnchors.sealedAtBoot === 'sealed',
+    JSON.stringify(egAnchors),
+  );
+
+  // 3w2. crossing-stamps: the authored canal causeway stands at its declared
+  // site, its road span COVERS the live-measured baked channel (+ a bank on
+  // each side), and its tiles are road (walkable stamp truth over the water).
+  const crossingStamp = await p3.evaluate(() => {
+    const ms = window.__ready();
+    const st = ms.chunkStreamer;
+    const B = window.__worldScale.schema.Biome;
+    const m = ms.egyptCorridorStampById.get('crossing-canal-ahmed-hamdi');
+    if (!m) return { setup: 'no causeway stamp' };
+    const b = m.bounds;
+    const cy = b.y + b.height / 2;
+    // Measure the baked channel along the causeway's center row (sampled at
+    // 16 px), ignoring stamp cover — the raw truth the causeway must span.
+    let first = -1;
+    let last = -1;
+    for (let x = b.x - 640; x <= b.x + b.width + 640; x += 16) {
+      const ll = ms.terrestrialLatLngFromPx(x, cy);
+      const r = st.earthSample(ll.lat, ll.lng);
+      if (r[0] === B.OCEAN || r[0] === B.FRESHWATER) {
+        if (first < 0) first = x;
+        last = x;
+      }
+    }
+    const walkMid = !m.isBlockedAtWorld(b.x + b.width / 2, cy);
+    const walkIn = !m.isBlockedAtWorld(b.x + 50, cy);
+    const walkOut = !m.isBlockedAtWorld(b.x + b.width - 50, cy);
+    return {
+      setup: 'ok',
+      channelPx: first >= 0 ? last - first : 0,
+      spansChannel: first >= 0 && b.x + 48 <= first && last <= b.x + b.width - 48,
+      walkMid,
+      walkIn,
+      walkOut,
+    };
+  });
+  ok(
+    'crossing-stamps: the Ahmed Hamdi causeway spans the live-measured baked canal channel with banks on both ends, and its road row is walkable end to end',
+    crossingStamp.setup === 'ok' && crossingStamp.channelPx > 0 && crossingStamp.spansChannel === true && crossingStamp.walkMid && crossingStamp.walkIn && crossingStamp.walkOut,
+    JSON.stringify(crossingStamp),
+  );
+
+  // 3w3. corridor-chain: the five beats walked end to end through the REAL
+  // paths — hearth offer, Sefu talk, retargeting between beats with the km
+  // readout matching the px math, the Suez pack (existing families + canon
+  // tints, defeated), the camp reach (+ waystone discovery), the unseal.
+  const beat1 = await p3.evaluate(async () => {
+    const ms = window.__ready();
+    const wait = (t) => new Promise((r) => setTimeout(r, t));
+    const st = ms.settlementStamps.find((s) => s.def.id === 'faiyum');
+    if (!st) return { setup: 'no faiyum stamp' };
+    const prev = { x: ms.player.x, y: ms.player.y };
+    ms.player.sprite.body.reset(st.npcs[0].sprite.x + 50, st.npcs[0].sprite.y);
+    ms.lastLandPos = undefined;
+    let opened = false;
+    for (let k = 0; k < 12 && !opened; k++) {
+      await wait(300);
+      if (ms.dialogue.isOpen()) opened = true;
+      else if (ms.talkButton.isVisible) {
+        ms.tryTalk();
+        await wait(300);
+        opened = ms.dialogue.isOpen();
+      }
+    }
+    ms.player.sprite.body.reset(prev.x, prev.y);
+    ms.lastLandPos = undefined;
+    return { setup: 'ok', opened };
+  });
+  for (let i = 0; i < 14; i++) {
+    await p3.waitForTimeout(280);
+    const uiOpen = await p3.evaluate(() => {
+      const ms = window.__game.scene.getScene('MainScene');
+      return ms.dialogue.isOpen() || ms.choice.isOpen();
+    });
+    if (!uiOpen) break;
+    await p3.mouse.click(214, 520);
+    await p3.mouse.click(214, 462);
+  }
+  let beat2Active = false;
+  for (let k = 0; k < 15 && !beat2Active; k++) {
+    await p3.waitForTimeout(400);
+    beat2Active = await p3.evaluate(() => window.__game.scene.getScene('MainScene').chain.status('egypt-corridor-2') === 'active');
+  }
+  // Retargeting + km-matching at beat 2: the marker points at the Cairo
+  // mentor and its km text equals the px math (formatKm rules replicated).
+  const kmMatch = await p3.evaluate(() => {
+    const ms = window.__ready();
+    const t = ms.chain.activeObjectiveDef?.target ?? null;
+    const text = ms.marker.label.text;
+    const distPx = Math.hypot(ms.cairoMentorPos.x - ms.player.x, ms.cairoMentorPos.y - ms.player.y);
+    const km = distPx / 1600;
+    const expect = `· ${km < 10 ? `${km.toFixed(1)} km` : `${Math.round(km)} km`}`;
+    return { target: t, text, expect, match: text.trim() === expect.trim() };
+  });
+  await p3.evaluate(() => {
+    const ms = window.__ready();
+    ms.player.sprite.body.reset(ms.cairoMentorPos.x + 60, ms.cairoMentorPos.y + 40);
+    ms.lastLandPos = undefined;
+  });
+  let beat3Active = false;
+  for (let k = 0; k < 15 && !beat3Active; k++) {
+    await p3.waitForTimeout(400);
+    beat3Active = await p3.evaluate(() => window.__game.scene.getScene('MainScene').chain.status('egypt-corridor-3') === 'active');
+  }
+  const suezLive = await p3.evaluate((tints) => {
+    const ms = window.__ready();
+    const live = ms.arcEnemies.filter((e) => e.isAlive);
+    const byFam = {};
+    let tintOk = true;
+    for (const e of live) {
+      const fam = e.sprite.texture.key.replace(/^enemy-/, '');
+      byFam[fam] = (byFam[fam] ?? 0) + 1;
+      // Base tint = the canon domain tint (except mid hit-flash; spawn-fresh here).
+      if (tints[fam] !== undefined && e.sprite.tintTopLeft !== tints[fam]) tintOk = false;
+    }
+    return { live: live.length, byFam, tintOk };
+  }, suezNode.tints);
+  // Defeat the pack (the established gate kill path) → beat 4.
+  await p3.evaluate(() => {
+    const ms = window.__ready();
+    for (const e of ms.arcEnemies) if (e.isAlive) e.destroy();
+  });
+  let beat4Active = false;
+  for (let k = 0; k < 15 && !beat4Active; k++) {
+    await p3.waitForTimeout(400);
+    beat4Active = await p3.evaluate(() => window.__game.scene.getScene('MainScene').chain.status('egypt-corridor-4') === 'active');
+  }
+  await p3.evaluate(() => {
+    const ms = window.__ready();
+    ms.player.sprite.body.reset(ms.sinaiCampSpawn.x, ms.sinaiCampSpawn.y - 40);
+    ms.lastLandPos = undefined;
+  });
+  let beat5Active = false;
+  for (let k = 0; k < 15 && !beat5Active; k++) {
+    await p3.waitForTimeout(400);
+    beat5Active = await p3.evaluate(() => window.__game.scene.getScene('MainScene').chain.status('egypt-corridor-5') === 'active');
+  }
+  // The camp waystone attunes by DISCOVERY while standing in the camp.
+  let campAttuned = false;
+  for (let k = 0; k < 10 && !campAttuned; k++) {
+    await p3.waitForTimeout(400);
+    campAttuned = await p3.evaluate(() => window.__game.scene.getScene('MainScene').waypointSys.unlocked.has('sinai-camp'));
+  }
+  ok(
+    'corridor-chain: hearth offers beat 1, the Sefu talk completes it, retargeting walks beats 2-5 (km readout matches the px math at Cairo), the Suez pack spawns existing families with canon tints and its defeat advances, the camp reach attunes the sinai-camp waystone',
+    hearthOffered && beat1.setup === 'ok' && beat1.opened && beat2Active && kmMatch.target === 'cairo-crown' && kmMatch.match && beat3Active && suezLive.live === suezNode.total && suezNode.allExisting && suezNode.entries >= 2 && suezLive.tintOk && beat4Active && beat5Active && campAttuned,
+    JSON.stringify({ hearthOffered, beat1, beat2Active, kmMatch, beat3Active, suezLive, suezNode: { ...suezNode, tints: undefined }, beat4Active, beat5Active, campAttuned }),
+  );
+
+  // 3w4. portal-sealed-until-chain: SEALED through beats 1-4 (asserted at
+  // boot above and re-checked here mid-quest-5), the crossing button REFUSES
+  // while sealed (no world change), the unseal ritual runs through the real
+  // proximity-action path and flips the state, and the ACTIVE portal crosses
+  // into the SAME Heaven plane as Idaho.
+  // Small SYNC evaluates with node-side waits between them: three prior
+  // runs wedged the renderer inside one long page-side async evaluate here
+  // — small steps make any future wedge fail at a named point instead of
+  // hanging the whole run silently.
+  await p3.evaluate(() => {
+    const ms = window.__ready();
+    ms.player.sprite.body.reset(ms.sinaiPortal.x + 60, ms.sinaiPortal.y + 40);
+    ms.lastLandPos = undefined;
+  });
+  await p3.waitForTimeout(700);
+  const sealedPress = await p3.evaluate(() => {
+    const ms = window.__ready();
+    const stateBefore = ms.sinaiPortalState();
+    const btnVisible = ms.sinaiEnterButton?.isVisible ?? false;
+    const worldBefore = ms.activeWorld;
+    ms.enterSinaiPortal();
+    return { stateBefore, btnVisible, worldBefore };
+  });
+  await p3.waitForTimeout(600);
+  const sealedRefusal = await p3.evaluate((worldBefore) => {
+    const ms = window.__game.scene.getScene('MainScene');
+    return {
+      refusalOpen: ms.dialogue.isOpen(),
+      stayed: ms.activeWorld === worldBefore && !ms.transitioning,
+    };
+  }, sealedPress.worldBefore);
+  sealedRefusal.stateBefore = sealedPress.stateBefore;
+  sealedRefusal.btnVisible = sealedPress.btnVisible;
+  for (let i = 0; i < 10; i++) {
+    await p3.waitForTimeout(280);
+    const uiOpen = await p3.evaluate(() => {
+      const ms = window.__game.scene.getScene('MainScene');
+      return ms.dialogue.isOpen() || ms.choice.isOpen();
+    });
+    if (!uiOpen) break;
+    await p3.mouse.click(214, 520);
+    await p3.mouse.click(214, 462);
+  }
+  let unsealBtn = false;
+  for (let k = 0; k < 12 && !unsealBtn; k++) {
+    await p3.waitForTimeout(300);
+    unsealBtn = await p3.evaluate(() => window.__game.scene.getScene('MainScene').burnButton.isVisible);
+  }
+  await p3.evaluate(() => window.__ready().tryArcAction()); // the shared proximity-action path fires 'summit-unsealed'
+  await p3.waitForTimeout(600);
+  const unsealRitual = await p3.evaluate(() => {
+    const ms = window.__game.scene.getScene('MainScene');
+    return { portal: ms.sinaiPortalState(), objIndex: ms.chain.activeObjectiveIndex };
+  });
+  unsealRitual.btn = unsealBtn;
+  await p3.evaluate(() => window.__ready().enterSinaiPortal());
+  for (let k = 0; k < 25; k++) {
+    await p3.waitForTimeout(400);
+    const arrived = await p3.evaluate(() => {
+      const ms = window.__game.scene.getScene('MainScene');
+      return ms.activeWorld === 'heaven' && !ms.transitioning;
+    });
+    if (arrived) break;
+  }
+  const crossing = await p3.evaluate(() => {
+    const ms = window.__game.scene.getScene('MainScene');
+    const dArrival = Math.hypot(ms.player.x - ms.heavenArrivalPos.x, ms.player.y - ms.heavenArrivalPos.y);
+    return { world: ms.activeWorld, dArrival: +dArrival.toFixed(0), q5: ms.chain.status('egypt-corridor-5'), portal: ms.sinaiPortalState() };
+  });
+  ok(
+    'portal-sealed-until-chain: sealed at boot and through beat 5a, the crossing button refuses while sealed (no world change), the real unseal ritual flips sealed -> active, and the active portal crosses into the SAME Heaven plane as Idaho (chain complete)',
+    sealedRefusal.stateBefore === 'sealed' && sealedRefusal.btnVisible && sealedRefusal.refusalOpen && sealedRefusal.stayed && unsealRitual.btn && unsealRitual.portal === 'active' && unsealRitual.objIndex === 1 && crossing.world === 'heaven' && crossing.dArrival <= 64 && crossing.q5 === 'complete' && crossing.portal === 'active',
+    JSON.stringify({ sealedRefusal, unsealRitual, crossing }),
+  );
+
+  // 3w5. corridor-traversable: ride the WHOLE egypt polyline against the live
+  // world rule (baked water blocks unless an authored stamp — the hand-built
+  // Cairo map, the camp, the causeway, a settlement — covers the point). NO
+  // water span wider than a ford; the causeway must be ridden end to end.
+  const egyptRide = await p3.evaluate(() => {
+    const ms = window.__ready();
+    const st = ms.chunkStreamer;
+    const B = window.__worldScale.schema.Biome;
+    const pts = ms.egyptCorridorScenePoints();
+    const covers = [ms.egyptMap.bounds, ...[...ms.egyptCorridorStampById.values()].map((m) => m.bounds), ...ms.settlementStamps.map((s) => s.map.bounds)];
+    const offenders = [];
+    let ridden = false;
+    const segs = [];
+    for (let i = 0; i + 1 < pts.length; i++) {
+      const a = pts[i];
+      const b = pts[i + 1];
+      if (a.label === 'x:canal-ahmed-hamdi:in' && b.label === 'x:canal-ahmed-hamdi:out') ridden = true;
+      const len = Math.hypot(b.x - a.x, b.y - a.y);
+      segs.push({ from: a.label, to: b.label, lenPx: Math.round(len) });
+      const n = Math.max(1, Math.ceil(len / 64));
+      let runStart = -1;
+      for (let k = 0; k <= n; k++) {
+        const t = k / n;
+        const x = a.x + (b.x - a.x) * t;
+        const y = a.y + (b.y - a.y) * t;
+        const covered = covers.some((c) => x >= c.x && x < c.x + c.width && y >= c.y && y < c.y + c.height);
+        let water = false;
+        if (!covered) {
+          const ll = ms.terrestrialLatLngFromPx(x, y);
+          const r = st.earthSample(ll.lat, ll.lng);
+          water = r[0] === B.OCEAN || r[0] === B.FRESHWATER;
+        }
+        if (water) {
+          if (runStart < 0) runStart = k;
+        } else if (runStart >= 0) {
+          const widthPx = (k - runStart) * 64;
+          if (widthPx > 96) offenders.push({ seg: `${a.label}->${b.label}`, widthPx });
+          runStart = -1;
+        }
+      }
+    }
+    const F = ms.map.constructor;
+    return { offenders, ridden, segs, fallbacks: F.walkableFallbacks.length };
+  });
+  ok(
+    'corridor-traversable: the egypt polyline rides clean end to end — zero water spans wider than a ford under the cover rule, the canal causeway ridden lengthwise, zero fallback engagements across the whole fixture',
+    egyptRide.offenders.length === 0 && egyptRide.ridden === true && egyptRide.fallbacks === 0,
+    JSON.stringify({ offenders: egyptRide.offenders.slice(0, 6), ridden: egyptRide.ridden, segments: egyptRide.segs.length, fallbacks: egyptRide.fallbacks }),
+  );
+  // SEGMENT-TIMES (ADVISORY, per spec — printed, never asserted): minutes per
+  // corridor leg at mount speed; feeds the ledgered Egypt spawn-density audit.
+  {
+    const ws7 = await (async () => {
+      const { build } = await import('esbuild');
+      const outfile = new URL('../node_modules/.cache/toh-world-scale7.mjs', import.meta.url).pathname;
+      await build({ entryPoints: [new URL('../src/world/world-scale.ts', import.meta.url).pathname], bundle: true, format: 'esm', platform: 'node', outfile, logLevel: 'silent' });
+      return import(outfile);
+    })();
+    const legs = [];
+    let from = egyptRide.segs[0]?.from ?? 'faiyum';
+    let acc = 0;
+    for (const s of egyptRide.segs) {
+      acc += s.lenPx;
+      if (!s.to.startsWith('via(') && !s.to.startsWith('x:')) {
+        legs.push(`${from}->${s.to}: ${(acc / ws7.MOUNT_SPEED_PX / 60).toFixed(1)}m`);
+        from = s.to;
+        acc = 0;
+      }
+    }
+    console.log(`ADVISORY egypt segment-times (mounted, ${ws7.MOUNT_SPEED_PX}px/s): ${legs.join('  ')}`);
+  }
+  await browser3.close();
 
   // ── PASS 4 COMMIT 2: THE FLIP ─────────────────────────────────────────────
   // 2i0. flip-default: a page with NO param is v2 — streamer live, the earth
