@@ -218,3 +218,24 @@ ruling lands, strike the entry with a pointer to the commit that resolved it.
   e.g. the isolated egypt-corridor fixture). Pairs with the timing-flake
   clock rule: long setup waits under frame pressure are exactly where
   wall-clock assertions die.
+- PASS 8 (art autonomy: asset manifest + MCP batch machine): the ENEMY-TINT
+  ruling is PROMOTED TO DECISION - whole-body domain tint over grayscale
+  (current) vs full-color + domain aura now BLOCKS the largest fenced
+  category in toh-asset-manifest.json (every enemy/hostile-creature row
+  carries enemy-tint-ruling); nothing in those categories can batch until
+  Casey rules. STYLE-LOCK APPROVALS are tracked per category in
+  art/style-locks.json - the file ships EMPTY (locks are human-approved
+  on-device only); every category needs its lock before its first batch.
+  CREDIT SPEND LOG: record the per-batch spend here as batches run
+  (none yet - no key has ever touched this repo or environment).
+  SPRITECOOK stands as the A/B generator if PixelLab misses the painterly
+  bar on the grass bake-off (the DO-NOT on a second generator holds until
+  that bake-off says otherwise). PIXELLAB ENDPOINT VERIFICATION: the
+  remote MCP URL (.mcp.json) and the REST shapes in
+  scripts/art-batch/generator-pixellab.mjs follow the published v1 docs,
+  which were PROXY-BLOCKED from this build environment - verify both on
+  the first live run; any drift is a one-line fix in the adapter.
+  DROP-CONTRACT GAPS made visible by the manifest: spell-fx (421 rows) and
+  town tiles have NO drop-in contract - fenced drop-contract-missing;
+  adding either contract is its own sanctioned pass, never implied by a
+  batch run.
