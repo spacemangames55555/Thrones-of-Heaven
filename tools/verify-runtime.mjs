@@ -638,6 +638,40 @@ const ok = (name, pass, detail = '') => {
     scriptsWired && goodRun.status === 0 && badRun.status === 1 && /HARD/.test(badRun.stderr) && realRun.status === 0 && convRun.status === 0 && keyed,
     JSON.stringify({ scriptsWired, good: goodRun.status, bad: badRun.status, real: realRun.status, conv: convRun.status, keyed }),
   );
+
+  // 0f2. ASSET-MANIFEST SYNC (PASS 8, pure Node): regenerating the manifest
+  // from the REAL registries reproduces the committed file byte-identically —
+  // code<->manifest drift is red. Statuses are DERIVED, never declared.
+  const msRun = run(['scripts/asset-manifest/build.mjs', '--check']);
+  const pkg8 = JSON.parse(readFileSync('package.json', 'utf8')).scripts;
+  ok(
+    'manifest-sync: toh-asset-manifest.json regenerates byte-identically from the live registries; art:manifest + art:coverage npm scripts wired',
+    msRun.status === 0 && pkg8['art:manifest'] === 'node scripts/asset-manifest/build.mjs' && pkg8['art:coverage'] === 'node scripts/asset-manifest/coverage.mjs',
+    JSON.stringify({ status: msRun.status, err: (msRun.stderr || '').slice(0, 160) }),
+  );
+
+  // 0f3. MANIFEST FENCES (PASS 8): the REQUIRED blockedBy fences exist on
+  // every row the ledger rules govern — enemy sprites wait on the tint
+  // ruling, animation sheets on the walk framework, and each biome's prop
+  // upgrades on that biome's base approval (unscattered props stated).
+  const mf = JSON.parse(readFileSync('toh-asset-manifest.json', 'utf8')).assets;
+  const fenceGaps = [];
+  for (const a of mf) {
+    const fences = a.blockedBy ?? [];
+    if (a.category === 'enemy' && !fences.includes('enemy-tint-ruling')) fenceGaps.push(`${a.id}:no-tint-fence`);
+    if (a.category === 'figure-anim' && !fences.includes('walk-framework')) fenceGaps.push(`${a.id}:no-walk-fence`);
+    if (a.category === 'terrain-prop' && !fences.some((f) => f.endsWith('-base-approved') || f === 'unscattered-prop')) fenceGaps.push(`${a.id}:no-base-fence`);
+  }
+  const mfCounts = {
+    enemy: mf.filter((a) => a.category === 'enemy').length,
+    anim: mf.filter((a) => a.category === 'figure-anim').length,
+    props: mf.filter((a) => a.category === 'terrain-prop').length,
+  };
+  ok(
+    'manifest-fences: every enemy row fenced on enemy-tint-ruling, every animation sheet on walk-framework, every terrain prop on {biome}-base-approved (or stated unscattered)',
+    fenceGaps.length === 0 && mfCounts.enemy >= 9 && mfCounts.anim === 14 && mfCounts.props >= 10,
+    JSON.stringify({ ...mfCounts, gaps: fenceGaps.slice(0, 6) }),
+  );
 }
 
 // 0g. SIM-LOCALITY STATIC (PASS 6B, pure Node): the rename landed (no

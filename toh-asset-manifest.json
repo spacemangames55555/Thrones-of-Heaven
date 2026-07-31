@@ -1,0 +1,8023 @@
+{
+  "assets": [
+    {
+      "id": "assassin-figure",
+      "category": "class-figure",
+      "spec": {
+        "kind": "rotations-8",
+        "w": 32,
+        "h": 48,
+        "path": "public/sprites/assassin-figure/<dir>.png",
+        "brief": "toh-figure-art-brief.md",
+        "classId": "assassin"
+      },
+      "status": "fallback"
+    },
+    {
+      "id": "bard-figure",
+      "category": "class-figure",
+      "spec": {
+        "kind": "rotations-8",
+        "w": 32,
+        "h": 48,
+        "path": "public/sprites/bard-figure/<dir>.png",
+        "brief": "toh-figure-art-brief.md",
+        "classId": "bard"
+      },
+      "status": "live"
+    },
+    {
+      "id": "druid-figure",
+      "category": "class-figure",
+      "spec": {
+        "kind": "rotations-8",
+        "w": 32,
+        "h": 48,
+        "path": "public/sprites/druid-figure/<dir>.png",
+        "brief": "toh-figure-art-brief.md",
+        "classId": "druid"
+      },
+      "status": "fallback"
+    },
+    {
+      "id": "hunter-figure",
+      "category": "class-figure",
+      "spec": {
+        "kind": "rotations-8",
+        "w": 32,
+        "h": 48,
+        "path": "public/sprites/hunter-figure/<dir>.png",
+        "brief": "toh-figure-art-brief.md",
+        "classId": "hunter"
+      },
+      "status": "live"
+    },
+    {
+      "id": "mage-figure",
+      "category": "class-figure",
+      "spec": {
+        "kind": "rotations-8",
+        "w": 32,
+        "h": 48,
+        "path": "public/sprites/mage-figure/<dir>.png",
+        "brief": "toh-figure-art-brief.md",
+        "classId": "mage"
+      },
+      "status": "fallback"
+    },
+    {
+      "id": "monk-figure",
+      "category": "class-figure",
+      "spec": {
+        "kind": "rotations-8",
+        "w": 32,
+        "h": 48,
+        "path": "public/sprites/monk-figure/<dir>.png",
+        "brief": "toh-figure-art-brief.md",
+        "classId": "monk"
+      },
+      "status": "fallback"
+    },
+    {
+      "id": "necro-figure",
+      "category": "class-figure",
+      "spec": {
+        "kind": "rotations-8",
+        "w": 32,
+        "h": 48,
+        "path": "public/sprites/necro-figure/<dir>.png",
+        "brief": "toh-figure-art-brief.md",
+        "classId": "necromancer"
+      },
+      "status": "live"
+    },
+    {
+      "id": "player-figure",
+      "category": "class-figure",
+      "spec": {
+        "kind": "rotations-8",
+        "w": 32,
+        "h": 48,
+        "path": "public/sprites/player-figure/<dir>.png",
+        "brief": "toh-figure-art-brief.md",
+        "classId": "blacksmith"
+      },
+      "status": "fallback"
+    },
+    {
+      "id": "priest-figure",
+      "category": "class-figure",
+      "spec": {
+        "kind": "rotations-8",
+        "w": 32,
+        "h": 48,
+        "path": "public/sprites/priest-figure/<dir>.png",
+        "brief": "toh-figure-art-brief.md",
+        "classId": "priest"
+      },
+      "status": "fallback"
+    },
+    {
+      "id": "samurai-figure",
+      "category": "class-figure",
+      "spec": {
+        "kind": "rotations-8",
+        "w": 32,
+        "h": 48,
+        "path": "public/sprites/samurai-figure/<dir>.png",
+        "brief": "toh-figure-art-brief.md",
+        "classId": "samurai"
+      },
+      "status": "fallback"
+    },
+    {
+      "id": "savage-figure",
+      "category": "class-figure",
+      "spec": {
+        "kind": "rotations-8",
+        "w": 32,
+        "h": 48,
+        "path": "public/sprites/savage-figure/<dir>.png",
+        "brief": "toh-figure-art-brief.md",
+        "classId": "savage"
+      },
+      "status": "fallback"
+    },
+    {
+      "id": "sundian-figure",
+      "category": "class-figure",
+      "spec": {
+        "kind": "rotations-8",
+        "w": 32,
+        "h": 48,
+        "path": "public/sprites/sundian-figure/<dir>.png",
+        "brief": "toh-figure-art-brief.md",
+        "classId": "atlantean"
+      },
+      "status": "fallback"
+    },
+    {
+      "id": "witchdoctor-figure",
+      "category": "class-figure",
+      "spec": {
+        "kind": "rotations-8",
+        "w": 32,
+        "h": 48,
+        "path": "public/sprites/witchdoctor-figure/<dir>.png",
+        "brief": "toh-figure-art-brief.md",
+        "classId": "witchdoctor"
+      },
+      "status": "fallback"
+    },
+    {
+      "id": "wizard-figure",
+      "category": "class-figure",
+      "spec": {
+        "kind": "rotations-8",
+        "w": 32,
+        "h": 48,
+        "path": "public/sprites/wizard-figure/<dir>.png",
+        "brief": "toh-figure-art-brief.md",
+        "classId": "wizard"
+      },
+      "status": "fallback"
+    },
+    {
+      "id": "angel-divine",
+      "category": "creature",
+      "spec": {
+        "kind": "still",
+        "w": 44,
+        "h": 56,
+        "path": "public/sprites/angel-divine.png",
+        "brief": "toh-figure-art-brief.md"
+      },
+      "status": "live",
+      "blockedBy": [
+        "enemy-tint-ruling"
+      ]
+    },
+    {
+      "id": "angel-enemy",
+      "category": "creature",
+      "spec": {
+        "kind": "still",
+        "w": 48,
+        "h": 56,
+        "path": "public/sprites/angel-enemy.png",
+        "brief": "toh-figure-art-brief.md"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "enemy-tint-ruling"
+      ]
+    },
+    {
+      "id": "cairo-keeper",
+      "category": "creature",
+      "spec": {
+        "kind": "still",
+        "w": 26,
+        "h": 38,
+        "path": "public/sprites/cairo-keeper.png",
+        "brief": "toh-figure-art-brief.md"
+      },
+      "status": "fallback"
+    },
+    {
+      "id": "cherub-enemy",
+      "category": "creature",
+      "spec": {
+        "kind": "still",
+        "w": 54,
+        "h": 58,
+        "path": "public/sprites/cherub-enemy.png",
+        "brief": "toh-figure-art-brief.md"
+      },
+      "status": "live",
+      "blockedBy": [
+        "enemy-tint-ruling"
+      ]
+    },
+    {
+      "id": "demon-enemy",
+      "category": "creature",
+      "spec": {
+        "kind": "still",
+        "w": 30,
+        "h": 38,
+        "path": "public/sprites/demon-enemy.png",
+        "brief": "toh-figure-art-brief.md"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "enemy-tint-ruling"
+      ]
+    },
+    {
+      "id": "flaming-sword",
+      "category": "creature",
+      "spec": {
+        "kind": "still",
+        "w": 30,
+        "h": 46,
+        "path": "public/sprites/flaming-sword.png",
+        "brief": "toh-figure-art-brief.md"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "enemy-tint-ruling"
+      ]
+    },
+    {
+      "id": "npc-quest",
+      "category": "creature",
+      "spec": {
+        "kind": "still",
+        "w": 28,
+        "h": 40,
+        "path": "public/sprites/npc-quest.png",
+        "brief": "toh-figure-art-brief.md"
+      },
+      "status": "fallback"
+    },
+    {
+      "id": "sasquatch",
+      "category": "creature",
+      "spec": {
+        "kind": "still",
+        "w": 60,
+        "h": 72,
+        "path": "public/sprites/sasquatch.png",
+        "brief": "toh-figure-art-brief.md"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "enemy-tint-ruling"
+      ]
+    },
+    {
+      "id": "spirit-swarmer",
+      "category": "creature",
+      "spec": {
+        "kind": "still",
+        "w": 22,
+        "h": 26,
+        "path": "public/sprites/spirit-swarmer.png",
+        "brief": "toh-figure-art-brief.md"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "enemy-tint-ruling"
+      ]
+    },
+    {
+      "id": "townsfolk",
+      "category": "creature",
+      "spec": {
+        "kind": "still",
+        "w": 24,
+        "h": 34,
+        "path": "public/sprites/townsfolk.png",
+        "brief": "toh-figure-art-brief.md"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "enemy-tint-ruling"
+      ]
+    },
+    {
+      "id": "enemy-corrupted-wildlife",
+      "category": "enemy",
+      "spec": {
+        "kind": "still",
+        "w": 24,
+        "h": 34,
+        "path": "public/sprites/enemy-corrupted-wildlife.png",
+        "brief": "toh-figure-art-brief.md",
+        "domain": "physical"
+      },
+      "status": "live",
+      "blockedBy": [
+        "enemy-tint-ruling"
+      ]
+    },
+    {
+      "id": "enemy-dark-casters",
+      "category": "enemy",
+      "spec": {
+        "kind": "still",
+        "w": 48,
+        "h": 56,
+        "path": "public/sprites/enemy-dark-casters.png",
+        "brief": "toh-figure-art-brief.md",
+        "domain": "mental"
+      },
+      "status": "live",
+      "blockedBy": [
+        "enemy-tint-ruling"
+      ]
+    },
+    {
+      "id": "enemy-evil-raiders",
+      "category": "enemy",
+      "spec": {
+        "kind": "still",
+        "w": 24,
+        "h": 34,
+        "path": "public/sprites/enemy-evil-raiders.png",
+        "brief": "toh-figure-art-brief.md",
+        "domain": "physical"
+      },
+      "status": "live",
+      "blockedBy": [
+        "enemy-tint-ruling"
+      ]
+    },
+    {
+      "id": "enemy-herald-angels",
+      "category": "enemy",
+      "spec": {
+        "kind": "still",
+        "w": 48,
+        "h": 56,
+        "path": "public/sprites/enemy-herald-angels.png",
+        "brief": "toh-figure-art-brief.md",
+        "domain": "spiritual"
+      },
+      "status": "live",
+      "blockedBy": [
+        "enemy-tint-ruling"
+      ]
+    },
+    {
+      "id": "enemy-hollowed-brutes",
+      "category": "enemy",
+      "spec": {
+        "kind": "still",
+        "w": 24,
+        "h": 34,
+        "path": "public/sprites/enemy-hollowed-brutes.png",
+        "brief": "toh-figure-art-brief.md",
+        "domain": "spiritual"
+      },
+      "status": "live",
+      "blockedBy": [
+        "enemy-tint-ruling"
+      ]
+    },
+    {
+      "id": "enemy-lesser-angels",
+      "category": "enemy",
+      "spec": {
+        "kind": "still",
+        "w": 48,
+        "h": 56,
+        "path": "public/sprites/enemy-lesser-angels.png",
+        "brief": "toh-figure-art-brief.md",
+        "domain": "spiritual"
+      },
+      "status": "live",
+      "blockedBy": [
+        "enemy-tint-ruling"
+      ]
+    },
+    {
+      "id": "enemy-lesser-evil-scouts",
+      "category": "enemy",
+      "spec": {
+        "kind": "still",
+        "w": 30,
+        "h": 38,
+        "path": "public/sprites/enemy-lesser-evil-scouts.png",
+        "brief": "toh-figure-art-brief.md",
+        "domain": "physical"
+      },
+      "status": "live",
+      "blockedBy": [
+        "enemy-tint-ruling"
+      ]
+    },
+    {
+      "id": "enemy-radiant-guardians",
+      "category": "enemy",
+      "spec": {
+        "kind": "still",
+        "w": 48,
+        "h": 56,
+        "path": "public/sprites/enemy-radiant-guardians.png",
+        "brief": "toh-figure-art-brief.md",
+        "domain": "spiritual"
+      },
+      "status": "live",
+      "blockedBy": [
+        "enemy-tint-ruling"
+      ]
+    },
+    {
+      "id": "enemy-veil-ambushers",
+      "category": "enemy",
+      "spec": {
+        "kind": "still",
+        "w": 24,
+        "h": 34,
+        "path": "public/sprites/enemy-veil-ambushers.png",
+        "brief": "toh-figure-art-brief.md",
+        "domain": "mental"
+      },
+      "status": "live",
+      "blockedBy": [
+        "enemy-tint-ruling"
+      ]
+    },
+    {
+      "id": "assassin-figure-walk",
+      "category": "figure-anim",
+      "spec": {
+        "kind": "anim-sheet",
+        "w": 32,
+        "h": 48,
+        "path": null,
+        "brief": "toh-figure-art-brief.md",
+        "classId": "assassin"
+      },
+      "status": "missing",
+      "blockedBy": [
+        "walk-framework"
+      ]
+    },
+    {
+      "id": "bard-figure-walk",
+      "category": "figure-anim",
+      "spec": {
+        "kind": "anim-sheet",
+        "w": 32,
+        "h": 48,
+        "path": null,
+        "brief": "toh-figure-art-brief.md",
+        "classId": "bard"
+      },
+      "status": "missing",
+      "blockedBy": [
+        "walk-framework"
+      ]
+    },
+    {
+      "id": "druid-figure-walk",
+      "category": "figure-anim",
+      "spec": {
+        "kind": "anim-sheet",
+        "w": 32,
+        "h": 48,
+        "path": null,
+        "brief": "toh-figure-art-brief.md",
+        "classId": "druid"
+      },
+      "status": "missing",
+      "blockedBy": [
+        "walk-framework"
+      ]
+    },
+    {
+      "id": "hunter-figure-walk",
+      "category": "figure-anim",
+      "spec": {
+        "kind": "anim-sheet",
+        "w": 32,
+        "h": 48,
+        "path": null,
+        "brief": "toh-figure-art-brief.md",
+        "classId": "hunter"
+      },
+      "status": "missing",
+      "blockedBy": [
+        "walk-framework"
+      ]
+    },
+    {
+      "id": "mage-figure-walk",
+      "category": "figure-anim",
+      "spec": {
+        "kind": "anim-sheet",
+        "w": 32,
+        "h": 48,
+        "path": null,
+        "brief": "toh-figure-art-brief.md",
+        "classId": "mage"
+      },
+      "status": "missing",
+      "blockedBy": [
+        "walk-framework"
+      ]
+    },
+    {
+      "id": "monk-figure-walk",
+      "category": "figure-anim",
+      "spec": {
+        "kind": "anim-sheet",
+        "w": 32,
+        "h": 48,
+        "path": null,
+        "brief": "toh-figure-art-brief.md",
+        "classId": "monk"
+      },
+      "status": "missing",
+      "blockedBy": [
+        "walk-framework"
+      ]
+    },
+    {
+      "id": "necro-figure-walk",
+      "category": "figure-anim",
+      "spec": {
+        "kind": "anim-sheet",
+        "w": 32,
+        "h": 48,
+        "path": null,
+        "brief": "toh-figure-art-brief.md",
+        "classId": "necromancer"
+      },
+      "status": "missing",
+      "blockedBy": [
+        "walk-framework"
+      ]
+    },
+    {
+      "id": "player-figure-walk",
+      "category": "figure-anim",
+      "spec": {
+        "kind": "anim-sheet",
+        "w": 32,
+        "h": 48,
+        "path": null,
+        "brief": "toh-figure-art-brief.md",
+        "classId": "blacksmith"
+      },
+      "status": "missing",
+      "blockedBy": [
+        "walk-framework"
+      ]
+    },
+    {
+      "id": "priest-figure-walk",
+      "category": "figure-anim",
+      "spec": {
+        "kind": "anim-sheet",
+        "w": 32,
+        "h": 48,
+        "path": null,
+        "brief": "toh-figure-art-brief.md",
+        "classId": "priest"
+      },
+      "status": "missing",
+      "blockedBy": [
+        "walk-framework"
+      ]
+    },
+    {
+      "id": "samurai-figure-walk",
+      "category": "figure-anim",
+      "spec": {
+        "kind": "anim-sheet",
+        "w": 32,
+        "h": 48,
+        "path": null,
+        "brief": "toh-figure-art-brief.md",
+        "classId": "samurai"
+      },
+      "status": "missing",
+      "blockedBy": [
+        "walk-framework"
+      ]
+    },
+    {
+      "id": "savage-figure-walk",
+      "category": "figure-anim",
+      "spec": {
+        "kind": "anim-sheet",
+        "w": 32,
+        "h": 48,
+        "path": null,
+        "brief": "toh-figure-art-brief.md",
+        "classId": "savage"
+      },
+      "status": "missing",
+      "blockedBy": [
+        "walk-framework"
+      ]
+    },
+    {
+      "id": "sundian-figure-walk",
+      "category": "figure-anim",
+      "spec": {
+        "kind": "anim-sheet",
+        "w": 32,
+        "h": 48,
+        "path": null,
+        "brief": "toh-figure-art-brief.md",
+        "classId": "atlantean"
+      },
+      "status": "missing",
+      "blockedBy": [
+        "walk-framework"
+      ]
+    },
+    {
+      "id": "witchdoctor-figure-walk",
+      "category": "figure-anim",
+      "spec": {
+        "kind": "anim-sheet",
+        "w": 32,
+        "h": 48,
+        "path": null,
+        "brief": "toh-figure-art-brief.md",
+        "classId": "witchdoctor"
+      },
+      "status": "missing",
+      "blockedBy": [
+        "walk-framework"
+      ]
+    },
+    {
+      "id": "wizard-figure-walk",
+      "category": "figure-anim",
+      "spec": {
+        "kind": "anim-sheet",
+        "w": 32,
+        "h": 48,
+        "path": null,
+        "brief": "toh-figure-art-brief.md",
+        "classId": "wizard"
+      },
+      "status": "missing",
+      "blockedBy": [
+        "walk-framework"
+      ]
+    },
+    {
+      "id": "dark-portal",
+      "category": "portal-waystone",
+      "spec": {
+        "kind": "still",
+        "w": 56,
+        "h": 56,
+        "path": "public/sprites/dark-portal.png",
+        "brief": "toh-figure-art-brief.md"
+      },
+      "status": "fallback"
+    },
+    {
+      "id": "earth-portal",
+      "category": "portal-waystone",
+      "spec": {
+        "kind": "still",
+        "w": 60,
+        "h": 68,
+        "path": "public/sprites/earth-portal.png",
+        "brief": "toh-figure-art-brief.md"
+      },
+      "status": "fallback"
+    },
+    {
+      "id": "heaven-pillar",
+      "category": "portal-waystone",
+      "spec": {
+        "kind": "still",
+        "w": 26,
+        "h": 72,
+        "path": "public/sprites/heaven-pillar.png",
+        "brief": "toh-figure-art-brief.md"
+      },
+      "status": "fallback"
+    },
+    {
+      "id": "heaven-portal",
+      "category": "portal-waystone",
+      "spec": {
+        "kind": "still",
+        "w": 60,
+        "h": 68,
+        "path": "public/sprites/heaven-portal.png",
+        "brief": "toh-figure-art-brief.md"
+      },
+      "status": "fallback"
+    },
+    {
+      "id": "hell-portal",
+      "category": "portal-waystone",
+      "spec": {
+        "kind": "still",
+        "w": 60,
+        "h": 68,
+        "path": "public/sprites/hell-portal.png",
+        "brief": "toh-figure-art-brief.md"
+      },
+      "status": "fallback"
+    },
+    {
+      "id": "fx-asn_mk_crippling",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "assassin"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-asn_mk_ensnare",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "assassin"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-asn_mk_fan",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "assassin"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-asn_mk_mastery",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "assassin"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-asn_mk_piercing",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "assassin"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-asn_mk_poisoned",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "assassin"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-asn_mk_rain",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "assassin"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-asn_mk_rapid",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "assassin"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-asn_mk_star",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "assassin"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-asn_mk_trick",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "assassin"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-asn_sh_ambush",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "assassin"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-asn_sh_cloak",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "assassin"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-asn_sh_dance",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "assassin"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-asn_sh_evasive",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "assassin"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-asn_sh_poisoned",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "assassin"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-asn_sh_silent",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "assassin"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-asn_sh_smoke",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "assassin"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-asn_sh_step",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "assassin"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-asn_sh_takedown",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "assassin"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-asn_sh_vanish",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "assassin"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-asn_tr_blade",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "assassin"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-asn_tr_caltrops",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "assassin"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-asn_tr_explosive",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "assassin"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-asn_tr_flash",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "assassin"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-asn_tr_frost",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "assassin"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-asn_tr_mastery",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "assassin"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-asn_tr_minefield",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "assassin"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-asn_tr_remote",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "assassin"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-asn_tr_snare",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "assassin"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-asn_tr_toxic",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "assassin"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-bard_bt_amplify",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "bard"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-bard_bt_cascade",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "bard"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-bard_bt_coda",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "bard"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-bard_bt_dive",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "bard"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-bard_bt_freq_shield",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "bard"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-bard_bt_heavy",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "bard"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-bard_bt_mosh",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "bard"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-bard_bt_throat",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "bard"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-bard_bt_war_song",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "bard"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-bard_bt_whistle",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "bard"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-bard_sc_blast",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "bard"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-bard_sc_chord",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "bard"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-bard_sc_distortion",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "bard"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-bard_sc_echoes",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "bard"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-bard_sc_pentatonic",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "bard"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-bard_sc_pitch",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "bard"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-bard_sc_pulse",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "bard"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-bard_sc_riff",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "bard"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-bard_sc_surge",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "bard"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-bard_sc_wall",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "bard"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-bard_sg_blood",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "bard"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-bard_sg_chant",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "bard"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-bard_sg_choir",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "bard"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-bard_sg_dissonant",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "bard"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-bard_sg_harmonics",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "bard"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-bard_sg_hum",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "bard"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-bard_sg_lore",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "bard"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-bard_sg_passion",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "bard"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-bard_sg_rally",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "bard"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-bard_sg_sharpen",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "bard"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-bs_ctrl_charge",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "blacksmith"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-bs_ctrl_counter",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "blacksmith"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-bs_ctrl_cripple",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "blacksmith"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-bs_ctrl_disarm",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "blacksmith"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-bs_ctrl_dominance",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "blacksmith"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-bs_ctrl_execute",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "blacksmith"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-bs_ctrl_intimidate",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "blacksmith"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-bs_ctrl_iron_will",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "blacksmith"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-bs_ctrl_pyrite",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "blacksmith"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-bs_ctrl_toughness",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "blacksmith"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-bs_dps_bash",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "blacksmith"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-bs_dps_berserker",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "blacksmith"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-bs_dps_bloodlust",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "blacksmith"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-bs_dps_crazed",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "blacksmith"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-bs_dps_double_swing",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "blacksmith"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-bs_dps_hammer_throw",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "blacksmith"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-bs_dps_overswing",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "blacksmith"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-bs_dps_prism",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "blacksmith"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-bs_dps_triple_swing",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "blacksmith"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-bs_dps_windmill",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "blacksmith"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-bs_tank_calcite",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "blacksmith"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-bs_tank_double_block",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "blacksmith"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-bs_tank_dual_shield",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "blacksmith"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-bs_tank_grit",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "blacksmith"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-bs_tank_iron_hide",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "blacksmith"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-bs_tank_plow",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "blacksmith"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-bs_tank_shield_bash",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "blacksmith"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-bs_tank_shield_swing",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "blacksmith"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-bs_tank_shove",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "blacksmith"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-bs_tank_war_chant",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "blacksmith"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-dru_res_aloe",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "druid"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-dru_res_bark",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "druid"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-dru_res_clay",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "druid"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-dru_res_honey",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "druid"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-dru_res_lye",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "druid"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-dru_res_mushroom",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "druid"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-dru_res_oil_immunity",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "druid"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-dru_res_oil_vitality",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "druid"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-dru_res_sage",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "druid"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-dru_res_spores",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "druid"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-dru_tap_bear",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "druid"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-dru_tap_bee",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "druid"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-dru_tap_chameleon",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "druid"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-dru_tap_elephant",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "druid"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-dru_tap_elk",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "druid"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-dru_tap_falcon",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "druid"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-dru_tap_lion",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "druid"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-dru_tap_mantis",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "druid"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-dru_tap_scorpion",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "druid"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-dru_tap_snow_leopard",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "druid"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-dru_wk_chill",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "druid"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-dru_wk_chimp_pair",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "druid"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-dru_wk_earthquake",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "druid"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-dru_wk_hail",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "druid"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-dru_wk_lava_pocket",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "druid"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-dru_wk_lightning",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "druid"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-dru_wk_polar_bear",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "druid"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-dru_wk_scavengers",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "druid"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-dru_wk_viper",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "druid"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-dru_wk_wolverine",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "druid"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-eth_ankh",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "wizard"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-eth_blink",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "wizard"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-eth_bolt",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "wizard"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-eth_form",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "wizard"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-eth_mana_shield",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "wizard"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-eth_mend",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "wizard"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-eth_reflect",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "wizard"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-eth_regeneration",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "wizard"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-eth_sanctuary",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "wizard"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-eth_soul_siphon",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "wizard"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-hun_bc_focus",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "hunter"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-hun_bc_great",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "hunter"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-hun_bc_horde",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "hunter"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-hun_bc_mastery",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "hunter"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-hun_bc_mend",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "hunter"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-hun_bc_pack",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "hunter"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-hun_bc_rage",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "hunter"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-hun_bc_scatter",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "hunter"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-hun_bc_tame",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "hunter"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-hun_bc_training",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "hunter"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-hun_mk_aim",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "hunter"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-hun_mk_boomerang",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "hunter"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-hun_mk_cripple",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "hunter"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-hun_mk_eagle",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "hunter"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-hun_mk_hawk",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "hunter"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-hun_mk_multi",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "hunter"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-hun_mk_net",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "hunter"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-hun_mk_sniper",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "hunter"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-hun_mk_steady",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "hunter"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-hun_mk_trueshot",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "hunter"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-hun_wf_alpha",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "hunter"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-hun_wf_bloodlet",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "hunter"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-hun_wf_call",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "hunter"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-hun_wf_hamstring",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "hunter"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-hun_wf_hunt",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "hunter"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-hun_wf_leader",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "hunter"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-hun_wf_quill",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "hunter"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-hun_wf_swipe",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "hunter"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-hun_wf_twin",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "hunter"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-hun_wf_venom",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "hunter"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-mage_ar_absorption",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "mage"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-mage_ar_black_hole",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "mage"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-mage_ar_blast",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "mage"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-mage_ar_entangled_chains",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "mage"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-mage_ar_infusion",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "mage"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-mage_ar_leech",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "mage"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-mage_ar_mana_surge",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "mage"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-mage_ar_missiles",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "mage"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-mage_ar_orb",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "mage"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-mage_ar_quantum_shield",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "mage"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-mage_cb_empowerment",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "mage"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-mage_cb_encapsulation",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "mage"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-mage_cb_facet_cleave",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "mage"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-mage_cb_flurry",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "mage"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-mage_cb_nova",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "mage"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-mage_cb_perfect_edge",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "mage"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-mage_cb_pulse",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "mage"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-mage_cb_shard",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "mage"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-mage_cb_shatter",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "mage"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-mage_cb_strike",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "mage"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-mage_st_antimatter_burst",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "mage"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-mage_st_contraction",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "mage"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-mage_st_graviton_surge",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "mage"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-mage_st_photon_beam",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "mage"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-mage_st_quantum_blast",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "mage"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-mage_st_singularity_collapse",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "mage"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-mage_st_spatial_distortion",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "mage"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-mage_st_temporal_acceleration",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "mage"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-mage_st_time_dilation",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "mage"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-mage_st_wormhole_rift",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "mage"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-monk_ch_acupuncture",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "monk"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-monk_ch_aura",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "monk"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-monk_ch_barrier",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "monk"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-monk_ch_explosion",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "monk"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-monk_ch_focus",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "monk"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-monk_ch_infusion",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "monk"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-monk_ch_soothe",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "monk"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-monk_ch_touch",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "monk"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-monk_ch_tranquil",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "monk"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-monk_ch_wave",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "monk"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-monk_ip_deflect",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "monk"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-monk_ip_empower",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "monk"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-monk_ip_flowing",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "monk"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-monk_ip_flurry",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "monk"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-monk_ip_hundred",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "monk"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-monk_ip_palm",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "monk"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-monk_ip_pressure",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "monk"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-monk_ip_rising",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "monk"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-monk_ip_silent",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "monk"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-monk_ip_sweep",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "monk"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-monk_sp_astral",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "monk"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-monk_sp_divine",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "monk"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-monk_sp_enigma",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "monk"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-monk_sp_enlighten",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "monk"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-monk_sp_enlightened",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "monk"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-monk_sp_force",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "monk"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-monk_sp_karma",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "monk"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-monk_sp_mantra",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "monk"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-monk_sp_meditate",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "monk"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-monk_sp_wheel",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "monk"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-necro_army_of_the_dead",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "necromancer"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-necro_blood_skeleton",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "necromancer"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-necro_dark_matter",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "necromancer"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-necro_death_channel",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "necromancer"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-necro_dm_abyssal",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "necromancer"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-necro_dm_beam",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "necromancer"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-necro_dm_blight",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "necromancer"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-necro_dm_blip",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "necromancer"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-necro_dm_bomb",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "necromancer"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-necro_dm_hex",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "necromancer"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-necro_dm_internal_collapse",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "necromancer"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-necro_dm_rift",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "necromancer"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-necro_dm_singularity",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "necromancer"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-necro_dm_tainted",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "necromancer"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-necro_entropy_cascade",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "necromancer"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-necro_marrow_bone_dart",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "necromancer"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-necro_marrow_bone_nova",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "necromancer"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-necro_marrow_bone_spur",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "necromancer"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-necro_marrow_calcify",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "necromancer"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-necro_marrow_grasp",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "necromancer"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-necro_marrow_marrownaut",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "necromancer"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-necro_marrow_osteo",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "necromancer"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-necro_marrow_skeleton",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "necromancer"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-necro_marrow_spiked_punch",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "necromancer"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-necro_marrow_stake",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "necromancer"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-necro_marrow_wrecking_ball",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "necromancer"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-necro_necrotic_presence",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "necromancer"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-necro_summon_skeleton",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "necromancer"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-necro_tentacles",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "necromancer"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-necro_unleash_monster",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "necromancer"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-necro_unyielding_beast",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "necromancer"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-prs_gr_ascend",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "priest"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-prs_gr_beacon",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "priest"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-prs_gr_benediction",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "priest"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-prs_gr_burst",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "priest"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-prs_gr_forgive",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "priest"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-prs_gr_hymn",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "priest"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-prs_gr_incarnate",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "priest"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-prs_gr_renewal",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "priest"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-prs_gr_vision",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "priest"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-prs_gr_words",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "priest"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-prs_li_aegis",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "priest"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-prs_li_barrier",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "priest"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-prs_li_blessing",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "priest"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-prs_li_embrace",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "priest"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-prs_li_fortress",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "priest"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-prs_li_intervention",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "priest"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-prs_li_radiant",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "priest"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-prs_li_ray",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "priest"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-prs_li_retribution",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "priest"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-prs_li_shield",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "priest"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-prs_rb_fury",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "priest"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-prs_rb_ground",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "priest"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-prs_rb_judgment",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "priest"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-prs_rb_ray",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "priest"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-prs_rb_rebuke",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "priest"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-prs_rb_smite",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "priest"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-prs_rb_vanquish",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "priest"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-prs_rb_word",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "priest"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-prs_rb_wrath",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "priest"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-prs_rb_zeal",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "priest"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-sam_bl_challenge",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "samurai"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-sam_bl_crescent",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "samurai"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-sam_bl_dragonfly",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "samurai"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-sam_bl_first",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "samurai"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-sam_bl_iaijutsu",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "samurai"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-sam_bl_petal",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "samurai"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-sam_bl_razor",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "samurai"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-sam_bl_tempo",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "samurai"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-sam_bl_thousand",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "samurai"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-sam_bl_twin",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "samurai"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-sam_bw_arc",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "samurai"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-sam_bw_flaming",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "samurai"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-sam_bw_hamstring",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "samurai"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-sam_bw_piercing",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "samurai"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-sam_bw_pinning",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "samurai"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-sam_bw_rain",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "samurai"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-sam_bw_running",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "samurai"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-sam_bw_steady",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "samurai"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-sam_bw_whistling",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "samurai"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-sam_bw_yumi",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "samurai"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-sam_st_breath",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "samurai"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-sam_st_counter",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "samurai"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-sam_st_fire",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "samurai"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-sam_st_guard_break",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "samurai"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-sam_st_immovable",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "samurai"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-sam_st_kiai",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "samurai"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-sam_st_parry",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "samurai"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-sam_st_perfect",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "samurai"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-sam_st_stone",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "samurai"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-sam_st_water",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "samurai"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-sav_br_crimson",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "savage"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-sav_br_harvest",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "savage"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-sav_br_hemorrhage",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "savage"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-sav_br_hunger",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "savage"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-sav_br_mire",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "savage"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-sav_br_sacrifice",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "savage"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-sav_br_spike",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "savage"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-sav_br_transfusion",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "savage"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-sav_br_veins",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "savage"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-sav_br_ward",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "savage"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-sav_jg_apex",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "savage"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-sav_jg_avatar",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "savage"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-sav_jg_hide",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "savage"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-sav_jg_hunt",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "savage"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-sav_jg_jaguar",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "savage"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-sav_jg_lick",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "savage"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-sav_jg_lunge",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "savage"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-sav_jg_pack",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "savage"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-sav_jg_snarl",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "savage"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-sav_jg_totem",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "savage"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-sav_ob_cleave",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "savage"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-sav_ob_headtaker",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "savage"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-sav_ob_jagged",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "savage"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-sav_ob_leap",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "savage"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-sav_ob_momentum",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "savage"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-sav_ob_roar",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "savage"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-sav_ob_scent",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "savage"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-sav_ob_skull",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "savage"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-sav_ob_slash",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "savage"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-sav_ob_slaughter",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "savage"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-sun_db_breaker",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "atlantean"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-sun_db_coral",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "atlantean"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-sun_db_crashing",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "atlantean"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-sun_db_edge",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "atlantean"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-sun_db_grasp",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "atlantean"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-sun_db_tidestep",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "atlantean"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-sun_db_trident",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "atlantean"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-sun_db_twin",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "atlantean"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-sun_db_weight",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "atlantean"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-sun_db_wrath",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "atlantean"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-sun_rg_attune",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "atlantean"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-sun_rg_bands",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "atlantean"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-sun_rg_coral",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "atlantean"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-sun_rg_crown",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "atlantean"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-sun_rg_curse",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "atlantean"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-sun_rg_flare",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "atlantean"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-sun_rg_idol",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "atlantean"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-sun_rg_pearl",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "atlantean"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-sun_rg_talisman",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "atlantean"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-sun_rg_ward",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "atlantean"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-sun_tc_crush",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "atlantean"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-sun_tc_drench",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "atlantean"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-sun_tc_ebb",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "atlantean"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-sun_tc_lash",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "atlantean"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-sun_tc_mist",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "atlantean"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-sun_tc_riptide",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "atlantean"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-sun_tc_spout",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "atlantean"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-sun_tc_tsunami",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "atlantean"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-sun_tc_undertow",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "atlantean"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-sun_tc_whirlpool",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "atlantean"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-wd_dc_brew",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "witchdoctor"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-wd_dc_cloud",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "witchdoctor"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-wd_dc_dart",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "witchdoctor"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-wd_dc_drain",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "witchdoctor"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-wd_dc_eruption",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "witchdoctor"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-wd_dc_flask",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "witchdoctor"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-wd_dc_infusion",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "witchdoctor"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-wd_dc_mastery",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "witchdoctor"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-wd_dc_miasma",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "witchdoctor"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-wd_dc_nova",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "witchdoctor"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-wd_sp_bind",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "witchdoctor"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-wd_sp_effigy",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "witchdoctor"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-wd_sp_guidance",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "witchdoctor"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-wd_sp_hex",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "witchdoctor"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-wd_sp_pact",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "witchdoctor"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-wd_sp_revenant",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "witchdoctor"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-wd_sp_ritual",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "witchdoctor"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-wd_sp_swarm",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "witchdoctor"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-wd_sp_totem",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "witchdoctor"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-wd_sp_walk",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "witchdoctor"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-wd_vd_assault",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "witchdoctor"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-wd_vd_decoy",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "witchdoctor"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-wd_vd_doll",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "witchdoctor"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-wd_vd_echoes",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "witchdoctor"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-wd_vd_harvest",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "witchdoctor"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-wd_vd_hex",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "witchdoctor"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-wd_vd_shackles",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "witchdoctor"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-wd_vd_split",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "witchdoctor"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-wd_vd_stitch",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "witchdoctor"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-wd_vd_vision",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "witchdoctor"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-wiz_biohazard",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "wizard"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-wiz_black_ice",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "wizard"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-wiz_freezing_rain",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "wizard"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-wiz_frostbite",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "wizard"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-wiz_fw_combust",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "wizard"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-wiz_fw_dust_devil",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "wizard"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-wiz_fw_fireball",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "wizard"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-wiz_fw_flicker",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "wizard"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-wiz_fw_gust",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "wizard"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-wiz_fw_immolation",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "wizard"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-wiz_fw_jet_stream",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "wizard"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-wiz_fw_lava",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "wizard"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-wiz_fw_storm",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "wizard"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-wiz_fw_tornado",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "wizard"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-wiz_ice_golem",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "wizard"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-wiz_icicle",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "wizard"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-wiz_pestilence",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "wizard"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-wiz_plague",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "wizard"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-wiz_sludge",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "wizard"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "fx-wiz_toxic_bolt",
+      "category": "spell-fx",
+      "spec": {
+        "kind": "fx",
+        "w": null,
+        "h": null,
+        "path": null,
+        "brief": null,
+        "classId": "wizard"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "summon-hunter_companion",
+      "category": "summon",
+      "spec": {
+        "kind": "still",
+        "w": 46,
+        "h": 56,
+        "path": "public/sprites/summon-hunter_companion.png",
+        "brief": "toh-figure-art-brief.md"
+      },
+      "status": "live"
+    },
+    {
+      "id": "summon-hunter_great",
+      "category": "summon",
+      "spec": {
+        "kind": "still",
+        "w": 46,
+        "h": 56,
+        "path": "public/sprites/summon-hunter_great.png",
+        "brief": "toh-figure-art-brief.md"
+      },
+      "status": "live"
+    },
+    {
+      "id": "summon-hunter_horde",
+      "category": "summon",
+      "spec": {
+        "kind": "still",
+        "w": 46,
+        "h": 56,
+        "path": "public/sprites/summon-hunter_horde.png",
+        "brief": "toh-figure-art-brief.md"
+      },
+      "status": "live"
+    },
+    {
+      "id": "prop-boulder-a",
+      "category": "terrain-prop",
+      "spec": {
+        "kind": "prop",
+        "w": 32,
+        "h": 32,
+        "path": "public/art/terrain/props/boulder-a.png",
+        "brief": "toh-terrain-art-brief.md"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "rock-base-approved"
+      ]
+    },
+    {
+      "id": "prop-boulder-b",
+      "category": "terrain-prop",
+      "spec": {
+        "kind": "prop",
+        "w": 32,
+        "h": 32,
+        "path": "public/art/terrain/props/boulder-b.png",
+        "brief": "toh-terrain-art-brief.md"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "rock-base-approved"
+      ]
+    },
+    {
+      "id": "prop-cactus-a",
+      "category": "terrain-prop",
+      "spec": {
+        "kind": "prop",
+        "w": 32,
+        "h": 48,
+        "path": "public/art/terrain/props/cactus-a.png",
+        "brief": "toh-terrain-art-brief.md"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "desert-base-approved"
+      ]
+    },
+    {
+      "id": "prop-scrub-a",
+      "category": "terrain-prop",
+      "spec": {
+        "kind": "prop",
+        "w": 32,
+        "h": 32,
+        "path": "public/art/terrain/props/scrub-a.png",
+        "brief": "toh-terrain-art-brief.md"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "desert-base-approved"
+      ]
+    },
+    {
+      "id": "prop-swamp-tree-a",
+      "category": "terrain-prop",
+      "spec": {
+        "kind": "prop",
+        "w": 48,
+        "h": 64,
+        "path": "public/art/terrain/props/swamp-tree-a.png",
+        "brief": "toh-terrain-art-brief.md"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "swamp-base-approved"
+      ]
+    },
+    {
+      "id": "prop-swamp-tree-b",
+      "category": "terrain-prop",
+      "spec": {
+        "kind": "prop",
+        "w": 48,
+        "h": 64,
+        "path": "public/art/terrain/props/swamp-tree-b.png",
+        "brief": "toh-terrain-art-brief.md"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "swamp-base-approved"
+      ]
+    },
+    {
+      "id": "prop-tree-broad-a",
+      "category": "terrain-prop",
+      "spec": {
+        "kind": "prop",
+        "w": 48,
+        "h": 64,
+        "path": "public/art/terrain/props/tree-broad-a.png",
+        "brief": "toh-terrain-art-brief.md"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "forest-base-approved"
+      ]
+    },
+    {
+      "id": "prop-tree-broad-b",
+      "category": "terrain-prop",
+      "spec": {
+        "kind": "prop",
+        "w": 48,
+        "h": 64,
+        "path": "public/art/terrain/props/tree-broad-b.png",
+        "brief": "toh-terrain-art-brief.md"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "forest-base-approved"
+      ]
+    },
+    {
+      "id": "prop-tree-fir-a",
+      "category": "terrain-prop",
+      "spec": {
+        "kind": "prop",
+        "w": 48,
+        "h": 64,
+        "path": "public/art/terrain/props/tree-fir-a.png",
+        "brief": "toh-terrain-art-brief.md"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "forest-base-approved",
+        "taiga-base-approved"
+      ]
+    },
+    {
+      "id": "prop-tree-fir-b",
+      "category": "terrain-prop",
+      "spec": {
+        "kind": "prop",
+        "w": 48,
+        "h": 64,
+        "path": "public/art/terrain/props/tree-fir-b.png",
+        "brief": "toh-terrain-art-brief.md"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "taiga-base-approved"
+      ]
+    },
+    {
+      "id": "prop-waystone",
+      "category": "terrain-prop",
+      "spec": {
+        "kind": "prop",
+        "w": 32,
+        "h": 64,
+        "path": "public/art/terrain/props/waystone.png",
+        "brief": "toh-terrain-art-brief.md"
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "unscattered-prop"
+      ]
+    },
+    {
+      "id": "beach",
+      "category": "terrain-sheet",
+      "spec": {
+        "kind": "sheet-256x128",
+        "w": 256,
+        "h": 128,
+        "path": "public/art/terrain/beach.png",
+        "brief": "toh-terrain-art-brief.md",
+        "biome": 2
+      },
+      "status": "fallback"
+    },
+    {
+      "id": "desert",
+      "category": "terrain-sheet",
+      "spec": {
+        "kind": "sheet-256x128",
+        "w": 256,
+        "h": 128,
+        "path": "public/art/terrain/desert.png",
+        "brief": "toh-terrain-art-brief.md",
+        "biome": 5
+      },
+      "status": "fallback"
+    },
+    {
+      "id": "forest",
+      "category": "terrain-sheet",
+      "spec": {
+        "kind": "sheet-256x128",
+        "w": 256,
+        "h": 128,
+        "path": "public/art/terrain/forest.png",
+        "brief": "toh-terrain-art-brief.md",
+        "biome": 6
+      },
+      "status": "fallback"
+    },
+    {
+      "id": "freshwater",
+      "category": "terrain-sheet",
+      "spec": {
+        "kind": "sheet-256x128",
+        "w": 256,
+        "h": 128,
+        "path": "public/art/terrain/freshwater.png",
+        "brief": "toh-terrain-art-brief.md",
+        "biome": 1
+      },
+      "status": "fallback"
+    },
+    {
+      "id": "grass",
+      "category": "terrain-sheet",
+      "spec": {
+        "kind": "sheet-256x128",
+        "w": 256,
+        "h": 128,
+        "path": "public/art/terrain/grass.png",
+        "brief": "toh-terrain-art-brief.md",
+        "biome": 3
+      },
+      "status": "fallback"
+    },
+    {
+      "id": "ocean",
+      "category": "terrain-sheet",
+      "spec": {
+        "kind": "sheet-256x128",
+        "w": 256,
+        "h": 128,
+        "path": "public/art/terrain/ocean.png",
+        "brief": "toh-terrain-art-brief.md",
+        "biome": 0
+      },
+      "status": "fallback"
+    },
+    {
+      "id": "rock",
+      "category": "terrain-sheet",
+      "spec": {
+        "kind": "sheet-256x128",
+        "w": 256,
+        "h": 128,
+        "path": "public/art/terrain/rock.png",
+        "brief": "toh-terrain-art-brief.md",
+        "biome": 10
+      },
+      "status": "fallback"
+    },
+    {
+      "id": "savanna",
+      "category": "terrain-sheet",
+      "spec": {
+        "kind": "sheet-256x128",
+        "w": 256,
+        "h": 128,
+        "path": "public/art/terrain/savanna.png",
+        "brief": "toh-terrain-art-brief.md",
+        "biome": 4
+      },
+      "status": "fallback"
+    },
+    {
+      "id": "snow",
+      "category": "terrain-sheet",
+      "spec": {
+        "kind": "sheet-256x128",
+        "w": 256,
+        "h": 128,
+        "path": "public/art/terrain/snow.png",
+        "brief": "toh-terrain-art-brief.md",
+        "biome": 9
+      },
+      "status": "fallback"
+    },
+    {
+      "id": "swamp",
+      "category": "terrain-sheet",
+      "spec": {
+        "kind": "sheet-256x128",
+        "w": 256,
+        "h": 128,
+        "path": "public/art/terrain/swamp.png",
+        "brief": "toh-terrain-art-brief.md",
+        "biome": 11
+      },
+      "status": "fallback"
+    },
+    {
+      "id": "taiga",
+      "category": "terrain-sheet",
+      "spec": {
+        "kind": "sheet-256x128",
+        "w": 256,
+        "h": 128,
+        "path": "public/art/terrain/taiga.png",
+        "brief": "toh-terrain-art-brief.md",
+        "biome": 7
+      },
+      "status": "fallback"
+    },
+    {
+      "id": "tundra",
+      "category": "terrain-sheet",
+      "spec": {
+        "kind": "sheet-256x128",
+        "w": 256,
+        "h": 128,
+        "path": "public/art/terrain/tundra.png",
+        "brief": "toh-terrain-art-brief.md",
+        "biome": 8
+      },
+      "status": "fallback"
+    },
+    {
+      "id": "tile-corrupted_ground",
+      "category": "town-tile",
+      "spec": {
+        "kind": "tile",
+        "w": 32,
+        "h": 32,
+        "path": null,
+        "brief": null
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "tile-corruption_rift",
+      "category": "town-tile",
+      "spec": {
+        "kind": "tile",
+        "w": 32,
+        "h": 32,
+        "path": null,
+        "brief": null
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "tile-town_building",
+      "category": "town-tile",
+      "spec": {
+        "kind": "tile",
+        "w": 32,
+        "h": 32,
+        "path": null,
+        "brief": null
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "tile-town_door",
+      "category": "town-tile",
+      "spec": {
+        "kind": "tile",
+        "w": 32,
+        "h": 32,
+        "path": null,
+        "brief": null
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "tile-town_ground",
+      "category": "town-tile",
+      "spec": {
+        "kind": "tile",
+        "w": 32,
+        "h": 32,
+        "path": null,
+        "brief": null
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "tile-town_inn",
+      "category": "town-tile",
+      "spec": {
+        "kind": "tile",
+        "w": 32,
+        "h": 32,
+        "path": null,
+        "brief": null
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "tile-town_plaza",
+      "category": "town-tile",
+      "spec": {
+        "kind": "tile",
+        "w": 32,
+        "h": 32,
+        "path": null,
+        "brief": null
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "tile-town_road",
+      "category": "town-tile",
+      "spec": {
+        "kind": "tile",
+        "w": 32,
+        "h": 32,
+        "path": null,
+        "brief": null
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "tile-town_tree",
+      "category": "town-tile",
+      "spec": {
+        "kind": "tile",
+        "w": 32,
+        "h": 32,
+        "path": null,
+        "brief": null
+      },
+      "status": "fallback",
+      "blockedBy": [
+        "drop-contract-missing"
+      ]
+    },
+    {
+      "id": "icon-180",
+      "category": "ui-icon",
+      "spec": {
+        "kind": "still",
+        "w": 180,
+        "h": 180,
+        "path": "public/icons/icon-180.png",
+        "brief": null
+      },
+      "status": "live"
+    },
+    {
+      "id": "icon-192",
+      "category": "ui-icon",
+      "spec": {
+        "kind": "still",
+        "w": 192,
+        "h": 192,
+        "path": "public/icons/icon-192.png",
+        "brief": null
+      },
+      "status": "live"
+    },
+    {
+      "id": "icon-512",
+      "category": "ui-icon",
+      "spec": {
+        "kind": "still",
+        "w": 512,
+        "h": 512,
+        "path": "public/icons/icon-512.png",
+        "brief": null
+      },
+      "status": "live"
+    }
+  ]
+}

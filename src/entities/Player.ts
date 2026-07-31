@@ -2,40 +2,34 @@ import Phaser from 'phaser';
 import { RUN_SPEED } from '../game/settings';
 import { devSpeedMultiplier } from '../world/world-scale';
 import { rotationTextureFor } from '../render/spriteOverrides';
+import { DEFAULT_FIGURE_KEY, FIGURE_KEY_FOR_CLASS } from '../render/classFigureKeys';
 
-const TEXTURE_KEY = 'player-figure'; // Blacksmith (gold soul/herald) avatar
-const WIZARD_TEXTURE_KEY = 'wizard-figure'; // Wizard (Egyptian sorcerer) avatar
-const NECRO_TEXTURE_KEY = 'necro-figure'; // Necromancer (Slavic death-sorcerer) avatar
-const DRUID_TEXTURE_KEY = 'druid-figure'; // Druid (Seattle wild-warden) avatar
-const MAGE_TEXTURE_KEY = 'mage-figure'; // Mage (Moscow reality-surgeon) avatar — NOT the Wizard (canon)
-const BARD_TEXTURE_KEY = 'bard-figure'; // Bard (London memory-keeper) avatar
-const WITCHDOCTOR_TEXTURE_KEY = 'witchdoctor-figure'; // Witch Doctor (Kinshasa spirit-speaker) avatar
-const SAMURAI_TEXTURE_KEY = 'samurai-figure'; // Samurai (Kyoto blade) avatar
-const MONK_TEXTURE_KEY = 'monk-figure'; // Monk (Lhasa ascetic) avatar
-const ASSASSIN_TEXTURE_KEY = 'assassin-figure'; // Assassin (Dubai knife-in-the-dark) avatar
-const PRIEST_TEXTURE_KEY = 'priest-figure'; // Priest (Rome keeper of the Light) avatar
-const SAVAGE_TEXTURE_KEY = 'savage-figure'; // Savage (Mexico City blood-and-sun bruiser) avatar
-const HUNTER_TEXTURE_KEY = 'hunter-figure'; // Hunter (Sydney beast-bonded tracker) avatar
-const SUNDIAN_TEXTURE_KEY = 'sundian-figure'; // Sundian (Bali drowned sovereign; classId 'atlantean') avatar
+// PASS 8: every key DERIVES from the shared FIGURE_KEY_FOR_CLASS table (the
+// asset-manifest scanner reads the same table — render and manifest can
+// never drift). The per-class code-drawn texture generators below keep
+// their named constants.
+const TEXTURE_KEY = DEFAULT_FIGURE_KEY; // Blacksmith (gold soul/herald) avatar
+const WIZARD_TEXTURE_KEY = FIGURE_KEY_FOR_CLASS.wizard;
+const NECRO_TEXTURE_KEY = FIGURE_KEY_FOR_CLASS.necromancer;
+const DRUID_TEXTURE_KEY = FIGURE_KEY_FOR_CLASS.druid;
+const MAGE_TEXTURE_KEY = FIGURE_KEY_FOR_CLASS.mage; // NOT the Wizard (canon)
+const BARD_TEXTURE_KEY = FIGURE_KEY_FOR_CLASS.bard;
+const WITCHDOCTOR_TEXTURE_KEY = FIGURE_KEY_FOR_CLASS.witchdoctor;
+const SAMURAI_TEXTURE_KEY = FIGURE_KEY_FOR_CLASS.samurai;
+const MONK_TEXTURE_KEY = FIGURE_KEY_FOR_CLASS.monk;
+const ASSASSIN_TEXTURE_KEY = FIGURE_KEY_FOR_CLASS.assassin;
+const PRIEST_TEXTURE_KEY = FIGURE_KEY_FOR_CLASS.priest;
+const SAVAGE_TEXTURE_KEY = FIGURE_KEY_FOR_CLASS.savage;
+const HUNTER_TEXTURE_KEY = FIGURE_KEY_FOR_CLASS.hunter;
+const SUNDIAN_TEXTURE_KEY = FIGURE_KEY_FOR_CLASS.atlantean; // displays 'Sundian' (canon)
 const WIDTH = 32; // ~1 tile wide
 const HEIGHT = 48; // ~1.5 tiles tall — fixes the "character = one giant block" look
 
-/** Pick the avatar texture for a class id (defaults to the Blacksmith figure). */
+/** Pick the avatar texture for a class id (defaults to the Blacksmith figure).
+ *  PASS 8: the mapping lives in {@link FIGURE_KEY_FOR_CLASS} — the SAME table
+ *  the asset-manifest scanner reads, so manifest and render can never drift. */
 function textureForClass(classId: string): string {
-  if (classId === 'wizard') return WIZARD_TEXTURE_KEY;
-  if (classId === 'necromancer') return NECRO_TEXTURE_KEY;
-  if (classId === 'druid') return DRUID_TEXTURE_KEY;
-  if (classId === 'mage') return MAGE_TEXTURE_KEY;
-  if (classId === 'bard') return BARD_TEXTURE_KEY;
-  if (classId === 'witchdoctor') return WITCHDOCTOR_TEXTURE_KEY;
-  if (classId === 'samurai') return SAMURAI_TEXTURE_KEY;
-  if (classId === 'monk') return MONK_TEXTURE_KEY;
-  if (classId === 'assassin') return ASSASSIN_TEXTURE_KEY;
-  if (classId === 'priest') return PRIEST_TEXTURE_KEY;
-  if (classId === 'savage') return SAVAGE_TEXTURE_KEY;
-  if (classId === 'hunter') return HUNTER_TEXTURE_KEY;
-  if (classId === 'atlantean') return SUNDIAN_TEXTURE_KEY;
-  return TEXTURE_KEY;
+  return FIGURE_KEY_FOR_CLASS[classId] ?? DEFAULT_FIGURE_KEY;
 }
 
 /**
