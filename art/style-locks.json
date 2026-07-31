@@ -1,0 +1,4 @@
+{
+  "_readme": "STYLE REGISTRY (Pass 8): category -> the HUMAN-APPROVED reference asset + palette constraints from its governing brief. No entry => npm run art:batch REFUSES the category. Locks are created by humans only: generate candidates, Casey approves ONE on-device, record it here as { reference, prompt, palette }. See docs/art-pipeline.md.",
+  "locks": {}
+}

@@ -672,6 +672,135 @@ const ok = (name, pass, detail = '') => {
     fenceGaps.length === 0 && mfCounts.enemy >= 9 && mfCounts.anim === 14 && mfCounts.props >= 10,
     JSON.stringify({ ...mfCounts, gaps: fenceGaps.slice(0, 6) }),
   );
+
+  // 0f4. THE BATCH MACHINE (PASS 8 Commit 2, pure Node — generation NEVER
+  // runs here; the offline --fixture-dir path exercises every discipline).
+  {
+    const bfx = new URL('../node_modules/.cache/toh-artbatch-fx', import.meta.url).pathname;
+    rmSync(bfx, { recursive: true, force: true });
+    rmSync('art-review/gate-fix-a', { recursive: true, force: true });
+    rmSync('art-review/gate-fix-b', { recursive: true, force: true });
+    mkdirSync(join(bfx, 'fixtures'), { recursive: true });
+    // Locks fixtures (the REAL art/style-locks.json stays empty — locks are
+    // human-approved; the real-file refusal is asserted below).
+    writeFileSync(join(bfx, 'locks.json'), JSON.stringify({ locks: { 'terrain-sheet': { reference: 'public/icons/icon-192.png', prompt: 'fixture' }, creature: { reference: 'public/icons/icon-192.png', prompt: 'fixture' } } }));
+    // A contract-true sheet for 'beach' (same construction as the lint
+    // fixture above) and a wrong-size sheet for 'desert'.
+    const goodSheet = new PNG({ width: 256, height: 128 });
+    for (let y = 0; y < 128; y++) {
+      for (let x = 0; x < 256; x++) {
+        const o = (y * 256 + x) * 4;
+        const row = Math.floor(y / 32);
+        const col = Math.floor(x / 32);
+        let a = 0;
+        if (row === 0 && col <= 6) a = 255;
+        else if (row >= 1 && (row < 3 || col === 0)) a = (x + y) % 2 ? 255 : 0;
+        goodSheet.data[o] = 90 + col;
+        goodSheet.data[o + 1] = 150;
+        goodSheet.data[o + 2] = 70;
+        goodSheet.data[o + 3] = a;
+      }
+    }
+    writeFileSync(join(bfx, 'fixtures', 'beach.png'), PNG.sync.write(goodSheet));
+    writeFileSync(join(bfx, 'fixtures', 'desert.png'), PNG.sync.write(new PNG({ width: 64, height: 64 })));
+    // A fixture for a BLOCKED creature id — it must NEVER be consumed.
+    writeFileSync(join(bfx, 'fixtures', 'townsfolk.png'), PNG.sync.write(goodSheet));
+
+    // style-lock-required: the REAL (empty) locks file refuses the category;
+    // key-required: no PIXELLAB_SECRET and no fixture dir refuses too.
+    const noLock = run(['scripts/art-batch/batch.mjs', '--category', 'terrain-sheet', '--fixture-dir', join(bfx, 'fixtures')]);
+    const noKey = spawnSync('node', ['scripts/art-batch/batch.mjs', '--category', 'terrain-sheet', '--locks', join(bfx, 'locks.json')], { encoding: 'utf8', env: { ...process.env, PIXELLAB_SECRET: '' } });
+    ok(
+      'style-lock-required: an unlocked category refuses (locks are human-approved on-device); a missing PIXELLAB_SECRET refuses the live path (the key lives in the environment ONLY)',
+      noLock.status === 1 && /no style lock/.test(noLock.stderr) && noKey.status === 1 && /PIXELLAB_SECRET/.test(noKey.stderr),
+      JSON.stringify({ noLock: noLock.status, noKey: noKey.status }),
+    );
+
+    // batch-stages-only: a traversal batch id refuses; a real run writes
+    // ONLY inside art-review/<id> (the contract path stays absent and the
+    // live tree untouched); statically, the tool's ONE raw write sits
+    // inside the stagePath funnel.
+    const trav = run(['scripts/art-batch/batch.mjs', '--category', 'terrain-sheet', '--locks', join(bfx, 'locks.json'), '--fixture-dir', join(bfx, 'fixtures'), '--batch-id', '../escape']);
+    const runA = run(['scripts/art-batch/batch.mjs', '--category', 'terrain-sheet', '--locks', join(bfx, 'locks.json'), '--fixture-dir', join(bfx, 'fixtures'), '--limit', '2', '--batch-id', 'gate-fix-a']);
+    const batchSrc = readFileSync('scripts/art-batch/batch.mjs', 'utf8');
+    // Count CALL SITES (the import mention has no paren): the tool's one
+    // raw write lives inside writeStaged, behind the stagePath funnel.
+    const rawWrites = (batchSrc.match(/writeFileSync\(/g) ?? []).length;
+    const stagedOk = existsSync('art-review/gate-fix-a/public/art/terrain/beach.png');
+    const contractUntouched = !existsSync('public/art/terrain/beach.png') && !existsSync('escape');
+    ok(
+      'batch-stages-only: traversal batch id refused; a real batch stages under art-review/<id> only — the contract path stays absent; the tool has exactly ONE raw write, inside the stagePath funnel',
+      trav.status === 1 && /not a plain path segment/.test(trav.stderr) && runA.status === 0 && stagedOk && contractUntouched && rawWrites === 1 && /function stagePath/.test(batchSrc),
+      JSON.stringify({ trav: trav.status, runA: runA.status, stagedOk, contractUntouched, rawWrites }),
+    );
+
+    // lint-wired: the wrong-size fixture is EXCLUDED with its reason; the
+    // good one is staged with the advisory columns in the report.
+    const repA = JSON.parse(readFileSync('art-review/gate-fix-a/report.json', 'utf8'));
+    const beachRow = repA.staged.find((s) => s.id === 'beach');
+    const desertRow = repA.excluded.find((e) => e.id === 'desert');
+    ok(
+      'lint-wired: a bad staged asset is excluded with its lint reason; staged rows carry the palette-size + luminance advisory columns',
+      !!beachRow && Number.isFinite(beachRow.paletteSize) && Number.isFinite(beachRow.meanLuminance) && !!desertRow && /64x64/.test(desertRow.reason),
+      JSON.stringify({ beach: beachRow, desert: desertRow }),
+    );
+
+    // fence-respected: a category whose blocked ids HAVE fixtures generates
+    // NONE of them — blocked rows are reported, never consumed.
+    const runB = run(['scripts/art-batch/batch.mjs', '--category', 'creature', '--locks', join(bfx, 'locks.json'), '--fixture-dir', join(bfx, 'fixtures'), '--batch-id', 'gate-fix-b']);
+    const repB = JSON.parse(readFileSync('art-review/gate-fix-b/report.json', 'utf8'));
+    const townBlocked = repB.blockedSkipped.some((b) => b.id === 'townsfolk');
+    const townNotStaged = !repB.staged.some((s) => s.id === 'townsfolk') && !repB.excluded.some((e) => e.id === 'townsfolk');
+    ok(
+      'fence-respected: a blocked fixture id (townsfolk <- enemy-tint-ruling) is never generated — reported under blockedSkipped, absent from staged and excluded alike',
+      runB.status === 0 && townBlocked && townNotStaged,
+      JSON.stringify({ runB: runB.status, townBlocked, townNotStaged, blocked: repB.blockedSkipped.length }),
+    );
+
+    // manifest-sync RE-RUN POST-FLIP: approving the staged batch into a
+    // SANDBOX root lands the file at its contract-relative path there,
+    // while the live tree — and therefore the committed manifest — is
+    // untouched and still in sync.
+    const appr = run(['scripts/art-batch/approve.mjs', '--batch', 'gate-fix-a', '--root', join(bfx, 'sandbox')]);
+    const flipOk = existsSync(join(bfx, 'sandbox', 'public/art/terrain/beach.png'));
+    const syncAfter = run(['scripts/asset-manifest/build.mjs', '--check']);
+    ok(
+      'manifest-sync post-flip: sandbox approval lands the contract-relative file; the live tree and committed manifest remain byte-in-sync',
+      appr.status === 0 && flipOk && syncAfter.status === 0 && !existsSync('public/art/terrain/beach.png'),
+      JSON.stringify({ appr: appr.status, flipOk, syncAfter: syncAfter.status }),
+    );
+    rmSync('art-review/gate-fix-a', { recursive: true, force: true });
+    rmSync('art-review/gate-fix-b', { recursive: true, force: true });
+    rmSync(bfx, { recursive: true, force: true });
+  }
+
+  // 0f5. SECRET-HYGIENE (PASS 8): scan every git-tracked TEXT file for key
+  // material. PATTERN SET (stated): (a) a LITERAL assignment to
+  // PIXELLAB_SECRET / *_API_KEY / *_TOKEN (an env EXPANSION like
+  // ${PIXELLAB_SECRET} does not match); (b) sk-<20+ token chars>;
+  // (c) Bearer <24+ literal token chars> (again, ${...} expansions exempt).
+  {
+    const tracked = spawnSync('git', ['ls-files'], { encoding: 'utf8' }).stdout.split('\n').filter(Boolean);
+    const textish = tracked.filter((f) => !/\.(png|bin|gz|json\.gz|webmanifest|ico)$/.test(f) && existsSync(f));
+    const patterns = [
+      /(PIXELLAB_SECRET|API_KEY|_TOKEN)\s*[=:]\s*['"][A-Za-z0-9_\-]{8,}['"]/,
+      /\bsk-[A-Za-z0-9]{20,}\b/,
+      /Bearer\s+[A-Za-z0-9_\-.]{24,}/,
+    ];
+    const hits = [];
+    for (const f of textish) {
+      const body = readFileSync(f, 'utf8');
+      for (const p of patterns) {
+        const m = body.match(p);
+        if (m) hits.push(`${f}: ${m[0].slice(0, 40)}`);
+      }
+    }
+    ok(
+      'secret-hygiene: no literal key material in any tracked text file (patterns: literal SECRET/API_KEY/TOKEN assignment, sk-tokens, literal Bearer tokens; env expansions exempt)',
+      hits.length === 0,
+      JSON.stringify({ scanned: textish.length, hits: hits.slice(0, 5) }),
+    );
+  }
 }
 
 // 0g. SIM-LOCALITY STATIC (PASS 6B, pure Node): the rename landed (no

@@ -18,7 +18,9 @@
     "lint:terrain-art": "node tools/lint-terrain-art.mjs",
     "convert:terrain": "node tools/convert-terrain-art.mjs",
     "art:manifest": "node scripts/asset-manifest/build.mjs",
-    "art:coverage": "node scripts/asset-manifest/coverage.mjs"
+    "art:coverage": "node scripts/asset-manifest/coverage.mjs",
+    "art:batch": "node scripts/art-batch/batch.mjs",
+    "art:approve": "node scripts/art-batch/approve.mjs"
   },
   "dependencies": {
     "phaser": "^4.2.0"
