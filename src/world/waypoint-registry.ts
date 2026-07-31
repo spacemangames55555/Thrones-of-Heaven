@@ -1,6 +1,7 @@
 import { MANIFEST_CLASS_FOR, homeZoneForClass } from './class-canon';
 import { BOISE_POSITION, KAMIAH_POSITION, OLYMPIA_POSITION } from '../game/settings';
 import { SETTLEMENTS } from '../settlements/registry';
+import { SINAI_CAMP_STAMP } from './egypt-corridor';
 import { isScaleV2 } from './world-scale';
 import { latLngGlobePx } from './replant';
 import { LEGACY_GLOBE_ORIGIN_X } from './legacy-frame';
@@ -56,6 +57,11 @@ export function buildWaypointRegistry(): WaypointDef[] {
       const g = latLngGlobePx(s.lat, s.lng);
       nodes.push({ id: s.waystone.nodeId, label: s.waystone.label, continent: 'Africa', fixed: { x: LEGACY_GLOBE_ORIGIN_X + Math.round(g.x), y: Math.round(g.y) } });
     }
+    // PASS 7 COMMIT 3: the Sinai foot-camp waystone (a camp STAMP, not a
+    // settlement) — placeholder pillar, DISCOVERY-based like every non-home
+    // node, planted at the camp's true coordinate.
+    const c = latLngGlobePx(SINAI_CAMP_STAMP.lat, SINAI_CAMP_STAMP.lng);
+    nodes.push({ id: 'sinai-camp', label: 'Sinai Camp Waystone', continent: 'Africa', fixed: { x: LEGACY_GLOBE_ORIGIN_X + Math.round(c.x), y: Math.round(c.y) } });
   }
   return nodes;
 }

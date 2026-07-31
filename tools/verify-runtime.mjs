@@ -8432,9 +8432,9 @@ try {
   }));
   ok('travel-distance-ui: km readout matches px math (5.0 km / 25 km fixtures)', kmUi.a === '5.0 km' && kmUi.b === '25 km', JSON.stringify(kmUi));
 
-  // 2h1. waypoint-registry: 17 nodes (14 class homes by zone id + Olympia +
-  // Boise + the Kamiah staging camp), every anchor walkable post-validation,
-  // every nudge within the 64-tile rule.
+  // 2h1. waypoint-registry: 19 nodes (14 class homes by zone id + Olympia +
+  // Boise + the Kamiah staging camp + the Faiyum and Sinai-camp waystones),
+  // every anchor walkable post-validation, every nudge within the 64-tile rule.
   const wpRegistry = await page.evaluate(() => {
     const ms = window.__game.scene.getScene('MainScene');
     const wp = ms.waypointSys;
@@ -8447,13 +8447,13 @@ try {
     return { setup: 'ok', total: wp.nodes.length, homes, fixed, validated: wp.validated, walkable, maxNudge, nudged };
   });
   ok(
-    'waypoint-registry: 18 nodes resolve on existing anchors (14 homes + 3 fixed + the Faiyum settlement waystone), all walkable post-validation, nudges within 64 tiles',
+    'waypoint-registry: 19 nodes resolve on existing anchors (14 homes + 3 NA fixed + the Faiyum settlement waystone + the Sinai camp waystone), all walkable post-validation, nudges within 64 tiles',
     wpRegistry.setup === 'ok' &&
-      wpRegistry.total === 18 &&
+      wpRegistry.total === 19 &&
       wpRegistry.homes === 14 &&
-      wpRegistry.fixed.join(',') === 'faiyum,wp-boise,wp-kamiah,wp-olympia' &&
+      wpRegistry.fixed.join(',') === 'faiyum,sinai-camp,wp-boise,wp-kamiah,wp-olympia' &&
       wpRegistry.validated === true &&
-      wpRegistry.walkable === 18 &&
+      wpRegistry.walkable === 19 &&
       wpRegistry.maxNudge <= 64,
     JSON.stringify(wpRegistry),
   );
@@ -8850,8 +8850,8 @@ try {
     return { active, paused: ms.scene.isPaused(), centerErr: +Math.hypot(c.x - pm.x, c.y - pm.y).toFixed(2), markers: wms.waystoneMarkers.length };
   });
   ok(
-    'map-open-at-cap: pinching past the cap opens map mode centered on the player (MainScene paused, 18 waystone markers live: 14 homes + 3 NA fixed + faiyum)',
-    mapOpen.active === true && mapOpen.paused === true && mapOpen.centerErr <= 2 && mapOpen.markers === 18,
+    'map-open-at-cap: pinching past the cap opens map mode centered on the player (MainScene paused, 19 waystone markers live: 14 homes + 3 NA fixed + faiyum + sinai-camp)',
+    mapOpen.active === true && mapOpen.paused === true && mapOpen.centerErr <= 2 && mapOpen.markers === 19,
     JSON.stringify(mapOpen),
   );
 
@@ -10739,6 +10739,406 @@ try {
       JSON.stringify({ named, silentEarth, firstError: p2Errors.find((m) => m.includes('DecompressionStream'))?.slice(0, 140) ?? p2Errors[0]?.slice(0, 140) ?? null }),
     );
   }
+
+  // ── PASS 7 COMMIT 3: THE EGYPT CORRIDOR + THE SEALED SINAI PORTAL ─────────
+  // A dedicated fresh druid session in its OWN CONTEXT drives the whole
+  // five-beat chain from a cold state (deterministic — the main travel
+  // session may have side-started beat 1 through the Faiyum hearth). The
+  // isolated BROWSER PROCESS gets its own renderer tree (the fixture is
+  // heavy, and three prior runs died at its tail from end-of-suite memory
+  // pressure — a shared-process context was not enough) and its own
+  // storage — the travel session's save slot is never touched. The main
+  // page parks on about:blank first, releasing its world session's memory
+  // (flip-default re-navigates it regardless).
+  const egc = await (async () => {
+    const { build } = await import('esbuild');
+    const outfile = new URL('../node_modules/.cache/toh-egypt-corridor.mjs', import.meta.url).pathname;
+    await build({ entryPoints: [new URL('../src/world/egypt-corridor.ts', import.meta.url).pathname], bundle: true, format: 'esm', platform: 'node', outfile, logLevel: 'silent' });
+    return import(outfile);
+  })();
+  const rosterB = await (async () => {
+    const { build } = await import('esbuild');
+    const outfile = new URL('../node_modules/.cache/toh-enemy-roster.mjs', import.meta.url).pathname;
+    await build({ entryPoints: [new URL('../src/world/enemy-roster.ts', import.meta.url).pathname], bundle: true, format: 'esm', platform: 'node', outfile, logLevel: 'silent' });
+    return import(outfile);
+  })();
+  // 3w0. suez-spawn-set (Node half): every declared family is an EXISTING
+  // live-spawnable family with a canon domain (no new family ships here).
+  const suezNode = {
+    entries: egc.SUEZ_SPAWN_SET.length,
+    total: egc.SUEZ_SPAWN_SET.reduce((a, s) => a + s.count, 0),
+    allExisting: egc.SUEZ_SPAWN_SET.every((s) => s.family in rosterB.EXISTING_FAMILY_DOMAIN),
+    tints: Object.fromEntries(egc.SUEZ_SPAWN_SET.map((s) => [s.family, rosterB.DOMAIN_TINT[rosterB.EXISTING_FAMILY_DOMAIN[s.family]]])),
+  };
+  await page.goto('about:blank'); // release the main page's world memory
+  const browser3 = await chromium.launch({
+    executablePath: EXE,
+    headless: true,
+    args: ['--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--use-gl=swiftshader', '--enable-unsafe-swiftshader'],
+  });
+  const ctx3 = await browser3.newContext({ viewport: { width: 428, height: 926 } });
+  const p3 = await ctx3.newPage();
+  p3.on('pageerror', (e) => pageErrors.push(`corridor: ${e.message}`));
+  await p3.addInitScript(() => {
+    Object.defineProperty(document, 'hidden', { get: () => false });
+    Object.defineProperty(document, 'visibilityState', { get: () => 'visible' });
+  });
+  await p3.addInitScript(() => {
+    window.__ready = () => {
+      const ms = window.__game.scene.getScene('MainScene');
+      if (ms.playerDead) ms.respawnPlayer();
+      ms.playerHealth.full();
+      ms.playerHealth.shield = 1e9;
+      return ms;
+    };
+  });
+  await p3.goto(`http://localhost:${PORT}/?scale=v2&devspeed=99`, { waitUntil: 'load' });
+  await p3.waitForFunction(() => !!window.__game && window.__game.scene.isActive('TitleScene'), null, { timeout: 25000 });
+  await p3.evaluate(() => window.__game.scene.getScene('TitleScene').scene.start('MainScene', { mode: 'new', classId: 'druid' }));
+  await p3.waitForFunction(() => window.__game.scene.isActive('MainScene'), null, { timeout: 60000 });
+  await p3.waitForTimeout(2500);
+  if (await p3.evaluate(() => window.__game.scene.isActive('FirstSkillScene'))) {
+    await p3.mouse.click(214, 462);
+    await p3.waitForTimeout(600);
+  }
+  // Stand at Faiyum; the egypt pack lazy-loads; the HEARTH offers beat 1.
+  await p3.evaluate(() => {
+    const ms = window.__ready();
+    const p = ms.terrestrialPxFromLatLng({ lat: 29.31, lng: 30.84 });
+    ms.player.sprite.body.reset(p.x, p.y);
+    ms.lastLandPos = undefined;
+  });
+  await p3.waitForFunction(
+    () => {
+      const ms = window.__game.scene.getScene('MainScene');
+      return ms.chunkStreamer && ms.chunkStreamer.regionsRef.some((r) => r.id === 'egypt');
+    },
+    null,
+    { timeout: 120000 },
+  );
+  let hearthOffered = false;
+  for (let k = 0; k < 25 && !hearthOffered; k++) {
+    await p3.waitForTimeout(400);
+    hearthOffered = await p3.evaluate(() => window.__game.scene.getScene('MainScene').chain.status('egypt-corridor-1') === 'active');
+  }
+
+  // 3w1. corridor-anchor-sanity: every beat anchor stands on COMPOSED-truth
+  // walkable ground; Cairo enters the polyline BY ID (the b:cairo point IS
+  // the live mentor anchor); the fallback ring buffer is untouched.
+  const egAnchors = await p3.evaluate(() => {
+    const ms = window.__ready();
+    const F = ms.map.constructor;
+    const pts = ms.egyptCorridorScenePoints();
+    const byLabel = Object.fromEntries(pts.map((p) => [p.label, p]));
+    const beatWalkable = {};
+    for (const label of ['faiyum', 'b:cairo', 'suez', 'sinaiCamp', 'summit']) {
+      const p = byLabel[label];
+      beatWalkable[label] = p ? ms.composedTravelWalkable(p.x, p.y) === true : 'missing';
+    }
+    const cairoById = byLabel['b:cairo'] && byLabel['b:cairo'].x === ms.cairoMentorPos.x && byLabel['b:cairo'].y === ms.cairoMentorPos.y;
+    return { beatWalkable, cairoById, fallbacks: F.walkableFallbacks.length, sealedAtBoot: ms.sinaiPortalState() };
+  });
+  ok(
+    'corridor-anchor-sanity: all five beat anchors walkable on the composed source, Cairo referenced BY ID (polyline point === live mentor anchor), zero walkable-fallback engagements, portal born sealed',
+    Object.values(egAnchors.beatWalkable).every((v) => v === true) && egAnchors.cairoById === true && egAnchors.fallbacks === 0 && egAnchors.sealedAtBoot === 'sealed',
+    JSON.stringify(egAnchors),
+  );
+
+  // 3w2. crossing-stamps: the authored canal causeway stands at its declared
+  // site, its road span COVERS the live-measured baked channel (+ a bank on
+  // each side), and its tiles are road (walkable stamp truth over the water).
+  const crossingStamp = await p3.evaluate(() => {
+    const ms = window.__ready();
+    const st = ms.chunkStreamer;
+    const B = window.__worldScale.schema.Biome;
+    const m = ms.egyptCorridorStampById.get('crossing-canal-ahmed-hamdi');
+    if (!m) return { setup: 'no causeway stamp' };
+    const b = m.bounds;
+    const cy = b.y + b.height / 2;
+    // Measure the baked channel along the causeway's center row (sampled at
+    // 16 px), ignoring stamp cover — the raw truth the causeway must span.
+    let first = -1;
+    let last = -1;
+    for (let x = b.x - 640; x <= b.x + b.width + 640; x += 16) {
+      const ll = ms.terrestrialLatLngFromPx(x, cy);
+      const r = st.earthSample(ll.lat, ll.lng);
+      if (r[0] === B.OCEAN || r[0] === B.FRESHWATER) {
+        if (first < 0) first = x;
+        last = x;
+      }
+    }
+    const walkMid = !m.isBlockedAtWorld(b.x + b.width / 2, cy);
+    const walkIn = !m.isBlockedAtWorld(b.x + 50, cy);
+    const walkOut = !m.isBlockedAtWorld(b.x + b.width - 50, cy);
+    return {
+      setup: 'ok',
+      channelPx: first >= 0 ? last - first : 0,
+      spansChannel: first >= 0 && b.x + 48 <= first && last <= b.x + b.width - 48,
+      walkMid,
+      walkIn,
+      walkOut,
+    };
+  });
+  ok(
+    'crossing-stamps: the Ahmed Hamdi causeway spans the live-measured baked canal channel with banks on both ends, and its road row is walkable end to end',
+    crossingStamp.setup === 'ok' && crossingStamp.channelPx > 0 && crossingStamp.spansChannel === true && crossingStamp.walkMid && crossingStamp.walkIn && crossingStamp.walkOut,
+    JSON.stringify(crossingStamp),
+  );
+
+  // 3w3. corridor-chain: the five beats walked end to end through the REAL
+  // paths — hearth offer, Sefu talk, retargeting between beats with the km
+  // readout matching the px math, the Suez pack (existing families + canon
+  // tints, defeated), the camp reach (+ waystone discovery), the unseal.
+  const beat1 = await p3.evaluate(async () => {
+    const ms = window.__ready();
+    const wait = (t) => new Promise((r) => setTimeout(r, t));
+    const st = ms.settlementStamps.find((s) => s.def.id === 'faiyum');
+    if (!st) return { setup: 'no faiyum stamp' };
+    const prev = { x: ms.player.x, y: ms.player.y };
+    ms.player.sprite.body.reset(st.npcs[0].sprite.x + 50, st.npcs[0].sprite.y);
+    ms.lastLandPos = undefined;
+    let opened = false;
+    for (let k = 0; k < 12 && !opened; k++) {
+      await wait(300);
+      if (ms.dialogue.isOpen()) opened = true;
+      else if (ms.talkButton.isVisible) {
+        ms.tryTalk();
+        await wait(300);
+        opened = ms.dialogue.isOpen();
+      }
+    }
+    ms.player.sprite.body.reset(prev.x, prev.y);
+    ms.lastLandPos = undefined;
+    return { setup: 'ok', opened };
+  });
+  for (let i = 0; i < 14; i++) {
+    await p3.waitForTimeout(280);
+    const uiOpen = await p3.evaluate(() => {
+      const ms = window.__game.scene.getScene('MainScene');
+      return ms.dialogue.isOpen() || ms.choice.isOpen();
+    });
+    if (!uiOpen) break;
+    await p3.mouse.click(214, 520);
+    await p3.mouse.click(214, 462);
+  }
+  let beat2Active = false;
+  for (let k = 0; k < 15 && !beat2Active; k++) {
+    await p3.waitForTimeout(400);
+    beat2Active = await p3.evaluate(() => window.__game.scene.getScene('MainScene').chain.status('egypt-corridor-2') === 'active');
+  }
+  // Retargeting + km-matching at beat 2: the marker points at the Cairo
+  // mentor and its km text equals the px math (formatKm rules replicated).
+  const kmMatch = await p3.evaluate(() => {
+    const ms = window.__ready();
+    const t = ms.chain.activeObjectiveDef?.target ?? null;
+    const text = ms.marker.label.text;
+    const distPx = Math.hypot(ms.cairoMentorPos.x - ms.player.x, ms.cairoMentorPos.y - ms.player.y);
+    const km = distPx / 1600;
+    const expect = `· ${km < 10 ? `${km.toFixed(1)} km` : `${Math.round(km)} km`}`;
+    return { target: t, text, expect, match: text.trim() === expect.trim() };
+  });
+  await p3.evaluate(() => {
+    const ms = window.__ready();
+    ms.player.sprite.body.reset(ms.cairoMentorPos.x + 60, ms.cairoMentorPos.y + 40);
+    ms.lastLandPos = undefined;
+  });
+  let beat3Active = false;
+  for (let k = 0; k < 15 && !beat3Active; k++) {
+    await p3.waitForTimeout(400);
+    beat3Active = await p3.evaluate(() => window.__game.scene.getScene('MainScene').chain.status('egypt-corridor-3') === 'active');
+  }
+  const suezLive = await p3.evaluate((tints) => {
+    const ms = window.__ready();
+    const live = ms.arcEnemies.filter((e) => e.isAlive);
+    const byFam = {};
+    let tintOk = true;
+    for (const e of live) {
+      const fam = e.sprite.texture.key.replace(/^enemy-/, '');
+      byFam[fam] = (byFam[fam] ?? 0) + 1;
+      // Base tint = the canon domain tint (except mid hit-flash; spawn-fresh here).
+      if (tints[fam] !== undefined && e.sprite.tintTopLeft !== tints[fam]) tintOk = false;
+    }
+    return { live: live.length, byFam, tintOk };
+  }, suezNode.tints);
+  // Defeat the pack (the established gate kill path) → beat 4.
+  await p3.evaluate(() => {
+    const ms = window.__ready();
+    for (const e of ms.arcEnemies) if (e.isAlive) e.destroy();
+  });
+  let beat4Active = false;
+  for (let k = 0; k < 15 && !beat4Active; k++) {
+    await p3.waitForTimeout(400);
+    beat4Active = await p3.evaluate(() => window.__game.scene.getScene('MainScene').chain.status('egypt-corridor-4') === 'active');
+  }
+  await p3.evaluate(() => {
+    const ms = window.__ready();
+    ms.player.sprite.body.reset(ms.sinaiCampSpawn.x, ms.sinaiCampSpawn.y - 40);
+    ms.lastLandPos = undefined;
+  });
+  let beat5Active = false;
+  for (let k = 0; k < 15 && !beat5Active; k++) {
+    await p3.waitForTimeout(400);
+    beat5Active = await p3.evaluate(() => window.__game.scene.getScene('MainScene').chain.status('egypt-corridor-5') === 'active');
+  }
+  // The camp waystone attunes by DISCOVERY while standing in the camp.
+  let campAttuned = false;
+  for (let k = 0; k < 10 && !campAttuned; k++) {
+    await p3.waitForTimeout(400);
+    campAttuned = await p3.evaluate(() => window.__game.scene.getScene('MainScene').waypointSys.unlocked.has('sinai-camp'));
+  }
+  ok(
+    'corridor-chain: hearth offers beat 1, the Sefu talk completes it, retargeting walks beats 2-5 (km readout matches the px math at Cairo), the Suez pack spawns existing families with canon tints and its defeat advances, the camp reach attunes the sinai-camp waystone',
+    hearthOffered && beat1.setup === 'ok' && beat1.opened && beat2Active && kmMatch.target === 'cairo-crown' && kmMatch.match && beat3Active && suezLive.live === suezNode.total && suezNode.allExisting && suezNode.entries >= 2 && suezLive.tintOk && beat4Active && beat5Active && campAttuned,
+    JSON.stringify({ hearthOffered, beat1, beat2Active, kmMatch, beat3Active, suezLive, suezNode: { ...suezNode, tints: undefined }, beat4Active, beat5Active, campAttuned }),
+  );
+
+  // 3w4. portal-sealed-until-chain: SEALED through beats 1-4 (asserted at
+  // boot above and re-checked here mid-quest-5), the crossing button REFUSES
+  // while sealed (no world change), the unseal ritual runs through the real
+  // proximity-action path and flips the state, and the ACTIVE portal crosses
+  // into the SAME Heaven plane as Idaho.
+  // Small SYNC evaluates with node-side waits between them: three prior
+  // runs wedged the renderer inside one long page-side async evaluate here
+  // — small steps make any future wedge fail at a named point instead of
+  // hanging the whole run silently.
+  await p3.evaluate(() => {
+    const ms = window.__ready();
+    ms.player.sprite.body.reset(ms.sinaiPortal.x + 60, ms.sinaiPortal.y + 40);
+    ms.lastLandPos = undefined;
+  });
+  await p3.waitForTimeout(700);
+  const sealedPress = await p3.evaluate(() => {
+    const ms = window.__ready();
+    const stateBefore = ms.sinaiPortalState();
+    const btnVisible = ms.sinaiEnterButton?.isVisible ?? false;
+    const worldBefore = ms.activeWorld;
+    ms.enterSinaiPortal();
+    return { stateBefore, btnVisible, worldBefore };
+  });
+  await p3.waitForTimeout(600);
+  const sealedRefusal = await p3.evaluate((worldBefore) => {
+    const ms = window.__game.scene.getScene('MainScene');
+    return {
+      refusalOpen: ms.dialogue.isOpen(),
+      stayed: ms.activeWorld === worldBefore && !ms.transitioning,
+    };
+  }, sealedPress.worldBefore);
+  sealedRefusal.stateBefore = sealedPress.stateBefore;
+  sealedRefusal.btnVisible = sealedPress.btnVisible;
+  for (let i = 0; i < 10; i++) {
+    await p3.waitForTimeout(280);
+    const uiOpen = await p3.evaluate(() => {
+      const ms = window.__game.scene.getScene('MainScene');
+      return ms.dialogue.isOpen() || ms.choice.isOpen();
+    });
+    if (!uiOpen) break;
+    await p3.mouse.click(214, 520);
+    await p3.mouse.click(214, 462);
+  }
+  let unsealBtn = false;
+  for (let k = 0; k < 12 && !unsealBtn; k++) {
+    await p3.waitForTimeout(300);
+    unsealBtn = await p3.evaluate(() => window.__game.scene.getScene('MainScene').burnButton.isVisible);
+  }
+  await p3.evaluate(() => window.__ready().tryArcAction()); // the shared proximity-action path fires 'summit-unsealed'
+  await p3.waitForTimeout(600);
+  const unsealRitual = await p3.evaluate(() => {
+    const ms = window.__game.scene.getScene('MainScene');
+    return { portal: ms.sinaiPortalState(), objIndex: ms.chain.activeObjectiveIndex };
+  });
+  unsealRitual.btn = unsealBtn;
+  await p3.evaluate(() => window.__ready().enterSinaiPortal());
+  for (let k = 0; k < 25; k++) {
+    await p3.waitForTimeout(400);
+    const arrived = await p3.evaluate(() => {
+      const ms = window.__game.scene.getScene('MainScene');
+      return ms.activeWorld === 'heaven' && !ms.transitioning;
+    });
+    if (arrived) break;
+  }
+  const crossing = await p3.evaluate(() => {
+    const ms = window.__game.scene.getScene('MainScene');
+    const dArrival = Math.hypot(ms.player.x - ms.heavenArrivalPos.x, ms.player.y - ms.heavenArrivalPos.y);
+    return { world: ms.activeWorld, dArrival: +dArrival.toFixed(0), q5: ms.chain.status('egypt-corridor-5'), portal: ms.sinaiPortalState() };
+  });
+  ok(
+    'portal-sealed-until-chain: sealed at boot and through beat 5a, the crossing button refuses while sealed (no world change), the real unseal ritual flips sealed -> active, and the active portal crosses into the SAME Heaven plane as Idaho (chain complete)',
+    sealedRefusal.stateBefore === 'sealed' && sealedRefusal.btnVisible && sealedRefusal.refusalOpen && sealedRefusal.stayed && unsealRitual.btn && unsealRitual.portal === 'active' && unsealRitual.objIndex === 1 && crossing.world === 'heaven' && crossing.dArrival <= 64 && crossing.q5 === 'complete' && crossing.portal === 'active',
+    JSON.stringify({ sealedRefusal, unsealRitual, crossing }),
+  );
+
+  // 3w5. corridor-traversable: ride the WHOLE egypt polyline against the live
+  // world rule (baked water blocks unless an authored stamp — the hand-built
+  // Cairo map, the camp, the causeway, a settlement — covers the point). NO
+  // water span wider than a ford; the causeway must be ridden end to end.
+  const egyptRide = await p3.evaluate(() => {
+    const ms = window.__ready();
+    const st = ms.chunkStreamer;
+    const B = window.__worldScale.schema.Biome;
+    const pts = ms.egyptCorridorScenePoints();
+    const covers = [ms.egyptMap.bounds, ...[...ms.egyptCorridorStampById.values()].map((m) => m.bounds), ...ms.settlementStamps.map((s) => s.map.bounds)];
+    const offenders = [];
+    let ridden = false;
+    const segs = [];
+    for (let i = 0; i + 1 < pts.length; i++) {
+      const a = pts[i];
+      const b = pts[i + 1];
+      if (a.label === 'x:canal-ahmed-hamdi:in' && b.label === 'x:canal-ahmed-hamdi:out') ridden = true;
+      const len = Math.hypot(b.x - a.x, b.y - a.y);
+      segs.push({ from: a.label, to: b.label, lenPx: Math.round(len) });
+      const n = Math.max(1, Math.ceil(len / 64));
+      let runStart = -1;
+      for (let k = 0; k <= n; k++) {
+        const t = k / n;
+        const x = a.x + (b.x - a.x) * t;
+        const y = a.y + (b.y - a.y) * t;
+        const covered = covers.some((c) => x >= c.x && x < c.x + c.width && y >= c.y && y < c.y + c.height);
+        let water = false;
+        if (!covered) {
+          const ll = ms.terrestrialLatLngFromPx(x, y);
+          const r = st.earthSample(ll.lat, ll.lng);
+          water = r[0] === B.OCEAN || r[0] === B.FRESHWATER;
+        }
+        if (water) {
+          if (runStart < 0) runStart = k;
+        } else if (runStart >= 0) {
+          const widthPx = (k - runStart) * 64;
+          if (widthPx > 96) offenders.push({ seg: `${a.label}->${b.label}`, widthPx });
+          runStart = -1;
+        }
+      }
+    }
+    const F = ms.map.constructor;
+    return { offenders, ridden, segs, fallbacks: F.walkableFallbacks.length };
+  });
+  ok(
+    'corridor-traversable: the egypt polyline rides clean end to end — zero water spans wider than a ford under the cover rule, the canal causeway ridden lengthwise, zero fallback engagements across the whole fixture',
+    egyptRide.offenders.length === 0 && egyptRide.ridden === true && egyptRide.fallbacks === 0,
+    JSON.stringify({ offenders: egyptRide.offenders.slice(0, 6), ridden: egyptRide.ridden, segments: egyptRide.segs.length, fallbacks: egyptRide.fallbacks }),
+  );
+  // SEGMENT-TIMES (ADVISORY, per spec — printed, never asserted): minutes per
+  // corridor leg at mount speed; feeds the ledgered Egypt spawn-density audit.
+  {
+    const ws7 = await (async () => {
+      const { build } = await import('esbuild');
+      const outfile = new URL('../node_modules/.cache/toh-world-scale7.mjs', import.meta.url).pathname;
+      await build({ entryPoints: [new URL('../src/world/world-scale.ts', import.meta.url).pathname], bundle: true, format: 'esm', platform: 'node', outfile, logLevel: 'silent' });
+      return import(outfile);
+    })();
+    const legs = [];
+    let from = egyptRide.segs[0]?.from ?? 'faiyum';
+    let acc = 0;
+    for (const s of egyptRide.segs) {
+      acc += s.lenPx;
+      if (!s.to.startsWith('via(') && !s.to.startsWith('x:')) {
+        legs.push(`${from}->${s.to}: ${(acc / ws7.MOUNT_SPEED_PX / 60).toFixed(1)}m`);
+        from = s.to;
+        acc = 0;
+      }
+    }
+    console.log(`ADVISORY egypt segment-times (mounted, ${ws7.MOUNT_SPEED_PX}px/s): ${legs.join('  ')}`);
+  }
+  await browser3.close();
 
   // ── PASS 4 COMMIT 2: THE FLIP ─────────────────────────────────────────────
   // 2i0. flip-default: a page with NO param is v2 — streamer live, the earth
