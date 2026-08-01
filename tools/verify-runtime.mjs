@@ -708,7 +708,12 @@ const ok = (name, pass, detail = '') => {
 
     // style-lock-required: the REAL (empty) locks file refuses the category;
     // key-required: no PIXELLAB_SECRET and no fixture dir refuses too.
-    const noLock = run(['scripts/art-batch/batch.mjs', '--category', 'terrain-sheet', '--fixture-dir', join(bfx, 'fixtures')]);
+    // The refusal is proven against an EMPTY locks FIXTURE — the real
+    // art/style-locks.json belongs to Casey and grows as verdicts land
+    // (the terrain lock landed in Art Session 1); the tool's refusal
+    // logic, not the registry's current contents, is the invariant.
+    writeFileSync(join(bfx, 'locks-empty.json'), JSON.stringify({ locks: {} }));
+    const noLock = run(['scripts/art-batch/batch.mjs', '--category', 'terrain-sheet', '--locks', join(bfx, 'locks-empty.json'), '--fixture-dir', join(bfx, 'fixtures')]);
     const noKey = spawnSync('node', ['scripts/art-batch/batch.mjs', '--category', 'terrain-sheet', '--locks', join(bfx, 'locks.json')], { encoding: 'utf8', env: { ...process.env, PIXELLAB_SECRET: '' } });
     ok(
       'style-lock-required: an unlocked category refuses (locks are human-approved on-device); a missing PIXELLAB_SECRET refuses the live path (the key lives in the environment ONLY)',
@@ -10592,13 +10597,16 @@ try {
     JSON.stringify(ovBudget),
   );
 
-  // 2j3. art-fallback-chain: the all-procedural boot has both atlases + all
-  // prop silhouettes; injecting a synthetic DESERT sheet through the REAL
-  // activation path recolors ONLY desert (base cells + named fringe frames,
-  // repaint clean); rebuilding with no art restores the procedural pixels
-  // byte-identically. Per-biome activation, loud fallback, zero errors.
+  // 2j3. art-fallback-chain: the boot atlases stand (shipped art where it
+  // exists, procedural everywhere else); injecting a synthetic DESERT sheet
+  // through the REAL activation path — ON TOP of the SHIPPED sheets, which
+  // are re-fetched in-page — recolors ONLY desert (grass keeps its SHIPPED
+  // art through the rebuild: the per-biome invariant proven with real art
+  // present, not just procedural); rebuilding with the shipped set alone
+  // restores desert's boot pixels byte-identically AND leaves the session
+  // exactly as it booted. Loud fallback, zero errors.
   const afcPe0 = pageErrors.length;
-  const artChain = await page.evaluate(() => {
+  const artChain = await page.evaluate(async () => {
     const ms = window.__ready();
     const v = window.__worldScale.visuals;
     const readBase = (biome) => {
@@ -10607,6 +10615,22 @@ try {
     };
     const existed = ms.textures.exists('terrain-ph') && ms.textures.exists('terrain-fringe');
     const propsOk = Object.keys(v.PROP_TABLE).every((id) => ms.textures.exists(`terrain-prop-${id}`));
+    // Re-fetch the SHIPPED sheets (the same files the boot activation saw).
+    const shipped = new Map();
+    for (const [biome, stem] of Object.entries(v.BIOME_SHEET_NAME)) {
+      const img = new Image();
+      const okLoad = await new Promise((res) => {
+        img.onload = () => res(true);
+        img.onerror = () => res(false);
+        img.src = `art/terrain/${stem}.png`;
+      });
+      if (!okLoad || img.width !== 256 || img.height !== 128) continue;
+      const sc = document.createElement('canvas');
+      sc.width = 256;
+      sc.height = 128;
+      sc.getContext('2d').drawImage(img, 0, 0);
+      shipped.set(Number(biome), sc);
+    }
     const before = readBase(5);
     const grassBefore = readBase(3);
     const cvs = document.createElement('canvas');
@@ -10616,7 +10640,7 @@ try {
     c.fillStyle = '#ff8800';
     c.fillRect(0, 0, 7 * 32, 32); // base + anim row fully opaque
     for (let row = 1; row < 4; row++) c.fillRect(0, row * 32, 256, 16); // fringe cells: top half opaque
-    window.__worldScale.buildTerrainAtlases(ms, new Map([[5, cvs]]));
+    window.__worldScale.buildTerrainAtlases(ms, new Map([...shipped, [5, cvs]]));
     ms.chunkStreamer.repaintAllLayers();
     const after = readBase(5);
     const grassAfter = readBase(3);
@@ -10625,13 +10649,14 @@ try {
     const fctx = ftex.context;
     const fTop = [...fctx.getImageData(16, 5 * 32 + 4, 1, 1).data];
     const fBot = [...fctx.getImageData(16, 5 * 32 + 28, 1, 1).data];
-    window.__worldScale.buildTerrainAtlases(ms, new Map());
+    // Restore the session to its BOOT truth: the shipped set alone.
+    window.__worldScale.buildTerrainAtlases(ms, shipped);
     ms.chunkStreamer.repaintAllLayers();
     const restored = readBase(5);
-    return { existed, propsOk, before, after, grassSame: grassBefore.join() === grassAfter.join(), frameOk, fTop, fBot, restoredSame: restored.join() === before.join() };
+    return { existed, propsOk, shippedSheets: shipped.size, before, after, grassSame: grassBefore.join() === grassAfter.join(), frameOk, fTop, fBot, restoredSame: restored.join() === before.join() };
   });
   ok(
-    'art-fallback-chain: procedural boot complete; a one-biome synthetic drop activates ONLY that biome (base + fringe frames); no-art rebuild restores procedural pixels; zero errors',
+    'art-fallback-chain: boot atlases stand (shipped art + procedural fallback); a one-biome synthetic drop over the SHIPPED set activates ONLY that biome (grass keeps its shipped art through the rebuild); the shipped-set rebuild restores boot pixels and the live session; zero errors',
     artChain.existed &&
       artChain.propsOk &&
       artChain.after.join() === '255,136,0,255' &&
