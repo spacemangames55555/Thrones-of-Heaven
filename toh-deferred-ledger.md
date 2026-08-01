@@ -288,3 +288,23 @@ ruling lands, strike the entry with a pointer to the commit that resolved it.
   swamp props stay fenced on their bases; next terrain sessions are the
   released props and the remaining biome bases (desert, swamp, savanna,
   beach, tundra + the animated water pair).
+- ART SESSION 3 (pnw props, 2026-08-01): SIX PROPS LANDED on Casey
+  approve-all - tree-fir-a/b, tree-broad-a/b (48x64), boulder-a/b
+  (32x32), prompt-only under the terrain lock via create_map_object
+  (props are a new asset SHAPE, not a technique change - the
+  terrain-prop locks entry is a shares-lock ALIAS of the approved
+  terrain lock, and the prop recipe is a docs ADDENDUM, not a lock
+  amendment). PROP ACCEPTANCE BANDS shipped (hue family, opacity ratio,
+  edge/anchor rules, variant INVERSION: tonal spread <= 48 with
+  silhouette IoU <= 0.85 - tiles interchangeable, props varied; pair
+  IoUs 0.62-0.77). fir-a and boulder-a are best-of-two staged with
+  honest numbers and RECLASSIFIED BY VERDICT as intentional variety
+  assets - NO regeneration debt, deliberately absent from any polish
+  ledger. VOCABULARY: "moss flecks" browned a gray boulder (hue drift
+  from color modifiers - plain material words first); prior list
+  (blade, needle/litter) stands. SPEND: 8 generations (6 + 2 retries);
+  running total 249 of 2000, $0.00 credits. REMAINING TERRAIN ART:
+  desert/swamp/savanna/beach/tundra bases, the animated water pair
+  (ocean/freshwater - anim-cell shimmer recipe), fenced desert/swamp
+  props, and the waystone prop (HERO OBJECT - reserved for its own
+  mini bake-off by explicit ruling).
