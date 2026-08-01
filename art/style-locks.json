@@ -1,6 +1,13 @@
 {
   "_readme": "STYLE REGISTRY (Pass 8): category -> the HUMAN-APPROVED reference asset + palette constraints from its governing brief. No entry => npm run art:batch REFUSES the category. Locks are created by humans only: generate candidates, Casey approves ONE on-device, record it here. TECHNIQUE IS PART OF THE LOCK (Casey ruling, Art Session 2): any technique change (conditioning images, model/mode swap) is a lock AMENDMENT - its own bake-off, Casey approval, same ceremony as a new lock. See docs/art-pipeline.md.",
   "locks": {
+    "terrain-prop": {
+      "technique": "prompt-only",
+      "sharesLock": "terrain-sheet",
+      "note": "Props are a new asset SHAPE under the SAME approved terrain lock (Casey ruling, Art Session 3) - NOT a separate approval and NOT a technique change. Prop recipe addendum lives in docs/art-pipeline.md.",
+      "reference": "art/references/terrain-grass-d.png",
+      "referenceRole": "verification-target: judged against, never generated from"
+    },
     "terrain-sheet": {
       "technique": "prompt-only",
       "techniqueNote": "NO conditioning images on any call (Casey ruling, Art Session 2: the approved lock was created prompt-only - that IS its mechanical definition; style-image conditioning was rejected after the first pnw set leaked the grass palette into snow).",

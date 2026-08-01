@@ -7536,7 +7536,7 @@
         "path": "public/art/terrain/props/boulder-a.png",
         "brief": "toh-terrain-art-brief.md"
       },
-      "status": "fallback"
+      "status": "live"
     },
     {
       "id": "prop-boulder-b",
@@ -7548,7 +7548,7 @@
         "path": "public/art/terrain/props/boulder-b.png",
         "brief": "toh-terrain-art-brief.md"
       },
-      "status": "fallback"
+      "status": "live"
     },
     {
       "id": "prop-cactus-a",
@@ -7620,7 +7620,7 @@
         "path": "public/art/terrain/props/tree-broad-a.png",
         "brief": "toh-terrain-art-brief.md"
       },
-      "status": "fallback"
+      "status": "live"
     },
     {
       "id": "prop-tree-broad-b",
@@ -7632,7 +7632,7 @@
         "path": "public/art/terrain/props/tree-broad-b.png",
         "brief": "toh-terrain-art-brief.md"
       },
-      "status": "fallback"
+      "status": "live"
     },
     {
       "id": "prop-tree-fir-a",
@@ -7644,7 +7644,7 @@
         "path": "public/art/terrain/props/tree-fir-a.png",
         "brief": "toh-terrain-art-brief.md"
       },
-      "status": "fallback"
+      "status": "live"
     },
     {
       "id": "prop-tree-fir-b",
@@ -7656,7 +7656,7 @@
         "path": "public/art/terrain/props/tree-fir-b.png",
         "brief": "toh-terrain-art-brief.md"
       },
-      "status": "fallback"
+      "status": "live"
     },
     {
       "id": "prop-waystone",

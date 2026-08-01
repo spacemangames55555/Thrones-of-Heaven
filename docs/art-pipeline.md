@@ -64,3 +64,31 @@ reach contract paths — traversal fixtures) · `style-lock-required` ·
 `fence-respected` (a blocked id never generates) · `lint-wired` (bad staged
 asset excluded + reported) · `secret-hygiene` (repo scan, pattern set stated
 in the check) · `manifest-sync` re-run at the suite tail.
+
+## Prop recipe (addendum, Art Session 3 — a new SHAPE, not a new technique)
+
+Props run **prompt-only under the terrain lock** (`terrain-prop` in
+`art/style-locks.json` shares the terrain-sheet lock — an alias, not a
+separate approval). Generation: `create_map_object`, basic mode, exact
+contract canvas from PROP_TABLE, high top-down, selective outline, medium
+shading; single object, bottom-center anchored, transparent background,
+"no shadow on the ground" in every prompt.
+
+Acceptance bands (checked BEFORE staging): opaque-mean color in the
+assigned hue family · opacity ratio (trees 25–60% of canvas, boulders
+35–75%) · top/left/right 1px borders fully transparent, bottom contact
+only in the center third (the anchor must read) · VARIANT INVERSION for
+a/b pairs — same species and tonal family (opaque-mean spread ≤ 48) but
+different silhouettes (IoU ≤ 0.85). Tiles want interchangeable; props
+want recognizably varied.
+
+**Correction discipline** (Casey ruling): max 2 attempts per asset per
+round under the round's spend cap; still out of band ⇒ stage BEST-OF with
+honest numbers and let the verdict decide — never burn spend chasing a
+band. A verdict may reclassify a best-of as an intentional variety asset
+(fir-a and boulder-a are the precedent: approved as-is, no regeneration
+debt, no polish-ledger entry). Prompt-vocabulary lessons carry in the
+ledger: weapon homonyms (blade) and "needle"/"litter" trip the policy
+filter uncharged; color modifiers can drift hue ("moss flecks" browned a
+gray boulder — prefer plain material words, add accents only after the
+base reads right).
