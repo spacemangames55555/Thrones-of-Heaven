@@ -1,4 +1,17 @@
 {
   "_readme": "STYLE REGISTRY (Pass 8): category -> the HUMAN-APPROVED reference asset + palette constraints from its governing brief. No entry => npm run art:batch REFUSES the category. Locks are created by humans only: generate candidates, Casey approves ONE on-device, record it here as { reference, prompt, palette }. See docs/art-pipeline.md.",
-  "locks": {}
+  "locks": {
+    "terrain-sheet": {
+      "reference": "art/references/terrain-grass-d.png",
+      "approved": "Casey verdict D, Art Session 1 (grass bake-off, 2026-08-01)",
+      "pixellab": {
+        "tool": "create_tiles_pro",
+        "tile_id": "7b59daf2-291c-4d7f-86ed-55d3a80aecc2",
+        "seed": 71004,
+        "shape": "square_topdown, 32px, top-down view, segmentation outline mode"
+      },
+      "prompt": "seamless pixel-art ground, vivid natural color around the biome anchor, slightly rich saturation, soft front lighting, crisp tufted texture, interchangeable subtle variants of one ground, no objects, no flowers, no paths",
+      "palette": "anchor the biome color from src/world/terrain-placeholder.ts (grass #5f9e46); roughly 10 colors per tile; mean luminance near 127 so hillshade keeps ~128 headroom"
+    }
+  }
 }

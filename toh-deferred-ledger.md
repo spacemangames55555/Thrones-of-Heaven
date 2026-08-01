@@ -239,3 +239,21 @@ ruling lands, strike the entry with a pointer to the commit that resolved it.
   town tiles have NO drop-in contract - fenced drop-contract-missing;
   adding either contract is its own sanctioned pass, never implied by a
   batch run.
+- ART SESSION 1 (grass bake-off, 2026-08-01): TERRAIN STYLE LOCK LANDED -
+  Casey verdict D (tufted vivid, seed 71004) of four candidates; the lock
+  (art/style-locks.json terrain-sheet) records the PixelLab tile id, seed,
+  prompt, and palette constraints; the reference strip lives at
+  art/references/terrain-grass-d.png. CREDIT SPEND LOG: 80 of 2000
+  subscription generations (4 tiles-pro runs at 20 each; one policy
+  false-positive on the word "blade" was refused UNCHARGED and reworded -
+  note the filter for future prompts). $0.00 credits used. ADAPTER
+  VERIFICATION (owed from Pass 8): both REST endpoint names exist on the
+  live API (401 unauthenticated, not 404); body shapes still get final
+  confirmation on the first authenticated REST batch (this session
+  generated through the MCP tools). backblaze.pixellab.ai (tile storage)
+  is proxy-blocked but unneeded - the api.pixellab.ai download route
+  serves the same files. FRINGE DERIVATION NOTE: candidate sheets carry
+  fringe masks derived mechanically from each candidate's own base art
+  under the brief's geometry rules (12 px dissolve, deterministic dither);
+  hand-authored fringe art remains an upgrade slot per biome.
+  FOREST/ROCK/SNOW/TAIGA batch against this lock next session.
