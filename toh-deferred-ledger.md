@@ -308,3 +308,35 @@ ruling lands, strike the entry with a pointer to the commit that resolved it.
   (ocean/freshwater - anim-cell shimmer recipe), fenced desert/swamp
   props, and the waystone prop (HERO OBJECT - reserved for its own
   mini bake-off by explicit ruling).
+- PASS 9 (flora framework): PROPS DO NOT COLLIDE - the pass brief carried
+  boulders as collides:true "per current behavior"; VERIFICATION SAYS
+  OTHERWISE. Scatter props are pooled Phaser images with no physics body
+  anywhere in the renderer, so nothing scattered has ever blocked movement.
+  FLORA_PROPS ships collides:false on every row (the true behavior) with the
+  field declared for a future sanctioned pass; FLIPPING A ROW TO TRUE IS A
+  BEHAVIOR CHANGE and needs its own ruling plus footprint wiring (the
+  collision-invariance gate proves footprints derive from contract size and
+  never from render scale, so the machinery is ready).
+  VALUE JITTER IS DARKEN-ONLY - a platform fact, not a preference: a Phaser
+  tint MULTIPLIES, so it can darken but never brighten. The value band runs
+  [1-valuePct, 1], leaving every approved anchor as the BRIGHTEST instance of
+  itself. Brightening would need pre-baked lighter textures per prop -
+  PARKED here as its own (art-budget) decision.
+  NEAR-NEUTRAL ANCHORS TAKE VALUE-ONLY JITTER: hue and saturation are
+  numerically ill-conditioned near gray (measured 2.4 deg of hue swing on the
+  boulder anchor vs 0.4 deg on the greens), so anchors below
+  NEUTRAL_ANCHOR_SAT skip saturation jitter entirely - exact hue and
+  saturation preservation, and geology varies least by construction.
+  CLUSTER-NOISE DENSITY MODULATION parked (polish): density is uniform per
+  biome/tier today; clumping (groves, boulder fields) wants a low-frequency
+  noise term multiplying the tier density - additive to the current hash
+  discipline, no migration needed.
+  PER-REGION PALETTE DIVERGENCE owed: BIOME_FLORA is keyed by BIOME, so PNW
+  and Egypt forest would share a palette. Regional divergence (PNW ferns vs
+  an Egyptian understory) needs a region dimension on the palette key -
+  design it when the second region's understory art is queued.
+  ART QUEUE (canopy additions): dead-snag and cedar for the PNW forest/taiga
+  palettes - both are palette rows the day their art passes the bands.
+  DENSITY FEEL TUNING pending Casey's dressed-forest ride: the numbers are
+  the Pass 5 values chosen at 50:1 scale and never re-felt at 1:1 with real
+  art in the frame.

@@ -1,8 +1,14 @@
 import { Biome } from './terrain-schema';
+import { BIOME_FLORA, FLORA_PROPS } from './flora-config';
 
 /**
  * TERRAIN VISUALS CONFIG (Pass 5) — the LOCKED render model for the terrain
  * art pipeline. Art drops swap texture sources; nothing here changes shape.
+ *
+ * PASS 9: the three scatter tables below (PROP_TABLE, SCATTER_PROPS,
+ * SCATTER_DENSITY) are now DERIVED VIEWS of flora-config.ts, which owns the
+ * prop table and the per-biome/per-tier palettes. Their shapes and values
+ * are unchanged — existing consumers read exactly what they always did.
  */
 
 /** Fringe draw priority, LOW → HIGH (higher-priority biomes fringe onto
@@ -27,14 +33,15 @@ export const PRIORITY_RANK: Record<number, number> = Object.fromEntries(TERRAIN_
 export const OVERLAY_MAX_BIOMES = 2;
 export const OVERLAY_MAX_QUADS = 4;
 
-/** Scatter densities per biome (probability per scatter-allowed tile). */
-export const SCATTER_DENSITY: Record<number, number> = {
-  [Biome.FOREST]: 0.3,
-  [Biome.TAIGA]: 0.22,
-  [Biome.SWAMP]: 0.15,
-  [Biome.ROCK]: 0.05,
-  [Biome.DESERT]: 0.03,
-};
+/** Scatter densities per biome (probability per scatter-allowed tile).
+ *  PASS 9: DERIVED from BIOME_FLORA's canopy tier — flora-config.ts is the
+ *  source of truth; this stays as the legacy view every existing consumer
+ *  (terrain sources, the gate's priority lock) already reads. */
+export const SCATTER_DENSITY: Record<number, number> = Object.fromEntries(
+  Object.entries(BIOME_FLORA)
+    .filter(([, tiers]) => tiers.canopy.density > 0)
+    .map(([biome, tiers]) => [Number(biome), tiers.canopy.density]),
+);
 /** Hard pool caps (view-driven pools; culled to the load ring). */
 export const SCATTER_POOL_CAP = 900;
 export const FRINGE_POOL_CAP = 2600;
@@ -152,29 +159,21 @@ export const BIOME_SHEET_NAME: Record<number, string> = {
   [Biome.SWAMP]: 'swamp',
 };
 
-/** Scatter prop drop contract (/public/art/terrain/props/{id}.png, exact px). */
-export const PROP_TABLE: Record<string, { w: number; h: number }> = {
-  'tree-fir-a': { w: 48, h: 64 },
-  'tree-fir-b': { w: 48, h: 64 },
-  'tree-broad-a': { w: 48, h: 64 },
-  'tree-broad-b': { w: 48, h: 64 },
-  'boulder-a': { w: 32, h: 32 },
-  'boulder-b': { w: 32, h: 32 },
-  'cactus-a': { w: 32, h: 48 },
-  'scrub-a': { w: 32, h: 32 },
-  'swamp-tree-a': { w: 48, h: 64 },
-  'swamp-tree-b': { w: 48, h: 64 },
-  waystone: { w: 32, h: 64 },
-};
+/** Scatter prop drop contract (/public/art/terrain/props/{id}.png, exact px).
+ *  PASS 9: DERIVED from FLORA_PROPS (every tier — the drop contract covers
+ *  understory slots too, so their art lints the day it lands). */
+export const PROP_TABLE: Record<string, { w: number; h: number }> = Object.fromEntries(
+  Object.entries(FLORA_PROPS).map(([id, p]) => [id, { w: p.w, h: p.h }]),
+);
 
-/** Which props a scatter roll can pick per biome (hash-indexed, LOCKED order). */
-export const SCATTER_PROPS: Record<number, readonly string[]> = {
-  [Biome.FOREST]: ['tree-broad-a', 'tree-broad-b', 'tree-fir-a'],
-  [Biome.TAIGA]: ['tree-fir-a', 'tree-fir-b'],
-  [Biome.SWAMP]: ['swamp-tree-a', 'swamp-tree-b'],
-  [Biome.ROCK]: ['boulder-a', 'boulder-b'],
-  [Biome.DESERT]: ['cactus-a', 'scrub-a'],
-};
+/** Which props a scatter roll can pick per biome (hash-indexed, LOCKED order).
+ *  PASS 9: DERIVED from BIOME_FLORA's canopy palettes — palette ORDER is the
+ *  locked order (it decides which prop a tile's hash lands on). */
+export const SCATTER_PROPS: Record<number, readonly string[]> = Object.fromEntries(
+  Object.entries(BIOME_FLORA)
+    .filter(([, tiers]) => tiers.canopy.palette.length > 0)
+    .map(([biome, tiers]) => [Number(biome), tiers.canopy.palette.map((e) => e.propId)]),
+);
 
 /** MAP_PALETTE (Pass 6A): the world-map overview colors — CARTOGRAPHIC
  *  (physical-atlas hues modulated by hillshade at bake time), deliberately

@@ -7533,6 +7533,7 @@
         "kind": "prop",
         "w": 32,
         "h": 32,
+        "tier": "canopy",
         "path": "public/art/terrain/props/boulder-a.png",
         "brief": "toh-terrain-art-brief.md"
       },
@@ -7545,6 +7546,7 @@
         "kind": "prop",
         "w": 32,
         "h": 32,
+        "tier": "canopy",
         "path": "public/art/terrain/props/boulder-b.png",
         "brief": "toh-terrain-art-brief.md"
       },
@@ -7557,6 +7559,7 @@
         "kind": "prop",
         "w": 32,
         "h": 48,
+        "tier": "canopy",
         "path": "public/art/terrain/props/cactus-a.png",
         "brief": "toh-terrain-art-brief.md"
       },
@@ -7566,12 +7569,93 @@
       ]
     },
     {
+      "id": "prop-fern-sword-a",
+      "category": "terrain-prop",
+      "spec": {
+        "kind": "prop",
+        "w": 32,
+        "h": 32,
+        "tier": "understory",
+        "path": "public/art/terrain/props/fern-sword-a.png",
+        "brief": "toh-terrain-art-brief.md"
+      },
+      "status": "missing",
+      "blockedBy": [
+        "pnw-understory-palette"
+      ]
+    },
+    {
+      "id": "prop-fern-sword-b",
+      "category": "terrain-prop",
+      "spec": {
+        "kind": "prop",
+        "w": 32,
+        "h": 32,
+        "tier": "understory",
+        "path": "public/art/terrain/props/fern-sword-b.png",
+        "brief": "toh-terrain-art-brief.md"
+      },
+      "status": "missing",
+      "blockedBy": [
+        "pnw-understory-palette"
+      ]
+    },
+    {
+      "id": "prop-log-a",
+      "category": "terrain-prop",
+      "spec": {
+        "kind": "prop",
+        "w": 48,
+        "h": 32,
+        "tier": "understory",
+        "path": "public/art/terrain/props/log-a.png",
+        "brief": "toh-terrain-art-brief.md"
+      },
+      "status": "missing",
+      "blockedBy": [
+        "pnw-understory-palette"
+      ]
+    },
+    {
+      "id": "prop-salal-a",
+      "category": "terrain-prop",
+      "spec": {
+        "kind": "prop",
+        "w": 32,
+        "h": 32,
+        "tier": "understory",
+        "path": "public/art/terrain/props/salal-a.png",
+        "brief": "toh-terrain-art-brief.md"
+      },
+      "status": "missing",
+      "blockedBy": [
+        "pnw-understory-palette"
+      ]
+    },
+    {
+      "id": "prop-sapling-fir-a",
+      "category": "terrain-prop",
+      "spec": {
+        "kind": "prop",
+        "w": 32,
+        "h": 32,
+        "tier": "understory",
+        "path": "public/art/terrain/props/sapling-fir-a.png",
+        "brief": "toh-terrain-art-brief.md"
+      },
+      "status": "missing",
+      "blockedBy": [
+        "pnw-understory-palette"
+      ]
+    },
+    {
       "id": "prop-scrub-a",
       "category": "terrain-prop",
       "spec": {
         "kind": "prop",
         "w": 32,
         "h": 32,
+        "tier": "canopy",
         "path": "public/art/terrain/props/scrub-a.png",
         "brief": "toh-terrain-art-brief.md"
       },
@@ -7581,12 +7665,29 @@
       ]
     },
     {
+      "id": "prop-stump-a",
+      "category": "terrain-prop",
+      "spec": {
+        "kind": "prop",
+        "w": 32,
+        "h": 32,
+        "tier": "understory",
+        "path": "public/art/terrain/props/stump-a.png",
+        "brief": "toh-terrain-art-brief.md"
+      },
+      "status": "missing",
+      "blockedBy": [
+        "pnw-understory-palette"
+      ]
+    },
+    {
       "id": "prop-swamp-tree-a",
       "category": "terrain-prop",
       "spec": {
         "kind": "prop",
         "w": 48,
         "h": 64,
+        "tier": "canopy",
         "path": "public/art/terrain/props/swamp-tree-a.png",
         "brief": "toh-terrain-art-brief.md"
       },
@@ -7602,6 +7703,7 @@
         "kind": "prop",
         "w": 48,
         "h": 64,
+        "tier": "canopy",
         "path": "public/art/terrain/props/swamp-tree-b.png",
         "brief": "toh-terrain-art-brief.md"
       },
@@ -7617,6 +7719,7 @@
         "kind": "prop",
         "w": 48,
         "h": 64,
+        "tier": "canopy",
         "path": "public/art/terrain/props/tree-broad-a.png",
         "brief": "toh-terrain-art-brief.md"
       },
@@ -7629,6 +7732,7 @@
         "kind": "prop",
         "w": 48,
         "h": 64,
+        "tier": "canopy",
         "path": "public/art/terrain/props/tree-broad-b.png",
         "brief": "toh-terrain-art-brief.md"
       },
@@ -7641,6 +7745,7 @@
         "kind": "prop",
         "w": 48,
         "h": 64,
+        "tier": "canopy",
         "path": "public/art/terrain/props/tree-fir-a.png",
         "brief": "toh-terrain-art-brief.md"
       },
@@ -7653,6 +7758,7 @@
         "kind": "prop",
         "w": 48,
         "h": 64,
+        "tier": "canopy",
         "path": "public/art/terrain/props/tree-fir-b.png",
         "brief": "toh-terrain-art-brief.md"
       },
@@ -7665,10 +7771,11 @@
         "kind": "prop",
         "w": 32,
         "h": 64,
+        "tier": "canopy",
         "path": "public/art/terrain/props/waystone.png",
         "brief": "toh-terrain-art-brief.md"
       },
-      "status": "fallback",
+      "status": "missing",
       "blockedBy": [
         "unscattered-prop"
       ]
