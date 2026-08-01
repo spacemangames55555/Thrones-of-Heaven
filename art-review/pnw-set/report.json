@@ -1,0 +1,77 @@
+{
+  "batchId": "pnw-set",
+  "category": "terrain-sheet",
+  "lock": {
+    "reference": "art/references/terrain-grass-d.png",
+    "palette": "anchor the biome color from src/world/terrain-placeholder.ts (grass #5f9e46); roughly 10 colors per tile; mean luminance within 20 percent of the anchor luminance (acceptance band, checked before staging)"
+  },
+  "staged": [
+    {
+      "id": "forest",
+      "kind": "sheet-256x128",
+      "files": [
+        "public/art/terrain/forest.png"
+      ],
+      "paletteSize": 13,
+      "meanLuminance": 76
+    },
+    {
+      "id": "rock",
+      "kind": "sheet-256x128",
+      "files": [
+        "public/art/terrain/rock.png"
+      ],
+      "paletteSize": 13,
+      "meanLuminance": 122
+    },
+    {
+      "id": "snow",
+      "kind": "sheet-256x128",
+      "files": [
+        "public/art/terrain/snow.png"
+      ],
+      "paletteSize": 3,
+      "meanLuminance": 242
+    },
+    {
+      "id": "taiga",
+      "kind": "sheet-256x128",
+      "files": [
+        "public/art/terrain/taiga.png"
+      ],
+      "paletteSize": 7,
+      "meanLuminance": 96
+    }
+  ],
+  "excluded": [
+    {
+      "id": "beach",
+      "reason": "fixture missing"
+    },
+    {
+      "id": "desert",
+      "reason": "fixture missing"
+    },
+    {
+      "id": "freshwater",
+      "reason": "fixture missing"
+    },
+    {
+      "id": "ocean",
+      "reason": "fixture missing"
+    },
+    {
+      "id": "savanna",
+      "reason": "fixture missing"
+    },
+    {
+      "id": "swamp",
+      "reason": "fixture missing"
+    },
+    {
+      "id": "tundra",
+      "reason": "fixture missing"
+    }
+  ],
+  "blockedSkipped": []
+}
