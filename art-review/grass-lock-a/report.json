@@ -1,0 +1,66 @@
+{
+  "batchId": "grass-lock-a",
+  "category": "terrain-sheet",
+  "lock": {
+    "reference": "bootstrap: pixellab tiles-pro seeds 71001-71004 (no approved lock yet)",
+    "palette": null
+  },
+  "staged": [
+    {
+      "id": "grass",
+      "kind": "sheet-256x128",
+      "files": [
+        "public/art/terrain/grass.png"
+      ],
+      "paletteSize": 7,
+      "meanLuminance": 140
+    }
+  ],
+  "excluded": [
+    {
+      "id": "beach",
+      "reason": "fixture missing"
+    },
+    {
+      "id": "desert",
+      "reason": "fixture missing"
+    },
+    {
+      "id": "forest",
+      "reason": "fixture missing"
+    },
+    {
+      "id": "freshwater",
+      "reason": "fixture missing"
+    },
+    {
+      "id": "ocean",
+      "reason": "fixture missing"
+    },
+    {
+      "id": "rock",
+      "reason": "fixture missing"
+    },
+    {
+      "id": "savanna",
+      "reason": "fixture missing"
+    },
+    {
+      "id": "snow",
+      "reason": "fixture missing"
+    },
+    {
+      "id": "swamp",
+      "reason": "fixture missing"
+    },
+    {
+      "id": "taiga",
+      "reason": "fixture missing"
+    },
+    {
+      "id": "tundra",
+      "reason": "fixture missing"
+    }
+  ],
+  "blockedSkipped": []
+}
