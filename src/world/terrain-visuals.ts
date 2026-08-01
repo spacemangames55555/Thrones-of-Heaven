@@ -6,14 +6,13 @@ import {
   FRINGE_POOL_CAP,
   PRIORITY_RANK,
   PROP_TABLE,
-  SCATTER_DENSITY,
   SCATTER_MIN_ZOOM,
   SCATTER_POOL_CAP,
-  SCATTER_PROPS,
   WATER_ANIM_MS,
   selectOverlays,
   type OverlayQuad,
 } from './terrain-visuals-config';
+import { floraFor } from './flora-config';
 import { ATLAS_STRIDE, FRINGE_ATLAS_KEY, propTextureKey } from './terrain-placeholder';
 
 /**
@@ -35,28 +34,17 @@ export interface ChunkVisuals {
   scatter: { i: number; j: number; id: string; ox: number; oy: number }[];
 }
 
-/** Deterministic tile hash (the ONE scatter/offset source — no Math.random). */
-export function tileHash01(tx: number, ty: number, salt: number): number {
-  let h = (Math.imul(tx, 374761393) + Math.imul(ty, 668265263)) ^ salt;
-  h = Math.imul(h ^ (h >>> 13), 1274126177);
-  h ^= h >>> 16;
-  return (h >>> 0) / 4294967296;
-}
+/** Deterministic tile hash — PASS 9: lives in flora-config (the hash
+ *  discipline IS the flora contract); re-exported here for the existing
+ *  call sites and the gate handle. */
+export { tileHash01 } from './flora-config';
 
 /** PURE scatter reference: what (if anything) scatters on a global tile of a
- *  given biome. The streamer's per-chunk lists and the gate's recompute both
- *  call exactly this. Returns null when the roll fails or the biome is bare. */
+ *  given biome. PASS 9: the CANOPY tier of the flora reference — same
+ *  densities, same candidate order, same salts (canopy's tier salt is 0), so
+ *  this is bit-for-bit the Pass 5 result (gate: migration-silence). */
 export function scatterFor(tx: number, ty: number, biome: number): { id: string; ox: number; oy: number } | null {
-  const density = SCATTER_DENSITY[biome];
-  if (!density) return null;
-  if (tileHash01(tx, ty, 0x5ca77e12) >= density) return null;
-  const props = SCATTER_PROPS[biome];
-  const id = props[Math.floor(tileHash01(tx, ty, 0x9e3779b9) * props.length) % props.length];
-  return {
-    id,
-    ox: Math.round((tileHash01(tx, ty, 0x1b873593) - 0.5) * 20),
-    oy: Math.round((tileHash01(tx, ty, 0x85ebca6b) - 0.5) * 20),
-  };
+  return floraFor(tx, ty, biome, 'canopy');
 }
 
 /**

@@ -6,6 +6,7 @@ import * as worldScale from './world/world-scale';
 import * as terrainSchema from './world/terrain-schema';
 import { createProceduralSource, sampleRecord, tileRecord } from './world/terrain-procedural';
 import * as terrainVisualsConfig from './world/terrain-visuals-config';
+import * as floraConfig from './world/flora-config';
 import { scatterFor, tileHash01 } from './world/terrain-visuals';
 import { buildTerrainAtlases, fringeCoverage } from './world/terrain-placeholder';
 import { latLngToMapPx } from './ui/WorldMapScene';
@@ -40,6 +41,9 @@ const game = new Phaser.Game(gameConfig);
   // Pass 5: the LOCKED visuals config + the pure autotile/scatter references
   // (again pure exposure — nothing constructs, v1 stays fully inert).
   visuals: terrainVisualsConfig,
+  // Pass 9: the flora framework (prop table + per-biome/per-tier palettes +
+  // the pure selection/variation references) — pure exposure, same rule.
+  flora: floraConfig,
   scatterFor,
   tileHash01,
   fringeCoverage,

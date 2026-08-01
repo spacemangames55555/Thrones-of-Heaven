@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { TILE_PX } from './world-scale';
 import { FRINGE_CELLS, PROP_TABLE, SHEET_CELL, type FringeCell } from './terrain-visuals-config';
+import { FLORA_PROPS, type SilhouetteClass } from './flora-config';
 
 /**
  * TERRAIN ATLAS BUILDER (Pass 2 placeholder → Pass 5 art pipeline): builds the
@@ -195,20 +196,37 @@ export function propTextureKey(id: string): string {
   return `terrain-prop-${id}`;
 }
 
+/** Fill color per silhouette class (PASS 9: the Pass 5 colors, now keyed by
+ *  the prop's DECLARED class instead of its id prefix — same pixels for
+ *  every shipped id, and a new class is a row here plus a draw case). */
+const SILHOUETTE_FILL: Record<SilhouetteClass, string> = {
+  conifer: '#16351f',
+  broadleaf: '#1e4426',
+  cactus: '#2c5e33',
+  pillar: '#7d8ba8',
+  lump: '#4c4a44',
+  'fern-frond': '#2b5230',
+  'shrub-blob': '#24462a',
+  'log-lump': '#3d3226',
+  stump: '#4a3b2b',
+};
+
 /** Boot-generated silhouettes (dark conifer triangle, broadleaf blob, boulder
  *  lump…) so scatter density is tunable before any art exists. Art prop drops
- *  replace these textures by key, nothing else changes. */
+ *  replace these textures by key, nothing else changes. PASS 9: understory
+ *  classes draw too, but nothing places them until a biome's understory
+ *  palette is populated (every palette ships EMPTY). */
 export function ensurePropPlaceholders(scene: Phaser.Scene): void {
   for (const [id, dim] of Object.entries(PROP_TABLE)) {
     const key = propTextureKey(id);
     if (scene.textures.exists(key)) continue;
+    const cls = FLORA_PROPS[id]?.silhouette ?? 'lump';
     const c = document.createElement('canvas');
     c.width = dim.w;
     c.height = dim.h;
     const ctx = c.getContext('2d')!;
-    ctx.fillStyle =
-      id.startsWith('tree-fir') || id.startsWith('swamp') ? '#16351f' : id.startsWith('tree-broad') ? '#1e4426' : id.startsWith('cactus') ? '#2c5e33' : '#4c4a44';
-    if (id.startsWith('tree-fir') || id.startsWith('swamp')) {
+    ctx.fillStyle = SILHOUETTE_FILL[cls];
+    if (cls === 'conifer') {
       ctx.beginPath();
       ctx.moveTo(dim.w / 2, 2);
       ctx.lineTo(dim.w - 6, dim.h - 10);
@@ -216,17 +234,44 @@ export function ensurePropPlaceholders(scene: Phaser.Scene): void {
       ctx.closePath();
       ctx.fill();
       ctx.fillRect(dim.w / 2 - 3, dim.h - 12, 6, 12);
-    } else if (id.startsWith('tree-broad')) {
+    } else if (cls === 'broadleaf') {
       ctx.beginPath();
       ctx.arc(dim.w / 2, dim.h * 0.38, dim.w * 0.42, 0, Math.PI * 2);
       ctx.fill();
       ctx.fillRect(dim.w / 2 - 3, dim.h * 0.6, 6, dim.h * 0.4);
-    } else if (id.startsWith('cactus')) {
+    } else if (cls === 'cactus') {
       ctx.fillRect(dim.w / 2 - 4, 6, 8, dim.h - 8);
       ctx.fillRect(6, dim.h * 0.35, dim.w - 12, 7);
-    } else if (id === 'waystone') {
-      ctx.fillStyle = '#7d8ba8';
+    } else if (cls === 'pillar') {
       ctx.fillRect(dim.w / 2 - 6, 4, 12, dim.h - 6);
+    } else if (cls === 'fern-frond') {
+      // A low spray of fronds: three arcs fanning from the base.
+      for (const lean of [-0.5, 0, 0.5]) {
+        ctx.beginPath();
+        ctx.moveTo(dim.w / 2, dim.h - 1);
+        ctx.quadraticCurveTo(dim.w / 2 + lean * dim.w * 0.5, dim.h * 0.35, dim.w / 2 + lean * dim.w * 0.46, dim.h * 0.28);
+        ctx.lineTo(dim.w / 2 + lean * dim.w * 0.3, dim.h * 0.5);
+        ctx.closePath();
+        ctx.fill();
+      }
+    } else if (cls === 'shrub-blob') {
+      // A squat two-lobe bush sitting on the ground line.
+      ctx.beginPath();
+      ctx.ellipse(dim.w * 0.4, dim.h * 0.72, dim.w * 0.3, dim.h * 0.26, 0, 0, Math.PI * 2);
+      ctx.ellipse(dim.w * 0.62, dim.h * 0.78, dim.w * 0.26, dim.h * 0.2, 0, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (cls === 'log-lump') {
+      // A fallen trunk lying east-west, with a visible cut end.
+      ctx.fillRect(dim.w * 0.08, dim.h * 0.62, dim.w * 0.84, dim.h * 0.28);
+      ctx.beginPath();
+      ctx.ellipse(dim.w * 0.08, dim.h * 0.76, dim.w * 0.06, dim.h * 0.14, 0, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (cls === 'stump') {
+      // A cut stump: short cylinder plus its top ellipse.
+      ctx.fillRect(dim.w * 0.3, dim.h * 0.6, dim.w * 0.4, dim.h * 0.34);
+      ctx.beginPath();
+      ctx.ellipse(dim.w * 0.5, dim.h * 0.6, dim.w * 0.2, dim.h * 0.1, 0, 0, Math.PI * 2);
+      ctx.fill();
     } else {
       ctx.beginPath();
       ctx.ellipse(dim.w / 2, dim.h * 0.62, dim.w * 0.42, dim.h * 0.34, 0, 0, Math.PI * 2);

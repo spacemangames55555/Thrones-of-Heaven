@@ -58,6 +58,7 @@ const roster = await bundle('src/world/enemy-roster.ts', 'roster');
 const terrain = await bundle('src/world/terrain-visuals-config.ts', 'terrain');
 const skills = await bundle('src/skills/skillData.ts', 'skills', { stubPhaser: true });
 const town = await bundle('src/town/townTiles.ts', 'town');
+const flora = await bundle('src/world/flora-config.ts', 'flora');
 
 const declared = new Map(overrides.SPRITE_OVERRIDES.map((o) => [o.key, o]));
 
@@ -199,17 +200,30 @@ for (const [biome, props] of Object.entries(terrain.SCATTER_PROPS)) {
   for (const p of props) (propBiomes[p] ??= new Set()).add(terrain.BIOME_SHEET_NAME[biome]);
 }
 const sheetLive = (stem) => pngOk(`public/art/terrain/${stem}.png`, { w: 256, h: 128 });
+// PASS 9: understory props are fenced on their TIER PALETTE, not on a base
+// sheet — the slot is declared but nothing can place it until a biome's
+// understory palette carries entries. Release is GROUND-TRUTH derived from
+// BIOME_FLORA (the gate recomputes the same predicate).
+const understoryPopulated = flora.biomesWithTierPalette('understory').length > 0;
 for (const [prop, d] of Object.entries(terrain.PROP_TABLE).sort()) {
+  const def = flora.FLORA_PROPS[prop];
   const scattered = [...(propBiomes[prop] ?? [])];
   const fences = scattered.filter((stem) => !sheetLive(stem)).sort().map((stem) => `${stem}-base-approved`);
   // Unscattered props stay stated; a scattered prop with every fence
   // RELEASED carries no blockedBy at all — it is batchable.
-  const blockedBy = scattered.length === 0 ? ['unscattered-prop'] : fences;
+  let blockedBy;
+  if (def?.tier === 'understory') blockedBy = understoryPopulated ? [] : ['pnw-understory-palette'];
+  else if (scattered.length === 0) blockedBy = ['unscattered-prop'];
+  else blockedBy = fences;
+  // STATUS (derived, never declared): live = art at the contract path;
+  // fallback = a placeholder silhouette actually CARRIES it in the world
+  // (some palette places it); missing = nothing places it at all.
+  const status = pngOk(`public/art/terrain/props/${prop}.png`, d) ? 'live' : scattered.length > 0 ? 'fallback' : 'missing';
   assets.push({
     id: `prop-${prop}`,
     category: 'terrain-prop',
-    spec: { kind: 'prop', w: d.w, h: d.h, path: `public/art/terrain/props/${prop}.png`, brief: 'toh-terrain-art-brief.md' },
-    status: pngOk(`public/art/terrain/props/${prop}.png`, d) ? 'live' : 'fallback',
+    spec: { kind: 'prop', w: d.w, h: d.h, tier: def?.tier ?? 'canopy', path: `public/art/terrain/props/${prop}.png`, brief: 'toh-terrain-art-brief.md' },
+    status,
     ...(blockedBy.length > 0 ? { blockedBy } : {}),
   });
 }

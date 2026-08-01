@@ -665,6 +665,12 @@ const ok = (name, pass, detail = '') => {
     await build({ entryPoints: [new URL('../src/world/terrain-visuals-config.ts', import.meta.url).pathname], bundle: true, format: 'esm', platform: 'node', outfile, logLevel: 'silent' });
     return import(outfile);
   })();
+  const floraCfg = await (async () => {
+    const { build } = await import('esbuild');
+    const outfile = new URL('../node_modules/.cache/toh-flora-fences.mjs', import.meta.url).pathname;
+    await build({ entryPoints: [new URL('../src/world/flora-config.ts', import.meta.url).pathname], bundle: true, format: 'esm', platform: 'node', outfile, logLevel: 'silent' });
+    return import(outfile);
+  })();
   const fencePropBiomes = {};
   for (const [biome, props] of Object.entries(tvCfg.SCATTER_PROPS)) {
     for (const p of props) (fencePropBiomes[p] ??= new Set()).add(tvCfg.BIOME_SHEET_NAME[biome]);
@@ -685,7 +691,15 @@ const ok = (name, pass, detail = '') => {
     if (a.category === 'terrain-prop') {
       const prop = a.id.replace(/^prop-/, '');
       const scattered = [...(fencePropBiomes[prop] ?? [])];
-      const expected = scattered.length === 0 ? ['unscattered-prop'] : scattered.filter((s) => !sheetLiveNow(s)).sort().map((s) => `${s}-base-approved`);
+      // PASS 9: understory rows are fenced on their TIER PALETTE (released
+      // the moment a biome's understory palette carries entries — recomputed
+      // here from BIOME_FLORA, never read from the manifest's own claim).
+      const tier = floraCfg.FLORA_PROPS[prop]?.tier ?? 'canopy';
+      const understoryLive = floraCfg.biomesWithTierPalette('understory').length > 0;
+      let expected;
+      if (tier === 'understory') expected = understoryLive ? [] : ['pnw-understory-palette'];
+      else if (scattered.length === 0) expected = ['unscattered-prop'];
+      else expected = scattered.filter((s) => !sheetLiveNow(s)).sort().map((s) => `${s}-base-approved`);
       if (JSON.stringify([...fences].sort()) !== JSON.stringify(expected.sort())) fenceGaps.push(`${a.id}:expected[${expected}]got[${fences}]`);
     }
   }
@@ -10528,7 +10542,7 @@ try {
     };
   });
   ok(
-    'priority-lock: TERRAIN_PRIORITY order, overlay budget 2/4, densities .30/.22/.15/.05/.03, pool caps 900/2600, 17 fringe cells, contract tables',
+    'priority-lock: TERRAIN_PRIORITY order, overlay budget 2/4, densities .30/.22/.15/.05/.03, pool caps 900/2600, 17 fringe cells, contract tables (17 prop rows: 11 canopy + 6 understory slots)',
     prioLock.seq === '0,1,2,5,4,3,11,8,7,6,9,10' &&
       prioLock.rankOk &&
       prioLock.biomes === 2 &&
@@ -10537,7 +10551,7 @@ try {
       prioLock.caps.join(',') === '900,2600' &&
       prioLock.cells === 17 &&
       prioLock.sheets === 12 &&
-      prioLock.props === 11,
+      prioLock.props === 17,
     JSON.stringify(prioLock),
   );
 
@@ -10755,6 +10769,67 @@ try {
       waterAnim.seen.every((i) => i >= 4 && i <= 6) &&
       waterAnim.cycles > 0,
     JSON.stringify(waterAnim),
+  );
+
+  // 2k0. MIGRATION-SILENCE (PASS 9): the flora refactor must be INVISIBLE.
+  // A FROZEN copy of the Pass 5 algorithm — its literal salts, its uniform
+  // `props[floor(h*n) % n]` pick, its offset math, reading the same shipped
+  // tables — is recomputed against the LIVE path over 5,000 tiles spread
+  // across every scatter biome. Byte-equal ids AND offsets, or red.
+  const migrationSilence = await page.evaluate(() => {
+    const ws = window.__worldScale;
+    const v = ws.visuals;
+    // ── FROZEN Pass 5 reference (do not "fix" — it is the old truth) ──────
+    const h01 = (tx, ty, salt) => {
+      let h = (Math.imul(tx, 374761393) + Math.imul(ty, 668265263)) ^ salt;
+      h = Math.imul(h ^ (h >>> 13), 1274126177);
+      h ^= h >>> 16;
+      return (h >>> 0) / 4294967296;
+    };
+    const pass5ScatterFor = (tx, ty, biome) => {
+      const density = v.SCATTER_DENSITY[biome];
+      if (!density) return null;
+      if (h01(tx, ty, 0x5ca77e12) >= density) return null;
+      const props = v.SCATTER_PROPS[biome];
+      const id = props[Math.floor(h01(tx, ty, 0x9e3779b9) * props.length) % props.length];
+      return { id, ox: Math.round((h01(tx, ty, 0x1b873593) - 0.5) * 20), oy: Math.round((h01(tx, ty, 0x85ebca6b) - 0.5) * 20) };
+    };
+    // 1,000 tiles per scatter biome (5,000 total), plus every non-scatter
+    // biome sampled to prove they still grow nothing.
+    const scatterBiomes = Object.keys(v.SCATTER_DENSITY).map(Number);
+    const diffs = [];
+    let checked = 0;
+    let planted = 0;
+    for (const biome of scatterBiomes) {
+      for (let k = 0; k < 1000; k++) {
+        const tx = 310000 + k * 7 + biome * 13;
+        const ty = 190000 + k * 11 + biome * 29;
+        const want = pass5ScatterFor(tx, ty, biome);
+        const got = ws.scatterFor(tx, ty, biome);
+        checked++;
+        if (want) planted++;
+        if (JSON.stringify(want) !== JSON.stringify(got)) diffs.push({ biome, tx, ty, want, got });
+      }
+    }
+    let bareGrew = 0;
+    for (let biome = 0; biome < 12; biome++) {
+      if (scatterBiomes.includes(biome)) continue;
+      for (let k = 0; k < 200; k++) if (ws.scatterFor(410000 + k, 220000 + k * 3, biome)) bareGrew++;
+    }
+    // The derived legacy views must still equal the shipped Pass 5 tables.
+    const tablesOk =
+      JSON.stringify(v.SCATTER_DENSITY) === JSON.stringify({ 5: 0.03, 6: 0.3, 7: 0.22, 10: 0.05, 11: 0.15 }) &&
+      JSON.stringify(v.SCATTER_PROPS[6]) === JSON.stringify(['tree-broad-a', 'tree-broad-b', 'tree-fir-a']) &&
+      JSON.stringify(v.SCATTER_PROPS[7]) === JSON.stringify(['tree-fir-a', 'tree-fir-b']) &&
+      JSON.stringify(v.SCATTER_PROPS[11]) === JSON.stringify(['swamp-tree-a', 'swamp-tree-b']) &&
+      JSON.stringify(v.SCATTER_PROPS[10]) === JSON.stringify(['boulder-a', 'boulder-b']) &&
+      JSON.stringify(v.SCATTER_PROPS[5]) === JSON.stringify(['cactus-a', 'scrub-a']);
+    return { checked, planted, diffs: diffs.slice(0, 5), diffCount: diffs.length, bareGrew, tablesOk };
+  });
+  ok(
+    'migration-silence: the flora refactor is invisible — 5,000 tiles across every scatter biome plant byte-identically to a FROZEN Pass 5 reference (ids + offsets), bare biomes still grow nothing, derived tables equal the locked values',
+    migrationSilence.checked === 5000 && migrationSilence.planted > 0 && migrationSilence.diffCount === 0 && migrationSilence.bareGrew === 0 && migrationSilence.tablesOk,
+    JSON.stringify(migrationSilence),
   );
 
   // 2j5. scatter-determinism: the pure per-tile hash hits the locked FOREST
