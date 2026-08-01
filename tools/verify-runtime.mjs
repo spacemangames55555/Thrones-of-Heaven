@@ -650,17 +650,44 @@ const ok = (name, pass, detail = '') => {
     JSON.stringify({ status: msRun.status, err: (msRun.stderr || '').slice(0, 160) }),
   );
 
-  // 0f3. MANIFEST FENCES (PASS 8): the REQUIRED blockedBy fences exist on
-  // every row the ledger rules govern — enemy sprites wait on the tint
-  // ruling, animation sheets on the walk framework, and each biome's prop
-  // upgrades on that biome's base approval (unscattered props stated).
+  // 0f3. MANIFEST FENCES (PASS 8, RELEASE RULE Art Session 2): the REQUIRED
+  // blockedBy fences exist on every row the ledger rules govern — enemy
+  // sprites wait on the tint ruling, animation sheets on the walk
+  // framework, and each biome's prop upgrades on that biome's base
+  // approval. A prop fence RELEASES exactly when that biome's sheet is
+  // LIVE at the contract path — the EXPECTED fence list is recomputed here
+  // from SCATTER_PROPS + the on-disk sheets and must match the manifest
+  // exactly (unscattered props stated).
   const mf = JSON.parse(readFileSync('toh-asset-manifest.json', 'utf8')).assets;
+  const tvCfg = await (async () => {
+    const { build } = await import('esbuild');
+    const outfile = new URL('../node_modules/.cache/toh-visuals-config-fences.mjs', import.meta.url).pathname;
+    await build({ entryPoints: [new URL('../src/world/terrain-visuals-config.ts', import.meta.url).pathname], bundle: true, format: 'esm', platform: 'node', outfile, logLevel: 'silent' });
+    return import(outfile);
+  })();
+  const fencePropBiomes = {};
+  for (const [biome, props] of Object.entries(tvCfg.SCATTER_PROPS)) {
+    for (const p of props) (fencePropBiomes[p] ??= new Set()).add(tvCfg.BIOME_SHEET_NAME[biome]);
+  }
+  const sheetLiveNow = (stem) => {
+    try {
+      const png = PNG.sync.read(readFileSync(`public/art/terrain/${stem}.png`));
+      return png.width === 256 && png.height === 128;
+    } catch {
+      return false;
+    }
+  };
   const fenceGaps = [];
   for (const a of mf) {
     const fences = a.blockedBy ?? [];
     if (a.category === 'enemy' && !fences.includes('enemy-tint-ruling')) fenceGaps.push(`${a.id}:no-tint-fence`);
     if (a.category === 'figure-anim' && !fences.includes('walk-framework')) fenceGaps.push(`${a.id}:no-walk-fence`);
-    if (a.category === 'terrain-prop' && !fences.some((f) => f.endsWith('-base-approved') || f === 'unscattered-prop')) fenceGaps.push(`${a.id}:no-base-fence`);
+    if (a.category === 'terrain-prop') {
+      const prop = a.id.replace(/^prop-/, '');
+      const scattered = [...(fencePropBiomes[prop] ?? [])];
+      const expected = scattered.length === 0 ? ['unscattered-prop'] : scattered.filter((s) => !sheetLiveNow(s)).sort().map((s) => `${s}-base-approved`);
+      if (JSON.stringify([...fences].sort()) !== JSON.stringify(expected.sort())) fenceGaps.push(`${a.id}:expected[${expected}]got[${fences}]`);
+    }
   }
   const mfCounts = {
     enemy: mf.filter((a) => a.category === 'enemy').length,

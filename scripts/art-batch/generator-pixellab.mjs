@@ -1,4 +1,30 @@
 import { readFileSync } from 'node:fs';
+import { PNG } from 'pngjs';
+
+/** DRIFT FIX (Art Session 2, live-verified): bitforge requires style_image
+ *  sized EXACTLY to the requested output (HTTP 500 names the mismatch).
+ *  The lock reference (any size — e.g. the 128x32 grass base strip) is
+ *  cropped to its leading square tile and nearest-neighbor resampled to
+ *  the call's output size. NOTE the invocation environment: node fetch
+ *  ignores HTTPS_PROXY — run with NODE_USE_ENV_PROXY=1 (Node >= 22.21)
+ *  and NODE_EXTRA_CA_CERTS pointing at the proxy CA bundle when behind
+ *  an egress proxy (see docs/art-pipeline.md).
+ */
+function styleImageBase64(referencePath, w, h) {
+  const src = PNG.sync.read(readFileSync(referencePath));
+  const side = Math.min(src.width, src.height);
+  const out = new PNG({ width: w, height: h });
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const sx = Math.min(side - 1, Math.floor((x / w) * side));
+      const sy = Math.min(side - 1, Math.floor((y / h) * side));
+      const si = (sy * src.width + sx) * 4;
+      const di = (y * w + x) * 4;
+      for (let c = 0; c < 4; c++) out.data[di + c] = src.data[si + c];
+    }
+  }
+  return PNG.sync.write(out).toString('base64');
+}
 
 /**
  * PIXELLAB GENERATOR ADAPTER (Pass 8) — the ONLY file that talks to the
@@ -31,7 +57,6 @@ async function call(path, body, secret) {
 
 /** Generate one manifest item against the category's locked reference. */
 export async function generatePixellab(item, lock, secret) {
-  const styleImage = readFileSync(lock.reference).toString('base64');
   const prompt = `${lock.prompt ?? ''} ${item.spec.promptHint ?? item.id}`.trim();
   try {
     if (item.spec.kind === 'rotations-8') {
@@ -43,7 +68,7 @@ export async function generatePixellab(item, lock, secret) {
         frames[d] = await call('generate-image-bitforge', {
           description: `${prompt}, facing ${d}`,
           image_size: { width: 128, height: 128 }, // master; the drop pipeline auto-fits
-          style_image: { type: 'base64', base64: styleImage },
+          style_image: { type: 'base64', base64: styleImageBase64(lock.reference, 128, 128) },
           no_background: true,
         }, secret);
       }
@@ -53,7 +78,7 @@ export async function generatePixellab(item, lock, secret) {
     const image = await call('generate-image-bitforge', {
       description: prompt,
       image_size: size,
-      style_image: { type: 'base64', base64: styleImage },
+      style_image: { type: 'base64', base64: styleImageBase64(lock.reference, size.width, size.height) },
       no_background: item.spec.kind !== 'sheet-256x128',
     }, secret);
     return { image };
