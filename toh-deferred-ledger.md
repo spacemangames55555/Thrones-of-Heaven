@@ -257,3 +257,34 @@ ruling lands, strike the entry with a pointer to the commit that resolved it.
   under the brief's geometry rules (12 px dissolve, deterministic dither);
   hand-authored fringe art remains an upgrade slot per biome.
   FOREST/ROCK/SNOW/TAIGA batch against this lock next session.
+- ART SESSION 2 (pnw terrain batch, 2026-08-01): FOREST/ROCK/SNOW/TAIGA.
+  ADAPTER VERIFICATION CLOSED on the first authenticated REST call - two
+  named drifts fixed in generator-pixellab.mjs: (1) node fetch bypasses
+  the egress proxy (invocation env NODE_USE_ENV_PROXY=1 + CA bundle, per
+  the proxy README - documented in the adapter and pipeline doc); (2)
+  bitforge requires style_image sized EXACTLY to the output - the adapter
+  crops the lock reference to its leading square and nearest-neighbor
+  resamples per call. LOCK SEMANTICS AMENDMENT (Casey ruling): technique
+  is PART of the lock - the terrain lock is prompt-only by mechanical
+  definition; conditioning images were an unvalidated technique change.
+  FIRST SET REJECTED (all four): style-image conditioning leaked the
+  grass palette (snow rendered GREEN, sat evidence in the rows) and
+  crushed brightness. Rejected advisory rows for the record: forest
+  palette 29 lum 58 - rock palette 5 lum 64 - snow palette 4 lum 83
+  (green) - taiga palette 26 lum 28. RERUN (authorized round, prompt-only)
+  passed the NEW ACCEPTANCE BANDS (lum within 20 percent of anchor, hue
+  family, snow near-neutral, inter-variant spread <= 48) on attempt one
+  for all four: forest lum 75.7 spread 12.6 - rock lum 122.0 spread 39.5
+  - snow lum 240 sat 0.04 spread 7.7 - taiga lum 96.6 spread 1.8.
+  PROMPT-VOCABULARY UPDATE: "needle" JOINS the false-positive list
+  (charged nothing, but "needle litter" was policy-refused like session
+  1's "blade") - safe words now tuft/stalk/strand/facet/sprig.
+  CREDIT SPEND: attempt-1 reruns 80 generations + first (rejected) set 80
+  + REST verification probe 1 = session total 161; running total 241 of
+  2000 ($0.00 credits). Two policy refusals uncharged.
+  VERDICT: APPROVE ALL FOUR (Casey). Fences RELEASED by ground truth
+  (manifest builder + fence gate both derive release from live sheets):
+  boulder-a/b, tree-broad-a/b, tree-fir-a/b now batchable; desert and
+  swamp props stay fenced on their bases; next terrain sessions are the
+  released props and the remaining biome bases (desert, swamp, savanna,
+  beach, tundra + the animated water pair).

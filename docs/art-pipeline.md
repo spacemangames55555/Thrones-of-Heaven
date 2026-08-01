@@ -34,6 +34,15 @@ discipline, and hygiene.
    `{ "locks": { "<category>": { "reference": "path/to/approved.png",
    "prompt": "shared style words", "palette": "constraints from the brief" } } }`
    No lock ⇒ `art:batch` REFUSES the category.
+   **TECHNIQUE IS PART OF THE LOCK** (Casey ruling, Art Session 2): the
+   lock's `technique` field records HOW the approved asset was made
+   (e.g. `prompt-only`), and every batch call uses exactly that technique.
+   Any technique change — conditioning/style images, a model or mode swap —
+   is a **lock amendment**: its own bake-off, Casey's on-device approval,
+   the same ceremony as a new lock. The lock's `reference` is a
+   **verification-target** — candidates are judged against it, never
+   generated from it (the first PNW set leaked the grass palette into a
+   green "snow" by feeding it as a style image; rejected).
 3. `npm run art:batch -- --category X --limit N` (N ≤ 12): generates each
    unblocked missing/fallback item with the locked reference attached,
    converts (existing converter where applicable), lints, and stages under

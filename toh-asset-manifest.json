@@ -7536,10 +7536,7 @@
         "path": "public/art/terrain/props/boulder-a.png",
         "brief": "toh-terrain-art-brief.md"
       },
-      "status": "fallback",
-      "blockedBy": [
-        "rock-base-approved"
-      ]
+      "status": "fallback"
     },
     {
       "id": "prop-boulder-b",
@@ -7551,10 +7548,7 @@
         "path": "public/art/terrain/props/boulder-b.png",
         "brief": "toh-terrain-art-brief.md"
       },
-      "status": "fallback",
-      "blockedBy": [
-        "rock-base-approved"
-      ]
+      "status": "fallback"
     },
     {
       "id": "prop-cactus-a",
@@ -7626,10 +7620,7 @@
         "path": "public/art/terrain/props/tree-broad-a.png",
         "brief": "toh-terrain-art-brief.md"
       },
-      "status": "fallback",
-      "blockedBy": [
-        "forest-base-approved"
-      ]
+      "status": "fallback"
     },
     {
       "id": "prop-tree-broad-b",
@@ -7641,10 +7632,7 @@
         "path": "public/art/terrain/props/tree-broad-b.png",
         "brief": "toh-terrain-art-brief.md"
       },
-      "status": "fallback",
-      "blockedBy": [
-        "forest-base-approved"
-      ]
+      "status": "fallback"
     },
     {
       "id": "prop-tree-fir-a",
@@ -7656,11 +7644,7 @@
         "path": "public/art/terrain/props/tree-fir-a.png",
         "brief": "toh-terrain-art-brief.md"
       },
-      "status": "fallback",
-      "blockedBy": [
-        "forest-base-approved",
-        "taiga-base-approved"
-      ]
+      "status": "fallback"
     },
     {
       "id": "prop-tree-fir-b",
@@ -7672,10 +7656,7 @@
         "path": "public/art/terrain/props/tree-fir-b.png",
         "brief": "toh-terrain-art-brief.md"
       },
-      "status": "fallback",
-      "blockedBy": [
-        "taiga-base-approved"
-      ]
+      "status": "fallback"
     },
     {
       "id": "prop-waystone",
@@ -7729,7 +7710,7 @@
         "brief": "toh-terrain-art-brief.md",
         "biome": 6
       },
-      "status": "fallback"
+      "status": "live"
     },
     {
       "id": "freshwater",
@@ -7781,7 +7762,7 @@
         "brief": "toh-terrain-art-brief.md",
         "biome": 10
       },
-      "status": "fallback"
+      "status": "live"
     },
     {
       "id": "savanna",
@@ -7807,7 +7788,7 @@
         "brief": "toh-terrain-art-brief.md",
         "biome": 9
       },
-      "status": "fallback"
+      "status": "live"
     },
     {
       "id": "swamp",
@@ -7833,7 +7814,7 @@
         "brief": "toh-terrain-art-brief.md",
         "biome": 7
       },
-      "status": "fallback"
+      "status": "live"
     },
     {
       "id": "tundra",

@@ -190,19 +190,27 @@ for (const [biome, stem] of Object.entries(terrain.BIOME_SHEET_NAME).sort((a, b)
 }
 
 // 7. TERRAIN PROPS — each prop upgrade is fenced on EVERY biome that scatters
-// it having its base sheet approved ({stem}-base-approved).
+// it having its base sheet approved ({stem}-base-approved). A fence RELEASES
+// when that biome's sheet is LIVE at the contract path (an approved base is
+// ground truth on disk — Art Session 2 ruling: fences release for approved
+// biomes only; a prop with every fence released becomes batchable).
 const propBiomes = {};
 for (const [biome, props] of Object.entries(terrain.SCATTER_PROPS)) {
   for (const p of props) (propBiomes[p] ??= new Set()).add(terrain.BIOME_SHEET_NAME[biome]);
 }
+const sheetLive = (stem) => pngOk(`public/art/terrain/${stem}.png`, { w: 256, h: 128 });
 for (const [prop, d] of Object.entries(terrain.PROP_TABLE).sort()) {
-  const fences = [...(propBiomes[prop] ?? [])].sort().map((stem) => `${stem}-base-approved`);
+  const scattered = [...(propBiomes[prop] ?? [])];
+  const fences = scattered.filter((stem) => !sheetLive(stem)).sort().map((stem) => `${stem}-base-approved`);
+  // Unscattered props stay stated; a scattered prop with every fence
+  // RELEASED carries no blockedBy at all — it is batchable.
+  const blockedBy = scattered.length === 0 ? ['unscattered-prop'] : fences;
   assets.push({
     id: `prop-${prop}`,
     category: 'terrain-prop',
     spec: { kind: 'prop', w: d.w, h: d.h, path: `public/art/terrain/props/${prop}.png`, brief: 'toh-terrain-art-brief.md' },
     status: pngOk(`public/art/terrain/props/${prop}.png`, d) ? 'live' : 'fallback',
-    blockedBy: fences.length > 0 ? fences : ['unscattered-prop'],
+    ...(blockedBy.length > 0 ? { blockedBy } : {}),
   });
 }
 
