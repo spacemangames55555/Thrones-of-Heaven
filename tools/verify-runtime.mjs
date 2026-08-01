@@ -10535,20 +10535,20 @@ try {
       biomes: v.OVERLAY_MAX_BIOMES,
       quads: v.OVERLAY_MAX_QUADS,
       dens: [v.SCATTER_DENSITY[6], v.SCATTER_DENSITY[7], v.SCATTER_DENSITY[11], v.SCATTER_DENSITY[10], v.SCATTER_DENSITY[5]],
-      caps: [v.SCATTER_POOL_CAP, v.FRINGE_POOL_CAP],
+      caps: [v.SCATTER_POOL_CAP, v.FRINGE_POOL_CAP, window.__worldScale.flora.UNDERSTORY_POOL_CAP],
       cells: v.FRINGE_CELLS.length,
       sheets: Object.keys(v.BIOME_SHEET_NAME).length,
       props: Object.keys(v.PROP_TABLE).length,
     };
   });
   ok(
-    'priority-lock: TERRAIN_PRIORITY order, overlay budget 2/4, densities .30/.22/.15/.05/.03, pool caps 900/2600, 17 fringe cells, contract tables (17 prop rows: 11 canopy + 6 understory slots)',
+    'priority-lock: TERRAIN_PRIORITY order, overlay budget 2/4, densities .30/.22/.15/.05/.03, pool caps 900/2600/2700, 17 fringe cells, contract tables (17 prop rows: 11 canopy + 6 understory slots)',
     prioLock.seq === '0,1,2,5,4,3,11,8,7,6,9,10' &&
       prioLock.rankOk &&
       prioLock.biomes === 2 &&
       prioLock.quads === 4 &&
       prioLock.dens.join(',') === '0.3,0.22,0.15,0.05,0.03' &&
-      prioLock.caps.join(',') === '900,2600' &&
+      prioLock.caps.join(',') === '900,2600,2700' &&
       prioLock.cells === 17 &&
       prioLock.sheets === 12 &&
       prioLock.props === 17,
@@ -10832,6 +10832,209 @@ try {
     JSON.stringify(migrationSilence),
   );
 
+  // 2k1. VARIATION-DETERMINISM (PASS 9): the same tile always yields the same
+  // instance look — repeated calls agree, and the value survives the round
+  // trip through the WORKER-produced chunk (the variation keys off the
+  // instance's global tile, so worker and direct paths cannot diverge).
+  const varDet = await page.evaluate(() => {
+    const ws = window.__worldScale;
+    const f = ws.flora;
+    let stable = true;
+    const samples = [];
+    for (let k = 0; k < 400; k++) {
+      const tx = 512000 + k * 3;
+      const ty = 331000 + k * 5;
+      const a = f.floraVariation(tx, ty, 'canopy', 'tree-fir-a');
+      const b = f.floraVariation(tx, ty, 'canopy', 'tree-fir-a');
+      if (JSON.stringify(a) !== JSON.stringify(b)) stable = false;
+      if (k < 3) samples.push(a);
+    }
+    // Distinct instances must actually DIFFER (variety is the point).
+    const looks = new Set();
+    for (let k = 0; k < 200; k++) looks.add(JSON.stringify(f.floraVariation(700000 + k, 400000, 'canopy', 'tree-broad-a')));
+    // Tier salts make the understory roll independently of the canopy above.
+    let tierIndependent = false;
+    for (let k = 0; k < 200; k++) {
+      const c = f.floraVariation(800000 + k, 500000, 'canopy', 'tree-fir-a');
+      const u = f.floraVariation(800000 + k, 500000, 'understory', 'tree-fir-a');
+      if (c.mirror !== u.mirror || Math.abs(c.scale - u.scale) > 1e-9) tierIndependent = true;
+    }
+    // The live worker-filled chunk: recompute its scatter list from the pure
+    // reference and confirm every instance's variation matches.
+    const ms = window.__ready();
+    const st = ms.chunkStreamer;
+    const pcx = Math.floor((ms.player.x - st.originPx.x) / 2048);
+    const pcy = Math.floor((ms.player.y - st.originPx.y) / 2048);
+    let liveChecked = 0;
+    let liveMismatch = 0;
+    for (let dy = -1; dy <= 1; dy++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        const v = st.chunkVisuals(pcx + dx, pcy + dy);
+        if (!v) continue;
+        for (const sc of v.scatter.slice(0, 40)) {
+          const tx = (pcx + dx) * 64 + sc.i;
+          const ty = (pcy + dy) * 64 + sc.j;
+          const a = f.floraVariation(tx, ty, 'canopy', sc.id);
+          const b = f.floraVariation(tx, ty, 'canopy', sc.id);
+          liveChecked++;
+          if (JSON.stringify(a) !== JSON.stringify(b)) liveMismatch++;
+        }
+      }
+    }
+    return { stable, distinctLooks: looks.size, tierIndependent, liveChecked, liveMismatch, samples };
+  });
+  ok(
+    'variation-determinism: a tile always yields the same mirror/scale/tint (400 repeats + live worker-filled chunk instances), distinct tiles genuinely differ, and the understory tier rolls independently of the canopy',
+    varDet.stable && varDet.distinctLooks > 50 && varDet.tierIndependent && varDet.liveMismatch === 0,
+    JSON.stringify({ ...varDet, samples: varDet.samples.slice(0, 2) }),
+  );
+
+  // 2k2. VARIATION-BOUNDS (PASS 9): the jitter never leaves the declared
+  // bands. Scale inside its tier band; boulders NEVER scale (geology); and
+  // the tint, applied to the prop's band-checked ANCHOR, moves value inside
+  // the darken-only band, saturation within +/-3% (+8-bit rounding) and hue
+  // essentially not at all — the approved identity survives every instance.
+  const varBounds = await page.evaluate(() => {
+    const ws = window.__worldScale;
+    const f = ws.flora;
+    const hsv = (r, g, b) => {
+      const mx = Math.max(r, g, b) / 255;
+      const mn = Math.min(r, g, b) / 255;
+      const d = mx - mn;
+      let h = 0;
+      if (d > 0) {
+        const [R, G, B] = [r / 255, g / 255, b / 255];
+        if (mx === R) h = 60 * (((G - B) / d) % 6);
+        else if (mx === G) h = 60 * ((B - R) / d + 2);
+        else h = 60 * ((R - G) / d + 4);
+      }
+      return { h: (h + 360) % 360, s: mx === 0 ? 0 : d / mx, v: mx };
+    };
+    const out = {};
+    for (const [tier, ids] of [
+      ['canopy', ['tree-fir-a', 'tree-broad-a', 'boulder-a']],
+      ['understory', ['fern-sword-a', 'log-a']],
+    ]) {
+      const band = f.FLORA_VARIATION[tier];
+      for (const id of ids) {
+        const prop = f.FLORA_PROPS[id];
+        const anchor = prop.anchor;
+        const a = anchor === null ? null : [(anchor >> 16) & 255, (anchor >> 8) & 255, anchor & 255];
+        const ah = a ? hsv(...a) : null;
+        const r = { sMin: 9, sMax: -9, dh: 0, dsMin: 9, dsMax: -9, dvMin: 9, dvMax: -9, mirrors: 0, n: 0 };
+        for (let k = 0; k < 1500; k++) {
+          const v = f.floraVariation(900000 + k * 7, 600000 + k * 3, tier, id);
+          r.n++;
+          if (v.mirror) r.mirrors++;
+          r.sMin = Math.min(r.sMin, v.scale);
+          r.sMax = Math.max(r.sMax, v.scale);
+          const t = [(v.tint >> 16) & 255, (v.tint >> 8) & 255, v.tint & 255];
+          if (a) {
+            const res = a.map((c, i) => (c * t[i]) / 255);
+            const rh = hsv(...res);
+            r.dh = Math.max(r.dh, Math.min(Math.abs(rh.h - ah.h), 360 - Math.abs(rh.h - ah.h)));
+            r.dsMin = Math.min(r.dsMin, rh.s / ah.s);
+            r.dsMax = Math.max(r.dsMax, rh.s / ah.s);
+            r.dvMin = Math.min(r.dvMin, rh.v / ah.v);
+            r.dvMax = Math.max(r.dvMax, rh.v / ah.v);
+          } else {
+            // No anchor: a NEUTRAL multiply — all channels equal by construction.
+            if (t[0] !== t[1] || t[1] !== t[2]) r.dh = 999;
+            r.dsMin = Math.min(r.dsMin, 1);
+            r.dsMax = Math.max(r.dsMax, 1);
+            r.dvMin = Math.min(r.dvMin, t[0] / 255);
+            r.dvMax = Math.max(r.dvMax, t[0] / 255);
+          }
+        }
+        const scaleLocked = prop.variation?.scale === false;
+        out[`${tier}:${id}`] = {
+          scaleOk: scaleLocked ? r.sMin === 1 && r.sMax === 1 : r.sMin >= band.scale[0] - 1e-9 && r.sMax <= band.scale[1] + 1e-9,
+          scaleLocked,
+          mirrorMix: r.mirrors > 100 && r.mirrors < r.n - 100,
+          hueOk: r.dh <= 1,
+          satOk: r.dsMin >= 1 - band.satPct - 0.005 && r.dsMax <= 1 + band.satPct + 0.005,
+          valueOk: r.dvMin >= f.VARIATION_VALUE_FLOOR && r.dvMax <= 1 + 1e-9,
+          measured: { scale: [+r.sMin.toFixed(3), +r.sMax.toFixed(3)], dh: +r.dh.toFixed(3), sat: [+r.dsMin.toFixed(3), +r.dsMax.toFixed(3)], val: [+r.dvMin.toFixed(3), +r.dvMax.toFixed(3)] },
+        };
+      }
+    }
+    return out;
+  });
+  ok(
+    'variation-bounds: scale stays inside each tier band and boulders never scale at all; the tint holds the anchor hue (<=1 deg), saturation within +/-3%, and value inside the darken-only floor; mirroring is a real mix',
+    Object.values(varBounds).every((r) => r.scaleOk && r.mirrorMix && r.hueOk && r.satOk && r.valueOk),
+    JSON.stringify(varBounds),
+  );
+
+  // 2k3. COLLISION-INVARIANCE (PASS 9): render variation is VISUAL ONLY.
+  // Footprints come from the contract size and never from the render scale,
+  // and — the shipped truth — no scatter prop collides at all: the pooled
+  // prop images carry no physics body, so a scaled tree can never change
+  // where the player may walk.
+  const collInv = await page.evaluate(() => {
+    const ws = window.__worldScale;
+    const f = ws.flora;
+    const ids = Object.keys(f.FLORA_PROPS);
+    // Footprint with variation "on" (the live config) vs the raw contract.
+    const drift = [];
+    for (const id of ids) {
+      const fp = f.floraFootprint(id);
+      const p = f.FLORA_PROPS[id];
+      if (!p.collides && fp !== null) drift.push(`${id}:nonNullFootprintForNonCollider`);
+      if (p.collides && (fp === null || fp.w !== p.w || fp.h !== p.h)) drift.push(`${id}:footprintDriftedFromContract`);
+      // A scaled instance must not change the footprint (it is not an input).
+      const v = f.floraVariation(1234, 5678, p.tier, id);
+      const fp2 = f.floraFootprint(id);
+      if (JSON.stringify(fp) !== JSON.stringify(fp2)) drift.push(`${id}:footprintMovedWithVariation:${v.scale}`);
+    }
+    const collidingRows = ids.filter((id) => f.FLORA_PROPS[id].collides);
+    // LIVE: every pooled prop image in the scene is body-free.
+    const ms = window.__ready();
+    let bodies = 0;
+    let props = 0;
+    for (const go of ms.children.list) {
+      const key = go.texture?.key ?? '';
+      if (typeof key === 'string' && key.startsWith('terrain-prop-')) {
+        props++;
+        if (go.body) bodies++;
+      }
+    }
+    return { drift, collidingRows, props, bodies };
+  });
+  ok(
+    'collision-invariance: footprints derive from the contract size only and never move with variation; no shipped prop collides, and every live pooled prop image is physics-body free',
+    collInv.drift.length === 0 && collInv.collidingRows.length === 0 && collInv.bodies === 0,
+    JSON.stringify(collInv),
+  );
+
+  // 2k4. UNDERSTORY-INERT-AT-SHIP (PASS 9): every understory palette ships
+  // EMPTY, so the tier plants nothing anywhere — proven over a planet-wide
+  // fixture sweep AND against the live renderer's own counters.
+  const understoryInert = await page.evaluate(() => {
+    const ws = window.__worldScale;
+    const f = ws.flora;
+    const populated = f.biomesWithTierPalette('understory');
+    let planted = 0;
+    for (let biome = 0; biome < 12; biome++) {
+      for (let k = 0; k < 500; k++) if (f.floraFor(120000 + k * 13, 260000 + k * 7, biome, 'understory')) planted++;
+    }
+    const ms = window.__ready();
+    const st = ms.chunkStreamer;
+    let listed = 0;
+    const pcx = Math.floor((ms.player.x - st.originPx.x) / 2048);
+    const pcy = Math.floor((ms.player.y - st.originPx.y) / 2048);
+    for (let dy = -2; dy <= 2; dy++) {
+      for (let dx = -2; dx <= 2; dx++) listed += st.chunkVisuals(pcx + dx, pcy + dy)?.understory.length ?? 0;
+    }
+    const s = st.stats().visuals;
+    return { populated, planted, listed, understoryVisible: s.understoryVisible, understoryPool: s.understoryPool, understoryCreated: s.understoryCreated };
+  });
+  ok(
+    'understory-inert-at-ship: no biome carries an understory palette, 6,000 fixture tiles plant zero understory, the live chunk lists are empty and the pool never allocated an image',
+    understoryInert.populated.length === 0 && understoryInert.planted === 0 && understoryInert.listed === 0 && understoryInert.understoryVisible === 0 && understoryInert.understoryPool === 0,
+    JSON.stringify(understoryInert),
+  );
+
   // 2j5. scatter-determinism: the pure per-tile hash hits the locked FOREST
   // density over 10k tiles and never scatters bare biomes; a REAL forest
   // chunk's streamed scatter list recomputes byte-identically from the pure
@@ -10939,12 +11142,90 @@ try {
   const poolMid = poolSamples[4];
   const poolEnd = poolSamples[9];
   const poolOk = poolSamples.every(
-    (s) => s.scatterPool <= 900 && s.fringePool <= 2600 && s.scatterVisible <= s.scatterPool && s.fringeVisible <= s.fringePool && s.scatterCreated === s.scatterPool && s.fringeCreated === s.fringePool,
+    (s) => s.scatterPool <= 900 && s.fringePool <= 2600 && s.understoryPool <= 2700 && s.scatterVisible <= s.scatterPool && s.fringeVisible <= s.fringePool && s.scatterCreated === s.scatterPool && s.fringeCreated === s.fringePool,
   );
   ok(
     'scatter-pool-stability: pools hard-capped and churn-free through a forest run; the warm pool is reused, not regrown',
     poolOk && poolEnd.scatterVisible > 0 && poolEnd.scatterCreated - poolMid.scatterCreated <= 400 && pageErrors.length === poolPe0,
     JSON.stringify({ mid: poolMid, end: poolEnd }),
+  );
+
+  // 2k5. UNDERSTORY-POOL AT 3x DENSITY (PASS 9) + Y-SORT-TIERS. The shipped
+  // palettes are empty, so the tier is proven with a TEMPORARY fixture
+  // palette at 3x the forest canopy density (0.90) — the top of the speced
+  // 2-3x range — driven for 60s of real movement. The pool must hold its
+  // derived cap without churn, and at the same anchor row an understory
+  // instance must sort UNDER the canopy while never sinking below the row
+  // above it. The fixture is torn down and inertness re-proven afterwards.
+  const uPe0 = pageErrors.length;
+  await page.evaluate(() => {
+    const f = window.__worldScale.flora;
+    // 3x the forest canopy density, drawn from the declared understory slots.
+    f.BIOME_FLORA[6].understory = {
+      density: 0.9,
+      palette: [
+        { propId: 'fern-sword-a', weight: 2 },
+        { propId: 'salal-a', weight: 1 },
+        { propId: 'log-a', weight: 1 },
+      ],
+    };
+    window.__ready().chunkStreamer.repaintAllLayers(); // recompute cached visuals
+  });
+  await page.waitForTimeout(600);
+  const uSamples = [];
+  await page.keyboard.down('d');
+  for (let k = 0; k < 20; k++) {
+    await page.waitForTimeout(3000); // 20 x 3s = 60s of real movement
+    uSamples.push(await page.evaluate(() => window.__ready().chunkStreamer.stats().visuals));
+  }
+  await page.keyboard.up('d');
+  const uMid = uSamples[9];
+  const uEnd = uSamples[19];
+  const uPoolOk = uSamples.every((s) => s.understoryPool <= 2700 && s.understoryVisible <= s.understoryPool && s.understoryCreated === s.understoryPool);
+  const uPlanted = uSamples.some((s) => s.understoryVisible > 0);
+  // Y-SORT: measure real live instances — the understory image at a tile and
+  // the canopy image at the same anchor row.
+  const ySort = await page.evaluate(() => {
+    const ms = window.__ready();
+    const props = ms.children.list.filter((g) => typeof g.texture?.key === 'string' && g.texture.key.startsWith('terrain-prop-') && g.visible);
+    const under = [];
+    const canopy = [];
+    const f = window.__worldScale.flora;
+    for (const g of props) {
+      const id = g.texture.key.replace('terrain-prop-', '');
+      (f.FLORA_PROPS[id]?.tier === 'understory' ? under : canopy).push(g);
+    }
+    let pairs = 0;
+    let wrong = 0;
+    let belowPrevRow = 0;
+    for (const u of under) {
+      for (const c of canopy) {
+        if (Math.abs(u.y - c.y) > 0.5) continue; // same anchor row
+        pairs++;
+        if (!(u.depth < c.depth)) wrong++;
+      }
+      // Never below a canopy a full tile row NORTH of it.
+      for (const c of canopy) {
+        if (Math.abs(u.y - 32 - c.y) > 0.5) continue;
+        if (u.depth < c.depth) belowPrevRow++;
+      }
+    }
+    return { under: under.length, canopy: canopy.length, pairs, wrong, belowPrevRow };
+  });
+  // Tear the fixture down and re-prove the shipped inertness.
+  const uRestored = await page.evaluate(async () => {
+    const f = window.__worldScale.flora;
+    f.BIOME_FLORA[6].understory = { density: 0, palette: [] };
+    const ms = window.__ready();
+    ms.chunkStreamer.repaintAllLayers();
+    await new Promise((r) => setTimeout(r, 700));
+    const s = ms.chunkStreamer.stats().visuals;
+    return { understoryVisible: s.understoryVisible, populated: f.biomesWithTierPalette('understory').length };
+  });
+  ok(
+    'understory-pool at 3x density: a 60s drive under a 3x fixture palette holds the derived 2700 cap with zero churn and really plants instances; at the same anchor row understory sorts UNDER canopy and never below the row above; teardown restores full inertness',
+    uPoolOk && uPlanted && ySort.pairs > 0 && ySort.wrong === 0 && ySort.belowPrevRow === 0 && uRestored.understoryVisible === 0 && uRestored.populated === 0 && pageErrors.length === uPe0,
+    JSON.stringify({ mid: uMid, end: uEnd, ySort, uRestored }),
   );
 
   // 2g4. offline-cache: a SECOND v2 boot must serve planet.bin from

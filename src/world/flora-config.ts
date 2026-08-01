@@ -192,6 +192,153 @@ export function floraFootprint(propId: string): { w: number; h: number } | null 
   return { w: p.w, h: p.h };
 }
 
+// ── RENDER-TIME VARIATION (Pass 9 Commit 2) ─────────────────────────────────
+
+export interface TierVariation {
+  enabled: boolean;
+  /** Horizontal flip on ~50% of instances. */
+  mirror: boolean;
+  /** Uniform scale band [min, max], applied about the bottom-center anchor. */
+  scale: readonly [number, number];
+  /** Value (brightness) jitter depth — see the DARKEN-ONLY note below. */
+  valuePct: number;
+  /** Saturation jitter, +/- this fraction, hue untouched. */
+  satPct: number;
+}
+
+/**
+ * Per-tier variation bands. Free variety from the SAME hash family that
+ * placed the instance — no extra state, no per-frame randomness.
+ *
+ * VALUE IS DARKEN-ONLY, and that is a platform fact, not a preference: a
+ * Phaser tint MULTIPLIES the texture, so it can darken but can never
+ * brighten. The value jitter therefore runs [1 - valuePct, 1]: every
+ * approved anchor stays the BRIGHTEST instance of itself and variation only
+ * pushes into shadow. (Brightening would need pre-baked lighter textures —
+ * ledgered, not smuggled in here.)
+ *
+ * Saturation moves both ways: raising saturation multiplies the WEAK
+ * channels down, which a multiply tint does exactly. The solve below runs
+ * at the prop's band-checked ANCHOR color, so the identity Casey approved
+ * is the one the math protects.
+ */
+export const FLORA_VARIATION: Record<FloraTier, TierVariation> = {
+  canopy: { enabled: true, mirror: true, scale: [0.85, 1.15], valuePct: 0.04, satPct: 0.03 },
+  understory: { enabled: true, mirror: true, scale: [0.9, 1.1], valuePct: 0.04, satPct: 0.03 },
+};
+
+/**
+ * UNDERSTORY POOL CAP — DERIVED, not picked: the canopy pool holds 900 for
+ * densities up to 0.30, and the understory tier is speced to support 2-3x
+ * canopy density, so 3 x SCATTER_POOL_CAP keeps the SAME per-instance
+ * headroom at the top of that range. (Gate: understory-pool proves stability
+ * at 3x density in a real drive.)
+ */
+export const UNDERSTORY_POOL_CAP = 2700;
+
+/** Variation hash salts (same family, disjoint from placement). */
+export const VARIATION_SALT = { mirror: 0x27d4eb2f, scale: 0x165667b1, value: 0x2545f491, sat: 0x9e3779b1 } as const;
+
+/** GUARANTEED achieved-value floor at the anchor: the jitter itself takes at
+ *  most valuePct, and the multiply normalization can take at most satPct
+ *  more, so no instance sits below (1 - valuePct - satPct) of the anchor's
+ *  value. (Measured envelope today: 0.961-1.000 — normalization never bites
+ *  for the shipped anchors.) The gate asserts the live envelope inside it. */
+export const VARIATION_VALUE_FLOOR = 1 - 0.04 - 0.03;
+
+/** Below this anchor saturation, HUE AND SATURATION ARE ILL-CONDITIONED — a
+ *  one-step channel change swings the computed hue wildly (measured: 2.4 deg
+ *  on the gray boulder anchor vs 0.4 deg on the greens). Near-neutral anchors
+ *  therefore take VALUE-ONLY jitter, which is exactly hue- and
+ *  saturation-preserving for every source pixel. Geology varies least. */
+export const NEUTRAL_ANCHOR_SAT = 0.2;
+
+function rgbToHsv(r: number, g: number, b: number): { h: number; s: number; v: number } {
+  const mx = Math.max(r, g, b) / 255;
+  const mn = Math.min(r, g, b) / 255;
+  const d = mx - mn;
+  let h = 0;
+  if (d > 0) {
+    const [R, G, B] = [r / 255, g / 255, b / 255];
+    if (mx === R) h = 60 * (((G - B) / d) % 6);
+    else if (mx === G) h = 60 * ((B - R) / d + 2);
+    else h = 60 * ((R - G) / d + 4);
+  }
+  return { h: (h + 360) % 360, s: mx === 0 ? 0 : d / mx, v: mx };
+}
+function hsvToRgb(h: number, s: number, v: number): [number, number, number] {
+  const c = v * s;
+  const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+  const m = v - c;
+  const seg = Math.floor(((h % 360) + 360) % 360 / 60) % 6;
+  const [r1, g1, b1] = [
+    [c, x, 0],
+    [x, c, 0],
+    [0, c, x],
+    [0, x, c],
+    [x, 0, c],
+    [c, 0, x],
+  ][seg];
+  return [(r1 + m) * 255, (g1 + m) * 255, (b1 + m) * 255];
+}
+
+export interface FloraVariationResult {
+  mirror: boolean;
+  scale: number;
+  /** Phaser multiply tint (0xrrggbb); 0xffffff = untouched. */
+  tint: number;
+}
+
+/**
+ * Deterministic per-instance variation for the prop planted at a tile.
+ * Same tile + same tier + same prop => same result, forever, on any thread.
+ */
+export function floraVariation(tx: number, ty: number, tier: FloraTier, propId: string): FloraVariationResult {
+  const band = FLORA_VARIATION[tier];
+  const prop = FLORA_PROPS[propId];
+  if (!band?.enabled) return { mirror: false, scale: 1, tint: 0xffffff };
+  const salt = TIER_SALT[tier];
+  const mirror = band.mirror && tileHash01(tx, ty, VARIATION_SALT.mirror ^ salt) < 0.5;
+  // Geology never scales (see the boulder rows) — mirror + tint only.
+  const scale =
+    prop?.variation?.scale === false ? 1 : band.scale[0] + tileHash01(tx, ty, VARIATION_SALT.scale ^ salt) * (band.scale[1] - band.scale[0]);
+  // Value: darken-only band. Saturation: symmetric around the anchor.
+  const dv = 1 - tileHash01(tx, ty, VARIATION_SALT.value ^ salt) * band.valuePct;
+  const ds = 1 + (tileHash01(tx, ty, VARIATION_SALT.sat ^ salt) * 2 - 1) * band.satPct;
+  const anchor = prop?.anchor ?? null;
+  let tint: number;
+  if (anchor === null) {
+    // No approved anchor: a NEUTRAL multiply — scales value, leaves hue and
+    // saturation mathematically untouched for any source pixel.
+    const g = Math.round(Math.max(0, Math.min(255, 255 * dv)));
+    tint = (g << 16) | (g << 8) | g;
+  } else {
+    const ar = (anchor >> 16) & 255;
+    const ag = (anchor >> 8) & 255;
+    const ab = anchor & 255;
+    const hsv0 = rgbToHsv(ar, ag, ab);
+    if (Math.min(ar, ag, ab) < 8 || hsv0.s < NEUTRAL_ANCHOR_SAT) {
+      // Degenerate channel OR a near-neutral anchor: value-only multiply,
+      // which preserves hue and saturation exactly (see NEUTRAL_ANCHOR_SAT).
+      const g = Math.round(Math.max(0, Math.min(255, 255 * dv)));
+      tint = (g << 16) | (g << 8) | g;
+    } else {
+      const hsv = hsv0;
+      const target = hsvToRgb(hsv.h, Math.max(0, Math.min(1, hsv.s * ds)), Math.max(0, Math.min(1, hsv.v * dv)));
+      // Per-channel multiply that maps the ANCHOR exactly onto the target.
+      let t = [target[0] / ar, target[1] / ag, target[2] / ab];
+      // A multiply can never exceed 1 — normalize the whole tint down so the
+      // largest channel lands at 1. Hue and the saturation RATIO survive
+      // exactly; only value takes the extra (bounded) step into shadow.
+      const mx = Math.max(...t);
+      if (mx > 1) t = t.map((c) => c / mx);
+      const [r, g, b] = t.map((c) => Math.round(Math.max(0, Math.min(255, c * 255))));
+      tint = (r << 16) | (g << 8) | b;
+    }
+  }
+  return { mirror, scale, tint };
+}
+
 /** Every prop id of a tier (manifest + placeholder builders read this). */
 export function propsOfTier(tier: FloraTier): string[] {
   return Object.keys(FLORA_PROPS).filter((id) => FLORA_PROPS[id].tier === tier);
