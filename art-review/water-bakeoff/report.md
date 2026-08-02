@@ -157,3 +157,62 @@ rather than `2575213` (`#274b6d`). Every number above uses the correct anchor.
 
 Three tile runs, at the cap; two of them are the same asset's two attempts
 under correction discipline, not three separate candidates.
+
+---
+
+# FRESHWATER under the approved technique (HOLD 2)
+
+**Verdict applied:** C2, generated phase tiles. Anchor read from
+`src/world/biome-anchors.ts` (`BIOME_COLORS[Biome.FRESHWATER]`), never
+retyped — luminance band 81.1 – 121.6.
+
+**In-game preview:** both sheets are live at their contract paths **on this
+branch only**, so the Vercel deployment runs the real game with real animated
+water at real coastlines. `/water-bakeoff.html` is still there for the
+side-by-side.
+
+## Attempt 1 (seed 74005) — failed, and interestingly
+
+Every spatial band passed (luminance 106.9 – 108.6, hue 210, spread 3.0,
+seams excellent) but **zero of 560 subsets qualified**: pairwise deltas ran
+16.75 – 43.53 against a 6.62 ceiling. The same prompt structure that gave
+OCEAN mild variants gave FRESHWATER sixteen genuinely different lakes. The
+phase language is not reliably read as "one surface over time" — that is a
+property of the technique worth knowing, not a one-off.
+
+## Attempt 2 (seed 74006) — passes every band
+
+Correction pushed only the axis that missed, re-asserting the rest: "almost
+the same image four times", crests nudged one pixel, "nearly indistinguishable
+side by side", colours/texture density/layout explicitly unchanged.
+
+| band | value | rule |
+|---|---|---|
+| A2 → A3 | 6.55 ✅ | 1.32 – 6.62 |
+| A3 → A4 | 6.57 ✅ | 1.32 – 6.62 |
+| A4 → A2 (wrap) | 6.58 ✅ | 1.32 – 6.62 |
+| loop closure | ✅ | wrap ≤ 1.5 × max forward |
+| fringe coherence | 6.31 / 4.86 / 7.36 ✅ | ≤ 13.24 |
+| luminance, 7 cells | 113.3 – 114.9 ✅ | 81.1 – 121.6 |
+| hue · spread | 210 · 1.7 ✅ | blue family · ≤ 48 |
+| seam index, worst | 2.49 (advisory) | ≤ 8.693, typical 1.347 |
+| terrain lint (pair) | 0 hard, 0 advisory | — |
+
+**Stated honestly:** freshwater passes coherence at **6.55–6.58 against a 6.62
+ceiling** — 99 % of the way to it, and only 5 of 560 subsets qualified at all.
+It is inside the band, not comfortably inside it. Ocean sits at 3.35–3.45, so
+the pair is not evenly matched: expect freshwater to read as a livelier,
+choppier surface than ocean. That is a judgement for the preview, which is
+what HOLD 2 is for. Its row seam indices (1.9 – 2.5) also sit above the
+shipped-typical 1.347, well under the ceiling.
+
+## Spend
+
+| item | generations |
+|---|---|
+| carried from the bake-off | 61 |
+| freshwater attempt 1 (seed 74005, no qualifying subset) | 20 |
+| freshwater attempt 2 (seed 74006, approved bands) | 20 |
+| **session total** | **101** of the 120 ceiling |
+
+Freshwater used both of its permitted runs.

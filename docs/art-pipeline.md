@@ -110,3 +110,43 @@ correction.
 Sizing vocabulary that works: ask for the OBJECT to be bigger ("large
 lush fern", "thick heavy log"), not for it to fill the canvas — canvas
 language invites edge contact, object language does not.
+
+## Standing batch policy (Casey ruling, Art Session 5)
+
+Two rules that apply to **every** category from here on, not just water.
+
+### 1. Tile selection is by band, never by file order
+
+A `create_tiles_pro` run returns 16 tiles. Art Sessions 1–4 took **the first
+four** — that was never a ruling, just what the scratchpad band script
+happened to slice, and it is now disclosed as such. Art Session 5's corrected
+OCEAN run proved the cost: it came back **bimodal**, its first four tiles
+texture-dead (luminance sd ≈ 1) while later tiles in the *same run* carried
+real texture at the right luminance. File order carries no quality signal.
+
+The rule, which is only the lock's own words ("interchangeable subtle
+variants of ONE ground") made mechanical:
+
+1. keep tiles inside the biome's luminance band;
+2. of those, keep tiles whose texture (luminance sd) is at or above the run's
+   **median** — a flat tile cannot read as ground, and cannot be animated by
+   displacement at all, since displacing a flat field returns the same field;
+3. take the four with the smallest maximum pairwise mean-colour distance —
+   interchangeability (≤ 48) is the band that matters for base variants;
+4. tie-break toward texture, so sameness is never bought with lifelessness.
+
+If fewer than four tiles survive 1–2, say so and fall back to the most
+textured in-band tiles, labelled honestly.
+
+**Approved art stays approved.** Every sheet Casey has already approved keeps
+its verdict — this rule changes how future runs are read, and creates no
+regeneration debt for anything already shipped.
+
+### 2. Anchors are read from source, never retyped
+
+Biome anchors live in `src/world/terrain-placeholder.ts` and are the single
+source of truth. Band tooling must **import** them; a hand-typed hex in a
+prompt, a script argument or a report is a defect. Art Session 5 typed
+`#27476d` for OCEAN's `#274b6d` and shifted the whole luminance band by three
+units before the miscopy was caught. Retyping an anchor into prose is fine
+only when the number is quoted *from* the file in the same breath.

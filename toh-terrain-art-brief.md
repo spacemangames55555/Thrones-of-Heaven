@@ -39,10 +39,39 @@ forest.png  taiga.png  tundra.png  snow.png  rock.png  swamp.png
   Keep them interchangeable (same palette, same lighting), not four different
   grounds.
 - **anim-2..4** — three more fully-opaque frames. For **ocean and
-  freshwater** these are the water animation: the engine cycles
-  base-variant → anim-2 → anim-3 → anim-4 at 450 ms per step. Make them the
-  same water with the highlights displaced (a slow shimmer, not a current).
-  For land biomes the cells are ignored — leave them empty or copy base-0.
+  freshwater** these are the water animation. Make them the same water with
+  the highlights displaced (a slow shimmer, not a current). For land biomes
+  the cells are ignored — leave them empty or copy base-0.
+
+  **The cycle is THREE frames, not four** (corrected against the shipped
+  renderer, Art Session 5 — this doc previously described a four-frame
+  `base-variant → anim-2 → anim-3 → anim-4` cycle that has never been what
+  ships). `src/world/terrain-visuals.ts` runs
+  `waterPhase = (waterPhase + 1) % 3` and writes
+  `t.index = biome*ATLAS_STRIDE + 4 + waterPhase`, so the real cycle is:
+
+  > **anim-2 → anim-3 → anim-4 → anim-2**, 450 ms per step
+  > (`WATER_ANIM_MS`), with **one global phase** written to every water tile
+  > in every live chunk on the same tick — no per-tile offset or stagger.
+
+  Three things follow, and they are what the art has to serve:
+
+  1. **base-0..3 are a stream-in flash on water.** A chunk paints
+     `biome*ATLAS_STRIDE + (moisture & 3)` when it is built; the next global
+     tick overwrites every water tile within 450 ms and never returns to a
+     base variant. The base cells still matter — they are what a newly
+     streamed chunk shows for that instant — but they carry none of the look.
+  2. **The loop wraps anim-4 → anim-2.** There is no rest frame. Whatever
+     closes the cycle has to close it between those two cells.
+  3. **Fringe cells never animate.** The cycler only touches the water tiles'
+     own indices, so the 17 transition pieces are static — every coastline is
+     a still ring around moving water. This is why the water bands include
+     **fringe coherence** (see docs/art-pipeline.md): the anim frames must
+     stay within `D_var` of base-0, which is what the fringes are cut from.
+
+  A four-frame cycle, or animated fringes, would both be real improvements —
+  and both are **renderer changes**, so they are amendment territory with
+  their own ceremony, not something an art drop may assume.
 - **row 1–3 fringe cells** — the autotile transition pieces. Each is **this
   biome's ground spilling over a neighboring tile**, drawn as a partial mask:
   opaque where this biome overhangs, fully transparent elsewhere. The engine

@@ -1,0 +1,205 @@
+{
+  "calibration": {
+    "D_var": 13.24,
+    "coherenceCeiling": 6.62,
+    "livenessFloor": 1.32,
+    "seamIndexCeiling": 8.693,
+    "seamIndexTypical": 1.347
+  },
+  "spatial": [
+    {
+      "cell": "base-0",
+      "meanRGB": [
+        63,
+        115,
+        157
+      ],
+      "meanLum": 106.9,
+      "lumBand": "81.1-121.6",
+      "lumPass": true,
+      "domHue": 210,
+      "sat": 0.609,
+      "seamIdxCol": 0.602,
+      "seamIdxRow": 0.163,
+      "wrapAbsCol": 19.74,
+      "wrapAbsRow": 11.83,
+      "seamPass": true,
+      "seamAdvisory": null
+    },
+    {
+      "cell": "base-1",
+      "meanRGB": [
+        65,
+        116,
+        159
+      ],
+      "meanLum": 108.6,
+      "lumBand": "81.1-121.6",
+      "lumPass": true,
+      "domHue": 210,
+      "sat": 0.603,
+      "seamIdxCol": 0.726,
+      "seamIdxRow": 0.127,
+      "wrapAbsCol": 32.76,
+      "wrapAbsRow": 9.18,
+      "seamPass": true,
+      "seamAdvisory": null
+    },
+    {
+      "cell": "base-2",
+      "meanRGB": [
+        64,
+        115,
+        158
+      ],
+      "meanLum": 107.4,
+      "lumBand": "81.1-121.6",
+      "lumPass": true,
+      "domHue": 210,
+      "sat": 0.609,
+      "seamIdxCol": 0.536,
+      "seamIdxRow": 0,
+      "wrapAbsCol": 18.08,
+      "wrapAbsRow": 0,
+      "seamPass": true,
+      "seamAdvisory": null
+    },
+    {
+      "cell": "base-3",
+      "meanRGB": [
+        64,
+        115,
+        158
+      ],
+      "meanLum": 107.2,
+      "lumBand": "81.1-121.6",
+      "lumPass": true,
+      "domHue": 210,
+      "sat": 0.607,
+      "seamIdxCol": 0.336,
+      "seamIdxRow": 0.173,
+      "wrapAbsCol": 14.26,
+      "wrapAbsRow": 10.28,
+      "seamPass": true,
+      "seamAdvisory": null
+    },
+    {
+      "cell": "anim-2",
+      "meanRGB": [
+        64,
+        115,
+        158
+      ],
+      "meanLum": 107.4,
+      "lumBand": "81.1-121.6",
+      "lumPass": true,
+      "domHue": 210,
+      "sat": 0.607,
+      "seamIdxCol": 0.083,
+      "seamIdxRow": 0.075,
+      "wrapAbsCol": 2.34,
+      "wrapAbsRow": 6.49,
+      "seamPass": true,
+      "seamAdvisory": null
+    },
+    {
+      "cell": "anim-3",
+      "meanRGB": [
+        64,
+        115,
+        158
+      ],
+      "meanLum": 107.5,
+      "lumBand": "81.1-121.6",
+      "lumPass": true,
+      "domHue": 210,
+      "sat": 0.606,
+      "seamIdxCol": 0.509,
+      "seamIdxRow": 0.189,
+      "wrapAbsCol": 21.58,
+      "wrapAbsRow": 13.07,
+      "seamPass": true,
+      "seamAdvisory": null
+    },
+    {
+      "cell": "anim-4",
+      "meanRGB": [
+        65,
+        116,
+        159
+      ],
+      "meanLum": 108.4,
+      "lumBand": "81.1-121.6",
+      "lumPass": true,
+      "domHue": 210,
+      "sat": 0.604,
+      "seamIdxCol": 0.298,
+      "seamIdxRow": 0.064,
+      "wrapAbsCol": 12.94,
+      "wrapAbsRow": 5.24,
+      "seamPass": true,
+      "seamAdvisory": null
+    }
+  ],
+  "interVariantSpread": {
+    "value": 3,
+    "band": "<= 48",
+    "pass": true
+  },
+  "temporal": [
+    {
+      "step": "A2->A3",
+      "delta": 29.07,
+      "coherence": "<= 6.62",
+      "liveness": ">= 1.32",
+      "pass": false
+    },
+    {
+      "step": "A3->A4",
+      "delta": 29.14,
+      "coherence": "<= 6.62",
+      "liveness": ">= 1.32",
+      "pass": false
+    },
+    {
+      "step": "A4->A2 (wrap)",
+      "delta": 29.26,
+      "coherence": "<= 6.62",
+      "liveness": ">= 1.32",
+      "pass": false
+    }
+  ],
+  "loopClosure": {
+    "wrap": 29.26,
+    "maxForward": 29.14,
+    "rule": "inside coherence band AND <= 1.5x max forward step",
+    "pass": false
+  },
+  "fringeCoherence": [
+    {
+      "cell": "anim-2",
+      "dFromBase0": 26.48,
+      "ceiling": 13.24,
+      "pass": false
+    },
+    {
+      "cell": "anim-3",
+      "dFromBase0": 26.29,
+      "ceiling": 13.24,
+      "pass": false
+    },
+    {
+      "cell": "anim-4",
+      "dFromBase0": 17.87,
+      "ceiling": 13.24,
+      "pass": false
+    }
+  ],
+  "VERDICT": {
+    "spatial": true,
+    "seam": true,
+    "temporal": false,
+    "loop": false,
+    "fringe": false
+  }
+}
