@@ -1,0 +1,66 @@
+{
+  "batchId": "world-dress-bases",
+  "category": "terrain-sheet",
+  "lock": {
+    "reference": "art/references/terrain-grass-d.png",
+    "palette": "anchor the biome color from src/world/terrain-placeholder.ts (grass #5f9e46); roughly 10 colors per tile; mean luminance within 20 percent of the anchor luminance (acceptance band, checked before staging)"
+  },
+  "staged": [
+    {
+      "id": "beach",
+      "kind": "sheet-256x128",
+      "files": [
+        "public/art/terrain/beach.png"
+      ],
+      "paletteSize": 4,
+      "meanLuminance": 210
+    },
+    {
+      "id": "desert",
+      "kind": "sheet-256x128",
+      "files": [
+        "public/art/terrain/desert.png"
+      ],
+      "paletteSize": 5,
+      "meanLuminance": 188
+    },
+    {
+      "id": "savanna",
+      "kind": "sheet-256x128",
+      "files": [
+        "public/art/terrain/savanna.png"
+      ],
+      "paletteSize": 6,
+      "meanLuminance": 172
+    },
+    {
+      "id": "swamp",
+      "kind": "sheet-256x128",
+      "files": [
+        "public/art/terrain/swamp.png"
+      ],
+      "paletteSize": 8,
+      "meanLuminance": 98
+    },
+    {
+      "id": "tundra",
+      "kind": "sheet-256x128",
+      "files": [
+        "public/art/terrain/tundra.png"
+      ],
+      "paletteSize": 7,
+      "meanLuminance": 177
+    }
+  ],
+  "excluded": [
+    {
+      "id": "freshwater",
+      "reason": "fixture missing"
+    },
+    {
+      "id": "ocean",
+      "reason": "fixture missing"
+    }
+  ],
+  "blockedSkipped": []
+}
