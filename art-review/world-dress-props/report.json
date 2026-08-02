@@ -1,0 +1,115 @@
+{
+  "batchId": "world-dress-props",
+  "category": "terrain-prop",
+  "lock": {
+    "reference": "art/references/terrain-grass-d.png",
+    "palette": null
+  },
+  "staged": [
+    {
+      "id": "prop-cedar-a",
+      "kind": "prop",
+      "files": [
+        "public/art/terrain/props/cedar-a.png"
+      ],
+      "paletteSize": 55,
+      "meanLuminance": 60
+    },
+    {
+      "id": "prop-fern-sword-a",
+      "kind": "prop",
+      "files": [
+        "public/art/terrain/props/fern-sword-a.png"
+      ],
+      "paletteSize": 127,
+      "meanLuminance": 114
+    },
+    {
+      "id": "prop-fern-sword-b",
+      "kind": "prop",
+      "files": [
+        "public/art/terrain/props/fern-sword-b.png"
+      ],
+      "paletteSize": 25,
+      "meanLuminance": 85
+    },
+    {
+      "id": "prop-log-a",
+      "kind": "prop",
+      "files": [
+        "public/art/terrain/props/log-a.png"
+      ],
+      "paletteSize": 44,
+      "meanLuminance": 81
+    },
+    {
+      "id": "prop-salal-a",
+      "kind": "prop",
+      "files": [
+        "public/art/terrain/props/salal-a.png"
+      ],
+      "paletteSize": 19,
+      "meanLuminance": 63
+    },
+    {
+      "id": "prop-sapling-fir-a",
+      "kind": "prop",
+      "files": [
+        "public/art/terrain/props/sapling-fir-a.png"
+      ],
+      "paletteSize": 32,
+      "meanLuminance": 99
+    },
+    {
+      "id": "prop-snag-a",
+      "kind": "prop",
+      "files": [
+        "public/art/terrain/props/snag-a.png"
+      ],
+      "paletteSize": 18,
+      "meanLuminance": 85
+    },
+    {
+      "id": "prop-stump-a",
+      "kind": "prop",
+      "files": [
+        "public/art/terrain/props/stump-a.png"
+      ],
+      "paletteSize": 48,
+      "meanLuminance": 98
+    }
+  ],
+  "excluded": [],
+  "blockedSkipped": [
+    {
+      "id": "prop-cactus-a",
+      "blockedBy": [
+        "desert-base-approved"
+      ]
+    },
+    {
+      "id": "prop-scrub-a",
+      "blockedBy": [
+        "desert-base-approved"
+      ]
+    },
+    {
+      "id": "prop-swamp-tree-a",
+      "blockedBy": [
+        "swamp-base-approved"
+      ]
+    },
+    {
+      "id": "prop-swamp-tree-b",
+      "blockedBy": [
+        "swamp-base-approved"
+      ]
+    },
+    {
+      "id": "prop-waystone",
+      "blockedBy": [
+        "unscattered-prop"
+      ]
+    }
+  ]
+}

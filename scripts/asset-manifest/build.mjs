@@ -195,9 +195,15 @@ for (const [biome, stem] of Object.entries(terrain.BIOME_SHEET_NAME).sort((a, b)
 // when that biome's sheet is LIVE at the contract path (an approved base is
 // ground truth on disk — Art Session 2 ruling: fences release for approved
 // biomes only; a prop with every fence released becomes batchable).
+// ART SESSION 4 FIX (found by the pre-generation manifest verification):
+// derive prop -> biomes across EVERY tier, not just canopy. With understory
+// palettes populated, a canopy-only map reported placed props as `missing`
+// and skipped their base fences — the placement truth lives in BIOME_FLORA.
 const propBiomes = {};
-for (const [biome, props] of Object.entries(terrain.SCATTER_PROPS)) {
-  for (const p of props) (propBiomes[p] ??= new Set()).add(terrain.BIOME_SHEET_NAME[biome]);
+for (const [biome, tiers] of Object.entries(flora.BIOME_FLORA)) {
+  for (const tier of Object.values(tiers)) {
+    for (const e of tier.palette) (propBiomes[e.propId] ??= new Set()).add(terrain.BIOME_SHEET_NAME[biome]);
+  }
 }
 const sheetLive = (stem) => pngOk(`public/art/terrain/${stem}.png`, { w: 256, h: 128 });
 // PASS 9: understory props are fenced on their TIER PALETTE, not on a base
@@ -211,8 +217,10 @@ for (const [prop, d] of Object.entries(terrain.PROP_TABLE).sort()) {
   const fences = scattered.filter((stem) => !sheetLive(stem)).sort().map((stem) => `${stem}-base-approved`);
   // Unscattered props stay stated; a scattered prop with every fence
   // RELEASED carries no blockedBy at all — it is batchable.
+  // An understory row waits on its TIER PALETTE first; once populated it
+  // obeys the same {biome}-base-approved rule as any other prop.
   let blockedBy;
-  if (def?.tier === 'understory') blockedBy = understoryPopulated ? [] : ['pnw-understory-palette'];
+  if (def?.tier === 'understory' && !understoryPopulated) blockedBy = ['pnw-understory-palette'];
   else if (scattered.length === 0) blockedBy = ['unscattered-prop'];
   else blockedBy = fences;
   // STATUS (derived, never declared): live = art at the contract path;

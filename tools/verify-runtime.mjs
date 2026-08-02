@@ -671,9 +671,14 @@ const ok = (name, pass, detail = '') => {
     await build({ entryPoints: [new URL('../src/world/flora-config.ts', import.meta.url).pathname], bundle: true, format: 'esm', platform: 'node', outfile, logLevel: 'silent' });
     return import(outfile);
   })();
+  // ART SESSION 4: placement truth is BIOME_FLORA across EVERY tier — a
+  // canopy-only map mislabels populated understory rows (found by the
+  // pre-generation manifest verification; the builder derives identically).
   const fencePropBiomes = {};
-  for (const [biome, props] of Object.entries(tvCfg.SCATTER_PROPS)) {
-    for (const p of props) (fencePropBiomes[p] ??= new Set()).add(tvCfg.BIOME_SHEET_NAME[biome]);
+  for (const [biome, tiers] of Object.entries(floraCfg.BIOME_FLORA)) {
+    for (const tier of Object.values(tiers)) {
+      for (const e of tier.palette) (fencePropBiomes[e.propId] ??= new Set()).add(tvCfg.BIOME_SHEET_NAME[biome]);
+    }
   }
   const sheetLiveNow = (stem) => {
     try {
@@ -697,7 +702,7 @@ const ok = (name, pass, detail = '') => {
       const tier = floraCfg.FLORA_PROPS[prop]?.tier ?? 'canopy';
       const understoryLive = floraCfg.biomesWithTierPalette('understory').length > 0;
       let expected;
-      if (tier === 'understory') expected = understoryLive ? [] : ['pnw-understory-palette'];
+      if (tier === 'understory' && !understoryLive) expected = ['pnw-understory-palette'];
       else if (scattered.length === 0) expected = ['unscattered-prop'];
       else expected = scattered.filter((s) => !sheetLiveNow(s)).sort().map((s) => `${s}-base-approved`);
       if (JSON.stringify([...fences].sort()) !== JSON.stringify(expected.sort())) fenceGaps.push(`${a.id}:expected[${expected}]got[${fences}]`);
@@ -10771,11 +10776,15 @@ try {
     JSON.stringify(waterAnim),
   );
 
-  // 2k0. MIGRATION-SILENCE (PASS 9): the flora refactor must be INVISIBLE.
-  // A FROZEN copy of the Pass 5 algorithm — its literal salts, its uniform
-  // `props[floor(h*n) % n]` pick, its offset math, reading the same shipped
-  // tables — is recomputed against the LIVE path over 5,000 tiles spread
-  // across every scatter biome. Byte-equal ids AND offsets, or red.
+  // 2k0. MIGRATION-SILENCE (PASS 9, re-scoped in Art Session 4): the flora
+  // MECHANISM must stay Pass 5 semantics forever. A FROZEN copy of the Pass 5
+  // algorithm — its literal salts, its uniform `props[floor(h*n) % n]` pick,
+  // its offset math — is recomputed against the live flora reference over
+  // 5,000 tiles, driven by an EQUAL-WEIGHT FIXTURE palette (the condition
+  // under which the two are provably identical). Content moved on when Art
+  // Session 4 dressed the world, so pinning today's palettes here would be a
+  // content freeze, not an invariant: `palette-pin` below owns that, and this
+  // check owns the algebra. Byte-equal ids AND offsets, or red.
   const migrationSilence = await page.evaluate(() => {
     const ws = window.__worldScale;
     const v = ws.visuals;
@@ -10786,17 +10795,24 @@ try {
       h ^= h >>> 16;
       return (h >>> 0) / 4294967296;
     };
-    const pass5ScatterFor = (tx, ty, biome) => {
-      const density = v.SCATTER_DENSITY[biome];
-      if (!density) return null;
+    const f = ws.flora;
+    const pass5ScatterFor = (tx, ty, density, props) => {
       if (h01(tx, ty, 0x5ca77e12) >= density) return null;
-      const props = v.SCATTER_PROPS[biome];
       const id = props[Math.floor(h01(tx, ty, 0x9e3779b9) * props.length) % props.length];
       return { id, ox: Math.round((h01(tx, ty, 0x1b873593) - 0.5) * 20), oy: Math.round((h01(tx, ty, 0x85ebca6b) - 0.5) * 20) };
     };
-    // 1,000 tiles per scatter biome (5,000 total), plus every non-scatter
-    // biome sampled to prove they still grow nothing.
+    // EQUAL-WEIGHT FIXTURE palettes installed on the live scatter biomes at
+    // their live densities: the exact condition under which the weighted walk
+    // and the Pass 5 uniform pick must agree. Restored before returning.
     const scatterBiomes = Object.keys(v.SCATTER_DENSITY).map(Number);
+    const saved = {};
+    const fixtureProps = {};
+    for (const biome of scatterBiomes) {
+      saved[biome] = f.BIOME_FLORA[biome].canopy;
+      const ids = saved[biome].palette.map((e) => e.propId);
+      fixtureProps[biome] = ids;
+      f.BIOME_FLORA[biome].canopy = { density: saved[biome].density, palette: ids.map((propId) => ({ propId, weight: 1 })) };
+    }
     const diffs = [];
     let checked = 0;
     let planted = 0;
@@ -10804,32 +10820,62 @@ try {
       for (let k = 0; k < 1000; k++) {
         const tx = 310000 + k * 7 + biome * 13;
         const ty = 190000 + k * 11 + biome * 29;
-        const want = pass5ScatterFor(tx, ty, biome);
+        const want = pass5ScatterFor(tx, ty, saved[biome].density, fixtureProps[biome]);
         const got = ws.scatterFor(tx, ty, biome);
         checked++;
         if (want) planted++;
         if (JSON.stringify(want) !== JSON.stringify(got)) diffs.push({ biome, tx, ty, want, got });
       }
     }
+    for (const biome of scatterBiomes) f.BIOME_FLORA[biome].canopy = saved[biome];
     let bareGrew = 0;
     for (let biome = 0; biome < 12; biome++) {
       if (scatterBiomes.includes(biome)) continue;
       for (let k = 0; k < 200; k++) if (ws.scatterFor(410000 + k, 220000 + k * 3, biome)) bareGrew++;
     }
-    // The derived legacy views must still equal the shipped Pass 5 tables.
-    const tablesOk =
-      JSON.stringify(v.SCATTER_DENSITY) === JSON.stringify({ 5: 0.03, 6: 0.3, 7: 0.22, 10: 0.05, 11: 0.15 }) &&
-      JSON.stringify(v.SCATTER_PROPS[6]) === JSON.stringify(['tree-broad-a', 'tree-broad-b', 'tree-fir-a']) &&
-      JSON.stringify(v.SCATTER_PROPS[7]) === JSON.stringify(['tree-fir-a', 'tree-fir-b']) &&
-      JSON.stringify(v.SCATTER_PROPS[11]) === JSON.stringify(['swamp-tree-a', 'swamp-tree-b']) &&
-      JSON.stringify(v.SCATTER_PROPS[10]) === JSON.stringify(['boulder-a', 'boulder-b']) &&
-      JSON.stringify(v.SCATTER_PROPS[5]) === JSON.stringify(['cactus-a', 'scrub-a']);
+    // The DENSITIES are still the locked Pass 5 numbers (palette membership
+    // is content and lives in palette-pin; density is the render budget).
+    const tablesOk = JSON.stringify(v.SCATTER_DENSITY) === JSON.stringify({ 5: 0.03, 6: 0.3, 7: 0.22, 10: 0.05, 11: 0.15 });
     return { checked, planted, diffs: diffs.slice(0, 5), diffCount: diffs.length, bareGrew, tablesOk };
   });
   ok(
-    'migration-silence: the flora refactor is invisible — 5,000 tiles across every scatter biome plant byte-identically to a FROZEN Pass 5 reference (ids + offsets), bare biomes still grow nothing, derived tables equal the locked values',
+    'migration-silence: the flora MECHANISM is Pass 5 semantics — under equal-weight fixture palettes, 5,000 tiles across every scatter biome plant byte-identically to a FROZEN Pass 5 reference (ids + offsets); bare biomes still grow nothing; canopy densities still the locked values',
     migrationSilence.checked === 5000 && migrationSilence.planted > 0 && migrationSilence.diffCount === 0 && migrationSilence.bareGrew === 0 && migrationSilence.tablesOk,
     JSON.stringify(migrationSilence),
+  );
+
+  // 2k0b. PALETTE-PIN (Art Session 4): WHAT GROWS WHERE is content, and
+  // content changes only on purpose. Every biome/tier palette — ids, ORDER,
+  // weights, density — is pinned here, because adding or reordering an entry
+  // silently re-plants that biome for every existing save. Changing the world
+  // means changing this pin in the same commit.
+  const palettePin = await page.evaluate(() => {
+    const f = window.__worldScale.flora;
+    const out = {};
+    for (const [biome, tiers] of Object.entries(f.BIOME_FLORA)) {
+      for (const [tier, cfg] of Object.entries(tiers)) {
+        out[`${biome}:${tier}`] = `${cfg.density}|${cfg.palette.map((e) => `${e.propId}=${e.weight}`).join(',')}`;
+      }
+    }
+    return out;
+  });
+  const PALETTE_EXPECTED = {
+    '5:canopy': '0.03|cactus-a=1,scrub-a=1',
+    '5:understory': '0|',
+    '6:canopy': '0.3|tree-broad-a=1,tree-broad-b=1,tree-fir-a=1,cedar-a=20,snag-a=5',
+    '6:understory': '0.45|fern-sword-a=30,fern-sword-b=30,salal-a=20,sapling-fir-a=10,stump-a=5,log-a=5',
+    '7:canopy': '0.22|tree-fir-a=1,tree-fir-b=1,cedar-a=10,snag-a=10',
+    '7:understory': '0.35|fern-sword-a=25,fern-sword-b=25,salal-a=15,sapling-fir-a=20,stump-a=10,log-a=5',
+    '10:canopy': '0.05|boulder-a=1,boulder-b=1',
+    '10:understory': '0|',
+    '11:canopy': '0.15|swamp-tree-a=1,swamp-tree-b=1',
+    '11:understory': '0|',
+  };
+  const paletteDrift = Object.keys({ ...palettePin, ...PALETTE_EXPECTED }).filter((k) => palettePin[k] !== PALETTE_EXPECTED[k]);
+  ok(
+    'palette-pin: every biome/tier palette matches its pinned ids, order, weights and density — a silent re-plant (an added, reordered or reweighted entry) is red',
+    paletteDrift.length === 0,
+    JSON.stringify({ drift: paletteDrift.map((k) => ({ k, got: palettePin[k], want: PALETTE_EXPECTED[k] })) }),
   );
 
   // 2k1. VARIATION-DETERMINISM (PASS 9): the same tile always yields the same
@@ -11007,16 +11053,23 @@ try {
     JSON.stringify(collInv),
   );
 
-  // 2k4. UNDERSTORY-INERT-AT-SHIP (PASS 9): every understory palette ships
-  // EMPTY, so the tier plants nothing anywhere — proven over a planet-wide
-  // fixture sweep AND against the live renderer's own counters.
+  // 2k4. UNDERSTORY-LIVE (PASS 9's inertness check, PROMOTED in Art Session 4
+  // when the PNW understory palettes were populated): the tier now plants for
+  // real in exactly the biomes whose palette carries entries, and STILL plants
+  // nothing anywhere else. The inertness half of the original check survives
+  // as the "every unpopulated biome stays empty" assertion.
   const understoryInert = await page.evaluate(() => {
     const ws = window.__worldScale;
     const f = ws.flora;
     const populated = f.biomesWithTierPalette('understory');
-    let planted = 0;
+    let plantedPopulated = 0;
+    let plantedElsewhere = 0;
     for (let biome = 0; biome < 12; biome++) {
-      for (let k = 0; k < 500; k++) if (f.floraFor(120000 + k * 13, 260000 + k * 7, biome, 'understory')) planted++;
+      for (let k = 0; k < 500; k++) {
+        if (!f.floraFor(120000 + k * 13, 260000 + k * 7, biome, 'understory')) continue;
+        if (populated.includes(biome)) plantedPopulated++;
+        else plantedElsewhere++;
+      }
     }
     const ms = window.__ready();
     const st = ms.chunkStreamer;
@@ -11027,11 +11080,11 @@ try {
       for (let dx = -2; dx <= 2; dx++) listed += st.chunkVisuals(pcx + dx, pcy + dy)?.understory.length ?? 0;
     }
     const s = st.stats().visuals;
-    return { populated, planted, listed, understoryVisible: s.understoryVisible, understoryPool: s.understoryPool, understoryCreated: s.understoryCreated };
+    return { populated, plantedPopulated, plantedElsewhere, listed, understoryVisible: s.understoryVisible, understoryPool: s.understoryPool };
   });
   ok(
-    'understory-inert-at-ship: no biome carries an understory palette, 6,000 fixture tiles plant zero understory, the live chunk lists are empty and the pool never allocated an image',
-    understoryInert.populated.length === 0 && understoryInert.planted === 0 && understoryInert.listed === 0 && understoryInert.understoryVisible === 0 && understoryInert.understoryPool === 0,
+    'understory-live: the tier plants ONLY in biomes whose palette carries entries (PNW forest + taiga) and nowhere else across a 6,000-tile sweep; unpopulated biomes stay exactly inert',
+    understoryInert.populated.length === 2 && understoryInert.plantedPopulated > 0 && understoryInert.plantedElsewhere === 0,
     JSON.stringify(understoryInert),
   );
 
