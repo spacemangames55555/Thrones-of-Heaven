@@ -92,3 +92,21 @@ ledger: weapon homonyms (blade) and "needle"/"litter" trip the policy
 filter uncharged; color modifiers can drift hue ("moss flecks" browned a
 gray boulder — prefer plain material words, add accents only after the
 base reads right).
+
+### Correction discipline, addendum (Art Session 4)
+
+A correction must re-assert **every** band the first attempt already held —
+most easily forgotten: **frame containment**. Art Session 4's `log-a` is the
+precedent: attempt 1 sat 0.021 under its (self-derived) opacity floor with a
+clean silhouette; the correction prompt asked for a log "across the full
+width of the frame", which hit the opacity band but ran off both side edges,
+reading as a trunk clipped mid-length. Attempt 1 was staged as best-of and
+approved as a slender variety asset. So: when you push on the axis that
+missed, name the axes that passed as constraints in the same prompt
+("filling more of the frame **while staying clear of the left and right
+edges**"). A correction that trades one band for another is not a
+correction.
+
+Sizing vocabulary that works: ask for the OBJECT to be bigger ("large
+lush fern", "thick heavy log"), not for it to fill the canvas — canvas
+language invites edge contact, object language does not.

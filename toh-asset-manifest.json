@@ -7563,10 +7563,20 @@
         "path": "public/art/terrain/props/cactus-a.png",
         "brief": "toh-terrain-art-brief.md"
       },
-      "status": "fallback",
-      "blockedBy": [
-        "desert-base-approved"
-      ]
+      "status": "fallback"
+    },
+    {
+      "id": "prop-cedar-a",
+      "category": "terrain-prop",
+      "spec": {
+        "kind": "prop",
+        "w": 48,
+        "h": 64,
+        "tier": "canopy",
+        "path": "public/art/terrain/props/cedar-a.png",
+        "brief": "toh-terrain-art-brief.md"
+      },
+      "status": "live"
     },
     {
       "id": "prop-fern-sword-a",
@@ -7579,10 +7589,7 @@
         "path": "public/art/terrain/props/fern-sword-a.png",
         "brief": "toh-terrain-art-brief.md"
       },
-      "status": "missing",
-      "blockedBy": [
-        "pnw-understory-palette"
-      ]
+      "status": "live"
     },
     {
       "id": "prop-fern-sword-b",
@@ -7595,10 +7602,7 @@
         "path": "public/art/terrain/props/fern-sword-b.png",
         "brief": "toh-terrain-art-brief.md"
       },
-      "status": "missing",
-      "blockedBy": [
-        "pnw-understory-palette"
-      ]
+      "status": "live"
     },
     {
       "id": "prop-log-a",
@@ -7611,10 +7615,7 @@
         "path": "public/art/terrain/props/log-a.png",
         "brief": "toh-terrain-art-brief.md"
       },
-      "status": "missing",
-      "blockedBy": [
-        "pnw-understory-palette"
-      ]
+      "status": "live"
     },
     {
       "id": "prop-salal-a",
@@ -7627,10 +7628,7 @@
         "path": "public/art/terrain/props/salal-a.png",
         "brief": "toh-terrain-art-brief.md"
       },
-      "status": "missing",
-      "blockedBy": [
-        "pnw-understory-palette"
-      ]
+      "status": "live"
     },
     {
       "id": "prop-sapling-fir-a",
@@ -7643,10 +7641,7 @@
         "path": "public/art/terrain/props/sapling-fir-a.png",
         "brief": "toh-terrain-art-brief.md"
       },
-      "status": "missing",
-      "blockedBy": [
-        "pnw-understory-palette"
-      ]
+      "status": "live"
     },
     {
       "id": "prop-scrub-a",
@@ -7659,10 +7654,20 @@
         "path": "public/art/terrain/props/scrub-a.png",
         "brief": "toh-terrain-art-brief.md"
       },
-      "status": "fallback",
-      "blockedBy": [
-        "desert-base-approved"
-      ]
+      "status": "fallback"
+    },
+    {
+      "id": "prop-snag-a",
+      "category": "terrain-prop",
+      "spec": {
+        "kind": "prop",
+        "w": 48,
+        "h": 64,
+        "tier": "canopy",
+        "path": "public/art/terrain/props/snag-a.png",
+        "brief": "toh-terrain-art-brief.md"
+      },
+      "status": "live"
     },
     {
       "id": "prop-stump-a",
@@ -7675,10 +7680,7 @@
         "path": "public/art/terrain/props/stump-a.png",
         "brief": "toh-terrain-art-brief.md"
       },
-      "status": "missing",
-      "blockedBy": [
-        "pnw-understory-palette"
-      ]
+      "status": "live"
     },
     {
       "id": "prop-swamp-tree-a",
@@ -7691,10 +7693,7 @@
         "path": "public/art/terrain/props/swamp-tree-a.png",
         "brief": "toh-terrain-art-brief.md"
       },
-      "status": "fallback",
-      "blockedBy": [
-        "swamp-base-approved"
-      ]
+      "status": "fallback"
     },
     {
       "id": "prop-swamp-tree-b",
@@ -7707,10 +7706,7 @@
         "path": "public/art/terrain/props/swamp-tree-b.png",
         "brief": "toh-terrain-art-brief.md"
       },
-      "status": "fallback",
-      "blockedBy": [
-        "swamp-base-approved"
-      ]
+      "status": "fallback"
     },
     {
       "id": "prop-tree-broad-a",
@@ -7791,7 +7787,7 @@
         "brief": "toh-terrain-art-brief.md",
         "biome": 2
       },
-      "status": "fallback"
+      "status": "live"
     },
     {
       "id": "desert",
@@ -7804,7 +7800,7 @@
         "brief": "toh-terrain-art-brief.md",
         "biome": 5
       },
-      "status": "fallback"
+      "status": "live"
     },
     {
       "id": "forest",
@@ -7882,7 +7878,7 @@
         "brief": "toh-terrain-art-brief.md",
         "biome": 4
       },
-      "status": "fallback"
+      "status": "live"
     },
     {
       "id": "snow",
@@ -7908,7 +7904,7 @@
         "brief": "toh-terrain-art-brief.md",
         "biome": 11
       },
-      "status": "fallback"
+      "status": "live"
     },
     {
       "id": "taiga",
@@ -7934,7 +7930,7 @@
         "brief": "toh-terrain-art-brief.md",
         "biome": 8
       },
-      "status": "fallback"
+      "status": "live"
     },
     {
       "id": "tile-corrupted_ground",
