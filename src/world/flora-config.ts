@@ -1,4 +1,5 @@
 import { Biome } from './terrain-schema';
+import { BIOME_COLORS } from './biome-anchors';
 
 /**
  * FLORA CONFIG (Pass 9) — the structural home of world scatter: WHAT can
@@ -73,15 +74,15 @@ const propPath = (id: string) => `public/art/terrain/props/${id}.png`;
  */
 export const FLORA_PROPS: Record<string, FloraProp> = {
   // ── Canopy: the live PNW set (Art Session 3, band-checked anchors) ──────
-  'tree-fir-a': { w: 48, h: 64, tier: 'canopy', collides: false, silhouette: 'conifer', artPath: propPath('tree-fir-a'), anchor: 0x3a5f4a },
-  'tree-fir-b': { w: 48, h: 64, tier: 'canopy', collides: false, silhouette: 'conifer', artPath: propPath('tree-fir-b'), anchor: 0x3a5f4a },
-  'tree-broad-a': { w: 48, h: 64, tier: 'canopy', collides: false, silhouette: 'broadleaf', artPath: propPath('tree-broad-a'), anchor: 0x2f6d3a },
-  'tree-broad-b': { w: 48, h: 64, tier: 'canopy', collides: false, silhouette: 'broadleaf', artPath: propPath('tree-broad-b'), anchor: 0x2f6d3a },
+  'tree-fir-a': { w: 48, h: 64, tier: 'canopy', collides: false, silhouette: 'conifer', artPath: propPath('tree-fir-a'), anchor: BIOME_COLORS[Biome.TAIGA] },
+  'tree-fir-b': { w: 48, h: 64, tier: 'canopy', collides: false, silhouette: 'conifer', artPath: propPath('tree-fir-b'), anchor: BIOME_COLORS[Biome.TAIGA] },
+  'tree-broad-a': { w: 48, h: 64, tier: 'canopy', collides: false, silhouette: 'broadleaf', artPath: propPath('tree-broad-a'), anchor: BIOME_COLORS[Biome.FOREST] },
+  'tree-broad-b': { w: 48, h: 64, tier: 'canopy', collides: false, silhouette: 'broadleaf', artPath: propPath('tree-broad-b'), anchor: BIOME_COLORS[Biome.FOREST] },
   // GEOLOGY DOES NOT GROW: a scale-jittered boulder reads as a floating rock
   // (the eye knows stone size from its texture), so boulders take mirror +
   // tint variation only. Stated here, enforced by the variation resolver.
-  'boulder-a': { w: 32, h: 32, tier: 'canopy', collides: false, silhouette: 'lump', artPath: propPath('boulder-a'), anchor: 0x7d7a74, variation: { scale: false } },
-  'boulder-b': { w: 32, h: 32, tier: 'canopy', collides: false, silhouette: 'lump', artPath: propPath('boulder-b'), anchor: 0x7d7a74, variation: { scale: false } },
+  'boulder-a': { w: 32, h: 32, tier: 'canopy', collides: false, silhouette: 'lump', artPath: propPath('boulder-a'), anchor: BIOME_COLORS[Biome.ROCK], variation: { scale: false } },
+  'boulder-b': { w: 32, h: 32, tier: 'canopy', collides: false, silhouette: 'lump', artPath: propPath('boulder-b'), anchor: BIOME_COLORS[Biome.ROCK], variation: { scale: false } },
   // ── Canopy: fenced rows (no art yet — placeholder silhouettes carry them) ─
   'cactus-a': { w: 32, h: 48, tier: 'canopy', collides: false, silhouette: 'cactus', artPath: propPath('cactus-a'), anchor: null },
   'scrub-a': { w: 32, h: 32, tier: 'canopy', collides: false, silhouette: 'lump', artPath: propPath('scrub-a'), anchor: null },
@@ -91,7 +92,7 @@ export const FLORA_PROPS: Record<string, FloraProp> = {
   waystone: { w: 32, h: 64, tier: 'canopy', collides: false, silhouette: 'pillar', artPath: propPath('waystone'), anchor: null },
   // ── Canopy adds (Art Session 4) ────────────────────────────────────────
   // Cedar: a second PNW conifer, shaggier and broader than the firs.
-  'cedar-a': { w: 48, h: 64, tier: 'canopy', collides: false, silhouette: 'conifer', artPath: propPath('cedar-a'), anchor: 0x3a5f4a },
+  'cedar-a': { w: 48, h: 64, tier: 'canopy', collides: false, silhouette: 'conifer', artPath: propPath('cedar-a'), anchor: BIOME_COLORS[Biome.TAIGA] },
   // Snag: a DEAD standing trunk. Nearest existing silhouette class is
   // 'stump' — the same dead-wood object, just tall (a 'conifer' triangle
   // would draw it alive and green, 'pillar' would draw it as blue stone).

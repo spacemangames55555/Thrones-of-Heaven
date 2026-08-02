@@ -978,6 +978,41 @@ const ok = (name, pass, detail = '') => {
       JSON.stringify({ scanned: textish.length, hits: hits.slice(0, 5) }),
     );
   }
+
+  // 0f6. ANCHOR-SOURCE (ART SESSION 5, standing batch policy): biome anchors
+  // live in src/world/biome-anchors.ts (a LEAF module, so no consumer can
+  // close an init cycle on it) and NOWHERE else in executable
+  // code. Art Session 5 hand-typed OCEAN's anchor with one hex digit wrong
+  // and shifted a whole luminance band by three units before the miscopy
+  // surfaced; the numbers a band check runs on must be IMPORTED, never
+  // retyped. (This comment names no anchor on purpose — the check would
+  // rightly flag its own prose.)
+  // Scope is deliberate: tracked .ts/.mjs under src/, scripts/ and tools/ —
+  // executable code, where a stale copy silently changes a measurement. Prose
+  // may quote an anchor (docs and the style lock do, next to the file name).
+  {
+    const { BIOME_COLORS } = await import(await (async () => {
+      const { build } = await import('esbuild');
+      const outfile = new URL('../node_modules/.cache/toh-anchors.mjs', import.meta.url).pathname;
+      await build({ entryPoints: [new URL('../src/world/biome-anchors.ts', import.meta.url).pathname], bundle: true, format: 'esm', platform: 'node', outfile, logLevel: 'silent' });
+      return outfile;
+    })());
+    const anchorHexes = new Set(BIOME_COLORS.map((c) => c.toString(16).padStart(6, '0').toLowerCase()));
+    const tracked = spawnSync('git', ['ls-files'], { encoding: 'utf8' }).stdout.split('\n').filter(Boolean);
+    const code = tracked.filter((f) => /^(src|scripts|tools)\/.*\.(ts|mjs)$/.test(f) && f !== 'src/world/biome-anchors.ts' && existsSync(f));
+    const strays = [];
+    for (const f of code) {
+      for (const m of readFileSync(f, 'utf8').matchAll(/0x([0-9a-fA-F]{6})\b|#([0-9a-fA-F]{6})\b/g)) {
+        const hex = (m[1] ?? m[2]).toLowerCase();
+        if (anchorHexes.has(hex)) strays.push(`${f}: ${m[0]}`);
+      }
+    }
+    ok(
+      'anchor-source: every biome anchor is read from src/world/biome-anchors.ts — no tracked .ts/.mjs under src/, scripts/ or tools/ retypes one as a literal (a hand-copied anchor silently moves the band it defines)',
+      strays.length === 0 && anchorHexes.size === 12,
+      JSON.stringify({ anchors: anchorHexes.size, scanned: code.length, strays: strays.slice(0, 6) }),
+    );
+  }
 }
 
 // 0g. SIM-LOCALITY STATIC (PASS 6B, pure Node): the rename landed (no

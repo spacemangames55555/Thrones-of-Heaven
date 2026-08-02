@@ -7854,7 +7854,7 @@
         "brief": "toh-terrain-art-brief.md",
         "biome": 1
       },
-      "status": "fallback"
+      "status": "live"
     },
     {
       "id": "grass",
@@ -7880,7 +7880,7 @@
         "brief": "toh-terrain-art-brief.md",
         "biome": 0
       },
-      "status": "fallback"
+      "status": "live"
     },
     {
       "id": "rock",

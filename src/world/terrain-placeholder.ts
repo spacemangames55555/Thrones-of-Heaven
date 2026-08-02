@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { TILE_PX } from './world-scale';
+import { BIOME_COLORS } from './biome-anchors';
 import { FRINGE_CELLS, PROP_TABLE, SHEET_CELL, type FringeCell } from './terrain-visuals-config';
 import { FLORA_PROPS, type SilhouetteClass } from './flora-config';
 
@@ -25,21 +26,6 @@ export const VARIANTS_PER_BIOME = 4;
 export const ATLAS_STRIDE = 8;
 export const BIOME_COUNT = 12;
 
-// Indexed by Biome enum value (0..11).
-const BIOME_COLORS = [
-  0x274b6d, // OCEAN
-  0x3a6d99, // FRESHWATER
-  0xdcc98f, // BEACH
-  0x5f9e46, // GRASS
-  0xb8a24f, // SAVANNA
-  0xd8b56a, // DESERT
-  0x2f6d3a, // FOREST
-  0x3a5f4a, // TAIGA
-  0x8fa08a, // TUNDRA
-  0xe8edf2, // SNOW
-  0x7d7a74, // ROCK
-  0x4a5f3f, // SWAMP
-];
 
 /** Deterministic per-pixel hash for speckle + dither (no Math.random). */
 function hash01(ix: number, iy: number, seed: number): number {
