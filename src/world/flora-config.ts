@@ -79,6 +79,13 @@ export const FLORA_PROPS: Record<string, FloraProp> = {
   'swamp-tree-b': { w: 48, h: 64, tier: 'canopy', collides: false, silhouette: 'conifer', artPath: propPath('swamp-tree-b'), anchor: null },
   // Reserved hero object — its own mini bake-off, never batched (ledgered).
   waystone: { w: 32, h: 64, tier: 'canopy', collides: false, silhouette: 'pillar', artPath: propPath('waystone'), anchor: null },
+  // ── Canopy adds (Art Session 4) ────────────────────────────────────────
+  // Cedar: a second PNW conifer, shaggier and broader than the firs.
+  'cedar-a': { w: 48, h: 64, tier: 'canopy', collides: false, silhouette: 'conifer', artPath: propPath('cedar-a'), anchor: 0x3a5f4a },
+  // Snag: a DEAD standing trunk. Nearest existing silhouette class is
+  // 'stump' — the same dead-wood object, just tall (a 'conifer' triangle
+  // would draw it alive and green, 'pillar' would draw it as blue stone).
+  'snag-a': { w: 48, h: 64, tier: 'canopy', collides: false, silhouette: 'stump', artPath: propPath('snag-a'), anchor: 0x6b5a49 },
   // ── Understory: declared slots, EMPTY in every palette at ship ──────────
   'fern-sword-a': { w: 32, h: 32, tier: 'understory', collides: false, silhouette: 'fern-frond', artPath: propPath('fern-sword-a'), anchor: null },
   'fern-sword-b': { w: 32, h: 32, tier: 'understory', collides: false, silhouette: 'fern-frond', artPath: propPath('fern-sword-b'), anchor: null },
@@ -111,13 +118,55 @@ const EMPTY_UNDERSTORY: FloraTierConfig = { density: 0, palette: [] };
  * on, so a reorder silently re-plants the whole world).
  */
 export const BIOME_FLORA: Record<number, Record<FloraTier, FloraTierConfig>> = {
+  // ART SESSION 4: the PNW gains an understory and two more canopy species.
+  // Adding a weighted entry RE-ROLLS which species each tile holds (the
+  // palette is the pick space) — an intended re-plant, not a regression.
+  // Weights + densities are INITIAL values; the density feel ruling is the
+  // dressed-forest ride's job (ledgered).
   [Biome.FOREST]: {
-    canopy: { density: 0.3, palette: even('tree-broad-a', 'tree-broad-b', 'tree-fir-a') },
-    understory: EMPTY_UNDERSTORY,
+    canopy: {
+      density: 0.3,
+      palette: [
+        { propId: 'tree-broad-a', weight: 1 },
+        { propId: 'tree-broad-b', weight: 1 },
+        { propId: 'tree-fir-a', weight: 1 },
+        { propId: 'cedar-a', weight: 20 },
+        { propId: 'snag-a', weight: 5 },
+      ],
+    },
+    understory: {
+      density: 0.45,
+      palette: [
+        { propId: 'fern-sword-a', weight: 30 },
+        { propId: 'fern-sword-b', weight: 30 },
+        { propId: 'salal-a', weight: 20 },
+        { propId: 'sapling-fir-a', weight: 10 },
+        { propId: 'stump-a', weight: 5 },
+        { propId: 'log-a', weight: 5 },
+      ],
+    },
   },
   [Biome.TAIGA]: {
-    canopy: { density: 0.22, palette: even('tree-fir-a', 'tree-fir-b') },
-    understory: EMPTY_UNDERSTORY,
+    canopy: {
+      density: 0.22,
+      palette: [
+        { propId: 'tree-fir-a', weight: 1 },
+        { propId: 'tree-fir-b', weight: 1 },
+        { propId: 'cedar-a', weight: 10 },
+        { propId: 'snag-a', weight: 10 },
+      ],
+    },
+    understory: {
+      density: 0.35,
+      palette: [
+        { propId: 'fern-sword-a', weight: 25 },
+        { propId: 'fern-sword-b', weight: 25 },
+        { propId: 'salal-a', weight: 15 },
+        { propId: 'sapling-fir-a', weight: 20 },
+        { propId: 'stump-a', weight: 10 },
+        { propId: 'log-a', weight: 5 },
+      ],
+    },
   },
   [Biome.SWAMP]: {
     canopy: { density: 0.15, palette: even('swamp-tree-a', 'swamp-tree-b') },

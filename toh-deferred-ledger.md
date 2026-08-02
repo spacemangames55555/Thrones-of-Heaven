@@ -340,3 +340,42 @@ ruling lands, strike the entry with a pointer to the commit that resolved it.
   DENSITY FEEL TUNING pending Casey's dressed-forest ride: the numbers are
   the Pass 5 values chosen at 50:1 scale and never re-felt at 1:1 with real
   art in the frame.
+- ART SESSION 4 (world dress v1, 2026-08-02): FIVE BASES (desert, savanna,
+  swamp, tundra, beach) + SIX PNW UNDERSTORY PROPS + TWO CANOPY ADDS (cedar,
+  snag) approved on three independent verdicts; PNW understory palettes and
+  the cedar/snag canopy entries populated. Ten of twelve biomes now wear real
+  art (ocean + freshwater are Session 5's animated-water bake-off).
+  PALETTE ENTRIES RE-PLANT: adding a weighted entry re-rolls which species
+  each tile holds, so forest and taiga canopy re-planted by design. The
+  refactor-invariance check (migration-silence) was RE-SCOPED to the
+  mechanism (equal-weight palettes reduce to the Pass 5 uniform pick) and a
+  new PALETTE-PIN check now owns content: ids, order, weights and density are
+  pinned, so a silent re-plant is red.
+  MANIFEST DERIVATION FIX (found by the pre-generation verification, before
+  any credit was spent): the prop->biome map was CANOPY-ONLY, so populated
+  understory props reported `missing` and skipped their base fences.
+  Placement truth is BIOME_FLORA across every tier - corrected identically in
+  the builder and the gate.
+  LOG-A is a SLENDER VARIETY ASSET by verdict (fir-a/boulder-a precedent):
+  0.229 opacity against a self-derived 0.25 floor, clean ends, no
+  regeneration debt. LOG-B (fuller) is SCHEDULED for the swamp-props session
+  to complete the pair.
+  CORRECTION DISCIPLINE ADDENDUM (docs/art-pipeline.md): a correction must
+  re-assert the bands the first attempt already held - frame containment
+  above all. log-a attempt 2 traded clean edges for opacity ("across the full
+  width of the frame") and was rejected as best-of. Prompt sizing by OBJECT
+  ("large lush fern", "thick heavy log"), never by canvas.
+  SPEND RECONCILIATION (session 170 generations; running 419 of 2000, $0.00
+  credits). Itemized: 7 tiles_pro base runs x 20 = 140; 10 map_object prop
+  calls x 1 = 10; total accounted 150. The 20-generation delta is a
+  RESTART DOUBLE-DISPATCH, verified against the service job list rather than
+  inferred: a duplicate SWAMP tiles_pro job (e31bfc0d, completed, never
+  returned a response to the session) plus a duplicate TUNDRA job (43e70847,
+  FAILED, uncharged) both exist server-side from the container restart
+  window. Lesson: an interrupted generate call may still have reached the
+  service - reconcile against list_tiles_pro / list_objects before reporting
+  spend, and prefer checking for an existing job over re-dispatching after a
+  restart.
+  SWAMP DARKNESS + TUNDRA SPREAD both needed attempt 2 (swamp lum 56 -> 99
+  against a 71 floor; tundra variant spread 76 -> 9.9 against 48). Tundra's
+  0.093 saturation correctly triggers the Pass 9 near-neutral rule.
