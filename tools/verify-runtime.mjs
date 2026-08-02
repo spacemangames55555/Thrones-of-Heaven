@@ -3458,15 +3458,37 @@ try {
       ms.zoomControls.target = z; // the real funnel — a raw setZoom is pulled back to target next frame
       ms.cameras.main.setZoom(z);
     };
+    // STABILIZATION (Art Session 5, second confirmed flake on this check):
+    // the settles were FIXED waits (fadeMs + 1200), already widened once in
+    // Pass 4 and flaked again anyway — a bigger constant is a guess, not a
+    // fix. Wait on the CONDITION instead, the dot-on-evicted precedent:
+    // poll until the LOD state and the visible-layer count have both reached
+    // their terminal values, with a deadline far beyond any observed stall.
+    // The assertions below are UNCHANGED — if the state never settles, the
+    // poll times out with the un-settled numbers and the check still fails.
+    const settle = async (want) => {
+      const deadline = Date.now() + ms.feel.lod.fadeMs + 8000;
+      let seen = { state: ms.lodState, ...counts() };
+      while (Date.now() < deadline) {
+        seen = { state: ms.lodState, ...counts() };
+        if (seen.state === want.state && (want.state === 'far' ? seen.tileLayersVisible === 0 : seen.tileLayersVisible === seen.tileLayersTotal)) {
+          // Hold it for two more polls so a mid-fade sample cannot pass.
+          await wait(120);
+          const again = { state: ms.lodState, ...counts() };
+          if (again.state === seen.state && again.tileLayersVisible === seen.tileLayersVisible) return again;
+          seen = again;
+          continue;
+        }
+        await wait(120);
+      }
+      return seen;
+    };
     zoomTo(1.1);
-    await wait(120);
-    const near0 = { state: ms.lodState, ...counts() };
+    const near0 = await settle({ state: 'near' });
     zoomTo(0.0005); // world view
-    await wait(ms.feel.lod.fadeMs + 1200); // generous settle: swiftshader world-zoom frames stall under load (3 observed flakes)
-    const far = { state: ms.lodState, ...counts() };
+    const far = await settle({ state: 'far' });
     zoomTo(1.1);
-    await wait(ms.feel.lod.fadeMs + 1200);
-    const near1 = { state: ms.lodState, ...counts() };
+    const near1 = await settle({ state: 'near' });
     return { near0, far, near1 };
   });
   ok(
@@ -9111,14 +9133,20 @@ try {
     const home = ms.terrestrialPxFromLatLng({ lat: 23.0, lng: 2.0 });
     ms.player.sprite.body.reset(home.x, home.y);
     ms.lastLandPos = undefined;
-    await wait(400);
+    // STABILIZATION (Art Session 5, this check flaked again AFTER its Pass 6A
+    // hardening). Two gaps, both fixed by waiting on conditions instead of
+    // clocks: (a) the 400 ms after body.reset was a fixed wait, so under a
+    // stall the demon could spawn 100 px from a STALE player position and
+    // never engage; (b) the poll only watched inCombatDerived(), not the DoT
+    // list, so the sampled precondition was never the whole precondition.
+    for (let k = 0; k < 40 && Math.hypot(ms.player.x - home.x, ms.player.y - home.y) > 1; k++) await wait(100);
     const d = ms.spawnDemon(home.x + 100, home.y, ms.activeMap().layer);
     d.takeHit(1);
     ms.applyDotInRange(d.x, d.y, 60, 3, 250, 9000, 0x77ff77);
     // The funnel recomputes per FRAME - under swiftshader load frames can
-    // stall, so ESTABLISH the engaged precondition by polling (the assertion
-    // itself is unchanged: DoT live + combat derived).
-    for (let k = 0; k < 14 && !ms.inCombatDerived(); k++) await wait(300);
+    // stall, so ESTABLISH the FULL engaged precondition by polling (the
+    // assertion itself is unchanged: DoT live + combat derived).
+    for (let k = 0; k < 40 && !(ms.dots.length >= 1 && ms.inCombatDerived()); k++) await wait(150);
     const dotLive = ms.dots.length >= 1 && ms.inCombatDerived() === true;
     d.destroy(); // the eviction path (deactivateRegionZone destroys exactly so)
     await wait(600);
