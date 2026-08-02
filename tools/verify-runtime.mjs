@@ -695,6 +695,13 @@ const ok = (name, pass, detail = '') => {
     if (a.category === 'figure-anim' && !fences.includes('walk-framework')) fenceGaps.push(`${a.id}:no-walk-fence`);
     if (a.category === 'terrain-prop') {
       const prop = a.id.replace(/^prop-/, '');
+      // SYNTHETIC HARNESS ROWS carry no fence at all — a fence is a promise
+      // that art lands when the ruling clears, and no art may EVER land
+      // here. `fixture-row-inert` below owns their invariants.
+      if (a.fixture) {
+        if (fences.length > 0) fenceGaps.push(`${a.id}:fixture-must-carry-no-fence`);
+        continue;
+      }
       const scattered = [...(fencePropBiomes[prop] ?? [])];
       // PASS 9: understory rows are fenced on their TIER PALETTE (released
       // the moment a biome's understory palette carries entries — recomputed
@@ -729,7 +736,7 @@ const ok = (name, pass, detail = '') => {
     mkdirSync(join(bfx, 'fixtures'), { recursive: true });
     // Locks fixtures (the REAL art/style-locks.json stays empty — locks are
     // human-approved; the real-file refusal is asserted below).
-    writeFileSync(join(bfx, 'locks.json'), JSON.stringify({ locks: { 'terrain-sheet': { reference: 'public/icons/icon-192.png', prompt: 'fixture' }, creature: { reference: 'public/icons/icon-192.png', prompt: 'fixture' } } }));
+    writeFileSync(join(bfx, 'locks.json'), JSON.stringify({ locks: { 'terrain-sheet': { reference: 'public/icons/icon-192.png', prompt: 'fixture' }, 'terrain-prop': { reference: 'public/icons/icon-192.png', prompt: 'fixture' }, creature: { reference: 'public/icons/icon-192.png', prompt: 'fixture' } } }));
     // A contract-true sheet for 'ocean' (same construction as the lint
     // fixture above) and a wrong-size sheet for 'freshwater'. ART SESSION 4:
     // these fixtures MUST name sheets that are still fallback — the batch
@@ -754,6 +761,24 @@ const ok = (name, pass, detail = '') => {
     }
     writeFileSync(join(bfx, 'fixtures', 'ocean.png'), PNG.sync.write(goodSheet));
     writeFileSync(join(bfx, 'fixtures', 'freshwater.png'), PNG.sync.write(new PNG({ width: 64, height: 64 })));
+    // ART SESSION 5 — THE PERMANENT HARNESS TARGET. These checks used to
+    // borrow whichever real biome happened to be undressed, and quietly
+    // stopped asserting the moment it shipped (Session 4 lost three that
+    // way). `fixture-harness-a` is synthetic FOREVER: never in a palette,
+    // never rendered, never counted as debt, and refused by art:approve —
+    // so it can never become live and can never stop being a valid target.
+    const goodProp = new PNG({ width: 32, height: 32 });
+    for (let i = 0; i < goodProp.data.length; i += 4) {
+      goodProp.data[i] = 90;
+      goodProp.data[i + 1] = 110;
+      goodProp.data[i + 2] = 80;
+      goodProp.data[i + 3] = 255;
+    }
+    writeFileSync(join(bfx, 'fixtures', 'prop-fixture-harness-a.png'), PNG.sync.write(goodProp));
+    // ...and the BAD half on the OTHER permanent harness row: a wrong-size
+    // PNG (contract is 32x32) so lint-wired proves the exclusion path against
+    // a target that can never ship its way out of being a target.
+    writeFileSync(join(bfx, 'fixtures', 'prop-fixture-harness-b.png'), PNG.sync.write(new PNG({ width: 11, height: 7 })));
     // A fixture for a BLOCKED creature id — it must NEVER be consumed.
     writeFileSync(join(bfx, 'fixtures', 'townsfolk.png'), PNG.sync.write(goodSheet));
 
@@ -776,14 +801,14 @@ const ok = (name, pass, detail = '') => {
     // ONLY inside art-review/<id> (the contract path stays absent and the
     // live tree untouched); statically, the tool's ONE raw write sits
     // inside the stagePath funnel.
-    const trav = run(['scripts/art-batch/batch.mjs', '--category', 'terrain-sheet', '--locks', join(bfx, 'locks.json'), '--fixture-dir', join(bfx, 'fixtures'), '--batch-id', '../escape']);
-    const runA = run(['scripts/art-batch/batch.mjs', '--category', 'terrain-sheet', '--locks', join(bfx, 'locks.json'), '--fixture-dir', join(bfx, 'fixtures'), '--limit', '2', '--batch-id', 'gate-fix-a']);
+    const trav = run(['scripts/art-batch/batch.mjs', '--category', 'terrain-prop', '--locks', join(bfx, 'locks.json'), '--fixture-dir', join(bfx, 'fixtures'), '--batch-id', '../escape']);
+    const runA = run(['scripts/art-batch/batch.mjs', '--category', 'terrain-prop', '--locks', join(bfx, 'locks.json'), '--fixture-dir', join(bfx, 'fixtures'), '--limit', '12', '--batch-id', 'gate-fix-a']);
     const batchSrc = readFileSync('scripts/art-batch/batch.mjs', 'utf8');
     // Count CALL SITES (the import mention has no paren): the tool's one
     // raw write lives inside writeStaged, behind the stagePath funnel.
     const rawWrites = (batchSrc.match(/writeFileSync\(/g) ?? []).length;
-    const stagedOk = existsSync('art-review/gate-fix-a/public/art/terrain/ocean.png');
-    const contractUntouched = !existsSync('public/art/terrain/ocean.png') && !existsSync('escape');
+    const stagedOk = existsSync('art-review/gate-fix-a/public/art/terrain/props/fixture-harness-a.png');
+    const contractUntouched = !existsSync('public/art/terrain/props/fixture-harness-a.png') && !existsSync('escape');
     ok(
       'batch-stages-only: traversal batch id refused; a real batch stages under art-review/<id> only — the contract path stays absent; the tool has exactly ONE raw write, inside the stagePath funnel',
       trav.status === 1 && /not a plain path segment/.test(trav.stderr) && runA.status === 0 && stagedOk && contractUntouched && rawWrites === 1 && /function stagePath/.test(batchSrc),
@@ -793,12 +818,12 @@ const ok = (name, pass, detail = '') => {
     // lint-wired: the wrong-size fixture is EXCLUDED with its reason; the
     // good one is staged with the advisory columns in the report.
     const repA = JSON.parse(readFileSync('art-review/gate-fix-a/report.json', 'utf8'));
-    const beachRow = repA.staged.find((s) => s.id === 'ocean');
-    const desertRow = repA.excluded.find((e) => e.id === 'freshwater');
+    const goodRow = repA.staged.find((s) => s.id === 'prop-fixture-harness-a');
+    const badRow = repA.excluded.find((e) => e.id === 'prop-fixture-harness-b');
     ok(
-      'lint-wired: a bad staged asset is excluded with its lint reason; staged rows carry the palette-size + luminance advisory columns',
-      !!beachRow && Number.isFinite(beachRow.paletteSize) && Number.isFinite(beachRow.meanLuminance) && !!desertRow && /64x64/.test(desertRow.reason),
-      JSON.stringify({ beach: beachRow, desert: desertRow }),
+      'lint-wired: a bad staged asset is excluded with its lint reason; staged rows carry the palette-size + luminance advisory columns (both halves ride PERMANENT harness rows)',
+      !!goodRow && Number.isFinite(goodRow.paletteSize) && Number.isFinite(goodRow.meanLuminance) && !!badRow && /11x7/.test(badRow.reason),
+      JSON.stringify({ good: goodRow, bad: badRow }),
     );
 
     // fence-respected: a category whose blocked ids HAVE fixtures generates
@@ -813,21 +838,117 @@ const ok = (name, pass, detail = '') => {
       JSON.stringify({ runB: runB.status, townBlocked, townNotStaged, blocked: repB.blockedSkipped.length }),
     );
 
-    // manifest-sync RE-RUN POST-FLIP: approving the staged batch into a
-    // SANDBOX root lands the file at its contract-relative path there,
-    // while the live tree — and therefore the committed manifest — is
-    // untouched and still in sync.
-    const appr = run(['scripts/art-batch/approve.mjs', '--batch', 'gate-fix-a', '--root', join(bfx, 'sandbox')]);
-    const flipOk = existsSync(join(bfx, 'sandbox', 'public/art/terrain/ocean.png'));
+    // manifest-sync RE-RUN POST-FLIP, two halves (Art Session 5):
+    // (a) approving the HARNESS batch is REFUSED outright — a synthetic row
+    //     must never reach a contract path, or the checks that depend on it
+    //     staying unlive would retire themselves;
+    // (b) a hand-built batch carrying a REAL row still flips correctly into
+    //     a sandbox root, and the live tree + committed manifest stay
+    //     byte-in-sync throughout.
+    const apprFixture = run(['scripts/art-batch/approve.mjs', '--batch', 'gate-fix-a', '--root', join(bfx, 'sandbox')]);
+    const fixtureBlocked = apprFixture.status !== 0 && /REFUSED/.test(apprFixture.stderr) && !existsSync(join(bfx, 'sandbox', 'public/art/terrain/props/fixture-harness-a.png'));
+    const realDir = 'art-review/gate-fix-c/public/art/terrain/props';
+    mkdirSync(realDir, { recursive: true });
+    const realPng = new PNG({ width: 32, height: 48 });
+    for (let i = 0; i < realPng.data.length; i += 4) {
+      realPng.data[i + 1] = 120;
+      realPng.data[i + 3] = 255;
+    }
+    writeFileSync(join(realDir, 'cactus-a.png'), PNG.sync.write(realPng));
+    writeFileSync('art-review/gate-fix-c/report.json', JSON.stringify({ batchId: 'gate-fix-c', category: 'terrain-prop', staged: [{ id: 'prop-cactus-a', files: ['public/art/terrain/props/cactus-a.png'] }], excluded: [], blockedSkipped: [] }));
+    const appr = run(['scripts/art-batch/approve.mjs', '--batch', 'gate-fix-c', '--root', join(bfx, 'sandbox')]);
+    const flipOk = existsSync(join(bfx, 'sandbox', 'public/art/terrain/props/cactus-a.png'));
     const syncAfter = run(['scripts/asset-manifest/build.mjs', '--check']);
+    rmSync('art-review/gate-fix-c', { recursive: true, force: true });
     ok(
-      'manifest-sync post-flip: sandbox approval lands the contract-relative file; the live tree and committed manifest remain byte-in-sync',
-      appr.status === 0 && flipOk && syncAfter.status === 0 && !existsSync('public/art/terrain/ocean.png'),
-      JSON.stringify({ appr: appr.status, flipOk, syncAfter: syncAfter.status }),
+      'manifest-sync post-flip: approving a synthetic harness row is REFUSED and lands nothing; a real staged row still flips into the sandbox; the live tree and committed manifest stay byte-in-sync',
+      fixtureBlocked && appr.status === 0 && flipOk && syncAfter.status === 0 && !existsSync('public/art/terrain/props/fixture-harness-a.png') && !existsSync('public/art/terrain/props/cactus-a.png'),
+      JSON.stringify({ apprFixture: apprFixture.status, fixtureBlocked, appr: appr.status, flipOk, syncAfter: syncAfter.status }),
     );
     rmSync('art-review/gate-fix-a', { recursive: true, force: true });
     rmSync('art-review/gate-fix-b', { recursive: true, force: true });
     rmSync(bfx, { recursive: true, force: true });
+  }
+
+  // 0f4b. FIXTURE-ROW-INERT (ART SESSION 5 Step 0): the three batch-machine
+  // checks above now target a PERMANENTLY SYNTHETIC row instead of borrowing
+  // whichever real asset happens to be undressed — Art Session 4 lost three
+  // checks the moment beach/desert shipped, and Session 5 dresses the last
+  // two biomes, so there would be nothing left to borrow. That only holds if
+  // the harness row can never become real. THREE INVARIANTS, all asserted
+  // from ground truth, none read from the row's own claim:
+  //   NEVER RENDERS  — absent from every BIOME_FLORA palette on every tier,
+  //                    and floraFor (THE placement function) returns it zero
+  //                    times over a dense sweep of every biome x tier; no
+  //                    file at its contract path.
+  //   NEVER COUNTS   — invisible to art:coverage: it appears in no line of
+  //                    the report, and the terrain-prop row counts equal the
+  //                    non-fixture manifest rows exactly (it is not art debt).
+  //   NEVER APPROVES — art:approve REFUSES a batch carrying it and lands
+  //                    nothing, even into a throwaway sandbox root.
+  {
+    const fixIds = floraCfg.fixturePropIds();
+    const inPalette = [];
+    for (const [biome, tiers] of Object.entries(floraCfg.BIOME_FLORA)) {
+      for (const [tier, cfg] of Object.entries(tiers)) {
+        for (const e of cfg.palette) if (fixIds.includes(e.propId)) inPalette.push(`${biome}/${tier}:${e.propId}`);
+      }
+    }
+    // Dense placement sweep: every biome that has ANY palette, both tiers,
+    // 4,000 tiles each — a fixture id surfacing even once is a live render.
+    let sampled = 0;
+    let plantedFixture = 0;
+    for (const biome of Object.keys(floraCfg.BIOME_FLORA).map(Number)) {
+      for (const tier of ['canopy', 'understory']) {
+        for (let k = 0; k < 4000; k++) {
+          const f = floraCfg.floraFor(70000 + k * 11, 90000 + k * 17 + biome * 3, biome, tier);
+          sampled++;
+          if (f && fixIds.includes(f.id)) plantedFixture++;
+        }
+      }
+    }
+    const fixtureFilesOnDisk = fixIds.filter((id) => existsSync(`public/art/terrain/props/${id}.png`));
+    const neverRenders = fixIds.length > 0 && inPalette.length === 0 && plantedFixture === 0 && fixtureFilesOnDisk.length === 0;
+
+    const cov = run(['scripts/asset-manifest/coverage.mjs']);
+    const covMentions = fixIds.filter((id) => cov.stdout.includes(id));
+    const propRows = mf.filter((a) => a.category === 'terrain-prop');
+    const realProps = propRows.filter((a) => !a.fixture);
+    const fixtureRows = propRows.filter((a) => a.fixture);
+    const covLine = (cov.stdout.match(/^terrain-prop\s+.*$/m) ?? [''])[0];
+    const covNums = covLine.trim().split(/\s+/).slice(1, 4).map(Number);
+    const countedTotal = covNums.reduce((a, b) => a + b, 0);
+    const neverCounts =
+      cov.status === 0 &&
+      covMentions.length === 0 &&
+      fixtureRows.length === fixIds.length &&
+      Number.isFinite(countedTotal) &&
+      countedTotal === realProps.length &&
+      realProps.length + fixtureRows.length === propRows.length;
+
+    const inertFx = new URL('../node_modules/.cache/toh-fixture-inert', import.meta.url).pathname;
+    rmSync(inertFx, { recursive: true, force: true });
+    rmSync('art-review/gate-inert', { recursive: true, force: true });
+    const inertDir = 'art-review/gate-inert/public/art/terrain/props';
+    mkdirSync(inertDir, { recursive: true });
+    const inertPng = new PNG({ width: 32, height: 32 });
+    for (let i = 0; i < inertPng.data.length; i += 4) inertPng.data[i + 3] = 255;
+    for (const id of fixIds) writeFileSync(join(inertDir, `${id}.png`), PNG.sync.write(inertPng));
+    writeFileSync(
+      'art-review/gate-inert/report.json',
+      JSON.stringify({ batchId: 'gate-inert', category: 'terrain-prop', staged: fixIds.map((id) => ({ id: `prop-${id}`, files: [`public/art/terrain/props/${id}.png`] })), excluded: [], blockedSkipped: [] }),
+    );
+    const apprInert = run(['scripts/art-batch/approve.mjs', '--batch', 'gate-inert', '--root', inertFx]);
+    const landedAnyway = fixIds.filter((id) => existsSync(join(inertFx, `public/art/terrain/props/${id}.png`)) || existsSync(`public/art/terrain/props/${id}.png`));
+    const neverApproves = apprInert.status !== 0 && /REFUSED/.test(apprInert.stderr) && landedAnyway.length === 0;
+    rmSync('art-review/gate-inert', { recursive: true, force: true });
+    rmSync(inertFx, { recursive: true, force: true });
+
+    ok(
+      'fixture-row-inert: the synthetic harness row NEVER RENDERS (in no biome/tier palette; zero plants across a 4,000-tile sweep of every biome x tier; no file at its contract path), NEVER COUNTS (absent from art:coverage; terrain-prop counts equal the real rows exactly), NEVER APPROVES (art:approve refuses it and lands nothing)',
+      neverRenders && neverCounts && neverApproves,
+      JSON.stringify({ fixIds, inPalette, sampled, plantedFixture, fixtureFilesOnDisk, covMentions, covNums, real: realProps.length, fixtures: fixtureRows.length, apprInert: apprInert.status, landedAnyway }),
+    );
   }
 
   // 0f5. SECRET-HYGIENE (PASS 8): scan every git-tracked TEXT file for key
@@ -855,6 +976,41 @@ const ok = (name, pass, detail = '') => {
       'secret-hygiene: no literal key material in any tracked text file (patterns: literal SECRET/API_KEY/TOKEN assignment, sk-tokens, literal Bearer tokens; env expansions exempt)',
       hits.length === 0,
       JSON.stringify({ scanned: textish.length, hits: hits.slice(0, 5) }),
+    );
+  }
+
+  // 0f6. ANCHOR-SOURCE (ART SESSION 5, standing batch policy): biome anchors
+  // live in src/world/biome-anchors.ts (a LEAF module, so no consumer can
+  // close an init cycle on it) and NOWHERE else in executable
+  // code. Art Session 5 hand-typed OCEAN's anchor with one hex digit wrong
+  // and shifted a whole luminance band by three units before the miscopy
+  // surfaced; the numbers a band check runs on must be IMPORTED, never
+  // retyped. (This comment names no anchor on purpose — the check would
+  // rightly flag its own prose.)
+  // Scope is deliberate: tracked .ts/.mjs under src/, scripts/ and tools/ —
+  // executable code, where a stale copy silently changes a measurement. Prose
+  // may quote an anchor (docs and the style lock do, next to the file name).
+  {
+    const { BIOME_COLORS } = await import(await (async () => {
+      const { build } = await import('esbuild');
+      const outfile = new URL('../node_modules/.cache/toh-anchors.mjs', import.meta.url).pathname;
+      await build({ entryPoints: [new URL('../src/world/biome-anchors.ts', import.meta.url).pathname], bundle: true, format: 'esm', platform: 'node', outfile, logLevel: 'silent' });
+      return outfile;
+    })());
+    const anchorHexes = new Set(BIOME_COLORS.map((c) => c.toString(16).padStart(6, '0').toLowerCase()));
+    const tracked = spawnSync('git', ['ls-files'], { encoding: 'utf8' }).stdout.split('\n').filter(Boolean);
+    const code = tracked.filter((f) => /^(src|scripts|tools)\/.*\.(ts|mjs)$/.test(f) && f !== 'src/world/biome-anchors.ts' && existsSync(f));
+    const strays = [];
+    for (const f of code) {
+      for (const m of readFileSync(f, 'utf8').matchAll(/0x([0-9a-fA-F]{6})\b|#([0-9a-fA-F]{6})\b/g)) {
+        const hex = (m[1] ?? m[2]).toLowerCase();
+        if (anchorHexes.has(hex)) strays.push(`${f}: ${m[0]}`);
+      }
+    }
+    ok(
+      'anchor-source: every biome anchor is read from src/world/biome-anchors.ts — no tracked .ts/.mjs under src/, scripts/ or tools/ retypes one as a literal (a hand-copied anchor silently moves the band it defines)',
+      strays.length === 0 && anchorHexes.size === 12,
+      JSON.stringify({ anchors: anchorHexes.size, scanned: code.length, strays: strays.slice(0, 6) }),
     );
   }
 }
@@ -3302,15 +3458,37 @@ try {
       ms.zoomControls.target = z; // the real funnel — a raw setZoom is pulled back to target next frame
       ms.cameras.main.setZoom(z);
     };
+    // STABILIZATION (Art Session 5, second confirmed flake on this check):
+    // the settles were FIXED waits (fadeMs + 1200), already widened once in
+    // Pass 4 and flaked again anyway — a bigger constant is a guess, not a
+    // fix. Wait on the CONDITION instead, the dot-on-evicted precedent:
+    // poll until the LOD state and the visible-layer count have both reached
+    // their terminal values, with a deadline far beyond any observed stall.
+    // The assertions below are UNCHANGED — if the state never settles, the
+    // poll times out with the un-settled numbers and the check still fails.
+    const settle = async (want) => {
+      const deadline = Date.now() + ms.feel.lod.fadeMs + 8000;
+      let seen = { state: ms.lodState, ...counts() };
+      while (Date.now() < deadline) {
+        seen = { state: ms.lodState, ...counts() };
+        if (seen.state === want.state && (want.state === 'far' ? seen.tileLayersVisible === 0 : seen.tileLayersVisible === seen.tileLayersTotal)) {
+          // Hold it for two more polls so a mid-fade sample cannot pass.
+          await wait(120);
+          const again = { state: ms.lodState, ...counts() };
+          if (again.state === seen.state && again.tileLayersVisible === seen.tileLayersVisible) return again;
+          seen = again;
+          continue;
+        }
+        await wait(120);
+      }
+      return seen;
+    };
     zoomTo(1.1);
-    await wait(120);
-    const near0 = { state: ms.lodState, ...counts() };
+    const near0 = await settle({ state: 'near' });
     zoomTo(0.0005); // world view
-    await wait(ms.feel.lod.fadeMs + 1200); // generous settle: swiftshader world-zoom frames stall under load (3 observed flakes)
-    const far = { state: ms.lodState, ...counts() };
+    const far = await settle({ state: 'far' });
     zoomTo(1.1);
-    await wait(ms.feel.lod.fadeMs + 1200);
-    const near1 = { state: ms.lodState, ...counts() };
+    const near1 = await settle({ state: 'near' });
     return { near0, far, near1 };
   });
   ok(
@@ -8955,14 +9133,20 @@ try {
     const home = ms.terrestrialPxFromLatLng({ lat: 23.0, lng: 2.0 });
     ms.player.sprite.body.reset(home.x, home.y);
     ms.lastLandPos = undefined;
-    await wait(400);
+    // STABILIZATION (Art Session 5, this check flaked again AFTER its Pass 6A
+    // hardening). Two gaps, both fixed by waiting on conditions instead of
+    // clocks: (a) the 400 ms after body.reset was a fixed wait, so under a
+    // stall the demon could spawn 100 px from a STALE player position and
+    // never engage; (b) the poll only watched inCombatDerived(), not the DoT
+    // list, so the sampled precondition was never the whole precondition.
+    for (let k = 0; k < 40 && Math.hypot(ms.player.x - home.x, ms.player.y - home.y) > 1; k++) await wait(100);
     const d = ms.spawnDemon(home.x + 100, home.y, ms.activeMap().layer);
     d.takeHit(1);
     ms.applyDotInRange(d.x, d.y, 60, 3, 250, 9000, 0x77ff77);
     // The funnel recomputes per FRAME - under swiftshader load frames can
-    // stall, so ESTABLISH the engaged precondition by polling (the assertion
-    // itself is unchanged: DoT live + combat derived).
-    for (let k = 0; k < 14 && !ms.inCombatDerived(); k++) await wait(300);
+    // stall, so ESTABLISH the FULL engaged precondition by polling (the
+    // assertion itself is unchanged: DoT live + combat derived).
+    for (let k = 0; k < 40 && !(ms.dots.length >= 1 && ms.inCombatDerived()); k++) await wait(150);
     const dotLive = ms.dots.length >= 1 && ms.inCombatDerived() === true;
     d.destroy(); // the eviction path (deactivateRegionZone destroys exactly so)
     await wait(600);
@@ -10549,10 +10733,17 @@ try {
       cells: v.FRINGE_CELLS.length,
       sheets: Object.keys(v.BIOME_SHEET_NAME).length,
       props: Object.keys(v.PROP_TABLE).length,
+      // ART SESSION 5: the drop contract also carries the synthetic harness
+      // row(s) — they need a contract size so the batch fixture lints. Count
+      // them SEPARATELY so a real prop can never hide inside the fixture
+      // allowance, and vice versa.
+      fixtures: window.__worldScale.flora.fixturePropIds().slice().sort(),
     };
   });
+  const prioFixtures = prioLock.fixtures;
+  const prioRealProps = prioLock.props - prioFixtures.length;
   ok(
-    'priority-lock: TERRAIN_PRIORITY order, overlay budget 2/4, densities .30/.22/.15/.05/.03, pool caps 900/2600/2700, 17 fringe cells, contract tables (19 prop rows: 13 canopy + 6 understory)',
+    'priority-lock: TERRAIN_PRIORITY order, overlay budget 2/4, densities .30/.22/.15/.05/.03, pool caps 900/2600/2700, 17 fringe cells, contract tables (19 REAL prop rows: 13 canopy + 6 understory, plus exactly the 2 synthetic harness rows, counted apart)',
     prioLock.seq === '0,1,2,5,4,3,11,8,7,6,9,10' &&
       prioLock.rankOk &&
       prioLock.biomes === 2 &&
@@ -10561,8 +10752,9 @@ try {
       prioLock.caps.join(',') === '900,2600,2700' &&
       prioLock.cells === 17 &&
       prioLock.sheets === 12 &&
-      prioLock.props === 19,
-    JSON.stringify(prioLock),
+      prioRealProps === 19 &&
+      JSON.stringify(prioFixtures) === JSON.stringify(['fixture-harness-a', 'fixture-harness-b']),
+    JSON.stringify({ ...prioLock, realProps: prioRealProps }),
   );
 
   // 2j1. fringe-selection: the pure mask→pieces function agrees with an

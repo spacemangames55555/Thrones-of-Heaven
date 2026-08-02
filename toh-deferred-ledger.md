@@ -379,3 +379,101 @@ ruling lands, strike the entry with a pointer to the commit that resolved it.
   SWAMP DARKNESS + TUNDRA SPREAD both needed attempt 2 (swamp lum 56 -> 99
   against a 71 floor; tundra variant spread 76 -> 9.9 against 48). Tundra's
   0.093 saturation correctly triggers the Pass 9 near-neutral rule.
+- ART SESSION 5 (water pair v1 + technique amendment, 2026-08-02): OCEAN and
+  FRESHWATER approved on a three-candidate bake-off and its freshwater
+  follow-up. TWELVE OF TWELVE BIOMES now wear real art; the terrain-sheet
+  category is complete.
+  RECON BEFORE SPEC, and the renderer disagreed with the contract doc: the
+  shipped cycler is a THREE-frame loop (anim-2, anim-3, anim-4, wrapping
+  anim-4 back to anim-2) at 450 ms with ONE GLOBAL PHASE written to every
+  water tile on the same tick - not the four-frame base-to-anim cycle the
+  brief described and had never shipped. Three consequences now written into
+  the brief: base-0..3 are a STREAM-IN FLASH only (painted at chunk build,
+  overwritten within 450 ms, never seen again); the loop has no rest frame;
+  and the 17 fringe cells NEVER animate, so every coastline is a static ring
+  around moving water. That last one produced a new derived band -
+  FRINGE COHERENCE, D(base-0, anim_k) <= D_var - because the shoreline is cut
+  from base-0 and must read as the same material as the water it borders.
+  A four-frame cycle and animated fringes are both renderer changes: parked
+  as amendment territory, not assumable by an art drop.
+  TECHNIQUE AMENDMENT (Casey verdict C2): animated water is a technique
+  EXTENSION of the terrain lock, recorded as `terrain-water` in
+  art/style-locks.json. One create_tiles_pro run per water biome, prompted as
+  a numbered travelling-ripple CYCLE; the three anim cells are the 3-SUBSET of
+  that run whose pairwise deltas all sit in the temporal band with the
+  smallest spread (a 3-cycle visits all three pairs whatever order it plays,
+  so the choice is a subset, not an ordering); base-0 is the remaining tile
+  nearest that triple's centroid, since base-0 is both the fringe source and
+  the stream-in frame. Bands derived from the ten shipped sheets, never
+  invented: D_var 13.24 is the game's own accepted difference between two
+  draws of one biome, coherence 0.5*D_var, liveness 0.1*D_var, loop closure on
+  the real wrap, fringe coherence, and a seam index normalised by the LARGEST
+  interior boundary (the first draft divided by the mean and was
+  ill-conditioned on flat tiles - NaN on grass, 31 on tundra, with nothing
+  wrong with the art).
+  ANIMATE-WITH-TEXT-V3 REDRAWS, IT DOES NOT EVOLVE - the bake-off's most
+  reusable finding. Candidate C3 pinned its loop EXACTLY (last frame vs first
+  = 0.00) but its consecutive deltas ran 0.12, 22.76, 15.80, 24.60, 11.40,
+  13.20: near-copies punctuated by full redraws, and NO three-frame subset of
+  the generated cycle fit the coherence band at all. TILE LOOPS: NO - the
+  surface cannot hold a texture stable across frames, which is exactly what a
+  tiling ground needs. FUTURE CHARACTER ANIMATION: MAYBE - a walk cycle wants
+  the silhouette to change every frame, which is the same behaviour read as a
+  feature rather than a defect. Worth a bake-off of its own when the walk
+  framework thaws; do not assume either way from this result.
+  MECHANICAL DERIVATION (C1) passed every band and stays documented in the
+  amendment as the fallback control: seamlessness, exact palette preservation
+  and loop closure hold BY CONSTRUCTION there, so a water biome that cannot be
+  generated cleanly can still be dressed. Its own lesson: amplitude is not the
+  knob, because nearest-neighbour sampling quantises displacement to whole
+  pixels (bisecting amplitude converged on the jump point and overshot the
+  ceiling, 5.15/7.79 against 6.62); crest SHARPNESS is the continuous handle.
+  STANDING BATCH POLICY, two rules now in docs/art-pipeline.md and applying to
+  every category. (1) TILE SELECTION IS BY BAND, NEVER BY FILE ORDER. Sessions
+  1-4 took the first four tiles of a 16-tile run; that was never a ruling,
+  just what the scratchpad script sliced, and it is disclosed rather than
+  quietly changed. The corrected OCEAN run came back BIMODAL - first four
+  tiles texture-dead (luminance sd ~1) while later tiles in the SAME run
+  carried real texture in band - so file order would have reported a false
+  failure and, worse, handed mechanical derivation a flat field it cannot
+  animate at all. APPROVED ART STAYS APPROVED: no regeneration debt for
+  anything already shipped. (2) ANCHORS ARE READ FROM SOURCE, NEVER RETYPED.
+  This session typed OCEAN's anchor with one hex digit wrong and shifted a
+  whole luminance band by three units. Anchors moved to a new LEAF module
+  src/world/biome-anchors.ts (a leaf because terrain-placeholder imports
+  flora-config, so keeping them in the former would have closed an
+  initialisation cycle through FLORA_PROPS); the six prop anchors in
+  flora-config now reference BIOME_COLORS by Biome instead of duplicating
+  literals; and a new `anchor-source` gate check fails on any retyped anchor
+  in tracked src/scripts/tools code. It caught a literal in its own comment on
+  the first run.
+  SYNTHETIC HARNESS ROWS (landed as their own commit before any generation
+  call): fixture-harness-a and -b are permanently synthetic FLORA_PROPS rows
+  that never render, never count as art debt and are REFUSED by art:approve,
+  enforced by the new `fixture-row-inert` check. They end the treadmill where
+  the three batch-machine checks were repointed at whichever real asset was
+  undressed that month and silently retired when it shipped (Art Session 4
+  lost three that way, and this session dressed the last two biomes - there
+  was nothing left to borrow). Two checks had to change and were STRENGTHENED:
+  priority-lock now counts real and fixture rows separately, and lint-wired's
+  bad-asset half had been pointed at prop-waystone, a portal-waystone row the
+  terrain-prop batch never targeted, so that half was already dead.
+  FRESHWATER SITS CLOSE TO ITS CEILING, stated rather than buried: it clears
+  coherence at 6.55-6.58 against 6.62, with only 5 of 560 subsets qualifying,
+  where ocean sits at 3.35-3.45. Approved on the in-game preview knowing that;
+  expect freshwater to read as the livelier surface. Its first attempt failed
+  differently and instructively - every spatial band passed but ZERO of 560
+  subsets qualified (deltas 16.75-43.53), because the phase prompt is not
+  reliably read as one surface over time. Ask for "almost the same image four
+  times" with the crest step named in pixels.
+  SPEND: 101 generations of the 120 session ceiling (running 520 of 2000,
+  $0.00 credits). Itemized: ocean base attempt 1 (seed 74001, every tile out
+  of band) 20; ocean phase run for C2 (74002) 20; ocean base attempt 2 (74003,
+  corrected) 20; C3 animate-with-text-v3 6 frames at 32x32, 1; freshwater
+  attempt 1 (74005, no qualifying subset) 20; freshwater attempt 2 (74006,
+  approved) 20. Three ocean tile runs at the bake-off cap, two of them the
+  same asset's two attempts under correction discipline; freshwater used both
+  of its permitted runs.
+  STILL QUEUED: swamp/desert props (with log-b to complete the log pair),
+  the waystone hero-object mini bake-off, per-region palette divergence, and
+  the dressed-forest density ride.
