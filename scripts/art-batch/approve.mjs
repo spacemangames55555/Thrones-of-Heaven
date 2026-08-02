@@ -33,8 +33,24 @@ if (!existsSync(join(SRC, 'report.json'))) {
 }
 const report = JSON.parse(readFileSync(join(SRC, 'report.json'), 'utf8'));
 
+// PERMANENTLY SYNTHETIC HARNESS ROWS can never become art (Art Session 5):
+// they exist only as the gate's guaranteed-non-live batch target. Approving
+// one would put a fixture at a contract path and quietly retire the checks
+// that depend on it staying unlive.
+const manifest = JSON.parse(readFileSync('toh-asset-manifest.json', 'utf8'));
+const fixtureIds = new Set(manifest.assets.filter((a) => a.fixture).map((a) => a.id));
+const staged = report.staged.filter((s) => {
+  if (!fixtureIds.has(s.id)) return true;
+  console.error(`art:approve: REFUSED ${s.id} — synthetic harness row, never art (it is the gate's permanent batch fixture)`);
+  return false;
+});
+if (staged.length !== report.staged.length && staged.length === 0) {
+  console.error('art:approve: nothing to approve (the batch held only harness rows)');
+  process.exit(1);
+}
+
 let moved = 0;
-for (const s of report.staged) {
+for (const s of staged) {
   for (const rel of s.files) {
     const from = join(SRC, rel);
     const to = join(ROOT, rel);

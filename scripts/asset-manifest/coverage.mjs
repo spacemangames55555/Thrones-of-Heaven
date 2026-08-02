@@ -14,8 +14,11 @@ import { readFileSync } from 'node:fs';
 
 const { assets } = JSON.parse(readFileSync('toh-asset-manifest.json', 'utf8'));
 
+// SYNTHETIC HARNESS ROWS are not art debt — they exist only so the gate's
+// batch-machine checks have a permanent non-live target. Never counted.
 const cats = {};
 for (const a of assets) {
+  if (a.fixture) continue;
   const c = (cats[a.category] ??= { live: 0, fallback: 0, missing: 0, calls: 0, blocked: [] });
   c[a.status]++;
   const blocked = (a.blockedBy ?? []).length > 0;
@@ -38,7 +41,7 @@ if (totalBlocked > 0) {
   console.log(`BLOCKED ITEMS (${totalBlocked}) — grouped by the ruling that blocks them:`);
   const byFence = {};
   for (const a of assets) {
-    if (a.status === 'live' || !(a.blockedBy ?? []).length) continue;
+    if (a.fixture || a.status === 'live' || !(a.blockedBy ?? []).length) continue;
     for (const fence of a.blockedBy) (byFence[fence] ??= []).push(`${a.category}:${a.id}`);
   }
   for (const [fence, items] of Object.entries(byFence).sort()) {

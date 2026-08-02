@@ -7605,6 +7605,34 @@
       "status": "live"
     },
     {
+      "id": "prop-fixture-harness-a",
+      "category": "terrain-prop",
+      "spec": {
+        "kind": "prop",
+        "w": 32,
+        "h": 32,
+        "tier": "canopy",
+        "path": "public/art/terrain/props/fixture-harness-a.png",
+        "brief": "toh-terrain-art-brief.md"
+      },
+      "status": "missing",
+      "fixture": true
+    },
+    {
+      "id": "prop-fixture-harness-b",
+      "category": "terrain-prop",
+      "spec": {
+        "kind": "prop",
+        "w": 32,
+        "h": 32,
+        "tier": "canopy",
+        "path": "public/art/terrain/props/fixture-harness-b.png",
+        "brief": "toh-terrain-art-brief.md"
+      },
+      "status": "missing",
+      "fixture": true
+    },
+    {
       "id": "prop-log-a",
       "category": "terrain-prop",
       "spec": {

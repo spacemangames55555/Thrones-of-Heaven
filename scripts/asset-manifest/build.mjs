@@ -227,12 +227,14 @@ for (const [prop, d] of Object.entries(terrain.PROP_TABLE).sort()) {
   // fallback = a placeholder silhouette actually CARRIES it in the world
   // (some palette places it); missing = nothing places it at all.
   const status = pngOk(`public/art/terrain/props/${prop}.png`, d) ? 'live' : scattered.length > 0 ? 'fallback' : 'missing';
+  // A synthetic harness row is NOT art: it carries no fence (nothing gates
+  // it) and is flagged so coverage can leave it out of the debt counts.
   assets.push({
     id: `prop-${prop}`,
     category: 'terrain-prop',
     spec: { kind: 'prop', w: d.w, h: d.h, tier: def?.tier ?? 'canopy', path: `public/art/terrain/props/${prop}.png`, brief: 'toh-terrain-art-brief.md' },
     status,
-    ...(blockedBy.length > 0 ? { blockedBy } : {}),
+    ...(def?.fixture ? { fixture: true } : blockedBy.length > 0 ? { blockedBy } : {}),
   });
 }
 

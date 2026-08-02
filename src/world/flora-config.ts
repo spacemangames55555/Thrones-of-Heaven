@@ -52,6 +52,16 @@ export interface FloraProp {
   anchor: number | null;
   /** Per-prop variation overrides (see FLORA_VARIATION). */
   variation?: { scale?: false };
+  /**
+   * PERMANENTLY SYNTHETIC HARNESS ROW (Art Session 5). Not art, not art
+   * debt, not content: it exists so the batch-machine gate checks always
+   * have a guaranteed-non-live target and stop being repointed at whichever
+   * real asset happens to be undressed this month (Art Session 4 lost three
+   * checks that way). A fixture row is excluded from every runtime palette,
+   * never rendered, excluded from coverage counts, and REFUSED by
+   * art:approve — no art file may ever land at its contract path.
+   */
+  fixture?: true;
 }
 
 const propPath = (id: string) => `public/art/terrain/props/${id}.png`;
@@ -86,6 +96,14 @@ export const FLORA_PROPS: Record<string, FloraProp> = {
   // 'stump' — the same dead-wood object, just tall (a 'conifer' triangle
   // would draw it alive and green, 'pillar' would draw it as blue stone).
   'snag-a': { w: 48, h: 64, tier: 'canopy', collides: false, silhouette: 'stump', artPath: propPath('snag-a'), anchor: 0x6b5a49 },
+  // ── Harness (Art Session 5): permanently synthetic, never art ──────────
+  // TWO rows, because the batch machine's lint half needs both halves of the
+  // story on permanent targets: -a is the GOOD staged asset (contract-sized),
+  // -b is the BAD one (the gate hands it a wrong-size PNG so lint-wired can
+  // prove the exclusion path). Pointing either half at a real prop is what
+  // hollowed three checks out in Art Session 4 the moment that prop shipped.
+  'fixture-harness-a': { w: 32, h: 32, tier: 'canopy', collides: false, silhouette: 'lump', artPath: propPath('fixture-harness-a'), anchor: null, fixture: true },
+  'fixture-harness-b': { w: 32, h: 32, tier: 'canopy', collides: false, silhouette: 'lump', artPath: propPath('fixture-harness-b'), anchor: null, fixture: true },
   // ── Understory: declared slots, EMPTY in every palette at ship ──────────
   'fern-sword-a': { w: 32, h: 32, tier: 'understory', collides: false, silhouette: 'fern-frond', artPath: propPath('fern-sword-a'), anchor: null },
   'fern-sword-b': { w: 32, h: 32, tier: 'understory', collides: false, silhouette: 'fern-frond', artPath: propPath('fern-sword-b'), anchor: null },
@@ -386,6 +404,11 @@ export function floraVariation(tx: number, ty: number, tier: FloraTier, propId: 
     }
   }
   return { mirror, scale, tint };
+}
+
+/** Ids of the permanently-synthetic harness rows (never art, never debt). */
+export function fixturePropIds(): string[] {
+  return Object.keys(FLORA_PROPS).filter((id) => FLORA_PROPS[id].fixture === true);
 }
 
 /** Every prop id of a tier (manifest + placeholder builders read this). */
