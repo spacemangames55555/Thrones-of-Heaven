@@ -1,0 +1,205 @@
+{
+  "calibration": {
+    "D_var": 13.24,
+    "coherenceCeiling": 6.62,
+    "livenessFloor": 1.32,
+    "seamIndexCeiling": 8.693,
+    "seamIndexTypical": 1.347
+  },
+  "spatial": [
+    {
+      "cell": "base-0",
+      "meanRGB": [
+        35,
+        71,
+        98
+      ],
+      "meanLum": 65.4,
+      "lumBand": "55.8-83.8",
+      "lumPass": true,
+      "domHue": 210,
+      "sat": 0.643,
+      "seamIdxCol": 0.919,
+      "seamIdxRow": 0.756,
+      "wrapAbsCol": 1.31,
+      "wrapAbsRow": 3.18,
+      "seamPass": true,
+      "seamAdvisory": null
+    },
+    {
+      "cell": "base-1",
+      "meanRGB": [
+        35,
+        71,
+        98
+      ],
+      "meanLum": 65.4,
+      "lumBand": "55.8-83.8",
+      "lumPass": true,
+      "domHue": 210,
+      "sat": 0.643,
+      "seamIdxCol": 0.813,
+      "seamIdxRow": 0.154,
+      "wrapAbsCol": 2.61,
+      "wrapAbsRow": 1.59,
+      "seamPass": true,
+      "seamAdvisory": null
+    },
+    {
+      "cell": "base-2",
+      "meanRGB": [
+        35,
+        71,
+        98
+      ],
+      "meanLum": 65.2,
+      "lumBand": "55.8-83.8",
+      "lumPass": true,
+      "domHue": 210,
+      "sat": 0.645,
+      "seamIdxCol": 0.495,
+      "seamIdxRow": 0.891,
+      "wrapAbsCol": 3.18,
+      "wrapAbsRow": 6.43,
+      "seamPass": true,
+      "seamAdvisory": null
+    },
+    {
+      "cell": "base-3",
+      "meanRGB": [
+        35,
+        71,
+        99
+      ],
+      "meanLum": 65.7,
+      "lumBand": "55.8-83.8",
+      "lumPass": true,
+      "domHue": 210,
+      "sat": 0.644,
+      "seamIdxCol": 0.441,
+      "seamIdxRow": 0.338,
+      "wrapAbsCol": 2.73,
+      "wrapAbsRow": 3.02,
+      "seamPass": true,
+      "seamAdvisory": null
+    },
+    {
+      "cell": "anim-2",
+      "meanRGB": [
+        36,
+        72,
+        99
+      ],
+      "meanLum": 66.2,
+      "lumBand": "55.8-83.8",
+      "lumPass": true,
+      "domHue": 210,
+      "sat": 0.64,
+      "seamIdxCol": 1.18,
+      "seamIdxRow": 0.163,
+      "wrapAbsCol": 4.44,
+      "wrapAbsRow": 1.42,
+      "seamPass": true,
+      "seamAdvisory": null
+    },
+    {
+      "cell": "anim-3",
+      "meanRGB": [
+        35,
+        71,
+        98
+      ],
+      "meanLum": 65.5,
+      "lumBand": "55.8-83.8",
+      "lumPass": true,
+      "domHue": 210,
+      "sat": 0.644,
+      "seamIdxCol": 0.523,
+      "seamIdxRow": 0.051,
+      "wrapAbsCol": 2.5,
+      "wrapAbsRow": 0.51,
+      "seamPass": true,
+      "seamAdvisory": null
+    },
+    {
+      "cell": "anim-4",
+      "meanRGB": [
+        35,
+        71,
+        98
+      ],
+      "meanLum": 65.1,
+      "lumBand": "55.8-83.8",
+      "lumPass": true,
+      "domHue": 210,
+      "sat": 0.645,
+      "seamIdxCol": 0.588,
+      "seamIdxRow": 0.393,
+      "wrapAbsCol": 2.78,
+      "wrapAbsRow": 3.98,
+      "seamPass": true,
+      "seamAdvisory": null
+    }
+  ],
+  "interVariantSpread": {
+    "value": 1,
+    "band": "<= 48",
+    "pass": true
+  },
+  "temporal": [
+    {
+      "step": "A2->A3",
+      "delta": 3.45,
+      "coherence": "<= 6.62",
+      "liveness": ">= 1.32",
+      "pass": true
+    },
+    {
+      "step": "A3->A4",
+      "delta": 3.38,
+      "coherence": "<= 6.62",
+      "liveness": ">= 1.32",
+      "pass": true
+    },
+    {
+      "step": "A4->A2 (wrap)",
+      "delta": 3.35,
+      "coherence": "<= 6.62",
+      "liveness": ">= 1.32",
+      "pass": true
+    }
+  ],
+  "loopClosure": {
+    "wrap": 3.35,
+    "maxForward": 3.45,
+    "rule": "inside coherence band AND <= 1.5x max forward step",
+    "pass": true
+  },
+  "fringeCoherence": [
+    {
+      "cell": "anim-2",
+      "dFromBase0": 2.23,
+      "ceiling": 13.24,
+      "pass": true
+    },
+    {
+      "cell": "anim-3",
+      "dFromBase0": 2.46,
+      "ceiling": 13.24,
+      "pass": true
+    },
+    {
+      "cell": "anim-4",
+      "dFromBase0": 1.99,
+      "ceiling": 13.24,
+      "pass": true
+    }
+  ],
+  "VERDICT": {
+    "spatial": true,
+    "seam": true,
+    "temporal": true,
+    "loop": true,
+    "fringe": true
+  }
+}

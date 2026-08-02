@@ -1,0 +1,205 @@
+{
+  "calibration": {
+    "D_var": 13.24,
+    "coherenceCeiling": 6.62,
+    "livenessFloor": 1.32,
+    "seamIndexCeiling": 8.693,
+    "seamIndexTypical": 1.347
+  },
+  "spatial": [
+    {
+      "cell": "base-0",
+      "meanRGB": [
+        41,
+        70,
+        96
+      ],
+      "meanLum": 65.9,
+      "lumBand": "55.8-83.8",
+      "lumPass": true,
+      "domHue": 210,
+      "sat": 0.583,
+      "seamIdxCol": 1.476,
+      "seamIdxRow": 0.744,
+      "wrapAbsCol": 16.13,
+      "wrapAbsRow": 31.67,
+      "seamPass": true,
+      "seamAdvisory": "above the shipped-typical seam index"
+    },
+    {
+      "cell": "base-1",
+      "meanRGB": [
+        40,
+        70,
+        96
+      ],
+      "meanLum": 65.4,
+      "lumBand": "55.8-83.8",
+      "lumPass": true,
+      "domHue": 210,
+      "sat": 0.587,
+      "seamIdxCol": 1.227,
+      "seamIdxRow": 0.582,
+      "wrapAbsCol": 18.45,
+      "wrapAbsRow": 31.61,
+      "seamPass": true,
+      "seamAdvisory": null
+    },
+    {
+      "cell": "base-2",
+      "meanRGB": [
+        39,
+        68,
+        95
+      ],
+      "meanLum": 64.2,
+      "lumBand": "55.8-83.8",
+      "lumPass": true,
+      "domHue": 210,
+      "sat": 0.595,
+      "seamIdxCol": 1.112,
+      "seamIdxRow": 0.662,
+      "wrapAbsCol": 16.86,
+      "wrapAbsRow": 35.41,
+      "seamPass": true,
+      "seamAdvisory": null
+    },
+    {
+      "cell": "base-3",
+      "meanRGB": [
+        40,
+        69,
+        95
+      ],
+      "meanLum": 64.5,
+      "lumBand": "55.8-83.8",
+      "lumPass": true,
+      "domHue": 210,
+      "sat": 0.594,
+      "seamIdxCol": 1.18,
+      "seamIdxRow": 0.711,
+      "wrapAbsCol": 17.95,
+      "wrapAbsRow": 36.96,
+      "seamPass": true,
+      "seamAdvisory": null
+    },
+    {
+      "cell": "anim-2",
+      "meanRGB": [
+        41,
+        70,
+        96
+      ],
+      "meanLum": 65.9,
+      "lumBand": "55.8-83.8",
+      "lumPass": true,
+      "domHue": 210,
+      "sat": 0.583,
+      "seamIdxCol": 1.476,
+      "seamIdxRow": 0.744,
+      "wrapAbsCol": 16.13,
+      "wrapAbsRow": 31.67,
+      "seamPass": true,
+      "seamAdvisory": "above the shipped-typical seam index"
+    },
+    {
+      "cell": "anim-3",
+      "meanRGB": [
+        42,
+        72,
+        97
+      ],
+      "meanLum": 67.5,
+      "lumBand": "55.8-83.8",
+      "lumPass": true,
+      "domHue": 210,
+      "sat": 0.579,
+      "seamIdxCol": 2.172,
+      "seamIdxRow": 0.705,
+      "wrapAbsCol": 33.68,
+      "wrapAbsRow": 32.29,
+      "seamPass": true,
+      "seamAdvisory": "above the shipped-typical seam index"
+    },
+    {
+      "cell": "anim-4",
+      "meanRGB": [
+        40,
+        70,
+        95
+      ],
+      "meanLum": 65,
+      "lumBand": "55.8-83.8",
+      "lumPass": true,
+      "domHue": 210,
+      "sat": 0.588,
+      "seamIdxCol": 1.29,
+      "seamIdxRow": 0.816,
+      "wrapAbsCol": 20.85,
+      "wrapAbsRow": 32.79,
+      "seamPass": true,
+      "seamAdvisory": null
+    }
+  ],
+  "interVariantSpread": {
+    "value": 3,
+    "band": "<= 48",
+    "pass": true
+  },
+  "temporal": [
+    {
+      "step": "A2->A3",
+      "delta": 22.79,
+      "coherence": "<= 6.62",
+      "liveness": ">= 1.32",
+      "pass": false
+    },
+    {
+      "step": "A3->A4",
+      "delta": 25.32,
+      "coherence": "<= 6.62",
+      "liveness": ">= 1.32",
+      "pass": false
+    },
+    {
+      "step": "A4->A2 (wrap)",
+      "delta": 18.98,
+      "coherence": "<= 6.62",
+      "liveness": ">= 1.32",
+      "pass": false
+    }
+  ],
+  "loopClosure": {
+    "wrap": 18.98,
+    "maxForward": 25.32,
+    "rule": "inside coherence band AND <= 1.5x max forward step",
+    "pass": false
+  },
+  "fringeCoherence": [
+    {
+      "cell": "anim-2",
+      "dFromBase0": 0,
+      "ceiling": 13.24,
+      "pass": true
+    },
+    {
+      "cell": "anim-3",
+      "dFromBase0": 22.79,
+      "ceiling": 13.24,
+      "pass": false
+    },
+    {
+      "cell": "anim-4",
+      "dFromBase0": 18.98,
+      "ceiling": 13.24,
+      "pass": false
+    }
+  ],
+  "VERDICT": {
+    "spatial": true,
+    "seam": true,
+    "temporal": false,
+    "loop": false,
+    "fringe": false
+  }
+}
