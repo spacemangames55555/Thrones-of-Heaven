@@ -71,7 +71,7 @@ import { NameplatePool, FAMILY_DISPLAY, type PlateTarget } from '../ui/Nameplate
 import { EUROPE_BUILT_ZONES, buildEuropeQuestDefs } from '../world/europe-built';
 import { appendToRegistry } from '../world/quest-factory';
 import { ENEMY_ROSTER, DOMAIN_TINT, EXISTING_FAMILY_DOMAIN, EXISTING_FAMILY_PACK, makeRegionChampion } from '../world/enemy-roster';
-import { enemyArtKey, enemyBaseTint } from '../render/enemyArtRegistry';
+import { enemyArtKey, enemyBaseTint, isRimBacked } from '../render/enemyArtRegistry';
 import type { CombatDomain } from '../world/enemy-roster';
 import { CHAMPION_SPECS } from '../world/champion-specs';
 import { triggerForBeat } from '../world/quest-factory';
@@ -11232,7 +11232,7 @@ export class MainScene extends Phaser.Scene {
 
   /** Gate seam (tools/verify-runtime.mjs): dress an enemy through the real
    *  funnel so the check exercises the shipped path, not a copy of it. */
-  dressFamilyEnemyForGate(entity: { sprite: Phaser.GameObjects.Sprite; setBaseTint: (t: number) => void }, family: string, domainTint: number): void {
+  dressFamilyEnemyForGate(entity: { sprite: Phaser.GameObjects.Sprite; setBaseTint: (t: number) => void; setArtBacked: (on: boolean) => void }, family: string, domainTint: number): void {
     this.dressFamilyEnemy(entity, family, domainTint);
   }
 
@@ -11249,8 +11249,10 @@ export class MainScene extends Phaser.Scene {
    * forgets to write. Callers pass the entity, not the sprite, so the tint
    * lands on the field the hit-flash restores from.
    */
-  private dressFamilyEnemy(entity: { sprite: Phaser.GameObjects.Sprite; setBaseTint: (t: number) => void }, family: string, domainTint: number): void {
+  private dressFamilyEnemy(entity: { sprite: Phaser.GameObjects.Sprite; setBaseTint: (t: number) => void; setArtBacked: (on: boolean) => void }, family: string, domainTint: number): void {
     this.applyFamilyTexture(entity.sprite, family);
+    const onArt = isRimBacked(family);
+    entity.setArtBacked(onArt);
     entity.setBaseTint(enemyBaseTint(family, domainTint));
   }
 

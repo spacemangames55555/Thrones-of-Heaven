@@ -78,6 +78,15 @@ export class Demon {
    *  demon red with their domain tint — game-feel: guaranteed restore). */
   private baseTint: number = DEMON.color;
 
+  /** PASS 10: does this enemy wear baked rim art (so the flash should be the
+   *  shorter art-backed pulse and the restore a no-op multiply)? Set by the
+   *  ONE dressing funnel in MainScene; false for every placeholder enemy. */
+  private artBacked = false;
+
+  setArtBacked(on: boolean): void {
+    this.artBacked = on;
+  }
+
   setBaseTint(tint: number): void {
     this.baseTint = tint;
     this.sprite.setTint(tint).setTintMode(Phaser.TintModes.MULTIPLY);
@@ -90,7 +99,7 @@ export class Demon {
     this.revealBar();
     this.bar.setRatio(this.health.ratio);
     this.sprite.setTint(0xffffff).setTintMode(Phaser.TintModes.FILL);
-    this.scene.time.delayedCall(FEEL.flash.flashMs, () => {
+    this.scene.time.delayedCall((this.artBacked ? FEEL.flash.artFlashMs : FEEL.flash.flashMs), () => {
       if (this.state !== 'dead') this.sprite.setTint(this.baseTint).setTintMode(Phaser.TintModes.MULTIPLY);
     });
     if (this.health.isDead) this.die();

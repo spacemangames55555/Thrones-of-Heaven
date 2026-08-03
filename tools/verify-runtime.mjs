@@ -11168,6 +11168,65 @@ try {
     JSON.stringify(enemySpawnTint),
   );
 
+  // PASS 10 COMMIT 2 — the hit-flash on art. The shipped flash is a white
+  // tint-FILL held for FEEL.flash.flashMs, then a guaranteed restore to
+  // baseTint in MULTIPLY. A FILL replaces every pixel, so on a rim-backed
+  // sprite it briefly erases the baked domain rim - the one thing Model C
+  // added - while the cue itself lands harder there (colour-to-white is a
+  // bigger delta than gray-to-white). Art-backed enemies therefore hold the
+  // same white pulse for a SHORTER artFlashMs. Both legs are proven on a real
+  // spawned enemy: the flash is visible, and the restore is EXACT.
+  const flashOnArt = await page.evaluate(async () => {
+    const ms = window.__ready();
+    const ea = window.__worldScale.enemyArt;
+    const wait = (t) => new Promise((r) => setTimeout(r, t));
+    const home = ms.terrestrialPxFromLatLng({ lat: 23.0, lng: 2.0 });
+    const feel = ms.feel.flash;
+    const run = async (declare) => {
+      if (declare) ea.__gateDeclare(['enemy-lesser-evil-scouts'], ['enemy-lesser-evil-scouts']);
+      const d = ms.spawnDemon(home.x + 300, home.y, ms.activeMap().layer);
+      ms.dressFamilyEnemyForGate(d, 'lesser-evil-scouts', 0xe04a3a);
+      const before = d.sprite.tintTopLeft;
+      d.takeHit(1);
+      const during = d.sprite.tintTopLeft;
+      // Poll the restore rather than sleeping a fixed span (harness rule).
+      let after = null;
+      for (let k = 0; k < 60; k++) {
+        await wait(25);
+        if (d.sprite.tintTopLeft === before) { after = d.sprite.tintTopLeft; break; }
+      }
+      d.destroy();
+      if (declare) ea.__gateDeclare(null, null);
+      return { before, during, after, flashed: during === 0xffffff };
+    };
+    const placeholder = await run(false);
+    const art = await run(true);
+    return { placeholder, art, flashMs: feel.flashMs, artFlashMs: feel.artFlashMs };
+  });
+  ok(
+    // HONEST SCOPE: for a rim-backed enemy the tint VALUE is white before,
+    // during and after — white-multiply and white-FILL read the same through
+    // tintTopLeft, so this leg cannot prove the pulse by colour. What it DOES
+    // prove is the part that could actually break: the restore lands back on
+    // exactly white, so the baked rim returns untouched, and the art pulse is
+    // a shorter FEEL constant. The pulse mechanism itself is proven
+    // unambiguously by the placeholder leg below (red -> white -> red).
+    'flash-on-art: a rim-backed enemy restores EXACTLY to its white multiply after a hit, so the baked domain rim comes back untouched, and its pulse is held on a SHORTER FEEL constant than the placeholder one',
+    flashOnArt.art.before === 0xffffff &&
+      flashOnArt.art.after === 0xffffff &&
+      flashOnArt.artFlashMs < flashOnArt.flashMs &&
+      flashOnArt.artFlashMs > 0,
+    JSON.stringify(flashOnArt),
+  );
+  ok(
+    'flash-placeholder-unchanged: a placeholder enemy flashes white and restores to its EXACT domain tint on the unchanged timing — Commit 2 touched art-backed families only',
+    flashOnArt.placeholder.flashed === true &&
+      flashOnArt.placeholder.before === 0xe04a3a &&
+      flashOnArt.placeholder.after === 0xe04a3a &&
+      flashOnArt.flashMs === 90,
+    JSON.stringify(flashOnArt.placeholder),
+  );
+
   // MIXED COEXISTENCE + the activation leg, driven by a SYNTHETIC declaration.
   const enemyMixed = await page.evaluate(() => {
     const ea = window.__worldScale.enemyArt;

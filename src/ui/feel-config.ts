@@ -38,6 +38,16 @@ export const FEEL = {
   /** HIT FEEDBACK. */
   flash: {
     flashMs: 90, // white tint-fill on the victim, then guaranteed base-tint restore
+    /**
+     * PASS 10 — the same white tint-fill, held SHORTER on art-backed enemies.
+     * A FILL flash replaces every pixel, so on a full-colour rim-backed sprite
+     * it briefly erases the baked domain rim, which is the one thing Model C
+     * added. The cue also lands harder there: colour-to-white is a far bigger
+     * delta than gray-to-white, so it needs less time to read. Shorter keeps
+     * the hit legible while giving the domain back sooner. Placeholder
+     * families keep flashMs exactly.
+     */
+    artFlashMs: 55,
   },
   shake: {
     shakeThreshold: 12, // player hits >= this HP shake the camera
