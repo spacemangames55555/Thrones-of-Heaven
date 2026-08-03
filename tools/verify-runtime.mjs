@@ -10743,7 +10743,7 @@ try {
   const prioFixtures = prioLock.fixtures;
   const prioRealProps = prioLock.props - prioFixtures.length;
   ok(
-    'priority-lock: TERRAIN_PRIORITY order, overlay budget 2/4, densities .30/.22/.15/.05/.03, pool caps 900/2600/2700, 17 fringe cells, contract tables (19 REAL prop rows: 13 canopy + 6 understory, plus exactly the 2 synthetic harness rows, counted apart)',
+    'priority-lock: TERRAIN_PRIORITY order, overlay budget 2/4, densities .30/.22/.15/.05/.03, pool caps 900/2600/2700, 17 fringe cells, contract tables (20 REAL prop rows: 13 canopy + 7 understory, plus exactly the 2 synthetic harness rows, counted apart)',
     prioLock.seq === '0,1,2,5,4,3,11,8,7,6,9,10' &&
       prioLock.rankOk &&
       prioLock.biomes === 2 &&
@@ -10752,7 +10752,7 @@ try {
       prioLock.caps.join(',') === '900,2600,2700' &&
       prioLock.cells === 17 &&
       prioLock.sheets === 12 &&
-      prioRealProps === 19 &&
+      prioRealProps === 20 &&
       JSON.stringify(prioFixtures) === JSON.stringify(['fixture-harness-a', 'fixture-harness-b']),
     JSON.stringify({ ...prioLock, realProps: prioRealProps }),
   );
@@ -11057,7 +11057,10 @@ try {
     return out;
   });
   const PALETTE_EXPECTED = {
-    '5:canopy': '0.03|cactus-a=1,scrub-a=1',
+    // ART SESSION 6: desert reweighted 10:1 toward scrub-a so the biome
+    // reads as scrub while cactus-a art stays fenced behind per-region
+    // divergence. Density unchanged.
+    '5:canopy': '0.03|cactus-a=1,scrub-a=10',
     '5:understory': '0|',
     '6:canopy': '0.3|tree-broad-a=1,tree-broad-b=1,tree-fir-a=1,cedar-a=20,snag-a=5',
     '6:understory': '0.45|fern-sword-a=30,fern-sword-b=30,salal-a=20,sapling-fir-a=10,stump-a=5,log-a=5',
@@ -11066,7 +11069,9 @@ try {
     '10:canopy': '0.05|boulder-a=1,boulder-b=1',
     '10:understory': '0|',
     '11:canopy': '0.15|swamp-tree-a=1,swamp-tree-b=1',
-    '11:understory': '0|',
+    // ART SESSION 6: the swamp gains a DEBRIS understory (logs + stumps) at
+    // 0.2 — deliberately below the PNW fern carpets at 0.35-0.45.
+    '11:understory': '0.2|log-a=1,log-b=1,stump-a=1',
   };
   const paletteDrift = Object.keys({ ...palettePin, ...PALETTE_EXPECTED }).filter((k) => palettePin[k] !== PALETTE_EXPECTED[k]);
   ok(
@@ -11280,8 +11285,8 @@ try {
     return { populated, plantedPopulated, plantedElsewhere, listed, understoryVisible: s.understoryVisible, understoryPool: s.understoryPool };
   });
   ok(
-    'understory-live: the tier plants ONLY in biomes whose palette carries entries (PNW forest + taiga) and nowhere else across a 6,000-tile sweep; unpopulated biomes stay exactly inert',
-    understoryInert.populated.length === 2 && understoryInert.plantedPopulated > 0 && understoryInert.plantedElsewhere === 0,
+    'understory-live: the tier plants ONLY in biomes whose palette carries entries (PNW forest + taiga, and the swamp debris tier from Art Session 6) and nowhere else across a 6,000-tile sweep; unpopulated biomes stay exactly inert',
+    understoryInert.populated.length === 3 && understoryInert.plantedPopulated > 0 && understoryInert.plantedElsewhere === 0,
     JSON.stringify(understoryInert),
   );
 
@@ -11484,7 +11489,7 @@ try {
   });
   ok(
     'understory-pool at 3x density: a 60s drive under a 3x fixture palette holds the derived 2700 cap with zero churn and really plants instances; at the same anchor row understory sorts UNDER canopy and never below the row above; teardown puts the SHIPPED forest palette back exactly',
-    uPoolOk && uPlanted && ySort.pairs > 0 && ySort.wrong === 0 && ySort.belowPrevRow === 0 && uRestored.populated === 2 && uRestored.density === 0.45 && uRestored.paletteLen === 6 && pageErrors.length === uPe0,
+    uPoolOk && uPlanted && ySort.pairs > 0 && ySort.wrong === 0 && ySort.belowPrevRow === 0 && uRestored.populated === 3 && uRestored.density === 0.45 && uRestored.paletteLen === 6 && pageErrors.length === uPe0,
     JSON.stringify({ mid: uMid, end: uEnd, ySort, uRestored }),
   );
 

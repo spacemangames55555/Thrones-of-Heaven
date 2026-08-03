@@ -7646,6 +7646,19 @@
       "status": "live"
     },
     {
+      "id": "prop-log-b",
+      "category": "terrain-prop",
+      "spec": {
+        "kind": "prop",
+        "w": 48,
+        "h": 32,
+        "tier": "understory",
+        "path": "public/art/terrain/props/log-b.png",
+        "brief": "toh-terrain-art-brief.md"
+      },
+      "status": "fallback"
+    },
+    {
       "id": "prop-salal-a",
       "category": "terrain-prop",
       "spec": {

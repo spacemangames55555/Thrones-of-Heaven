@@ -111,6 +111,13 @@ export const FLORA_PROPS: Record<string, FloraProp> = {
   'salal-a': { w: 32, h: 32, tier: 'understory', collides: false, silhouette: 'shrub-blob', artPath: propPath('salal-a'), anchor: null },
   'stump-a': { w: 32, h: 32, tier: 'understory', collides: false, silhouette: 'stump', artPath: propPath('stump-a'), anchor: null },
   'log-a': { w: 48, h: 32, tier: 'understory', collides: false, silhouette: 'log-lump', artPath: propPath('log-a'), anchor: null },
+  // LOG-B completes the pair Art Session 4 left half-finished: log-a was
+  // approved as the SLENDER variety asset and log-b was scheduled as the
+  // fuller half. It is 48x32 — log-a's contract size — because a variant
+  // pair is judged on silhouette inversion at a SHARED size; the session
+  // brief said 32x32, which would have made the two incomparable and broken
+  // the pair rather than completing it. Sizes come from the rows.
+  'log-b': { w: 48, h: 32, tier: 'understory', collides: false, silhouette: 'log-lump', artPath: propPath('log-b'), anchor: null },
   'sapling-fir-a': { w: 32, h: 32, tier: 'understory', collides: false, silhouette: 'conifer', artPath: propPath('sapling-fir-a'), anchor: null },
 };
 
@@ -187,16 +194,52 @@ export const BIOME_FLORA: Record<number, Record<FloraTier, FloraTierConfig>> = {
       ],
     },
   },
+  // ART SESSION 6 — the flora closeout. The SWAMP CANOPY entries were
+  // already here from Pass 5 (the brief read as if they needed adding); only
+  // the ART was missing, so the canopy line below is untouched. What is new
+  // is the understory: a DEBRIS tier, not a ground cover.
   [Biome.SWAMP]: {
     canopy: { density: 0.15, palette: even('swamp-tree-a', 'swamp-tree-b') },
-    understory: EMPTY_UNDERSTORY,
+    understory: {
+      // 0.2 is an INITIAL value (feel stays the dressed-forest ride's job).
+      // Derived by KIND, not copied: the PNW understories are fern carpets
+      // at 0.35-0.45 because ferns cover ground continuously. Fallen logs
+      // and stumps are occasional debris — a swamp floor at PNW density
+      // would read as a lumberyard, so this sits well below them.
+      density: 0.2,
+      palette: even('log-a', 'log-b', 'stump-a'),
+    },
   },
   [Biome.ROCK]: {
     canopy: { density: 0.05, palette: even('boulder-a', 'boulder-b') },
     understory: EMPTY_UNDERSTORY,
   },
   [Biome.DESERT]: {
-    canopy: { density: 0.03, palette: even('cactus-a', 'scrub-a') },
+    // ART SESSION 6 RECON: scrub-a was ALREADY in this palette, and so is
+    // cactus-a — the fence everyone remembers ("do not plant cacti in
+    // Egypt") was never a fence on the palette, only on the ART. A global
+    // DESERT palette already rolls cactus-a across Egypt today; it just
+    // draws as a placeholder silhouette, so nobody has seen it.
+    //
+    // DENSITY IS UNCHANGED at 0.03 — already sparser than ROCK's 0.05, and
+    // a live value is not this session's to re-feel.
+    //
+    // WEIGHTS DO change, and this is the only content call here: with
+    // scrub-a getting art and cactus-a explicitly held back, an even
+    // palette would leave HALF of every desert as placeholder cacti next to
+    // finished shrubs. Weighting 10:1 makes the desert read as scrub — the
+    // "Egypt wants desert scrub BEFORE cactus" ruling (Pass 7) applied to
+    // the pick space rather than only to the generation queue. cactus-a
+    // stays in the palette at weight 1 rather than being removed, because
+    // removing it would hide the per-region dependency instead of parking
+    // it: when regional divergence lands, this weight is the dial.
+    canopy: {
+      density: 0.03,
+      palette: [
+        { propId: 'cactus-a', weight: 1 },
+        { propId: 'scrub-a', weight: 10 },
+      ],
+    },
     understory: EMPTY_UNDERSTORY,
   },
 };
