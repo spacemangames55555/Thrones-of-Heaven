@@ -21,3 +21,21 @@ compares two singly-sampled timing/throughput numbers under swiftshader.
 | death respawn (egypt-in-globe) (`alive:false` — the 1500 ms scene-time death banner overran the check's 2300 ms wall-clock wait under a swiftshader frame stall; position untouched, same fixture coords as the passing runs) | Pass 6C Commit 1 gate, run `bc23r8h83` (283/284) | Clean re-run `bb1l814rd` (284/284), zero code change | ONE CONFIRMED FLAKE — next one ⇒ stabilization commit |
 | orientation FPS parity (Rome ground zoom) | Art Session 4 final gate, run `bekyybceg` (322/323; landscape 29.7 vs portrait 35.3 = 84.1% against an 85% floor) | RULED OUT BY MEASUREMENT, not by re-running: a focused probe at the same spot showed the new understory tier renders **zero** instances there (scatter/understory/fringe all 0 — that spot sits below the prop zoom thresholds), and three back-to-back orientation samples gave landscape/portrait ratios of 1.036 / 1.030 / 1.018. Both absolute numbers also beat the check's own 2026-07 baseline (25.6/26.1). Then a clean gate re-run, zero code change | ONE CONFIRMED FLAKE — next one ⇒ stabilization commit (candidate fix: sample both orientations twice and take the better ratio, or lengthen the post-resize settle). **MECHANISM FAMILY: perf-measurement variance** (Casey ruling, Art Session 5) — a timing/throughput number sampled once under swiftshader, where the assertion is a RATIO of two such samples. The family, not just this check, carries the strike: the SECOND failure anywhere in **perf-measurement variance** triggers the double-sample stabilization across the family, not a third re-run of whichever check happened to blink. Current family members: this check, and the GROUND-FPS half of the tile-LOD row above (a singly-sampled FPS comparison). CORRECTION: an earlier draft of this row swept the WHOLE tile-LOD row into the family. That was too broad and is withdrawn - the world-zoom half is a different mechanism (state not yet SETTLED when sampled, not a noisy measurement) and carries its own row and its own strike. |
 | ground FPS at ground zoom (Rome) — **perf-measurement variance family** | Session 8 reconciliation gate, run `bt7xmd9g8` (330/334; ground=20.6 vs baseline=26.1 = 78.9% against an 80% floor) | Re-run `b5puf85j3` green at 334/334 with ground=23.2 vs 25.5 = 91.0%. HONEST CAVEAT ON THE PROTOCOL: this re-run was NOT zero-change — it carried the approve.mjs duplicate-const fix. That file is a standalone Node CLI that the browser never loads and that runs after the FPS probe, so it cannot move a rendering measurement; but the protocol says zero change, this was not zero change, and the difference is recorded rather than glossed. The machine had also just run a Chromium screenshot job for the contact sheets | **SECOND CONFIRMED FLAKE IN THE FAMILY ⇒ STABILIZATION OWED.** The first was orientation FPS parity (Art Session 4). Per the standing family rule the strike is counted per MECHANISM, so this does NOT get a third re-run — the double-sample stabilization lands across every singly-sampled FPS ratio in its own dedicated commit |
+
+**FAMILY STABILIZED (Session 8 reconciliation).** The perf-measurement
+variance family reached its second confirmed strike (orientation FPS parity,
+Art Session 4; ground-zoom FPS, Session 8 reconciliation), so per the standing
+family rule the fix landed across EVERY member rather than on the check that
+blinked most recently. All three singly-sampled FPS ratios — ground zoom,
+continent zoom, and orientation parity — now take TWO samples and assert the
+BETTER ratio, reporting both.
+
+WHY THIS IS A STABILIZATION AND NOT A WEAKENING, on record: **the tolerances
+are untouched** (80% / 80% / 85%) and both samples are still taken. A real
+regression is persistent — the ground layer genuinely costing more to draw
+happens on every frame, so it fails both windows. A swiftshader scheduler
+stall is transient and will not land on both. Widening a tolerance would have
+bought the same green while also hiding real regressions; this discards noise
+without discarding signal. If a future failure shows BOTH ratios close to the
+floor, that is a real regression and must be treated as one.
+
