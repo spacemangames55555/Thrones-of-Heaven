@@ -27,7 +27,8 @@ discipline, and hygiene.
 1. `npm run art:coverage` — what's missing, what each batch would cost
    (call estimate BEFORE credits are spent), what's blocked and by which
    ruling. Blocked categories cannot be batched — the fences are ledger
-   rulings (enemy-tint-ruling, walk-framework, {biome}-base-approved).
+   rulings (walk-framework, {biome}-base-approved, unscattered-prop).
+   `enemy-tint-ruling` was resolved in Art Session 7; see below.
 2. **Style lock first** (per category, human): generate candidates
    (interactively via the MCP tools, or a 1-item batch), Casey approves ONE
    on-device — record it in `art/style-locks.json`:
@@ -62,8 +63,11 @@ discipline, and hygiene.
 `manifest-sync` · `manifest-fences` · `batch-stages-only` (the tool cannot
 reach contract paths — traversal fixtures) · `style-lock-required` ·
 `fence-respected` (a blocked id never generates) · `lint-wired` (bad staged
-asset excluded + reported) · `secret-hygiene` (repo scan, pattern set stated
-in the check) · `manifest-sync` re-run at the suite tail.
+asset excluded + reported) · `fixture-row-inert` (the permanent synthetic
+harness rows never render, count or approve) · `rims-derived` (enemy rims are
+baked from master + domain table, never hand-landed) · `anchor-source` (biome
+anchors are imported, never retyped) · `secret-hygiene` (repo scan, pattern
+set stated in the check) · `manifest-sync` re-run at the suite tail.
 
 ## Prop recipe (addendum, Art Session 3 — a new SHAPE, not a new technique)
 
@@ -110,6 +114,53 @@ correction.
 Sizing vocabulary that works: ask for the OBJECT to be bigger ("large
 lush fern", "thick heavy log"), not for it to fill the canvas — canvas
 language invites edge contact, object language does not.
+
+## Enemy domain treatment — MODEL C (Casey verdict, Art Session 7)
+
+The `enemy-tint-ruling` fence is **RESOLVED**. It blocked the largest fenced
+category in the manifest — every enemy row plus the hostile creatures — and
+the bestiary is now unblocked.
+
+**The model: MASTERS ARE CANONICAL, RIMS ARE DERIVED.** An enemy sprite is
+never authored with its domain in it. It is baked from
+
+> (full-colour master) + (the domain table in `src/world/enemy-roster.ts`)
+
+by `npm run art:rims`, and from nothing else. The master keeps its full
+painterly colour; domain is carried by an **outer rim of pure, unmultiplied
+`DOMAIN_TINT`**. No runtime tint, no new pools, the hit-flash untouched.
+
+Three rules, each enforced by the `rims-derived` gate check:
+
+1. **A canon fix stays a data edit.** Re-domaining a family is a one-line
+   change to `EXISTING_FAMILY_DOMAIN` plus a **zero-credit re-bake**. The
+   receipt for why this matters is already in the roster:
+   `'lesser-evil-scouts': 'physical', // CANON FIX: was mis-mapped 'mental'`
+   — fifteen zones use that family.
+2. **Hand-landing a rimmed sprite is FORBIDDEN.** `art:rims --check`
+   re-derives every rim-derived sprite and compares byte for byte; a
+   hand-edited rim is red.
+3. **4 px is the DERIVED MINIMUM, and the treatment is frozen.** Masters fit
+   to their contract size by nearest-neighbour downscale, so a thinner rim
+   can fall between samples and vanish on some edges. **Any treatment change
+   — thickness, an inner rim, a gradient — is AMENDMENT TERRITORY**: its own
+   bake-off and Casey's approval, the same ceremony as a lock amendment.
+
+Masters live at `public/sprites/masters/<key>.png`. A key with no master is
+simply not rim-derived — which is every enemy today, since the nine live
+sprites are still the grayscale `gen-sprites` placeholders. They stay that
+way until the bestiary session paints masters under its own style lock (that
+lock is the bestiary session's opening bake-off; this session created none).
+
+### Why not the alternatives
+
+Measured on the bake-off master, in `art-review/tint-decision/report.md`:
+whole-body multiply tint (the shipped model) costs **59 % of luminance** and
+collapses **mental vs spiritual to 33.3** apart — under this project's own 48
+"reads as the same thing" threshold. The baked rim carries the raw tint
+distance instead, worst pair **102.2**. The full-colour + aura model needed a
+persistent pooled under-glow that does not exist (`CircleFxPool` is a
+transient flash pool).
 
 ## Standing batch policy (Casey ruling, Art Session 5)
 

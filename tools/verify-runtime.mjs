@@ -691,7 +691,10 @@ const ok = (name, pass, detail = '') => {
   const fenceGaps = [];
   for (const a of mf) {
     const fences = a.blockedBy ?? [];
-    if (a.category === 'enemy' && !fences.includes('enemy-tint-ruling')) fenceGaps.push(`${a.id}:no-tint-fence`);
+    // ART SESSION 7: the enemy-tint fence is RESOLVED (Casey verdict, MODEL
+    // C). The assertion INVERTS rather than disappearing - a resolved ruling
+    // that leaves no check behind is how a fence quietly comes back.
+    if (fences.includes('enemy-tint-ruling')) fenceGaps.push(`${a.id}:tint-fence-should-be-resolved`);
     if (a.category === 'figure-anim' && !fences.includes('walk-framework')) fenceGaps.push(`${a.id}:no-walk-fence`);
     if (a.category === 'terrain-prop') {
       const prop = a.id.replace(/^prop-/, '');
@@ -719,10 +722,11 @@ const ok = (name, pass, detail = '') => {
     enemy: mf.filter((a) => a.category === 'enemy').length,
     anim: mf.filter((a) => a.category === 'figure-anim').length,
     props: mf.filter((a) => a.category === 'terrain-prop').length,
+    tintFenced: mf.filter((a) => (a.blockedBy ?? []).includes('enemy-tint-ruling')).length,
   };
   ok(
-    'manifest-fences: every enemy row fenced on enemy-tint-ruling, every animation sheet on walk-framework, every terrain prop on {biome}-base-approved (or stated unscattered)',
-    fenceGaps.length === 0 && mfCounts.enemy >= 9 && mfCounts.anim === 14 && mfCounts.props >= 10,
+    'manifest-fences: the enemy-tint ruling is RESOLVED so NO row carries it anywhere, every animation sheet is fenced on walk-framework, every terrain prop on {biome}-base-approved (or stated unscattered)',
+    fenceGaps.length === 0 && mfCounts.enemy >= 9 && mfCounts.anim === 14 && mfCounts.props >= 10 && mfCounts.tintFenced === 0,
     JSON.stringify({ ...mfCounts, gaps: fenceGaps.slice(0, 6) }),
   );
 
@@ -830,11 +834,16 @@ const ok = (name, pass, detail = '') => {
     // NONE of them — blocked rows are reported, never consumed.
     const runB = run(['scripts/art-batch/batch.mjs', '--category', 'creature', '--locks', join(bfx, 'locks.json'), '--fixture-dir', join(bfx, 'fixtures'), '--batch-id', 'gate-fix-b']);
     const repB = JSON.parse(readFileSync('art-review/gate-fix-b/report.json', 'utf8'));
-    const townBlocked = repB.blockedSkipped.some((b) => b.id === 'townsfolk');
-    const townNotStaged = !repB.staged.some((s) => s.id === 'townsfolk') && !repB.excluded.some((e) => e.id === 'townsfolk');
+    // ART SESSION 7: this used to watch `townsfolk <- enemy-tint-ruling`.
+    // Resolving that ruling made the check assert NOTHING (blocked: 0) in the
+    // very same run that resolved it. It now rides the PERMANENTLY-FENCED
+    // synthetic row, which is blocked on a ruling that exists only for it and
+    // can never resolve.
+    const townBlocked = repB.blockedSkipped.some((b) => b.id === 'fixture-fenced-forever');
+    const townNotStaged = !repB.staged.some((s) => s.id === 'fixture-fenced-forever') && !repB.excluded.some((e) => e.id === 'fixture-fenced-forever');
     ok(
-      'fence-respected: a blocked fixture id (townsfolk <- enemy-tint-ruling) is never generated — reported under blockedSkipped, absent from staged and excluded alike',
-      runB.status === 0 && townBlocked && townNotStaged,
+      'fence-respected: a blocked id (the PERMANENTLY-fenced synthetic row) is never generated — reported under blockedSkipped, absent from staged and excluded alike; and the report really did carry blocked rows, so the check cannot pass by having nothing to block',
+      runB.status === 0 && townBlocked && townNotStaged && repB.blockedSkipped.length >= 1,
       JSON.stringify({ runB: runB.status, townBlocked, townNotStaged, blocked: repB.blockedSkipped.length }),
     );
 
@@ -908,7 +917,12 @@ const ok = (name, pass, detail = '') => {
       }
     }
     const fixtureFilesOnDisk = fixIds.filter((id) => existsSync(`public/art/terrain/props/${id}.png`));
-    const neverRenders = fixIds.length > 0 && inPalette.length === 0 && plantedFixture === 0 && fixtureFilesOnDisk.length === 0;
+    // ART SESSION 7: the invariant now spans EVERY manifest fixture row, not
+    // just the flora ones — the permanently-fenced creature row joined them,
+    // and a per-category check would have missed it.
+    const allFixtureRows = mf.filter((a) => a.fixture);
+    const anyFixtureFileOnDisk = allFixtureRows.filter((a) => a.spec?.path && existsSync(a.spec.path)).map((a) => a.id);
+    const neverRenders = fixIds.length > 0 && inPalette.length === 0 && plantedFixture === 0 && fixtureFilesOnDisk.length === 0 && anyFixtureFileOnDisk.length === 0 && allFixtureRows.length >= 3;
 
     const cov = run(['scripts/asset-manifest/coverage.mjs']);
     const covMentions = fixIds.filter((id) => cov.stdout.includes(id));
@@ -921,6 +935,7 @@ const ok = (name, pass, detail = '') => {
     const neverCounts =
       cov.status === 0 &&
       covMentions.length === 0 &&
+      allFixtureRows.every((a) => !cov.stdout.includes(a.id)) &&
       fixtureRows.length === fixIds.length &&
       Number.isFinite(countedTotal) &&
       countedTotal === realProps.length &&
@@ -945,9 +960,79 @@ const ok = (name, pass, detail = '') => {
     rmSync(inertFx, { recursive: true, force: true });
 
     ok(
-      'fixture-row-inert: the synthetic harness row NEVER RENDERS (in no biome/tier palette; zero plants across a 4,000-tile sweep of every biome x tier; no file at its contract path), NEVER COUNTS (absent from art:coverage; terrain-prop counts equal the real rows exactly), NEVER APPROVES (art:approve refuses it and lands nothing)',
+      'fixture-row-inert: EVERY synthetic harness row (flora props + the permanently-fenced creature row) NEVER RENDERS (in no biome/tier palette; zero plants across a 4,000-tile sweep of every biome x tier; no file at its contract path), NEVER COUNTS (absent from art:coverage; terrain-prop counts equal the real rows exactly), NEVER APPROVES (art:approve refuses it and lands nothing)',
       neverRenders && neverCounts && neverApproves,
-      JSON.stringify({ fixIds, inPalette, sampled, plantedFixture, fixtureFilesOnDisk, covMentions, covNums, real: realProps.length, fixtures: fixtureRows.length, apprInert: apprInert.status, landedAnyway }),
+      JSON.stringify({ fixIds, inPalette, sampled, plantedFixture, fixtureFilesOnDisk, anyFixtureFileOnDisk, allFixtureRows: allFixtureRows.map((a) => a.id), covMentions, covNums, real: realProps.length, fixtures: fixtureRows.length, apprInert: apprInert.status, landedAnyway }),
+    );
+  }
+
+  // 0f4c. RIMS-DERIVED (ART SESSION 7, MODEL C): masters are canonical, rims
+  // are DERIVED. A shipped enemy sprite is baked from (master + the domain
+  // table) and nothing else, so:
+  //   * a canon fix stays a DATA edit plus a zero-credit re-bake;
+  //   * HAND-LANDING a rimmed sprite is forbidden, and this is what forbids
+  //     it — every rim-derived sprite must re-derive byte-identically;
+  //   * the 4 px treatment is the DERIVED MINIMUM and is frozen; changing it
+  //     is amendment territory, so the constant is pinned here too.
+  // The live tree has no masters yet (the bestiary session paints them), so
+  // the real --check is vacuous today. It is NOT allowed to be a vacuous
+  // check: a PERMANENT SYNTHETIC MASTER drives the whole path here — bake,
+  // re-derive clean, hand-edit detected, unmapped-domain refused. Same
+  // lesson as the fixture-harness rows (Art Session 5): a check that only
+  // asserts when real content happens to exist stops asserting the moment
+  // that content ships.
+  {
+    const rfx = new URL('../node_modules/.cache/toh-rims-fx', import.meta.url).pathname;
+    rmSync(rfx, { recursive: true, force: true });
+    mkdirSync(join(rfx, 'masters'), { recursive: true });
+    mkdirSync(join(rfx, 'out'), { recursive: true });
+    // A synthetic master for a REAL family id (so the domain table resolves),
+    // deliberately small with a hole so the dilation has edges to find.
+    const master = new PNG({ width: 24, height: 24 });
+    for (let y = 0; y < 24; y++) {
+      for (let x = 0; x < 24; x++) {
+        const o = (y * 24 + x) * 4;
+        const solid = x >= 8 && x < 16 && y >= 8 && y < 16;
+        master.data[o] = 200;
+        master.data[o + 1] = 120;
+        master.data[o + 2] = 60;
+        master.data[o + 3] = solid ? 255 : 0;
+      }
+    }
+    writeFileSync(join(rfx, 'masters', 'enemy-corrupted-wildlife.png'), PNG.sync.write(master));
+    const rimRun = (extra) => run(['scripts/art-batch/bake-rims.mjs', '--masters', join(rfx, 'masters'), '--out', join(rfx, 'out'), ...extra]);
+    const baked = rimRun([]);
+    const bakedPath = join(rfx, 'out', 'enemy-corrupted-wildlife.png');
+    // The rim must be PURE physical DOMAIN_TINT (corrupted-wildlife is
+    // physical) and must be exactly RIM_PX thick outside the 8x8 body.
+    let rimPure = false;
+    let rimThickness = -1;
+    if (existsSync(bakedPath)) {
+      const p = PNG.sync.read(readFileSync(bakedPath));
+      const at = (x, y) => { const o = (y * 24 + x) * 4; return [p.data[o], p.data[o + 1], p.data[o + 2], p.data[o + 3]]; };
+      rimPure = at(7, 12)[0] === 0xe0 && at(7, 12)[1] === 0x4a && at(7, 12)[2] === 0x3a && at(7, 12)[3] === 255;
+      let t = 0;
+      for (let x = 7; x >= 0; x--) if (at(x, 12)[3] > 0) t++; else break;
+      rimThickness = t;
+      // the body pixel itself must be untouched master colour
+      rimPure = rimPure && at(12, 12)[0] === 200 && at(12, 12)[1] === 120 && at(12, 12)[2] === 60;
+    }
+    const checkClean = rimRun(['--check']);
+    // HAND-EDIT DETECTION: scribble one pixel and the check must go red.
+    const tampered = PNG.sync.read(readFileSync(bakedPath));
+    tampered.data[(12 * 24 + 12) * 4] = 1;
+    writeFileSync(bakedPath, PNG.sync.write(tampered));
+    const checkTampered = rimRun(['--check']);
+    // UNMAPPED DOMAIN: a master whose family is in no domain table refuses.
+    writeFileSync(join(rfx, 'masters', 'enemy-not-a-family.png'), PNG.sync.write(master));
+    const unmapped = rimRun([]);
+    rmSync(rfx, { recursive: true, force: true });
+    const rimSrc = readFileSync('scripts/art-batch/bake-rims.mjs', 'utf8');
+    const pkgR = JSON.parse(readFileSync('package.json', 'utf8')).scripts;
+    ok(
+      'rims-derived: masters are canonical and rims are DERIVED — the baker lays a pure-DOMAIN_TINT rim of exactly the frozen 4 px around an untouched body, a clean tree re-derives byte-identically, a HAND-EDITED rim is caught, and a master with no domain in the table is refused',
+      baked.status === 0 && rimPure && rimThickness === 4 && checkClean.status === 0 && checkTampered.status === 1 && /DRIFT/.test(checkTampered.stderr) && unmapped.status === 1 && /no domain/.test(unmapped.stderr) && /export const RIM_PX = 4;/.test(rimSrc) && pkgR['art:rims'] === 'node scripts/art-batch/bake-rims.mjs',
+      JSON.stringify({ baked: baked.status, rimPure, rimThickness, clean: checkClean.status, tampered: checkTampered.status, unmapped: unmapped.status }),
     );
   }
 

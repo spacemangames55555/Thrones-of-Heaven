@@ -15,7 +15,6 @@ import { build } from 'esbuild';
  *   missing  — nothing carries it (no file and no fallback path exists).
  * blockedBy encodes the deferred-ledger fences (REQUIRED set asserted by the
  * manifest-fences gate):
- *   every enemy sprite            => enemy-tint-ruling
  *   every animation sheet         => walk-framework
  *   each biome's prop upgrades    => {biome-stem}-base-approved
  * plus 'drop-contract-missing' for categories with no drop-in contract at
@@ -142,20 +141,42 @@ for (const family of Object.keys(roster.EXISTING_FAMILY_DOMAIN).sort()) {
     category: 'enemy',
     spec: { kind: 'still', ...dims(key, 24, 34), path: `public/sprites/${key}.png`, brief: 'toh-figure-art-brief.md', domain: roster.EXISTING_FAMILY_DOMAIN[family] },
     status: stillStatus(key),
-    blockedBy: ['enemy-tint-ruling'],
+    // ART SESSION 7: the enemy-tint fence is RESOLVED (Casey verdict, MODEL C
+    // - baked domain rim). The bestiary is unblocked; enemy rows carry no
+    // fence. Rimmed sprites are DERIVED from masters, never hand-landed -
+    // see scripts/art-batch/bake-rims.mjs and the rims-derived gate check.
   });
 }
 
-// 3. CREATURE / NPC SLOTS — hostiles carry the enemy-tint fence too.
+// 3. CREATURE / NPC SLOTS — the enemy-tint fence that once blocked hostiles
+// was resolved in Art Session 7 (MODEL C), so nothing here is fenced on it.
 for (const s of CREATURE_SLOTS) {
   assets.push({
     id: s.key,
     category: 'creature',
     spec: { kind: 'still', ...dims(s.key, s.w, s.h), path: `public/sprites/${s.key}.png`, brief: 'toh-figure-art-brief.md' },
     status: stillStatus(s.key),
-    ...(s.hostile ? { blockedBy: ['enemy-tint-ruling'] } : {}),
   });
 }
+
+// 3b. THE PERMANENTLY-FENCED HARNESS ROW (Art Session 7). `fence-respected`
+// proves that a BLOCKED id is never generated, and it used to borrow whichever
+// real row happened to be fenced — `townsfolk <- enemy-tint-ruling`. Resolving
+// that ruling in Art Session 7 hollowed the check out on the spot: nothing was
+// blocked, so it asserted nothing. Same failure mode as the three checks Art
+// Session 4 lost, and the same fix as the flora harness rows: a target that
+// can NEVER stop being valid. This row is synthetic, is fenced on a ruling
+// that exists only for it, and can never resolve because there is nothing to
+// resolve. It never renders (no code reads it), never counts (coverage skips
+// fixture rows) and never approves (art:approve refuses fixture ids).
+assets.push({
+  id: 'fixture-fenced-forever',
+  category: 'creature',
+  spec: { kind: 'still', w: 24, h: 34, path: 'public/sprites/fixture-fenced-forever.png', brief: 'toh-figure-art-brief.md' },
+  status: 'missing',
+  fixture: true,
+  blockedBy: ['fixture-permanent-fence'],
+});
 
 // 4. SUMMONS — declared drop-in stills (the Hunter bond's three expressions).
 for (const o of overrides.SPRITE_OVERRIDES) {
