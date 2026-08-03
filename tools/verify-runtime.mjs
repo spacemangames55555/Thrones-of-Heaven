@@ -48,75 +48,138 @@ const ok = (name, pass, detail = '') => {
   console.log(`${pass ? 'PASS' : 'FAIL'}  ${name}${detail ? ' — ' + detail : ''}`);
 };
 
-// 0) SPRITE-GEN ASSET CONTRACT (pure Node, before the browser): the 9 shipped
-// enemy-family PNGs must exist at the drop-in pipeline paths with each family's
-// CANONICAL shared-key dimensions in 8-bit RGBA; stay TINT-COMPATIBLE (near-
-// neutral channels so the multiplicative domain tint colorizes them); carry a
-// readable silhouette (opaque coverage inside the config band); and regenerate
-// BYTE-IDENTICALLY from the committed config + seed (determinism).
+// 0) ENEMY SPRITE ASSET CONTRACT (pure Node, before the browser).
+//
+// OWNERSHIP MOVED (Art Session 8). Until the bestiary landed, the nine files
+// at public/sprites/enemy-<family>.png were emitted by scripts/gen-sprites.mjs:
+// grayscale, drawn at the shared key's size class, and deliberately
+// near-neutral so the runtime's multiplicative domain tint could colorize
+// them. Model C ended all three of those facts. Masters are canonical, rims
+// are DERIVED, and those same nine paths now hold full-colour art baked from
+// public/sprites/masters/ by `npm run art:rims`.
+//
+// The block moves with the ownership. Nothing here is deleted:
+//   files        still the contract, and now carries the STRONGER geometric
+//                assertion the rim treatment actually rests on (below);
+//   full-colour  the neutrality fence, INVERTED rather than dropped. It used
+//                to demand every drawn pixel be near-neutral; the domain is
+//                in the pixels now, so it demands the opposite against the
+//                same constant. A shipped enemy sprite that fell back UNDER
+//                TINT_NEUTRALITY_MAX_SPREAD would mean a grayscale
+//                placeholder had clobbered derived art — which is exactly the
+//                regression worth catching;
+//   silhouette   unchanged, band and all. It was calibrated on the
+//                placeholders and the real masters land inside it, so it
+//                keeps asserting without a single number moving;
+//   determinism  RE-POINTED, because its old premise is now false and a check
+//                that asserts a false premise is worse than no check.
+//                gen-sprites does not own the shipped files any more, so
+//                hash-comparing them against a regeneration would be a lie —
+//                `rims-derived` is what proves those re-derive, from masters.
+//                The generator's OWN guarantee is still real and still
+//                checked, against itself: two independent runs, byte for
+//                byte. Bolted to it is the new hazard the move created — a
+//                stale `npm run gen:sprites` would silently overwrite nine
+//                derived sprites with placeholders — so the generator now
+//                refuses to write over a rim-derived key in the live tree,
+//                and the refusal is proven here against the real files.
 {
-  const { loadConfig, decodePng, generateAll } = await import('../scripts/gen-sprites.mjs');
+  const { PNG } = await import('pngjs');
+  const { writeFileSync } = await import('node:fs');
+  const { loadConfig, generateAll } = await import('../scripts/gen-sprites.mjs');
   const cfg = await loadConfig();
+  // The frozen rim thickness, READ FROM THE BAKER'S SOURCE, never retyped
+  // (Art Session 5 ruling: anchors are read from source).
+  const RIM_PX = Number(/export const RIM_PX = (\d+);/.exec(readFileSync('scripts/art-batch/bake-rims.mjs', 'utf8'))?.[1]);
   const sprites = cfg.SPRITE_FAMILIES.map((f) => {
     const want = cfg.SIZE_CLASS[f.sizeClass];
     const path = cfg.spriteFileFor(f.id);
     if (!existsSync(path)) return { id: f.id, path, missing: true };
-    const png = decodePng(readFileSync(path));
+    const png = PNG.sync.read(readFileSync(path));
     let solid = 0;
     let spread = 0;
-    for (let i = 0; i < png.w * png.h; i++) {
-      const a = png.rgba[i * 4 + 3];
+    for (let i = 0; i < png.width * png.height; i++) {
+      const a = png.data[i * 4 + 3];
       if (a >= 128) solid++;
       if (a > 0) {
-        const r = png.rgba[i * 4];
-        const g = png.rgba[i * 4 + 1];
-        const b = png.rgba[i * 4 + 2];
+        const r = png.data[i * 4];
+        const g = png.data[i * 4 + 1];
+        const b = png.data[i * 4 + 2];
         spread = Math.max(spread, Math.abs(r - g), Math.abs(g - b), Math.abs(r - b));
       }
     }
+    const sx = png.width / want.w;
+    const sy = png.height / want.h;
     return {
       id: f.id,
       path,
-      shapeOk: png.w === want.w && png.h === want.h && png.bitDepth === 8 && png.colorType === 6,
-      dims: `${png.w}x${png.h}`,
+      rgba8: png.depth === 8 && png.colorType === 6,
+      dims: `${png.width}x${png.height}`,
+      // null unless the sprite is the SAME whole-number multiple of its size
+      // class on both axes (an aspect change would distort the figure too).
+      scale: sx === sy && Number.isInteger(sx) ? sx : null,
       spread,
-      coverage: Number((solid / (png.w * png.h)).toFixed(3)),
+      coverage: Number((solid / (png.width * png.height)).toFixed(3)),
     };
   });
   const nine = sprites.length === 9 && sprites.every((s) => !s.missing);
   ok(
-    'sprite-gen — files: all 9 enemy-family PNGs exist at pipeline paths with canonical dims, 8-bit RGBA',
-    nine && sprites.every((s) => s.shapeOk),
-    JSON.stringify(sprites.map((s) => `${s.id}:${s.missing ? 'MISSING' : s.dims}`)),
+    // WHY THE SCALE BAND IS THE RIGHT ASSERTION NOW. The shipped sprite is no
+    // longer AT the size class — it is the master canvas, fitted down at boot
+    // by the drop-in fitter's nearest-neighbour downscale. Two things must
+    // hold for that to be safe, and neither is implied by dimensions alone:
+    // an exact integer ratio (whole source pixels per screen pixel, or the
+    // crisp outline the enemy lock is built on samples unevenly), and a rim
+    // that survives it. RIM_PX = 4 is documented in bake-rims.mjs as the
+    // DERIVED MINIMUM precisely because a thinner rim can fall between
+    // samples and vanish; this is the check that makes that rationale true of
+    // every shipped master rather than of the one it was reasoned about.
+    `enemy-sprites — files: all 9 enemy-family PNGs exist at the pipeline paths in 8-bit RGBA, each an exact whole-number multiple (≥2×) of its shared-key size class on BOTH axes, so the boot fitter's nearest-neighbour downscale lands on whole source pixels and the frozen ${RIM_PX}px rim survives it as at least one screen pixel`,
+    Number.isInteger(RIM_PX) && RIM_PX > 0 && nine && sprites.every((s) => s.rgba8 && s.scale !== null && s.scale >= 2 && RIM_PX / s.scale >= 1),
+    JSON.stringify(sprites.map((s) => `${s.id}:${s.missing ? 'MISSING' : `${s.dims}@${s.scale}x`}`)),
   );
   ok(
-    `sprite-gen — tint-compat: every drawn pixel near-neutral (max channel spread ≤ ${cfg.TINT_NEUTRALITY_MAX_SPREAD}) so domain tint colorizes`,
-    nine && sprites.every((s) => s.spread <= cfg.TINT_NEUTRALITY_MAX_SPREAD),
+    `enemy-sprites — full-colour (the tint-compat fence, INVERTED): every shipped enemy sprite now EXCEEDS the placeholder neutrality bound (max channel spread > ${cfg.TINT_NEUTRALITY_MAX_SPREAD}) — under Model C the domain is baked into the pixels, so a near-neutral sprite at these paths means a grayscale placeholder has overwritten derived art`,
+    nine && sprites.every((s) => s.spread > cfg.TINT_NEUTRALITY_MAX_SPREAD),
     JSON.stringify(sprites.map((s) => `${s.id}:${s.missing ? 'MISSING' : s.spread}`)),
   );
   ok(
-    `sprite-gen — silhouette: opaque coverage within [${cfg.COVERAGE_MIN}, ${cfg.COVERAGE_MAX}] (no near-empty or blob sprite)`,
+    `enemy-sprites — silhouette: opaque coverage within the UNCHANGED [${cfg.COVERAGE_MIN}, ${cfg.COVERAGE_MAX}] band (no near-empty or blob sprite) — the band was calibrated on the placeholders and the real masters land inside it, so it survives the ownership move with no number moved`,
     nine && sprites.every((s) => s.coverage >= cfg.COVERAGE_MIN && s.coverage <= cfg.COVERAGE_MAX),
     JSON.stringify(sprites.map((s) => `${s.id}:${s.missing ? 'MISSING' : s.coverage}`)),
   );
-  const regenDir = mkdtempSync(join(tmpdir(), 'toh-spritegen-'));
-  let regen;
+  const dirA = mkdtempSync(join(tmpdir(), 'toh-spritegen-a-'));
+  const dirB = mkdtempSync(join(tmpdir(), 'toh-spritegen-b-'));
+  let regen = [];
+  let refusal = { status: -1, clobbered: ['NOT RUN'], out: '' };
   try {
-    await generateAll(regenDir);
+    // Sandbox out-dirs, so the refusal does not apply: both runs generate the
+    // FULL nine and the comparison is over the whole set.
+    await generateAll(dirA);
+    await generateAll(dirB);
     const sha = (buf) => createHash('sha256').update(buf).digest('hex');
     regen = cfg.SPRITE_FAMILIES.map((f) => {
       const name = `${cfg.spriteKeyFor(f.id)}.png`;
-      const shipped = cfg.spriteFileFor(f.id);
-      if (!existsSync(shipped) || !existsSync(join(regenDir, name))) return { id: f.id, identical: false };
-      return { id: f.id, identical: sha(readFileSync(shipped)) === sha(readFileSync(join(regenDir, name))) };
+      const a = join(dirA, name);
+      const b = join(dirB, name);
+      return { id: f.id, identical: existsSync(a) && existsSync(b) && sha(readFileSync(a)) === sha(readFileSync(b)) };
     });
+    // THE REFUSAL, proven against the real tree. Bytes are held first and
+    // restored unconditionally, so a broken guard fails this check loudly
+    // instead of leaving the working tree damaged.
+    const held = cfg.SPRITE_FAMILIES.map((f) => ({ id: f.id, file: cfg.spriteFileFor(f.id), bytes: readFileSync(cfg.spriteFileFor(f.id)) }));
+    const cli = spawnSync(process.execPath, ['scripts/gen-sprites.mjs'], { encoding: 'utf8' });
+    const clobbered = held.filter((h) => !readFileSync(h.file).equals(h.bytes));
+    for (const h of clobbered) writeFileSync(h.file, h.bytes);
+    refusal = { status: cli.status, clobbered: clobbered.map((c) => c.id), out: `${cli.stdout ?? ''}${cli.stderr ?? ''}` };
   } finally {
-    rmSync(regenDir, { recursive: true, force: true });
+    rmSync(dirA, { recursive: true, force: true });
+    rmSync(dirB, { recursive: true, force: true });
   }
   ok(
-    'sprite-gen — determinism: regeneration from committed config + seed is byte-identical to the shipped set (hash compare)',
-    regen.length === 9 && regen.every((r) => r.identical),
-    JSON.stringify(regen.map((r) => `${r.id}:${r.identical}`)),
+    'enemy-sprites — generator determinism + live-tree refusal: two independent gen-sprites runs into fresh directories are byte-identical (the generator guarantee, now held against ITSELF rather than against a shipped set it no longer owns), and a real run over the live tree REFUSES every rim-derived key by name — the nine derived sprites come through it byte-for-byte untouched',
+    regen.length === 9 && regen.every((r) => r.identical) && refusal.status === 0 && refusal.clobbered.length === 0 && /REFUSED to overwrite 9 rim-derived/.test(refusal.out),
+    JSON.stringify({ regen: regen.map((r) => `${r.id}:${r.identical}`), refusal }),
   );
 }
 
@@ -1039,22 +1102,54 @@ const ok = (name, pass, detail = '') => {
   // 0f4d. ENEMY ART ACTIVATION (PASS 10, pure Node half): the registry that
   // decides which families wear baked rim art. The predicate CANNOT be "a PNG
   // exists at the contract path" — art:rims writes to
-  // public/sprites/enemy-<family>.png, the SAME path the grayscale
-  // gen-sprites placeholder already occupies for all nine families. Activation
-  // keys off the canonical MASTER via art/enemy-rims.json instead, and this
-  // check proves that file is derived rather than hand-written.
+  // public/sprites/enemy-<family>.png, the same path the enemy drop-in
+  // pipeline has always filled for all nine families. Activation keys off the
+  // canonical MASTER via art/enemy-rims.json instead, and this check proves
+  // that file is derived rather than hand-written.
+  //
+  // ART SESSION 8 RE-SCOPE. This check used to prove the master-keyed
+  // predicate with the shipped tree itself: nine placeholder PNGs sat at the
+  // contract paths while the registry was empty, so an empty registry WAS the
+  // discriminator. The bestiary landed masters for all nine and that
+  // discriminator evaporated — every contract path and every registry entry
+  // now agree, and the check would pass just as happily under the wrong
+  // predicate. So the discriminator moves into a PERMANENT SYNTHETIC fixture
+  // that no future art drop can dissolve: a sandbox holding ONE master and
+  // TWO files at the out path. The baker must derive exactly the one with a
+  // master and leave the squatter — a file at a contract path with no master
+  // behind it — completely alone.
   {
     const efx = new URL('../node_modules/.cache/toh-enemyart-fx', import.meta.url).pathname;
     rmSync(efx, { recursive: true, force: true });
     mkdirSync(join(efx, 'masters'), { recursive: true });
     mkdirSync(join(efx, 'out'), { recursive: true });
     const reg = JSON.parse(readFileSync('art/enemy-rims.json', 'utf8'));
-    // Every nine placeholder sprites are on disk RIGHT NOW; if presence were
-    // the predicate this list would be nine long. It must be empty until a
-    // master is painted.
-    const placeholdersOnDisk = ['corrupted-wildlife', 'evil-raiders', 'dark-casters'].filter((f) => existsSync(`public/sprites/enemy-${f}.png`));
+    // PERMANENT SYNTHETIC DISCRIMINATOR — one master, two files at the out path.
+    const fxMaster = new PNG({ width: 16, height: 16 });
+    for (let y = 0; y < 16; y++) {
+      for (let x = 0; x < 16; x++) {
+        const o = (y * 16 + x) * 4;
+        fxMaster.data[o] = 200;
+        fxMaster.data[o + 1] = 120;
+        fxMaster.data[o + 2] = 60;
+        fxMaster.data[o + 3] = x >= 6 && x < 10 && y >= 6 && y < 10 ? 255 : 0;
+      }
+    }
+    writeFileSync(join(efx, 'masters', 'enemy-corrupted-wildlife.png'), PNG.sync.write(fxMaster));
+    // The squatter: a perfectly valid PNG sitting at the contract path of a
+    // family with NO master. Under a presence-based predicate it would be
+    // treated as art; under the master-keyed one it is invisible.
+    const squatterBytes = PNG.sync.write(new PNG({ width: 16, height: 16 }));
+    writeFileSync(join(efx, 'out', 'enemy-dark-casters.png'), squatterBytes);
+    const fxRun = run(['scripts/art-batch/bake-rims.mjs', '--masters', join(efx, 'masters'), '--out', join(efx, 'out')]);
+    const squatterUntouched = readFileSync(join(efx, 'out', 'enemy-dark-casters.png')).equals(squatterBytes);
+    const derivedExactlyOne = /derived 1 sprite\(s\)/.test(fxRun.stdout);
+    // REAL TREE: the committed registry must name exactly the masters on disk
+    // — not the files at the contract paths, and not a hand-kept list.
+    const mastersOnDisk = readdirSync('public/sprites/masters').filter((f) => f.endsWith('.png')).map((f) => f.slice(0, -4)).sort();
+    const registryMatchesMasters = JSON.stringify([...(reg.rimDerived ?? [])].sort()) === JSON.stringify(mastersOnDisk);
     const realCheck = run(['scripts/art-batch/bake-rims.mjs', '--check']);
-    // Hand-editing the registry is caught: claim a family nobody baked.
+    // Hand-editing the registry is caught: claim a set nobody baked.
     const tampered = { ...reg, rimDerived: ['enemy-corrupted-wildlife'] };
     writeFileSync(join(efx, 'reg-backup.json'), readFileSync('art/enemy-rims.json'));
     writeFileSync('art/enemy-rims.json', `${JSON.stringify(tampered, null, 2)}\n`);
@@ -1063,9 +1158,18 @@ const ok = (name, pass, detail = '') => {
     const restored = readFileSync('art/enemy-rims.json', 'utf8') === JSON.stringify(reg, null, 2) + '\n';
     rmSync(efx, { recursive: true, force: true });
     ok(
-      'enemy-rims-registry: activation keys off the canonical MASTER, never off a file at the contract path (the grayscale placeholders already sit there); the committed registry re-derives from the masters on disk, and a hand-claimed family is caught',
-      Array.isArray(reg.rimDerived) && placeholdersOnDisk.length === 3 && reg.rimDerived.length === 0 && realCheck.status === 0 && regTampered.status === 1 && /REGISTRY DRIFT/.test(regTampered.stderr) && restored,
-      JSON.stringify({ declared: reg.rimDerived, placeholdersOnDisk, realCheck: realCheck.status, regTampered: regTampered.status, restored }),
+      'enemy-rims-registry: activation keys off the canonical MASTER, never off a file at the contract path — a permanent synthetic squatter (valid PNG at a contract path, no master behind it) is neither derived nor touched, the committed registry names exactly the masters on disk, and a hand-claimed registry is caught',
+      Array.isArray(reg.rimDerived) &&
+        fxRun.status === 0 &&
+        derivedExactlyOne &&
+        squatterUntouched &&
+        mastersOnDisk.length === 9 &&
+        registryMatchesMasters &&
+        realCheck.status === 0 &&
+        regTampered.status === 1 &&
+        /REGISTRY DRIFT/.test(regTampered.stderr) &&
+        restored,
+      JSON.stringify({ declared: reg.rimDerived, mastersOnDisk, derivedExactlyOne, squatterUntouched, realCheck: realCheck.status, regTampered: regTampered.status, restored }),
     );
   }
 
@@ -7685,10 +7789,22 @@ try {
   // flashes white then GUARANTEED-restores to its domain tint (the old code
   // silently reverted to the variant color); a player hit at/over the FEEL
   // threshold shakes the camera, a lighter hit does not.
+  //
+  // ART SESSION 8: the subject is HELD domain-tinted on purpose. Once the
+  // bestiary declared all nine families, corrupted-wildlife renders rim-backed
+  // on white — and a white flash over a white base is white throughout, which
+  // would leave this check unable to see its own restore. Relaxing it to
+  // "restored === tintBefore" would have kept it green and proven nothing.
+  // Clearing the declaration for the spawn keeps the check literally what its
+  // name says: a red -> white -> red assertion on a domain-tinted enemy, which
+  // is the state every family with no master still ships in. The art-backed
+  // side of the same mechanism has its own home in flash-on-art.
   const hitFeel = await page.evaluate(async () => {
     const ms = window.__ready();
+    const ea = window.__worldScale.enemyArt;
     const wait = (t) => new Promise((r) => setTimeout(r, t));
     if (!window.__quietSpot()) return { setup: 'no quiet spot' };
+    ea.__gateDeclare([], []);
     const RED = ms.feel.domainTint.physical;
     const w = ms.activeMap().nearestWalkableWorld(ms.player.x + 140, ms.player.y);
     // The REAL region spawn path (domain tint via setBaseTint):
@@ -7716,11 +7832,12 @@ try {
     const noShakeOnChip = ms.cameras.main.shakeEffect.isRunning === false;
     ms.playerHealth.full();
     ms.playerHealth.shield = 1e9;
-    return { setup: 'ok', tintBefore, whiteDuringFlash, restored, RED, shookOnBig, settled, noShakeOnChip };
+    ea.__gateDeclare(null, null); // put the shipped bestiary roster back
+    return { setup: 'ok', tintBefore, whiteDuringFlash, restored, RED, shookOnBig, settled, noShakeOnChip, restoredDeclared: ea.declaredRimKeys().length };
   });
   ok(
-    'game-feel — hit feedback: white flash then guaranteed domain-tint restore; threshold camera shake (big yes, chip no)',
-    hitFeel.setup === 'ok' && hitFeel.tintBefore === hitFeel.RED && hitFeel.whiteDuringFlash && hitFeel.restored === hitFeel.RED && hitFeel.shookOnBig && hitFeel.settled && hitFeel.noShakeOnChip,
+    'game-feel — hit feedback: white flash then guaranteed domain-tint restore on a genuinely domain-tinted enemy (red -> white -> red, so the restore is actually visible); threshold camera shake (big yes, chip no); the shipped roster declaration is put back',
+    hitFeel.setup === 'ok' && hitFeel.tintBefore === hitFeel.RED && hitFeel.whiteDuringFlash && hitFeel.restored === hitFeel.RED && hitFeel.shookOnBig && hitFeel.settled && hitFeel.noShakeOnChip && hitFeel.restoredDeclared === 9,
     JSON.stringify(hitFeel),
   );
 
@@ -11174,17 +11291,26 @@ try {
   //   FALLBACK        a family the registry does NOT declare is byte-for-byte
   //                   the Pass 6 path — same texture key, same domain tint;
   //   COEXISTENCE     both in one world at once (the terrain precedent).
-  // The registry ships EMPTY, so the activation half is driven by a SYNTHETIC
-  // declaration injected here rather than by whichever family happens to get
-  // art first. Same lesson as the harness rows: a check that only asserts once
-  // real content exists is a check that starts asserting too late.
+  //
+  // ART SESSION 8: the shipped state INVERTED. When Pass 10 wrote these, the
+  // registry was empty and the ACTIVATION half needed a synthetic declaration
+  // to have anything to assert. The bestiary declared all nine, so it is now
+  // the FALLBACK half that has no real subject — and the same reasoning
+  // applies in the mirror. The fallback path is not dead code: any family
+  // whose master has not landed (batch 2's hostile creatures, batch 3's
+  // bosses) takes it, and it is the promise that art is per-family and
+  // additive. So it keeps being proven, through the same seam, by CLEARING
+  // the declaration rather than by injecting one.
   const enemyArt = await page.evaluate(() => {
     const ws = window.__worldScale;
     const ea = ws.enemyArt;
     const roster = { physical: 0xe04a3a, mental: 0x3a6de0, spiritual: 0x9a4ae0 };
-    // SHIPPED STATE: nothing declared, so nothing is rim-backed and every
-    // family keeps its domain tint. This is the fallback assertion.
+    // Leg 1 — the SHIPPED state: the bestiary roster is declared and live.
     const shippedDeclared = ea.declaredRimKeys();
+    const shippedRimBacked = ea.isRimBacked('corrupted-wildlife');
+    // Leg 2 — the FALLBACK contract, with nothing declared: no family is
+    // rim-backed and every marked one resolves to its exact Pass 6 domain tint.
+    ea.__gateDeclare([], []);
     const fallbackTints = {
       'corrupted-wildlife': ea.enemyBaseTint('corrupted-wildlife', roster.physical),
       'dark-casters': ea.enemyBaseTint('dark-casters', roster.mental),
@@ -11195,11 +11321,16 @@ try {
       fallbackTints['dark-casters'] === roster.mental &&
       fallbackTints['hollowed-brutes'] === roster.spiritual &&
       !ea.isRimBacked('corrupted-wildlife');
-    return { shippedDeclared, fallbackTints, fallbackIdentical, key: ea.enemyArtKey('corrupted-wildlife') };
+    ea.__gateDeclare(null, null);
+    return { shippedDeclared, shippedRimBacked, fallbackTints, fallbackIdentical, key: ea.enemyArtKey('corrupted-wildlife'), restored: ea.declaredRimKeys().length };
   });
   ok(
-    'enemy-fallback-identical: with the rims registry EMPTY (the shipped state), no family is rim-backed and every one still resolves to its exact Pass 6 domain tint — activation adds nothing until a master exists',
-    enemyArt.shippedDeclared.length === 0 && enemyArt.fallbackIdentical && enemyArt.key === 'enemy-corrupted-wildlife',
+    'enemy-fallback-identical: the shipped registry declares the whole nine-family bestiary roster and they render rim-backed; with the declaration CLEARED through the gate seam, no family is rim-backed and every marked one resolves to its exact Pass 6 domain tint — the fallback path that undeclared families still take is intact, and teardown restores the shipped state',
+    enemyArt.shippedDeclared.length === 9 &&
+      enemyArt.shippedRimBacked === true &&
+      enemyArt.fallbackIdentical &&
+      enemyArt.key === 'enemy-corrupted-wildlife' &&
+      enemyArt.restored === 9,
     JSON.stringify(enemyArt),
   );
 
@@ -11209,8 +11340,9 @@ try {
     const ms = window.__ready();
     const ea = window.__worldScale.enemyArt;
     const home = ms.terrestrialPxFromLatLng({ lat: 23.0, lng: 2.0 });
-    // Leg 1 — shipped state: the family is not declared, so the funnel must
+    // Leg 1 — UNDECLARED (the seam clears the shipped roster): the funnel must
     // put the DOMAIN tint on the sprite, exactly as the old call sites did.
+    ea.__gateDeclare([], []);
     const a = ms.spawnDemon(home.x + 240, home.y, ms.activeMap().layer);
     ms.dressFamilyEnemyForGate(a, 'lesser-evil-scouts', 0xe04a3a);
     const placeholderTint = a.sprite.tintTopLeft;
@@ -11227,7 +11359,7 @@ try {
   });
   ok(
     'enemy-activation: ONE funnel, two outcomes proven on a real spawned enemy — an undeclared family still wears its exact domain tint (the seven old call sites now route through one place with identical behaviour), and the SAME family declared rim-backed comes out white, the multiply identity that leaves baked art untouched',
-    enemySpawnTint.placeholderTint === 0xe04a3a && enemySpawnTint.rimTint === 0xffffff && enemySpawnTint.restored === 0,
+    enemySpawnTint.placeholderTint === 0xe04a3a && enemySpawnTint.rimTint === 0xffffff && enemySpawnTint.restored === 9,
     JSON.stringify(enemySpawnTint),
   );
 
@@ -11246,7 +11378,10 @@ try {
     const home = ms.terrestrialPxFromLatLng({ lat: 23.0, lng: 2.0 });
     const feel = ms.feel.flash;
     const run = async (declare) => {
-      if (declare) ea.__gateDeclare(['enemy-lesser-evil-scouts'], ['enemy-lesser-evil-scouts']);
+      // Both legs drive the seam explicitly: since the bestiary landed, the
+      // shipped state declares every family, so the placeholder leg has to
+      // CLEAR the roster to have an undeclared subject at all.
+      ea.__gateDeclare(declare ? ['enemy-lesser-evil-scouts'] : [], declare ? ['enemy-lesser-evil-scouts'] : []);
       const d = ms.spawnDemon(home.x + 300, home.y, ms.activeMap().layer);
       ms.dressFamilyEnemyForGate(d, 'lesser-evil-scouts', 0xe04a3a);
       const before = d.sprite.tintTopLeft;
@@ -11259,7 +11394,7 @@ try {
         if (d.sprite.tintTopLeft === before) { after = d.sprite.tintTopLeft; break; }
       }
       d.destroy();
-      if (declare) ea.__gateDeclare(null, null);
+      ea.__gateDeclare(null, null);
       return { before, during, after, flashed: during === 0xffffff };
     };
     const placeholder = await run(false);
@@ -11290,29 +11425,35 @@ try {
     JSON.stringify(flashOnArt.placeholder),
   );
 
-  // MIXED COEXISTENCE + the activation leg, driven by a SYNTHETIC declaration.
+  // MIXED COEXISTENCE, driven by a SYNTHETIC declaration of ONE family.
+  // The shipped roster is all-nine, so a mixed world is no longer the shipped
+  // world — but mixed is exactly the state batch 2 and batch 3 will ship in,
+  // and it is the whole promise of per-family activation. The seam declares a
+  // single family and the check reads BOTH sides in that one injected state:
+  // the declared family rim-backed on white, an undeclared one still on its
+  // domain tint, at the same instant in the same session.
   const enemyMixed = await page.evaluate(() => {
     const ea = window.__worldScale.enemyArt;
-    const before = ea.isRimBacked('corrupted-wildlife');
+    const shipped = ea.declaredRimKeys().length;
     const injected = ea.__gateDeclare(['enemy-corrupted-wildlife'], ['enemy-corrupted-wildlife']);
     const rimBacked = ea.isRimBacked('corrupted-wildlife');
     const stillPlaceholder = ea.isRimBacked('dark-casters');
     const rimTint = ea.enemyBaseTint('corrupted-wildlife', 0xe04a3a);
     const placeholderTint = ea.enemyBaseTint('dark-casters', 0x3a6de0);
+    const mixedDeclared = ea.declaredRimKeys().length;
     ea.__gateDeclare(null, null); // restore the shipped state exactly
-    const after = ea.isRimBacked('corrupted-wildlife');
-    return { before, injected, rimBacked, stillPlaceholder, rimTint, placeholderTint, after, declaredAfter: ea.declaredRimKeys().length };
+    return { shipped, injected, rimBacked, stillPlaceholder, rimTint, placeholderTint, mixedDeclared, declaredAfter: ea.declaredRimKeys().length };
   });
   ok(
-    'enemy-activation + mixed-coexist: a DECLARED family becomes rim-backed and takes WHITE (multiply identity, so the baked domain rim renders untouched) while an undeclared family in the same session stays on its placeholder and its domain tint; teardown restores the shipped state exactly',
-    enemyMixed.before === false &&
+    'enemy-activation + mixed-coexist: with ONE family declared, that family is rim-backed and takes WHITE (multiply identity, so the baked domain rim renders untouched) while an undeclared family in the SAME session at the SAME moment stays on its domain tint — per-family activation, not all-or-nothing; teardown restores the shipped nine exactly',
+    enemyMixed.shipped === 9 &&
       enemyMixed.injected === true &&
+      enemyMixed.mixedDeclared === 1 &&
       enemyMixed.rimBacked === true &&
       enemyMixed.stillPlaceholder === false &&
       enemyMixed.rimTint === 0xffffff &&
       enemyMixed.placeholderTint === 0x3a6de0 &&
-      enemyMixed.after === false &&
-      enemyMixed.declaredAfter === 0,
+      enemyMixed.declaredAfter === 9,
     JSON.stringify(enemyMixed),
   );
 
@@ -12133,16 +12274,31 @@ try {
   }
   const suezLive = await p3.evaluate((tints) => {
     const ms = window.__ready();
+    const ea = window.__worldScale.enemyArt;
     const live = ms.arcEnemies.filter((e) => e.isAlive);
     const byFam = {};
-    let tintOk = true;
+    const tintDrift = [];
     for (const e of live) {
       const fam = e.sprite.texture.key.replace(/^enemy-/, '');
       byFam[fam] = (byFam[fam] ?? 0) + 1;
-      // Base tint = the canon domain tint (except mid hit-flash; spawn-fresh here).
-      if (tints[fam] !== undefined && e.sprite.tintTopLeft !== tints[fam]) tintOk = false;
+      if (tints[fam] === undefined) continue;
+      // WHAT THIS ASSERTS, AND WHAT IT DELIBERATELY DOES NOT (Art Session 8).
+      // Before the bestiary, a spawn-fresh roster enemy wore its canon domain
+      // tint literally, so comparing against the literal was the same thing as
+      // proving this bespoke spawn site reuses the shared enemy path. Model C
+      // broke that equivalence: a rim-backed family carries its domain in the
+      // pixels and takes WHITE, so the literal now measures which families
+      // happen to have art rather than whether this site is wired correctly.
+      // The check therefore compares against what the ONE funnel resolves for
+      // that family — still red if this site paints a colour of its own, and
+      // now also correct for the mixed roster the creature and boss batches
+      // will ship. That undeclared families resolve to their EXACT canon
+      // domain tint is proven where it belongs, on a cleared declaration, by
+      // enemy-fallback-identical.
+      const want = ea.enemyBaseTint(fam, tints[fam]);
+      if (e.sprite.tintTopLeft !== want) tintDrift.push({ fam, got: e.sprite.tintTopLeft, want, canon: tints[fam] });
     }
-    return { live: live.length, byFam, tintOk };
+    return { live: live.length, byFam, tintOk: tintDrift.length === 0, tintDrift };
   }, suezNode.tints);
   // Defeat the pack (the established gate kill path) → beat 4.
   await p3.evaluate(() => {
@@ -12171,7 +12327,7 @@ try {
     campAttuned = await p3.evaluate(() => window.__game.scene.getScene('MainScene').waypointSys.unlocked.has('sinai-camp'));
   }
   ok(
-    'corridor-chain: hearth offers beat 1, the Sefu talk completes it, retargeting walks beats 2-5 (km readout matches the px math at Cairo), the Suez pack spawns existing families with canon tints and its defeat advances, the camp reach attunes the sinai-camp waystone',
+    'corridor-chain: hearth offers beat 1, the Sefu talk completes it, retargeting walks beats 2-5 (km readout matches the px math at Cairo), the Suez pack spawns EXISTING roster families dressed by the shared enemy funnel (no bespoke colour at this site) and its defeat advances, the camp reach attunes the sinai-camp waystone',
     hearthOffered && beat1.setup === 'ok' && beat1.opened && beat2Active && kmMatch.target === 'cairo-crown' && kmMatch.match && beat3Active && suezLive.live === suezNode.total && suezNode.allExisting && suezNode.entries >= 2 && suezLive.tintOk && beat4Active && beat5Active && campAttuned,
     JSON.stringify({ hearthOffered, beat1, beat2Active, kmMatch, beat3Active, suezLive, suezNode: { ...suezNode, tints: undefined }, beat4Active, beat5Active, campAttuned }),
   );

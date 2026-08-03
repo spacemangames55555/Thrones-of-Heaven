@@ -147,10 +147,17 @@ Three rules, each enforced by the `rims-derived` gate check:
    bake-off and Casey's approval, the same ceremony as a lock amendment.
 
 Masters live at `public/sprites/masters/<key>.png`. A key with no master is
-simply not rim-derived — which is every enemy today, since the nine live
-sprites are still the grayscale `gen-sprites` placeholders. They stay that
-way until the bestiary session paints masters under its own style lock (that
-lock is the bestiary session's opening bake-off; this session created none).
+simply not rim-derived and keeps the runtime domain tint. Art Session 8
+painted masters for all nine roster families under the `enemy` style lock;
+the creature batch and the boss batch land later and take that fallback in
+the meantime.
+
+`scripts/gen-sprites.mjs` drew the grayscale placeholders that held those
+paths before the bestiary. It still owns any family with no master, and it
+now **refuses to overwrite a rim-derived key in the live tree** — a stale
+`npm run gen:sprites` clobbering derived art is the same accident as
+hand-landing a rim. Sandbox out-dirs (`GEN_SPRITES_OUT`) still generate the
+full set, which is what keeps its determinism checkable.
 
 ### Why not the alternatives
 
