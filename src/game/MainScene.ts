@@ -71,6 +71,7 @@ import { NameplatePool, FAMILY_DISPLAY, type PlateTarget } from '../ui/Nameplate
 import { EUROPE_BUILT_ZONES, buildEuropeQuestDefs } from '../world/europe-built';
 import { appendToRegistry } from '../world/quest-factory';
 import { ENEMY_ROSTER, DOMAIN_TINT, EXISTING_FAMILY_DOMAIN, EXISTING_FAMILY_PACK, makeRegionChampion } from '../world/enemy-roster';
+import { enemyArtKey, enemyBaseTint, isRimBacked } from '../render/enemyArtRegistry';
 import type { CombatDomain } from '../world/enemy-roster';
 import { CHAMPION_SPECS } from '../world/champion-specs';
 import { triggerForBeat } from '../world/quest-factory';
@@ -9903,13 +9904,11 @@ export class MainScene extends Phaser.Scene {
         const spot = this.activeMap().nearestWalkableWorld(center.x + Math.cos(a) * 130, center.y + Math.sin(a) * 100);
         if (s.family === 'lesser-evil-scouts') {
           const d = this.spawnDemon(spot.x, spot.y, this.activeMap().layer);
-          d.setBaseTint(tint);
-          this.applyFamilyTexture(d.sprite, s.family);
+          this.dressFamilyEnemy(d, s.family, tint);
           this.arcEnemies.push(d);
         } else {
           const t = this.spawnTownsfolk(spot.x, spot.y, null, s.family === 'corrupted-wildlife' ? 'wolf' : 'raider');
-          t.setBaseTint(tint);
-          this.applyFamilyTexture(t.sprite, s.family);
+          this.dressFamilyEnemy(t, s.family, tint);
           this.arcEnemies.push(t);
         }
       }
@@ -11227,8 +11226,34 @@ export class MainScene extends Phaser.Scene {
    *  texture (set by the entity constructor) -> gray box (the entity's own
    *  ensure-texture fallback). INERT while no per-family PNG exists. */
   private applyFamilyTexture(sprite: Phaser.GameObjects.Sprite, family: string): void {
-    const key = `enemy-${family}`;
+    const key = enemyArtKey(family);
     if (this.textures.exists(key)) sprite.setTexture(key);
+  }
+
+  /** Gate seam (tools/verify-runtime.mjs): dress an enemy through the real
+   *  funnel so the check exercises the shipped path, not a copy of it. */
+  dressFamilyEnemyForGate(entity: { sprite: Phaser.GameObjects.Sprite; setBaseTint: (t: number) => void; setArtBacked: (on: boolean) => void }, family: string, domainTint: number): void {
+    this.dressFamilyEnemy(entity, family, domainTint);
+  }
+
+  /**
+   * PASS 10 — the ONE funnel that dresses a spawned family enemy: set its
+   * per-family texture, then give it the right MULTIPLY tint for what it is
+   * actually wearing. Rim-backed families (Model C baked art) take white,
+   * which is the multiply identity, so their baked domain rim renders exactly
+   * as authored and no runtime tint touches the art. Every other family takes
+   * its domain tint on the placeholder, exactly as before.
+   *
+   * It is a funnel on purpose: there are seven setBaseTint call sites across
+   * three entity classes, and a per-site `if` is a thing a future spawner
+   * forgets to write. Callers pass the entity, not the sprite, so the tint
+   * lands on the field the hit-flash restores from.
+   */
+  private dressFamilyEnemy(entity: { sprite: Phaser.GameObjects.Sprite; setBaseTint: (t: number) => void; setArtBacked: (on: boolean) => void }, family: string, domainTint: number): void {
+    this.applyFamilyTexture(entity.sprite, family);
+    const onArt = isRimBacked(family);
+    entity.setArtBacked(onArt);
+    entity.setBaseTint(enemyBaseTint(family, domainTint));
   }
 
   /** One mapped-family enemy via its EXISTING spawner (see EXISTING_FAMILY_SPAWNERS).
@@ -11238,22 +11263,19 @@ export class MainScene extends Phaser.Scene {
   private spawnRegionEnemy(zoneId: string, family: string, x: number, y: number, tint: number): void {
     if (family === 'lesser-evil-scouts') {
       const d = this.spawnDemon(x, y, this.activeMap().layer);
-      d.setBaseTint(tint); // the hit-flash restores THIS domain tint (game-feel)
-      this.applyFamilyTexture(d.sprite, family);
+      this.dressFamilyEnemy(d, family, tint); // rim-backed families take white (multiply identity)
       this.regionLive.push({ zoneId, family, kind: 'demon', entity: d, counted: false });
       this.attachPlate(zoneId, family, d.sprite, () => d.isAlive, () => d.health.ratio);
     } else if (family === 'corrupted-wildlife' || family === 'evil-raiders') {
       const t = this.spawnTownsfolk(x, y, null, family === 'corrupted-wildlife' ? 'wolf' : 'raider');
-      t.setBaseTint(tint); // the hit-flash restores THIS domain tint (game-feel)
-      this.applyFamilyTexture(t.sprite, family);
+      this.dressFamilyEnemy(t, family, tint); // rim-backed families take white (multiply identity)
       this.regionLive.push({ zoneId, family, kind: 'townsfolk', entity: t, counted: false });
       this.attachPlate(zoneId, family, t.sprite, () => t.isAlive, () => t.health.ratio);
     } else if (family === 'dark-casters') {
       // Low HP + ranged + native kiting (backs off inside preferred range); its
       // tagged bolts apply the slow/weaken + stacking DoT in onProjectileHitPlayer.
       const a = this.spawnAngel('darkcaster', x, y);
-      a.setBaseTint(tint); // the hit-flash restores THIS domain tint (game-feel)
-      this.applyFamilyTexture(a.sprite, family);
+      this.dressFamilyEnemy(a, family, tint); // rim-backed families take white (multiply identity)
       this.regionLive.push({ zoneId, family, kind: 'angel', entity: a, counted: false });
       this.attachPlate(zoneId, family, a.sprite, () => a.isAlive, () => a.health.ratio);
     } else if (family === 'veil-ambushers') {

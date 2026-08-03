@@ -1,0 +1,4 @@
+{
+  "_readme": "RIM-DERIVED ENEMY KEYS (Pass 10). Written by `npm run art:rims` — every key here was baked from a canonical master at public/sprites/masters/<key>.png plus the domain table. A key listed here renders its baked art with NO runtime domain tint; a family absent from this list keeps the placeholder + multiply path exactly. EMPTY at ship: no masters are painted yet (that is the bestiary session). Do not hand-edit — the rims-derived gate check proves this file matches the masters on disk.",
+  "rimDerived": []
+}

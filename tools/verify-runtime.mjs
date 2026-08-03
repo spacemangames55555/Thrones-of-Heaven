@@ -1036,6 +1036,39 @@ const ok = (name, pass, detail = '') => {
     );
   }
 
+  // 0f4d. ENEMY ART ACTIVATION (PASS 10, pure Node half): the registry that
+  // decides which families wear baked rim art. The predicate CANNOT be "a PNG
+  // exists at the contract path" — art:rims writes to
+  // public/sprites/enemy-<family>.png, the SAME path the grayscale
+  // gen-sprites placeholder already occupies for all nine families. Activation
+  // keys off the canonical MASTER via art/enemy-rims.json instead, and this
+  // check proves that file is derived rather than hand-written.
+  {
+    const efx = new URL('../node_modules/.cache/toh-enemyart-fx', import.meta.url).pathname;
+    rmSync(efx, { recursive: true, force: true });
+    mkdirSync(join(efx, 'masters'), { recursive: true });
+    mkdirSync(join(efx, 'out'), { recursive: true });
+    const reg = JSON.parse(readFileSync('art/enemy-rims.json', 'utf8'));
+    // Every nine placeholder sprites are on disk RIGHT NOW; if presence were
+    // the predicate this list would be nine long. It must be empty until a
+    // master is painted.
+    const placeholdersOnDisk = ['corrupted-wildlife', 'evil-raiders', 'dark-casters'].filter((f) => existsSync(`public/sprites/enemy-${f}.png`));
+    const realCheck = run(['scripts/art-batch/bake-rims.mjs', '--check']);
+    // Hand-editing the registry is caught: claim a family nobody baked.
+    const tampered = { ...reg, rimDerived: ['enemy-corrupted-wildlife'] };
+    writeFileSync(join(efx, 'reg-backup.json'), readFileSync('art/enemy-rims.json'));
+    writeFileSync('art/enemy-rims.json', `${JSON.stringify(tampered, null, 2)}\n`);
+    const regTampered = run(['scripts/art-batch/bake-rims.mjs', '--check']);
+    writeFileSync('art/enemy-rims.json', readFileSync(join(efx, 'reg-backup.json')));
+    const restored = readFileSync('art/enemy-rims.json', 'utf8') === JSON.stringify(reg, null, 2) + '\n';
+    rmSync(efx, { recursive: true, force: true });
+    ok(
+      'enemy-rims-registry: activation keys off the canonical MASTER, never off a file at the contract path (the grayscale placeholders already sit there); the committed registry re-derives from the masters on disk, and a hand-claimed family is caught',
+      Array.isArray(reg.rimDerived) && placeholdersOnDisk.length === 3 && reg.rimDerived.length === 0 && realCheck.status === 0 && regTampered.status === 1 && /REGISTRY DRIFT/.test(regTampered.stderr) && restored,
+      JSON.stringify({ declared: reg.rimDerived, placeholdersOnDisk, realCheck: realCheck.status, regTampered: regTampered.status, restored }),
+    );
+  }
+
   // 0f5. SECRET-HYGIENE (PASS 8): scan every git-tracked TEXT file for key
   // material. PATTERN SET (stated): (a) a LITERAL assignment to
   // PIXELLAB_SECRET / *_API_KEY / *_TOKEN (an env EXPANSION like
@@ -11069,6 +11102,155 @@ try {
       waterAnim.seen.every((i) => i >= 4 && i <= 6) &&
       waterAnim.cycles > 0,
     JSON.stringify(waterAnim),
+  );
+
+  // 2j9. ENEMY ART ACTIVATION (PASS 10) — the LIVE half, in the real session.
+  // Three things, and the middle one is the important one:
+  //   ACTIVATION      a family the registry declares renders its art and takes
+  //                   WHITE (multiply identity) instead of a domain tint;
+  //   FALLBACK        a family the registry does NOT declare is byte-for-byte
+  //                   the Pass 6 path — same texture key, same domain tint;
+  //   COEXISTENCE     both in one world at once (the terrain precedent).
+  // The registry ships EMPTY, so the activation half is driven by a SYNTHETIC
+  // declaration injected here rather than by whichever family happens to get
+  // art first. Same lesson as the harness rows: a check that only asserts once
+  // real content exists is a check that starts asserting too late.
+  const enemyArt = await page.evaluate(() => {
+    const ws = window.__worldScale;
+    const ea = ws.enemyArt;
+    const roster = { physical: 0xe04a3a, mental: 0x3a6de0, spiritual: 0x9a4ae0 };
+    // SHIPPED STATE: nothing declared, so nothing is rim-backed and every
+    // family keeps its domain tint. This is the fallback assertion.
+    const shippedDeclared = ea.declaredRimKeys();
+    const fallbackTints = {
+      'corrupted-wildlife': ea.enemyBaseTint('corrupted-wildlife', roster.physical),
+      'dark-casters': ea.enemyBaseTint('dark-casters', roster.mental),
+      'hollowed-brutes': ea.enemyBaseTint('hollowed-brutes', roster.spiritual),
+    };
+    const fallbackIdentical =
+      fallbackTints['corrupted-wildlife'] === roster.physical &&
+      fallbackTints['dark-casters'] === roster.mental &&
+      fallbackTints['hollowed-brutes'] === roster.spiritual &&
+      !ea.isRimBacked('corrupted-wildlife');
+    return { shippedDeclared, fallbackTints, fallbackIdentical, key: ea.enemyArtKey('corrupted-wildlife') };
+  });
+  ok(
+    'enemy-fallback-identical: with the rims registry EMPTY (the shipped state), no family is rim-backed and every one still resolves to its exact Pass 6 domain tint — activation adds nothing until a master exists',
+    enemyArt.shippedDeclared.length === 0 && enemyArt.fallbackIdentical && enemyArt.key === 'enemy-corrupted-wildlife',
+    JSON.stringify(enemyArt),
+  );
+
+  // A SPAWNED family enemy under the shipped (no-art) state must still carry
+  // its domain tint on the sprite — the funnel did not change behaviour.
+  const enemySpawnTint = await page.evaluate(async () => {
+    const ms = window.__ready();
+    const ea = window.__worldScale.enemyArt;
+    const home = ms.terrestrialPxFromLatLng({ lat: 23.0, lng: 2.0 });
+    // Leg 1 — shipped state: the family is not declared, so the funnel must
+    // put the DOMAIN tint on the sprite, exactly as the old call sites did.
+    const a = ms.spawnDemon(home.x + 240, home.y, ms.activeMap().layer);
+    ms.dressFamilyEnemyForGate(a, 'lesser-evil-scouts', 0xe04a3a);
+    const placeholderTint = a.sprite.tintTopLeft;
+    a.destroy();
+    // Leg 2 — same funnel, same family, but DECLARED rim-backed: the sprite
+    // must come out WHITE so the baked rim renders untouched.
+    ea.__gateDeclare(['enemy-lesser-evil-scouts'], ['enemy-lesser-evil-scouts']);
+    const b = ms.spawnDemon(home.x + 260, home.y, ms.activeMap().layer);
+    ms.dressFamilyEnemyForGate(b, 'lesser-evil-scouts', 0xe04a3a);
+    const rimTint = b.sprite.tintTopLeft;
+    b.destroy();
+    ea.__gateDeclare(null, null);
+    return { placeholderTint, rimTint, restored: ea.declaredRimKeys().length };
+  });
+  ok(
+    'enemy-activation: ONE funnel, two outcomes proven on a real spawned enemy — an undeclared family still wears its exact domain tint (the seven old call sites now route through one place with identical behaviour), and the SAME family declared rim-backed comes out white, the multiply identity that leaves baked art untouched',
+    enemySpawnTint.placeholderTint === 0xe04a3a && enemySpawnTint.rimTint === 0xffffff && enemySpawnTint.restored === 0,
+    JSON.stringify(enemySpawnTint),
+  );
+
+  // PASS 10 COMMIT 2 — the hit-flash on art. The shipped flash is a white
+  // tint-FILL held for FEEL.flash.flashMs, then a guaranteed restore to
+  // baseTint in MULTIPLY. A FILL replaces every pixel, so on a rim-backed
+  // sprite it briefly erases the baked domain rim - the one thing Model C
+  // added - while the cue itself lands harder there (colour-to-white is a
+  // bigger delta than gray-to-white). Art-backed enemies therefore hold the
+  // same white pulse for a SHORTER artFlashMs. Both legs are proven on a real
+  // spawned enemy: the flash is visible, and the restore is EXACT.
+  const flashOnArt = await page.evaluate(async () => {
+    const ms = window.__ready();
+    const ea = window.__worldScale.enemyArt;
+    const wait = (t) => new Promise((r) => setTimeout(r, t));
+    const home = ms.terrestrialPxFromLatLng({ lat: 23.0, lng: 2.0 });
+    const feel = ms.feel.flash;
+    const run = async (declare) => {
+      if (declare) ea.__gateDeclare(['enemy-lesser-evil-scouts'], ['enemy-lesser-evil-scouts']);
+      const d = ms.spawnDemon(home.x + 300, home.y, ms.activeMap().layer);
+      ms.dressFamilyEnemyForGate(d, 'lesser-evil-scouts', 0xe04a3a);
+      const before = d.sprite.tintTopLeft;
+      d.takeHit(1);
+      const during = d.sprite.tintTopLeft;
+      // Poll the restore rather than sleeping a fixed span (harness rule).
+      let after = null;
+      for (let k = 0; k < 60; k++) {
+        await wait(25);
+        if (d.sprite.tintTopLeft === before) { after = d.sprite.tintTopLeft; break; }
+      }
+      d.destroy();
+      if (declare) ea.__gateDeclare(null, null);
+      return { before, during, after, flashed: during === 0xffffff };
+    };
+    const placeholder = await run(false);
+    const art = await run(true);
+    return { placeholder, art, flashMs: feel.flashMs, artFlashMs: feel.artFlashMs };
+  });
+  ok(
+    // HONEST SCOPE: for a rim-backed enemy the tint VALUE is white before,
+    // during and after — white-multiply and white-FILL read the same through
+    // tintTopLeft, so this leg cannot prove the pulse by colour. What it DOES
+    // prove is the part that could actually break: the restore lands back on
+    // exactly white, so the baked rim returns untouched, and the art pulse is
+    // a shorter FEEL constant. The pulse mechanism itself is proven
+    // unambiguously by the placeholder leg below (red -> white -> red).
+    'flash-on-art: a rim-backed enemy restores EXACTLY to its white multiply after a hit, so the baked domain rim comes back untouched, and its pulse is held on a SHORTER FEEL constant than the placeholder one',
+    flashOnArt.art.before === 0xffffff &&
+      flashOnArt.art.after === 0xffffff &&
+      flashOnArt.artFlashMs < flashOnArt.flashMs &&
+      flashOnArt.artFlashMs > 0,
+    JSON.stringify(flashOnArt),
+  );
+  ok(
+    'flash-placeholder-unchanged: a placeholder enemy flashes white and restores to its EXACT domain tint on the unchanged timing — Commit 2 touched art-backed families only',
+    flashOnArt.placeholder.flashed === true &&
+      flashOnArt.placeholder.before === 0xe04a3a &&
+      flashOnArt.placeholder.after === 0xe04a3a &&
+      flashOnArt.flashMs === 90,
+    JSON.stringify(flashOnArt.placeholder),
+  );
+
+  // MIXED COEXISTENCE + the activation leg, driven by a SYNTHETIC declaration.
+  const enemyMixed = await page.evaluate(() => {
+    const ea = window.__worldScale.enemyArt;
+    const before = ea.isRimBacked('corrupted-wildlife');
+    const injected = ea.__gateDeclare(['enemy-corrupted-wildlife'], ['enemy-corrupted-wildlife']);
+    const rimBacked = ea.isRimBacked('corrupted-wildlife');
+    const stillPlaceholder = ea.isRimBacked('dark-casters');
+    const rimTint = ea.enemyBaseTint('corrupted-wildlife', 0xe04a3a);
+    const placeholderTint = ea.enemyBaseTint('dark-casters', 0x3a6de0);
+    ea.__gateDeclare(null, null); // restore the shipped state exactly
+    const after = ea.isRimBacked('corrupted-wildlife');
+    return { before, injected, rimBacked, stillPlaceholder, rimTint, placeholderTint, after, declaredAfter: ea.declaredRimKeys().length };
+  });
+  ok(
+    'enemy-activation + mixed-coexist: a DECLARED family becomes rim-backed and takes WHITE (multiply identity, so the baked domain rim renders untouched) while an undeclared family in the same session stays on its placeholder and its domain tint; teardown restores the shipped state exactly',
+    enemyMixed.before === false &&
+      enemyMixed.injected === true &&
+      enemyMixed.rimBacked === true &&
+      enemyMixed.stillPlaceholder === false &&
+      enemyMixed.rimTint === 0xffffff &&
+      enemyMixed.placeholderTint === 0x3a6de0 &&
+      enemyMixed.after === false &&
+      enemyMixed.declaredAfter === 0,
+    JSON.stringify(enemyMixed),
   );
 
   // 2k0. MIGRATION-SILENCE (PASS 9, re-scoped in Art Session 4): the flora

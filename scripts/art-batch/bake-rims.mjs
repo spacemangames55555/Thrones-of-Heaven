@@ -141,13 +141,34 @@ if (unmapped.length > 0) {
   console.error(`art:rims: REFUSED — master(s) with no domain in EXISTING_FAMILY_DOMAIN: ${unmapped.join(', ')}`);
   process.exit(1);
 }
+// The runtime registry: which keys are rim-derived. Written on a real bake,
+// verified (never written) under --check. This file is what lets the boot
+// registry tell a baked rim from the grayscale placeholder that shares its
+// path — see src/render/enemyArtRegistry.ts.
+const REGISTRY = 'art/enemy-rims.json';
+const registryNow = existsSync(REGISTRY) ? JSON.parse(readFileSync(REGISTRY, 'utf8')) : { rimDerived: [] };
+const wantKeys = baked.slice().sort();
+// The registry describes the LIVE tree, so it is only meaningful when we are
+// baking into it. A sandbox --out (the gate's fixtures) must not be measured
+// against it, or every fixture run would report drift against the real file.
+const LIVE_TREE = OUT === 'public/sprites';
+const registryDrift = LIVE_TREE && JSON.stringify(registryNow.rimDerived ?? []) !== JSON.stringify(wantKeys);
+
 if (CHECK) {
+  if (registryDrift) {
+    console.error(`art:rims --check: REGISTRY DRIFT — ${REGISTRY} lists [${(registryNow.rimDerived ?? []).join(', ')}] but the masters bake [${wantKeys.join(', ')}]`);
+    process.exit(1);
+  }
   if (drift.length > 0) {
     console.error(`art:rims --check: DRIFT — these sprites are NOT what the master + domain table bake to: ${drift.join(', ')}`);
     console.error('Rimmed sprites are DERIVED, never hand-landed. Fix the master or the domain table, then re-run npm run art:rims.');
     process.exit(1);
   }
-  console.log(`art:rims --check: ${baked.length} rim-derived sprite(s) re-derive byte-identically`);
+  console.log(`art:rims --check: ${baked.length} rim-derived sprite(s) re-derive byte-identically; registry in sync`);
 } else {
+  if (registryDrift) {
+    registryNow.rimDerived = wantKeys;
+    writeFileSync(REGISTRY, `${JSON.stringify(registryNow, null, 2)}\n`);
+  }
   console.log(`art:rims: baked ${baked.length} sprite(s) from ${MASTERS} -> ${OUT}`);
 }

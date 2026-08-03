@@ -3,6 +3,7 @@ import { gameConfig } from './game/config';
 import { viewportSize, type Insets } from './ui/uiLayout';
 import { chromeRects } from './ui/chrome';
 import * as worldScale from './world/world-scale';
+import * as enemyArtRegistry from './render/enemyArtRegistry';
 import * as terrainSchema from './world/terrain-schema';
 import { createProceduralSource, sampleRecord, tileRecord } from './world/terrain-procedural';
 import * as terrainVisualsConfig from './world/terrain-visuals-config';
@@ -44,6 +45,9 @@ const game = new Phaser.Game(gameConfig);
   // Pass 9: the flora framework (prop table + per-biome/per-tier palettes +
   // the pure selection/variation references) — pure exposure, same rule.
   flora: floraConfig,
+  // Pass 10: the enemy art registry (which families wear baked rim art and
+  // therefore take NO runtime domain tint) — pure exposure, same rule.
+  enemyArt: enemyArtRegistry,
   scatterFor,
   tileHash01,
   fringeCoverage,
