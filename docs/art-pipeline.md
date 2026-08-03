@@ -50,12 +50,16 @@ discipline, and hygiene.
    `art-review/<batch-id>/` with `report.md` (per-asset palette-size +
    luminance advisory columns; lint failures EXCLUDED with reasons). The
    batch tool cannot write contract paths — gate-proven.
-4. **Review**: push the `art-review/<batch-id>/` folder on a review branch;
-   the Vercel preview is the phone review surface.
-5. **Approve**: `npm run art:approve -- --batch <id>` moves staged files to
-   their contract paths. Then `npm run art:manifest` (statuses flip by
-   regeneration), full `npm run verify`, and land as a normal gated commit:
-   `art: {category} batch {id}`.
+4. **Review — HOLDS ARE VISUAL**: `npm run art:contact -- --batch <id>`
+   renders the staged art at true boot-fitter size and **post those images
+   directly into the chat surface**. The Vercel preview is a supplement, not
+   the hold. See the standing rules below.
+5. **Approve**: write `art-review/<id>/VERDICT.json` with the verbatim human
+   verdict, then `npm run art:approve -- --batch <id>` moves staged files to
+   their contract paths — **it refuses without that receipt**. Then
+   `npm run art:manifest` (statuses flip by regeneration), full
+   `npm run verify` read from the complete log, and land as a normal gated
+   commit `art: {category} batch {id}` **quoting the verdict verbatim**.
 6. Log the credit spend per batch in the ledger's spend log.
 
 ## What the gate owns (never generation)
@@ -189,6 +193,71 @@ gaps — the frame edge, and the creature's **own body** across a narrow
 crevice. Only genuinely EMPTY pixels before the wanted depth count as a gap.
 Without this rule the band fails intricate silhouettes (fur, limbs, spikes)
 for having exactly the shape they are supposed to have.
+
+## Standing rules — verdicts, gate readout, visual holds
+
+**Casey standing rules, Session 8 reconciliation.** Art Session 8 landed the
+nine-family bestiary with **no verdict at all**: a hold was declared, no
+image was ever posted, and a reply that had nothing to judge was read as
+approval. The same commit was reported green off a `tail -80` pipe that had
+in fact hidden two real failures and replaced npm's exit status with tail's.
+Two independent controls failed in one landing. These three rules exist so
+neither can fail quietly again.
+
+### VERDICT RECEIPTS
+
+Any hold-gated commit must **quote the human verdict verbatim in the commit
+body**, and that verdict must be a human message sent **after** the hold was
+staged. **No quotable verdict, no landing.**
+
+Enforced in `art:approve`, which refuses to move a single file without
+`art-review/<batch>/VERDICT.json`:
+
+```json
+{ "batch": "<id>", "stagedAt": "<ISO>", "images": ["<posted image>", ...],
+  "receivedAt": "<ISO>", "verdict": "<the human message, verbatim>" }
+```
+
+It refuses on: no receipt, a receipt for another batch, an empty verdict, no
+images listed, an image that is not on disk, and a `receivedAt` that does not
+postdate `stagedAt`. On success it echoes the verdict so the commit body
+quotes it rather than paraphrasing. The `verdict-receipt` gate check proves
+all six refusals and the approving case.
+
+**Honest limit, on record:** no local tool can prove a human wrote the text.
+What this removes is the failure that actually happened — approval as a
+belief in an agent's head with nothing on disk to contradict it.
+
+### GATE READOUT
+
+Read gate results from the **complete log** and the **gate process's own exit
+code**. Never through a truncating pipe. `npm run verify | tail -80` is the
+named precedent: it discarded the log head *and* substituted tail's exit
+status for npm's, turning 331/333 with two real failures into a reported
+pass. Redirect to a file and read that file.
+
+### HOLDS ARE VISUAL
+
+Every hold must deliver **images Casey can see in the chat surface itself** —
+posted directly, not only as a branch URL. Numbers and prose supplement the
+images; they never replace them. **A hold with no visible image is not a
+hold.**
+
+`npm run art:contact -- --batch <id>` exists for this. It reduces the shipped
+art to the boot-fitter frame by true nearest-neighbour — the same sampling
+Phaser applies at boot — so the 1:1 views are what the phone actually
+receives, and magnifies *those reduced pixels* rather than the master, since
+magnifying the master shows detail the player never gets. It renders each
+family on neutral and on shipped terrain, because the enemy lock's own
+criterion is "readable at thumbnail size" and readability is against ground.
+It **refuses to emit a sheet too tall to post** — an image that cannot be
+delivered is precisely the failure it exists to prevent.
+
+What this buys is not ceremony. The first contact sheet ever built found, in
+minutes, that `corrupted-wildlife` is an upright biped whose family theme and
+whose own lock prompt both describe a hunched quadruped — on the very asset
+that *is* the enemy style lock reference. No metric in the session caught it,
+because no metric was looking at the picture.
 
 ## Standing batch policy (Casey ruling, Art Session 5)
 

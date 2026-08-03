@@ -21,7 +21,8 @@
     "art:coverage": "node scripts/asset-manifest/coverage.mjs",
     "art:batch": "node scripts/art-batch/batch.mjs",
     "art:approve": "node scripts/art-batch/approve.mjs",
-    "art:rims": "node scripts/art-batch/bake-rims.mjs"
+    "art:rims": "node scripts/art-batch/bake-rims.mjs",
+    "art:contact": "node tools/contact-sheet.mjs"
   },
   "dependencies": {
     "phaser": "^4.2.0"
