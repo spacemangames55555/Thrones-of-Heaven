@@ -477,3 +477,44 @@ ruling lands, strike the entry with a pointer to the commit that resolved it.
   STILL QUEUED: swamp/desert props (with log-b to complete the log pair),
   the waystone hero-object mini bake-off, per-region palette divergence, and
   the dressed-forest density ride.
+- ART SESSION 6 (flora closeout, 2026-08-03): SWAMP TREES a/b, LOG-B and
+  SCRUB-A approved; the flora batch queue is empty. The swamp gains a DEBRIS
+  understory (log-a, log-b, stump-a at density 0.2 - deliberately below the
+  PNW fern carpets at 0.35-0.45, because logs and stumps are occasional
+  debris and a swamp floor at fern density reads as a lumberyard).
+  CACTUS-A EXITS THE GLOBAL DESERT PALETTE (Casey verdict, overriding the
+  staged 10:1 reweight). Recon found cactus-a had been in the live global
+  DESERT palette since Pass 5 - the fence everyone remembered was only ever
+  on the ART, never on the palette, so Egypt has been rolling cacti all
+  along, drawn as placeholder silhouettes where nobody looked. A weight of 1
+  is still a cactus in Egypt, so the row leaves the palette entirely. It is
+  now in NO palette, which fences it as `unscattered-prop`: FENCED BY PALETTE
+  ABSENCE, so no cactus art can be batched until somewhere exists that should
+  grow one. CACTUS RETURNS VIA PER-REGION PALETTE DIVERGENCE, MEXICO CITY
+  FIRST - as a REGIONAL entry, never a global one. This is now the concrete
+  first consumer of the regional-divergence work that has been owed since
+  Pass 7, and the reason to build it.
+  SPECIES NOTE (ledgered per verdict): neither swamp tree reads unmistakably
+  as BALD CYPRESS at 48x64 - no legible knees or moss drape survives at that
+  size; they read as full broad-crowned swamp trees. Approved on FAMILY OVER
+  SPECIES: at prop sizes the silhouette family is what carries, and asking a
+  48x64 sprite to name its species is asking for detail the render size
+  cannot hold. No regeneration debt. Carry the principle into future prop
+  briefs - name the family and the silhouette, treat the species as flavour.
+  BAND POLICY GAINS A PURPOSE RULE (docs/art-pipeline.md), ratified from
+  log-b: when an asset's brief says it must DIFFER from its comparable, the
+  comparable is a FLOOR or ceiling, never a centre. The session's band script
+  carried a log-a plus-or-minus-15-percent class band AND a rule that log-b
+  be fuller than log-a; both cannot hold, and the contradiction was visible
+  in the code before either attempt ran. Corrected band ran log-a mass to
+  stump-a mass; log-b landed at 0.402, 1.76x log-a, inverting at IoU 0.428.
+  SCRUB-A IS A RECLASSIFIED BAND-MISDERIVATION, NO DEBT (Casey verdict): its
+  luminance band came from salal-a, a lush dark rainforest evergreen, which
+  is the wrong tonal reference for a sun-bleached desert shrub. Reported
+  rather than quietly re-derived. Corollary now in the docs: check the
+  comparable belongs to the same world before deriving from it.
+  APPROVED CANOPY PROPS GAIN THEIR BAND-CHECKED ANCHORS (the Session 3/4
+  pattern): swamp-tree-a/b at the SWAMP anchor, scrub-a at the SAVANNA anchor
+  it was generated against, all read from src/world/biome-anchors.ts.
+  SPEND: 7 generations of the 24 round cap (4 first attempts + 3 corrections
+  for swamp-tree-a, log-b and scrub-a); running 528 of 2000, $0.00 credits.

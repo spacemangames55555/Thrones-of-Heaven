@@ -9133,28 +9133,41 @@ try {
     const home = ms.terrestrialPxFromLatLng({ lat: 23.0, lng: 2.0 });
     ms.player.sprite.body.reset(home.x, home.y);
     ms.lastLandPos = undefined;
-    // STABILIZATION (Art Session 5, this check flaked again AFTER its Pass 6A
-    // hardening). Two gaps, both fixed by waiting on conditions instead of
-    // clocks: (a) the 400 ms after body.reset was a fixed wait, so under a
-    // stall the demon could spawn 100 px from a STALE player position and
-    // never engage; (b) the poll only watched inCombatDerived(), not the DoT
-    // list, so the sampled precondition was never the whole precondition.
+    // STABILIZATION, THIRD PASS (Art Session 6). This check has now failed in
+    // Pass 6A, Art Session 5 and Art Session 6, and each earlier fix treated
+    // the symptom it had just seen:
+    //   Pass 6A     polled inCombatDerived() instead of a fixed wait
+    //   Session 5   polled the player's ARRIVAL, and polled the DoT list too
+    //   this pass   the remaining gap: applyDotInRange is a ONE-SHOT call at
+    //               a moment the demon may not yet be in combatEnemiesInRange
+    // Waiting longer for a DoT that was never attached cannot help — the
+    // earlier polls could only ever watch a list that stays empty forever.
+    // So the DoT application itself is RETRIED until it takes.
     for (let k = 0; k < 40 && Math.hypot(ms.player.x - home.x, ms.player.y - home.y) > 1; k++) await wait(100);
     const d = ms.spawnDemon(home.x + 100, home.y, ms.activeMap().layer);
     d.takeHit(1);
-    ms.applyDotInRange(d.x, d.y, 60, 3, 250, 9000, 0x77ff77);
-    // The funnel recomputes per FRAME - under swiftshader load frames can
-    // stall, so ESTABLISH the FULL engaged precondition by polling (the
-    // assertion itself is unchanged: DoT live + combat derived).
-    for (let k = 0; k < 40 && !(ms.dots.length >= 1 && ms.inCombatDerived()); k++) await wait(150);
-    const dotLive = ms.dots.length >= 1 && ms.inCombatDerived() === true;
+    // RETRY the DoT until it attaches: addDot only lands on a target the
+    // scene already counts as a combat enemy, and registration happens on a
+    // later frame. Re-applying is harmless (the assertion is about pruning,
+    // and any number of DoTs on one target prune together).
+    for (let k = 0; k < 40 && ms.dots.length === 0; k++) {
+      ms.applyDotInRange(d.x, d.y, 60, 3, 250, 9000, 0x77ff77);
+      if (ms.dots.length === 0) await wait(150);
+    }
+    // Then the engagement funnel, which recomputes per FRAME.
+    for (let k = 0; k < 40 && !ms.inCombatDerived(); k++) await wait(150);
+    // SELF-DIAGNOSING: report each half separately so a future failure names
+    // its own cause instead of collapsing to a bare dotLive:false.
+    const dotsAtCheck = ms.dots.length;
+    const inCombatAtCheck = ms.inCombatDerived();
+    const dotLive = dotsAtCheck >= 1 && inCombatAtCheck === true;
     d.destroy(); // the eviction path (deactivateRegionZone destroys exactly so)
     await wait(600);
     const dotPruned = ms.dots.length === 0;
     await wait(linger);
     const clears = ms.inCombatDerived() === false && mt.trySummon() === true;
     mt.dismount();
-    return { setup: 'ok', dotLive, dotPruned, clears };
+    return { setup: 'ok', dotLive, dotsAtCheck, inCombatAtCheck, dotPruned, clears };
   });
   ok(
     'dot-on-evicted: a DoT on an evicted target prunes instead of ticking combat alive; the mount returns within the linger',
@@ -10743,7 +10756,7 @@ try {
   const prioFixtures = prioLock.fixtures;
   const prioRealProps = prioLock.props - prioFixtures.length;
   ok(
-    'priority-lock: TERRAIN_PRIORITY order, overlay budget 2/4, densities .30/.22/.15/.05/.03, pool caps 900/2600/2700, 17 fringe cells, contract tables (19 REAL prop rows: 13 canopy + 6 understory, plus exactly the 2 synthetic harness rows, counted apart)',
+    'priority-lock: TERRAIN_PRIORITY order, overlay budget 2/4, densities .30/.22/.15/.05/.03, pool caps 900/2600/2700, 17 fringe cells, contract tables (20 REAL prop rows: 13 canopy + 7 understory, plus exactly the 2 synthetic harness rows, counted apart)',
     prioLock.seq === '0,1,2,5,4,3,11,8,7,6,9,10' &&
       prioLock.rankOk &&
       prioLock.biomes === 2 &&
@@ -10752,7 +10765,7 @@ try {
       prioLock.caps.join(',') === '900,2600,2700' &&
       prioLock.cells === 17 &&
       prioLock.sheets === 12 &&
-      prioRealProps === 19 &&
+      prioRealProps === 20 &&
       JSON.stringify(prioFixtures) === JSON.stringify(['fixture-harness-a', 'fixture-harness-b']),
     JSON.stringify({ ...prioLock, realProps: prioRealProps }),
   );
@@ -11057,7 +11070,15 @@ try {
     return out;
   });
   const PALETTE_EXPECTED = {
-    '5:canopy': '0.03|cactus-a=1,scrub-a=1',
+    // ART SESSION 6, Casey verdict: CACTUS-A EXITS the global DESERT palette
+    // outright (the staged 10:1 reweight was overridden - a weight of 1 is
+    // still a cactus in Egypt). Desert is single-entry scrub now. cactus-a is
+    // consequently in NO palette, which fences it as `unscattered-prop`:
+    // FENCED BY PALETTE ABSENCE, so no cactus art can be batched until a
+    // region exists that should grow one (Mexico City first, ledgered).
+    // If this line ever regains a cactus, that is a world change and wants
+    // its own ruling - which is exactly why the pin is here.
+    '5:canopy': '0.03|scrub-a=1',
     '5:understory': '0|',
     '6:canopy': '0.3|tree-broad-a=1,tree-broad-b=1,tree-fir-a=1,cedar-a=20,snag-a=5',
     '6:understory': '0.45|fern-sword-a=30,fern-sword-b=30,salal-a=20,sapling-fir-a=10,stump-a=5,log-a=5',
@@ -11066,7 +11087,9 @@ try {
     '10:canopy': '0.05|boulder-a=1,boulder-b=1',
     '10:understory': '0|',
     '11:canopy': '0.15|swamp-tree-a=1,swamp-tree-b=1',
-    '11:understory': '0|',
+    // ART SESSION 6: the swamp gains a DEBRIS understory (logs + stumps) at
+    // 0.2 — deliberately below the PNW fern carpets at 0.35-0.45.
+    '11:understory': '0.2|log-a=1,log-b=1,stump-a=1',
   };
   const paletteDrift = Object.keys({ ...palettePin, ...PALETTE_EXPECTED }).filter((k) => palettePin[k] !== PALETTE_EXPECTED[k]);
   ok(
@@ -11280,8 +11303,8 @@ try {
     return { populated, plantedPopulated, plantedElsewhere, listed, understoryVisible: s.understoryVisible, understoryPool: s.understoryPool };
   });
   ok(
-    'understory-live: the tier plants ONLY in biomes whose palette carries entries (PNW forest + taiga) and nowhere else across a 6,000-tile sweep; unpopulated biomes stay exactly inert',
-    understoryInert.populated.length === 2 && understoryInert.plantedPopulated > 0 && understoryInert.plantedElsewhere === 0,
+    'understory-live: the tier plants ONLY in biomes whose palette carries entries (PNW forest + taiga, and the swamp debris tier from Art Session 6) and nowhere else across a 6,000-tile sweep; unpopulated biomes stay exactly inert',
+    understoryInert.populated.length === 3 && understoryInert.plantedPopulated > 0 && understoryInert.plantedElsewhere === 0,
     JSON.stringify(understoryInert),
   );
 
@@ -11484,7 +11507,7 @@ try {
   });
   ok(
     'understory-pool at 3x density: a 60s drive under a 3x fixture palette holds the derived 2700 cap with zero churn and really plants instances; at the same anchor row understory sorts UNDER canopy and never below the row above; teardown puts the SHIPPED forest palette back exactly',
-    uPoolOk && uPlanted && ySort.pairs > 0 && ySort.wrong === 0 && ySort.belowPrevRow === 0 && uRestored.populated === 2 && uRestored.density === 0.45 && uRestored.paletteLen === 6 && pageErrors.length === uPe0,
+    uPoolOk && uPlanted && ySort.pairs > 0 && ySort.wrong === 0 && ySort.belowPrevRow === 0 && uRestored.populated === 3 && uRestored.density === 0.45 && uRestored.paletteLen === 6 && pageErrors.length === uPe0,
     JSON.stringify({ mid: uMid, end: uEnd, ySort, uRestored }),
   );
 

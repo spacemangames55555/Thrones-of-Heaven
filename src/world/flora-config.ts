@@ -85,9 +85,9 @@ export const FLORA_PROPS: Record<string, FloraProp> = {
   'boulder-b': { w: 32, h: 32, tier: 'canopy', collides: false, silhouette: 'lump', artPath: propPath('boulder-b'), anchor: BIOME_COLORS[Biome.ROCK], variation: { scale: false } },
   // ── Canopy: fenced rows (no art yet — placeholder silhouettes carry them) ─
   'cactus-a': { w: 32, h: 48, tier: 'canopy', collides: false, silhouette: 'cactus', artPath: propPath('cactus-a'), anchor: null },
-  'scrub-a': { w: 32, h: 32, tier: 'canopy', collides: false, silhouette: 'lump', artPath: propPath('scrub-a'), anchor: null },
-  'swamp-tree-a': { w: 48, h: 64, tier: 'canopy', collides: false, silhouette: 'conifer', artPath: propPath('swamp-tree-a'), anchor: null },
-  'swamp-tree-b': { w: 48, h: 64, tier: 'canopy', collides: false, silhouette: 'conifer', artPath: propPath('swamp-tree-b'), anchor: null },
+  'scrub-a': { w: 32, h: 32, tier: 'canopy', collides: false, silhouette: 'lump', artPath: propPath('scrub-a'), anchor: BIOME_COLORS[Biome.SAVANNA] },
+  'swamp-tree-a': { w: 48, h: 64, tier: 'canopy', collides: false, silhouette: 'conifer', artPath: propPath('swamp-tree-a'), anchor: BIOME_COLORS[Biome.SWAMP] },
+  'swamp-tree-b': { w: 48, h: 64, tier: 'canopy', collides: false, silhouette: 'conifer', artPath: propPath('swamp-tree-b'), anchor: BIOME_COLORS[Biome.SWAMP] },
   // Reserved hero object — its own mini bake-off, never batched (ledgered).
   waystone: { w: 32, h: 64, tier: 'canopy', collides: false, silhouette: 'pillar', artPath: propPath('waystone'), anchor: null },
   // ── Canopy adds (Art Session 4) ────────────────────────────────────────
@@ -111,6 +111,13 @@ export const FLORA_PROPS: Record<string, FloraProp> = {
   'salal-a': { w: 32, h: 32, tier: 'understory', collides: false, silhouette: 'shrub-blob', artPath: propPath('salal-a'), anchor: null },
   'stump-a': { w: 32, h: 32, tier: 'understory', collides: false, silhouette: 'stump', artPath: propPath('stump-a'), anchor: null },
   'log-a': { w: 48, h: 32, tier: 'understory', collides: false, silhouette: 'log-lump', artPath: propPath('log-a'), anchor: null },
+  // LOG-B completes the pair Art Session 4 left half-finished: log-a was
+  // approved as the SLENDER variety asset and log-b was scheduled as the
+  // fuller half. It is 48x32 — log-a's contract size — because a variant
+  // pair is judged on silhouette inversion at a SHARED size; the session
+  // brief said 32x32, which would have made the two incomparable and broken
+  // the pair rather than completing it. Sizes come from the rows.
+  'log-b': { w: 48, h: 32, tier: 'understory', collides: false, silhouette: 'log-lump', artPath: propPath('log-b'), anchor: null },
   'sapling-fir-a': { w: 32, h: 32, tier: 'understory', collides: false, silhouette: 'conifer', artPath: propPath('sapling-fir-a'), anchor: null },
 };
 
@@ -187,16 +194,53 @@ export const BIOME_FLORA: Record<number, Record<FloraTier, FloraTierConfig>> = {
       ],
     },
   },
+  // ART SESSION 6 — the flora closeout. The SWAMP CANOPY entries were
+  // already here from Pass 5 (the brief read as if they needed adding); only
+  // the ART was missing, so the canopy line below is untouched. What is new
+  // is the understory: a DEBRIS tier, not a ground cover.
   [Biome.SWAMP]: {
     canopy: { density: 0.15, palette: even('swamp-tree-a', 'swamp-tree-b') },
-    understory: EMPTY_UNDERSTORY,
+    understory: {
+      // 0.2 is an INITIAL value (feel stays the dressed-forest ride's job).
+      // Derived by KIND, not copied: the PNW understories are fern carpets
+      // at 0.35-0.45 because ferns cover ground continuously. Fallen logs
+      // and stumps are occasional debris — a swamp floor at PNW density
+      // would read as a lumberyard, so this sits well below them.
+      density: 0.2,
+      palette: even('log-a', 'log-b', 'stump-a'),
+    },
   },
   [Biome.ROCK]: {
     canopy: { density: 0.05, palette: even('boulder-a', 'boulder-b') },
     understory: EMPTY_UNDERSTORY,
   },
   [Biome.DESERT]: {
-    canopy: { density: 0.03, palette: even('cactus-a', 'scrub-a') },
+    // CACTUS-A HAS LEFT THIS PALETTE (Casey verdict, Art Session 6).
+    //
+    // Recon found cactus-a was ALREADY here and had been since Pass 5 - the
+    // fence everyone remembered ("do not plant cacti in Egypt") was only ever
+    // on the ART, never on the palette, so a global DESERT palette has been
+    // rolling cacti across Egypt all along. It just drew as a placeholder
+    // silhouette, so nobody saw it.
+    //
+    // The session STAGED a 10:1 reweight toward scrub-a. Casey OVERRODE it:
+    // cactus-a exits outright. A weight of 1 is still a cactus in Egypt, just
+    // a rarer one, and the ruling is that Egypt has none.
+    //
+    // The removal is deliberately LOUD, not a quiet deletion, because two
+    // consequences follow and both are intended:
+    //   * cactus-a is now in NO palette, so the manifest fences it as
+    //     `unscattered-prop` - FENCED BY PALETTE ABSENCE. It cannot be
+    //     batched, which is the point: no cactus art gets generated until
+    //     somewhere exists that should grow one.
+    //   * DESERT is single-entry now, so every desert prop is a scrub.
+    //
+    // CACTUS RETURNS VIA PER-REGION PALETTE DIVERGENCE - Mexico City first
+    // (ledgered). It comes back as a REGIONAL entry, never a global one.
+    //
+    // Density unchanged at 0.03 - already sparser than ROCK's 0.05, and a
+    // live value is not this session's to re-feel.
+    canopy: { density: 0.03, palette: even('scrub-a') },
     understory: EMPTY_UNDERSTORY,
   },
 };
