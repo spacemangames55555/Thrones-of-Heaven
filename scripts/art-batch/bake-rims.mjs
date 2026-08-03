@@ -63,7 +63,7 @@ async function domainTable() {
     logLevel: 'silent',
   });
   const m = await import(`${outfile}?t=${Date.now()}`);
-  return { DOMAIN_TINT: m.DOMAIN_TINT, FAMILY_DOMAIN: m.EXISTING_FAMILY_DOMAIN };
+  return { DOMAIN_TINT: m.DOMAIN_TINT, FAMILY_DOMAIN: m.EXISTING_FAMILY_DOMAIN, UNMARKED: m.UNMARKED_FAMILIES };
 }
 
 /**
@@ -115,7 +115,7 @@ export function rimTargets(masters, familyDomain) {
     });
 }
 
-const { DOMAIN_TINT, FAMILY_DOMAIN } = await domainTable();
+const { DOMAIN_TINT, FAMILY_DOMAIN, UNMARKED } = await domainTable();
 const targets = rimTargets(MASTERS, FAMILY_DOMAIN);
 const drift = [];
 const baked = [];
@@ -126,7 +126,13 @@ for (const t of targets) {
     unmapped.push(t.key);
     continue;
   }
-  const bytes = bakeRim(readFileSync(t.master), DOMAIN_TINT[t.domain]);
+  // UNMARKED FAMILIES DERIVE AS IDENTITY (Casey ruling, Art Session 8). The
+  // domain stays real as data; it is simply never painted. The master ships
+  // byte-for-byte, and rims-derived still enforces that identity, so an
+  // unmarked family is exactly as derived — and as un-hand-landable — as a
+  // rimmed one. See UNMARKED_FAMILIES in src/world/enemy-roster.ts.
+  const unmarked = UNMARKED.has(t.family);
+  const bytes = unmarked ? readFileSync(t.master) : bakeRim(readFileSync(t.master), DOMAIN_TINT[t.domain]);
   const dest = join(OUT, `${t.key}.png`);
   if (CHECK) {
     if (!existsSync(dest) || !readFileSync(dest).equals(bytes)) drift.push(t.key);
@@ -170,5 +176,5 @@ if (CHECK) {
     registryNow.rimDerived = wantKeys;
     writeFileSync(REGISTRY, `${JSON.stringify(registryNow, null, 2)}\n`);
   }
-  console.log(`art:rims: baked ${baked.length} sprite(s) from ${MASTERS} -> ${OUT}`);
+  console.log(`art:rims: derived ${baked.length} sprite(s) from ${MASTERS} -> ${OUT} (${baked.filter((k) => UNMARKED.has(k.replace(/^enemy-/, ''))).length} unmarked, shipped as identity)`);
 }

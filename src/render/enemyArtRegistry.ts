@@ -1,5 +1,6 @@
 import rimManifest from '../../art/enemy-rims.json';
 import { hasOverrideArt } from './spriteOverrides';
+import { isDomainMarked } from '../world/enemy-roster';
 
 /**
  * ENEMY ART REGISTRY (Pass 10) — which enemy families render BAKED RIM ART
@@ -80,5 +81,15 @@ export function declaredRimKeys(): string[] {
  * colour to restore to. Everything else gets its domain tint as before.
  */
 export function enemyBaseTint(family: string, domainTint: number): number {
+  // UNMARKED families (Casey ruling, Art Session 8) are never painted with
+  // their domain — not as a runtime tint on a placeholder, and not as a rim
+  // once their master lands. They take white either way, so the ruling holds
+  // as DATA read from the canon table rather than as a per-call-site
+  // exception someone has to remember to write.
+  if (!isDomainMarked(family)) return 0xffffff;
   return isRimBacked(family) ? 0xffffff : domainTint;
 }
+
+/** Canon: is this family painted with its domain at all? (re-exported so the
+ *  gate and the funnel read ONE table, never a second copy). */
+export { isDomainMarked };
