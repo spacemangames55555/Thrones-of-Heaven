@@ -138,3 +138,112 @@ judged on the same drawing.
 
 Archived: `bakeoff-master-corrupted-wildlife.png`,
 `bakeoff-neutral-corrupted-wildlife.png`.
+
+---
+
+# MODEL C — baked domain rim (follow-up stage, Art Session 7)
+
+Derived **in-repo** from the archived master — no generation call, spend
+unchanged at 1. Full-colour body untouched; domain carried by an **outer rim
+of pure `DOMAIN_TINT`, unmultiplied**, dilated ~4 source px outward from the
+silhouette so no body art is eaten. No runtime tint, no new pools, hit-flash
+untouched. BAKEOFF-ONLY.
+
+## Why 4 source px
+
+Not arbitrary. This row renders at 24×34 from a 96×136 master — a 4:1
+downscale, nearest-neighbour. Sampling takes every 4th pixel, so a rim thinner
+than 4 px can fall between samples and vanish on some edges. **4 px is the
+thinnest rim that survives the fit**, which is what makes it a ~1 px outline
+at the size that ships. Verified by downscaling and counting.
+
+Frame headroom on the master is 9 px left/right, 13 top, 14 bottom, so the
+rim fits without growing the canvas.
+
+## Measured, same as the others
+
+| | Model A | Model B | **Model C** |
+|---|---|---|---|
+| body luminance | 34.1 (−59 %) | 56.8 (unchanged) | **56.8 (unchanged)** |
+| painterly colour kept | no | yes | **yes** |
+| physical vs mental | 77.4 | n/a (aura) | **237.4** |
+| physical vs spiritual | 58.7 | n/a | **180.2** |
+| **mental vs spiritual** | **33.3** ❌ | n/a | **102.2** ✅ |
+
+Model C's domain separation is the **raw tint distance**, because the rim is
+pure unmultiplied `DOMAIN_TINT`. Its weakest pair (mental vs spiritual, 102.2)
+is **3× Model A's best-case weakest pair** and comfortably over this project's
+48 "reads as the same thing" threshold — the specific failure that sent the
+decision to a follow-up stage is gone.
+
+### The cost the numbers show
+
+At shipped size the rim is **36 % of the visible sprite** (151 rim px against
+272 body px at 24×34). That is not a hairline outline — it is a substantial
+coloured halo, and the beast reads as a coloured shape with a body inside it.
+The thickness is a dial, measured:
+
+| rim | share of sprite at 24×34 |
+|---|---|
+| 2 px | 26 % |
+| 3 px | 32 % |
+| **4 px (staged)** | **36 %** |
+| 6 px | 45 % |
+
+2 px is thinner but risks dropping out on some edges under the 4:1 fit. The
+staged 4 px buys guaranteed survival at the cost of a fat rim.
+
+### Silhouette contrast — where the mean-luminance metric misleads
+
+| | A | B | C |
+|---|---|---|---|
+| forest | 58.0 | 35.3 | 19.7 |
+| swamp | 54.1 | 31.4 | 15.8 |
+| desert | 148.9 | 126.2 | 110.6 |
+| snow | 202.2 | 179.5 | 163.8 |
+
+By mean luminance Model C looks worst. **That number understates it**, and it
+would be dishonest to leave it standing alone: C's contrast is concentrated at
+the boundary, not spread over the body. The rim's own luminance is 101.8–106.5,
+so against forest (92) and swamp (88) the rim separates by **hue at near-equal
+value** — gaps of 12.6 and 16.5 — while against desert (183) and snow (236) it
+separates by value too, 78.3 and 131.6. So on the two dark biomes C leans
+entirely on hue; on the two bright ones it is unambiguous. Judge the forest and
+swamp panels hardest.
+
+## The structural finding — Model C does not multiply the asset count
+
+Checked rather than assumed: **every enemy family has exactly one fixed
+domain**. `EXISTING_FAMILY_DOMAIN` and `ENEMY_ROSTER[].domain` are per-family
+constants, and the only per-spawn domain lookups (`spawnSuezPack`, region
+spawns) read that same constant. Region champions carry their own domain in
+`CHAMPION_SPECS` — 6 Physical, 4 Mental, 4 Spiritual — but each champion is a
+named individual with one domain.
+
+So a baked rim costs **one sprite per entity, exactly like Model A**. No 3×
+multiplication. That removes what would otherwise be Model C's obvious
+objection.
+
+### What it costs instead
+
+**Domain becomes an art property, not a data property.** Re-domaining a family
+stops being a one-line table edit and becomes a regeneration. This is not
+hypothetical — `enemy-roster.ts` carries the receipt:
+
+> `'lesser-evil-scouts': 'physical', // CANON FIX: was mis-mapped 'mental' (blue scouts on Rome)`
+
+That canon fix was a single-character data change. Under Model C it would have
+been a re-bake of every lesser-evil-scouts sprite. Fifteen zones use that
+family. Whether that matters depends on how settled the domain table is.
+
+Secondary: the hit-flash sets `FILL` white over the whole sprite, so it briefly
+covers the rim along with everything else, then restores — no special handling
+needed, but the domain cue is absent for the flash duration. Model A has the
+same behaviour, so this is parity, not a regression.
+
+## Verdict options
+
+**MODEL A** / **MODEL B** / **MODEL C** / **rerun with notes**.
+
+Spend unchanged: **1 generation** total for the session — Model C is derived,
+not generated.
