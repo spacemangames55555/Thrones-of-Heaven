@@ -1,0 +1,4 @@
+art:rims: baked 0 sprite(s) from public/sprites/masters -> public/sprites
+cand0.png {"size":"96x136","opaque":4425,"fringeShare":0,"boundarySamples":848,"ringGaps":0,"minRingDepth":4,"bodyPixelsOnFrameEdge":0}
+candA.png {"size":"96x136","opaque":6161,"fringeShare":0,"boundarySamples":888,"ringGaps":0,"minRingDepth":4,"bodyPixelsOnFrameEdge":0}
+candB.png {"size":"96x136","opaque":5513,"fringeShare":0,"boundarySamples":884,"ringGaps":0,"minRingDepth":4,"bodyPixelsOnFrameEdge":0}
