@@ -518,3 +518,55 @@ ruling lands, strike the entry with a pointer to the commit that resolved it.
   it was generated against, all read from src/world/biome-anchors.ts.
   SPEND: 7 generations of the 24 round cap (4 first attempts + 3 corrections
   for swamp-tree-a, log-b and scrub-a); running 528 of 2000, $0.00 credits.
+- ART SESSION 7 (enemy-tint DECISION, 2026-08-03): THE ENEMY-TINT RULING IS
+  RESOLVED - MODEL C, BAKED DOMAIN RIM (Casey verdict, after a three-candidate
+  bake-off and one authorized follow-up stage). This unfences the largest
+  blocked category in the manifest: every enemy row plus the hostile
+  creatures. THE BESTIARY IS UNBLOCKED.
+  THE MODEL: masters are canonical, rims are DERIVED. An enemy sprite is never
+  authored with its domain in it - it is baked from (full-colour master) plus
+  (the domain table in enemy-roster.ts) by npm run art:rims and nothing else.
+  The body keeps its full painterly colour; domain rides an outer rim of pure
+  UNMULTIPLIED DOMAIN_TINT. No runtime tint, no new pools, hit-flash
+  untouched.
+  WHY, IN NUMBERS: whole-body multiply costs 59 percent of luminance whatever
+  the master, and lands all three domains at luminance about 34, so domain is
+  carried by hue where hue reads worst. Pairwise separation came out 77.4
+  physical-mental, 58.7 physical-spiritual and 33.3 MENTAL-SPIRITUAL - under
+  this project own 48 threshold for "reads as the same thing", which is to say
+  the shipped model cannot reliably distinguish two of its three domains. The
+  baked rim carries the RAW tint distance instead: 237.4 / 180.2 / 102.2, its
+  weakest pair three times the old best. A painterly master multiplied
+  directly goes to (21,20,32) under the mental tint - effectively black - so
+  Model A also forbids painterly enemy art entirely.
+  THE COST, STATED: at shipped size the rim is 36 percent of the visible
+  sprite, and on forest and swamp it separates by HUE at near-equal value
+  (gaps of 12.6 and 16.5) rather than by value. Judged on the preview knowing
+  that.
+  THREE RULES, EACH GATE-ENFORCED by the new rims-derived check: (1) a canon
+  fix stays a DATA edit plus a ZERO-CREDIT re-bake - the receipt is already in
+  the roster, the lesser-evil-scouts canon fix touched fifteen zones worth of
+  sprites as a one-character edit; (2) HAND-LANDING a rimmed sprite is
+  FORBIDDEN, and art:rims --check re-derives byte-for-byte to prove it; (3)
+  4 px is the DERIVED MINIMUM (masters fit by nearest-neighbour downscale, so
+  a thinner rim can fall between samples and vanish) and the treatment is
+  FROZEN - thickness, inner rims, gradients are all AMENDMENT TERRITORY with
+  their own bake-off and approval.
+  THE CHECK IS NOT ALLOWED TO BE VACUOUS. No masters exist yet, so the real
+  --check has nothing to compare today. A PERMANENT SYNTHETIC MASTER drives
+  the whole path in the gate instead - bake, pure-tint rim at exactly 4 px
+  around an untouched body, clean re-derivation, hand-edit caught, unmapped
+  domain refused. Same lesson as the Session 5 harness rows: a check that only
+  asserts when real content happens to exist stops asserting the moment that
+  content ships.
+  MANIFEST-FENCES INVERTED RATHER THAN DELETED: the check used to assert every
+  enemy row CARRIES enemy-tint-ruling and now asserts NO row carries it
+  anywhere. A resolved ruling that leaves no check behind is how a fence
+  quietly comes back.
+  NO ENEMY STYLE LOCK WAS CREATED - that is the bestiary session opening
+  bake-off, run under Model C. The nine live enemy sprites remain the
+  grayscale gen-sprites placeholders until masters are painted.
+  SPEND: 1 generation for the whole session (one bake-off master). Model C was
+  derived in-repo at zero credits, which is the model arguing for itself.
+  Bake-off assets archived under art-review/tint-decision/; nothing on live
+  paths.

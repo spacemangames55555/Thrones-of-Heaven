@@ -192,10 +192,7 @@
         "path": "public/sprites/angel-divine.png",
         "brief": "toh-figure-art-brief.md"
       },
-      "status": "live",
-      "blockedBy": [
-        "enemy-tint-ruling"
-      ]
+      "status": "live"
     },
     {
       "id": "angel-enemy",
@@ -207,10 +204,7 @@
         "path": "public/sprites/angel-enemy.png",
         "brief": "toh-figure-art-brief.md"
       },
-      "status": "fallback",
-      "blockedBy": [
-        "enemy-tint-ruling"
-      ]
+      "status": "fallback"
     },
     {
       "id": "cairo-keeper",
@@ -234,10 +228,7 @@
         "path": "public/sprites/cherub-enemy.png",
         "brief": "toh-figure-art-brief.md"
       },
-      "status": "live",
-      "blockedBy": [
-        "enemy-tint-ruling"
-      ]
+      "status": "live"
     },
     {
       "id": "demon-enemy",
@@ -249,9 +240,22 @@
         "path": "public/sprites/demon-enemy.png",
         "brief": "toh-figure-art-brief.md"
       },
-      "status": "fallback",
+      "status": "fallback"
+    },
+    {
+      "id": "fixture-fenced-forever",
+      "category": "creature",
+      "spec": {
+        "kind": "still",
+        "w": 24,
+        "h": 34,
+        "path": "public/sprites/fixture-fenced-forever.png",
+        "brief": "toh-figure-art-brief.md"
+      },
+      "status": "missing",
+      "fixture": true,
       "blockedBy": [
-        "enemy-tint-ruling"
+        "fixture-permanent-fence"
       ]
     },
     {
@@ -264,10 +268,7 @@
         "path": "public/sprites/flaming-sword.png",
         "brief": "toh-figure-art-brief.md"
       },
-      "status": "fallback",
-      "blockedBy": [
-        "enemy-tint-ruling"
-      ]
+      "status": "fallback"
     },
     {
       "id": "npc-quest",
@@ -291,10 +292,7 @@
         "path": "public/sprites/sasquatch.png",
         "brief": "toh-figure-art-brief.md"
       },
-      "status": "fallback",
-      "blockedBy": [
-        "enemy-tint-ruling"
-      ]
+      "status": "fallback"
     },
     {
       "id": "spirit-swarmer",
@@ -306,10 +304,7 @@
         "path": "public/sprites/spirit-swarmer.png",
         "brief": "toh-figure-art-brief.md"
       },
-      "status": "fallback",
-      "blockedBy": [
-        "enemy-tint-ruling"
-      ]
+      "status": "fallback"
     },
     {
       "id": "townsfolk",
@@ -321,10 +316,7 @@
         "path": "public/sprites/townsfolk.png",
         "brief": "toh-figure-art-brief.md"
       },
-      "status": "fallback",
-      "blockedBy": [
-        "enemy-tint-ruling"
-      ]
+      "status": "fallback"
     },
     {
       "id": "enemy-corrupted-wildlife",
@@ -337,10 +329,7 @@
         "brief": "toh-figure-art-brief.md",
         "domain": "physical"
       },
-      "status": "live",
-      "blockedBy": [
-        "enemy-tint-ruling"
-      ]
+      "status": "live"
     },
     {
       "id": "enemy-dark-casters",
@@ -353,10 +342,7 @@
         "brief": "toh-figure-art-brief.md",
         "domain": "mental"
       },
-      "status": "live",
-      "blockedBy": [
-        "enemy-tint-ruling"
-      ]
+      "status": "live"
     },
     {
       "id": "enemy-evil-raiders",
@@ -369,10 +355,7 @@
         "brief": "toh-figure-art-brief.md",
         "domain": "physical"
       },
-      "status": "live",
-      "blockedBy": [
-        "enemy-tint-ruling"
-      ]
+      "status": "live"
     },
     {
       "id": "enemy-herald-angels",
@@ -385,10 +368,7 @@
         "brief": "toh-figure-art-brief.md",
         "domain": "spiritual"
       },
-      "status": "live",
-      "blockedBy": [
-        "enemy-tint-ruling"
-      ]
+      "status": "live"
     },
     {
       "id": "enemy-hollowed-brutes",
@@ -401,10 +381,7 @@
         "brief": "toh-figure-art-brief.md",
         "domain": "spiritual"
       },
-      "status": "live",
-      "blockedBy": [
-        "enemy-tint-ruling"
-      ]
+      "status": "live"
     },
     {
       "id": "enemy-lesser-angels",
@@ -417,10 +394,7 @@
         "brief": "toh-figure-art-brief.md",
         "domain": "spiritual"
       },
-      "status": "live",
-      "blockedBy": [
-        "enemy-tint-ruling"
-      ]
+      "status": "live"
     },
     {
       "id": "enemy-lesser-evil-scouts",
@@ -433,10 +407,7 @@
         "brief": "toh-figure-art-brief.md",
         "domain": "physical"
       },
-      "status": "live",
-      "blockedBy": [
-        "enemy-tint-ruling"
-      ]
+      "status": "live"
     },
     {
       "id": "enemy-radiant-guardians",
@@ -449,10 +420,7 @@
         "brief": "toh-figure-art-brief.md",
         "domain": "spiritual"
       },
-      "status": "live",
-      "blockedBy": [
-        "enemy-tint-ruling"
-      ]
+      "status": "live"
     },
     {
       "id": "enemy-veil-ambushers",
@@ -465,10 +433,7 @@
         "brief": "toh-figure-art-brief.md",
         "domain": "mental"
       },
-      "status": "live",
-      "blockedBy": [
-        "enemy-tint-ruling"
-      ]
+      "status": "live"
     },
     {
       "id": "assassin-figure-walk",
