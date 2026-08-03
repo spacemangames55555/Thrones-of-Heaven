@@ -54,8 +54,11 @@ export const SPRITE_OVERRIDES: { key: string; w: number; h: number; rotations?: 
   // tints are near-white (MULTIPLY-neutral), so both wear the art unmodified.
   { key: 'cherub-enemy', w: 54, h: 58 },
   { key: 'angel-divine', w: 44, h: 56 },
-  // Enemy roster families — generated grayscale art (scripts/gen-sprites.mjs),
-  // each at the canonical size of the shared key it replaces (tinted at runtime).
+  // Enemy roster families — the bestiary roster (Art Session 8), rim-derived
+  // from the masters in public/sprites/masters/ by `npm run art:rims`. These
+  // w/h are the FITTER FRAME, not the file size: masters ship at a whole-number
+  // multiple of the frame and are downscaled here. Rim-backed families take no
+  // runtime tint — their domain is baked in (src/render/enemyArtRegistry.ts).
   { key: 'enemy-corrupted-wildlife', w: 24, h: 34 },
   { key: 'enemy-evil-raiders', w: 24, h: 34 },
   { key: 'enemy-veil-ambushers', w: 24, h: 34 },

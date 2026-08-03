@@ -4,19 +4,21 @@ import { isDomainMarked } from '../world/enemy-roster';
 
 /**
  * ENEMY ART REGISTRY (Pass 10) — which enemy families render BAKED RIM ART
- * (Model C, Art Session 7) and which keep today's placeholder + runtime
- * multiply tint. Per-family activation, exactly like the terrain contract:
- * a family with art renders it, a family without is untouched, and the two
- * coexist in the same world.
+ * (Model C, Art Session 7) and which keep a plain sprite + runtime multiply
+ * tint. Per-family activation, exactly like the terrain contract: a family
+ * with art renders it, a family without is untouched, and the two coexist in
+ * the same world. Art Session 8 declared the nine roster families; the
+ * creature and boss batches will land later and take the fallback until they
+ * do, which is the case this whole mechanism exists for.
  *
  * ── THE TRAP THIS EXISTS TO AVOID ────────────────────────────────────────
  * The obvious predicate — "is there a PNG at the contract path?" — CANNOT
  * work here, and the recon for this pass is what found it. `art:rims` writes
- * its output to `public/sprites/enemy-<family>.png`, which is the SAME path
- * the grayscale gen-sprites placeholder already occupies. All nine exist
- * today. File presence therefore says nothing about whether a family is
+ * its output to `public/sprites/enemy-<family>.png`, the SAME path the
+ * pipeline already fills for every roster family whether or not a master
+ * exists. File presence therefore says nothing about whether a family is
  * rim-backed; it would activate every family at once and strip the domain
- * tint off nine placeholder sprites.
+ * tint off sprites that have no baked rim to replace it.
  *
  * So activation keys off the CANONICAL MASTER, which is the thing Model C
  * says is authoritative. `art/enemy-rims.json` is written by `npm run
@@ -43,12 +45,15 @@ let RIM_KEYS: ReadonlySet<string> = SHIPPED_KEYS;
 let LOADED_OVERRIDE: ReadonlySet<string> | null = null;
 
 /**
- * RUNTIME VERIFICATION SEAM (tools/verify-runtime.mjs). The rims registry
- * ships EMPTY — no masters are painted yet — so the activation half of the
- * gate has nothing real to assert against. Rather than let that check start
- * asserting only once the bestiary happens to land (the exact way Art Session
- * 4 lost three checks), the gate DECLARES a synthetic family here, proves
- * activation and mixed coexistence, then restores the shipped state.
+ * RUNTIME VERIFICATION SEAM (tools/verify-runtime.mjs). The gate drives BOTH
+ * sides of activation through this, and which side needs it has already
+ * flipped once. Under Pass 10 the registry shipped empty, so ACTIVATION had
+ * nothing real to assert and the gate injected a family. Art Session 8
+ * declared all nine, so now it is FALLBACK and MIXED coexistence that have no
+ * shipped subject, and the gate clears or narrows the declaration instead.
+ * Either way the point is the same one Art Session 4 taught by losing three
+ * checks: a check that only asserts when real content happens to be in the
+ * right state stops asserting the moment that state changes.
  * Passing (null, null) restores. Invisible to players; no UI, no behavior.
  */
 export function __gateDeclare(keys: string[] | null, loaded: string[] | null): boolean {

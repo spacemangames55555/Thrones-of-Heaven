@@ -624,3 +624,50 @@ ruling lands, strike the entry with a pointer to the commit that resolved it.
   SPEND: 2 generations (candidate 0 was free); running 530 of 2000, $0.00.
   STEP 2 - THE FIRST BATCH - IS NOT DONE. The 30-generation round cap is
   untouched and the lock is now in place for it.
+- ART SESSION 8 STEP 2 (bestiary roster v1, 2026-08-03): ALL NINE ENEMY
+  FAMILIES APPROVED AND LIVE. Six MARKED families wear baked domain rims;
+  three UNMARKED angelics ship as identity. The bestiary has real art.
+  ROAD AMENDMENT (Casey, full-roster amendment): BATCH 2 DISSOLVED INTO
+  BATCH 1. The published plan had the six non-angelics first and the angelics
+  second; the amendment brought all nine at once, because the unmarked
+  ruling's real verification is rimmed and unmarked standing in ONE brawl,
+  and that had to be judged before six masters locked the look in isolation.
+  RENUMBERED: hostile-creature rows are now BATCH 2 (were 3), bosses and hero
+  enemies are BATCH 3 (were later). Angelic recon found no blocker, so the
+  escape hatch went unused.
+  UNMARKED BANDS ARE PURPOSE-DERIVED, and the comparable is named: canon says
+  the reference is "the existing angel look", so the band comes from the
+  shipped angel-divine.png (luminance 117.3, opacity 0.423) and
+  cherub-enemy.png (opacity 0.290). RADIANCE FLOOR = 0.8 x angel-divine =
+  93.8, because radiance is what REPLACES the rim as the domain read - an
+  unmarked family that is not visibly brighter than the marked bestiary has
+  no read at all. Opacity band 0.23-0.52 brackets both comparables. The three
+  angelics land at 151.4 to 174.1 against a marked bestiary at 30.2 to 62.8.
+  PIPELINE VERIFIED ON THE REAL TOOL, not asserted: art:rims derived 9
+  sprites, 3 as identity; --check re-derives all nine byte-identically with
+  the registry in sync; the three unmarked outputs are BYTE-EQUAL to their
+  masters (zero rim) while corrupted-wildlife and dark-casters carry 2469 and
+  2049 rim pixels. The registry is emitted by a real bake and never
+  hand-landed - art:approve moves masters and rims, and the drift guard
+  caught the registry as NOT among them, which is the rule working.
+  PIXELLAB DROPS no_background ON LARGE CANVASES - the session's most
+  reusable finding. All four 192x224 generations (dark-casters and the three
+  angelics) came back FULLY OPAQUE at opacity 1.000, ignoring the flag and
+  returning solid rectangles; the 96x136 and 120x152 ones were fine. Attempt
+  2 at 96x112 with "single isolated figure cut out on empty transparent
+  space" fixed all four. KEEP ENEMY MASTERS AT OR UNDER ~152 PX ON THE LONG
+  EDGE.
+  AND THAT EXPOSED A HOLE IN THIS SESSION'S OWN BAND: the unmarked check
+  tested radiance but NOT alpha, so all three opaque angelics reported PASS
+  and an opaque rectangle would have shipped into the preview. Opacity joined
+  the unmarked band, bracketed from the angel comparables. This is the
+  calibrate-a-metric-on-known-truth rule (made standing policy earlier in the
+  SAME session) failing to be applied to the band written minutes later - the
+  rule is only worth anything when it is run against the new band too.
+  SPEND: 14 generations of the 30 round cap - 2 style-lock candidates, 8
+  firsts (corrupted-wildlife reused the lock master at zero) and 4
+  corrections. Running 544 of 2000, $0.00 credits.
+  STILL QUEUED: batch 2 (hostile creature rows - their own size and spawn
+  recon needed), batch 3 (bosses and hero enemies as 128px set-pieces), the
+  waystone hero object, per-region palette divergence (cactus/Mexico City is
+  its first concrete consumer), and the dressed-forest density ride.

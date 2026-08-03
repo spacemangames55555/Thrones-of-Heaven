@@ -6,11 +6,21 @@
 // Output: public/sprites/enemy-<family-id>.png at the canonical size of the
 // shared key each family replaces (the drop-in fitter's frame). Override the
 // output directory with GEN_SPRITES_OUT (the determinism check regenerates
-// into a temp dir and hash-compares against the committed files).
+// into temp dirs and hash-compares two independent runs).
+//
+// LIVE-TREE REFUSAL (Art Session 8). This generator no longer owns every one
+// of those paths. Model C made masters canonical and rims DERIVED: for each
+// family listed in art/enemy-rims.json, public/sprites/enemy-<family>.png is
+// baked from public/sprites/masters/ by `npm run art:rims`. Running this tool
+// over the live tree would silently replace that derived art with a grayscale
+// placeholder — the same accident as hand-landing a rim, which Model C
+// forbids. So it REFUSES, per key, and only in the live tree: a sandbox
+// out-dir still generates the full set, which is what keeps the determinism
+// guarantee checkable. A family with no master is still generated normally.
 import { execFileSync } from 'node:child_process';
-import { deflateSync, inflateSync } from 'node:zlib';
-import { mkdirSync, writeFileSync } from 'node:fs';
-import { join, dirname } from 'node:path';
+import { deflateSync } from 'node:zlib';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -63,28 +73,13 @@ export function encodePng(w, h, rgba) {
   const idat = deflateSync(raw, { level: 9 });
   return Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), chunk('IHDR', ihdr), chunk('IDAT', idat), chunk('IEND', Buffer.alloc(0))]);
 }
-/** Decode OUR PNGs (8-bit RGBA, filter 0 only) — used by the runtime gate. */
-export function decodePng(buf) {
-  const w = buf.readUInt32BE(16);
-  const h = buf.readUInt32BE(20);
-  const bitDepth = buf[24];
-  const colorType = buf[25];
-  const idat = [];
-  let off = 8;
-  while (off < buf.length) {
-    const len = buf.readUInt32BE(off);
-    const type = buf.toString('ascii', off + 4, off + 8);
-    if (type === 'IDAT') idat.push(buf.subarray(off + 8, off + 8 + len));
-    off += 12 + len;
-  }
-  const raw = inflateSync(Buffer.concat(idat));
-  const rgba = Buffer.alloc(w * h * 4);
-  for (let y = 0; y < h; y++) {
-    if (raw[y * (w * 4 + 1)] !== 0) throw new Error('unsupported PNG filter (our encoder writes filter 0)');
-    raw.copy(rgba, y * w * 4, y * (w * 4 + 1) + 1, (y + 1) * (w * 4 + 1));
-  }
-  return { w, h, bitDepth, colorType, rgba };
-}
+// RETIRED: decodePng. This module used to export a minimal decoder that the
+// runtime gate read the shipped sprites with. It only ever handled filter 0,
+// because that is all OUR encoder writes — a fair assumption while this
+// generator owned every enemy PNG, and false the moment Art Session 8 landed
+// rim-derived art written by pngjs. The gate reads those files with pngjs
+// now. Nothing decodes here; the encoder above is the only codec this tool
+// needs.
 
 // ── Deterministic RNG (mulberry32) + raster helpers ──────────────────────────
 function rng(seed) {
@@ -292,24 +287,46 @@ function paint(family, cfg, rand) {
   return r;
 }
 
+/** Keys the rim baker owns — read from the registry it writes, never restated. */
+function rimDerivedKeys() {
+  const reg = join(ROOT, 'art/enemy-rims.json');
+  if (!existsSync(reg)) return new Set();
+  return new Set(JSON.parse(readFileSync(reg, 'utf8')).rimDerived ?? []);
+}
+
 export async function generateAll(outDir) {
   const cfg = await loadConfig();
   const rand = rng(cfg.SPRITE_SEED);
   const files = [];
+  const skipped = [];
+  // The refusal applies to the LIVE tree only (see the header note).
+  const derived = resolve(outDir) === resolve(join(ROOT, 'public/sprites')) ? rimDerivedKeys() : new Set();
   mkdirSync(outDir, { recursive: true });
   for (const fam of cfg.SPRITE_FAMILIES) {
+    // Paint UNCONDITIONALLY even when the write is refused: `rand` is one
+    // stream shared across the whole set, so skipping a paint would shift
+    // every later family's dither and make a live run diverge from a sandbox
+    // one. The refusal withholds the WRITE, never the generation.
     const raster = paint(fam, cfg, rand);
+    const key = cfg.spriteKeyFor(fam.id);
+    if (derived.has(key)) {
+      skipped.push(key);
+      continue;
+    }
     const png = encodePng(raster.w, raster.h, raster.px);
-    const file = join(outDir, `${cfg.spriteKeyFor(fam.id)}.png`);
+    const file = join(outDir, `${key}.png`);
     writeFileSync(file, png);
     files.push(file);
   }
-  return files;
+  return { files, skipped };
 }
 
 // CLI entry: regenerate into the live drop-in folder (or GEN_SPRITES_OUT).
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const outDir = process.env.GEN_SPRITES_OUT ?? join(ROOT, 'public/sprites');
-  const files = await generateAll(outDir);
+  const { files, skipped } = await generateAll(outDir);
   console.log(`gen-sprites: wrote ${files.length} sprites to ${outDir}`);
+  if (skipped.length > 0) {
+    console.log(`gen-sprites: REFUSED to overwrite ${skipped.length} rim-derived sprite(s) — masters are canonical, run npm run art:rims instead: ${skipped.join(', ')}`);
+  }
 }

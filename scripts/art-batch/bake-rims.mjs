@@ -28,9 +28,10 @@
  *
  * Masters live at `public/sprites/masters/<key>.png`; the baked sprite lands
  * at `public/sprites/<key>.png`. A key with no master is simply not
- * rim-derived (today that is all of them — the nine live enemy sprites are
- * still the grayscale gen-sprites placeholders, and they stay that way until
- * the bestiary session paints masters under the enemy style lock).
+ * rim-derived and keeps the runtime domain tint on whatever sits at its path.
+ * Art Session 8 landed masters for all nine roster families; the creature and
+ * boss batches will arrive with no masters and take that fallback until they
+ * do, which is why per-family activation exists at all.
  *
  * usage:
  *   node scripts/art-batch/bake-rims.mjs            bake every master
