@@ -1,0 +1,46 @@
+{
+  "prop": "log-b",
+  "size": "48x32",
+  "references": [
+    {
+      "id": "log-a",
+      "opacity": 0.229,
+      "meanLum": 81.3,
+      "domHue": 30
+    }
+  ],
+  "opacity": {
+    "value": 0.402,
+    "band": [
+      0.194,
+      0.263
+    ],
+    "pass": false
+  },
+  "meanLum": 73.2,
+  "lumBandFromClass": [
+    65,
+    97.5
+  ],
+  "lumPass": true,
+  "domHue": 330,
+  "edges": {
+    "topClear": true,
+    "leftClear": true,
+    "rightClear": true,
+    "bottomOutsideCentreThird": 0
+  },
+  "edgesPass": true,
+  "fullerThanLogA": {
+    "logA": 0.229,
+    "logB": 0.402,
+    "rule": "log-b opacity > log-a opacity",
+    "pass": true
+  },
+  "pairInversion": {
+    "iou": 0.428,
+    "band": "<= 0.85",
+    "pass": true,
+    "tonalSpread": 32.4
+  }
+}

@@ -7563,7 +7563,10 @@
         "path": "public/art/terrain/props/cactus-a.png",
         "brief": "toh-terrain-art-brief.md"
       },
-      "status": "fallback"
+      "status": "missing",
+      "blockedBy": [
+        "unscattered-prop"
+      ]
     },
     {
       "id": "prop-cedar-a",
@@ -7646,6 +7649,19 @@
       "status": "live"
     },
     {
+      "id": "prop-log-b",
+      "category": "terrain-prop",
+      "spec": {
+        "kind": "prop",
+        "w": 48,
+        "h": 32,
+        "tier": "understory",
+        "path": "public/art/terrain/props/log-b.png",
+        "brief": "toh-terrain-art-brief.md"
+      },
+      "status": "live"
+    },
+    {
       "id": "prop-salal-a",
       "category": "terrain-prop",
       "spec": {
@@ -7682,7 +7698,7 @@
         "path": "public/art/terrain/props/scrub-a.png",
         "brief": "toh-terrain-art-brief.md"
       },
-      "status": "fallback"
+      "status": "live"
     },
     {
       "id": "prop-snag-a",
@@ -7721,7 +7737,7 @@
         "path": "public/art/terrain/props/swamp-tree-a.png",
         "brief": "toh-terrain-art-brief.md"
       },
-      "status": "fallback"
+      "status": "live"
     },
     {
       "id": "prop-swamp-tree-b",
@@ -7734,7 +7750,7 @@
         "path": "public/art/terrain/props/swamp-tree-b.png",
         "brief": "toh-terrain-art-brief.md"
       },
-      "status": "fallback"
+      "status": "live"
     },
     {
       "id": "prop-tree-broad-a",

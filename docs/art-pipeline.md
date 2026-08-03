@@ -113,7 +113,7 @@ language invites edge contact, object language does not.
 
 ## Standing batch policy (Casey ruling, Art Session 5)
 
-Two rules that apply to **every** category from here on, not just water.
+Rules that apply to **every** category from here on, not just water.
 
 ### 1. Tile selection is by band, never by file order
 
@@ -142,7 +142,34 @@ textured in-band tiles, labelled honestly.
 its verdict — this rule changes how future runs are read, and creates no
 regeneration debt for anything already shipped.
 
-### 2. Anchors are read from source, never retyped
+### 2. A band must serve the asset's PURPOSE, not just its class
+
+Class bands are derived from shipped comparables (rule 1's sibling). That
+breaks down when the class has **one** member and the new asset is *defined
+by differing from it*. Art Session 6's `log-b` is the precedent: the band
+script carried a log-a ±15 % class band `[0.194, 0.263]` **and** a purpose
+rule that log-b be *fuller* than log-a (0.229). Both cannot hold — the window
+they leave is `(0.229, 0.263]`, which sets the asset up to fail for the exact
+reason it exists. The contradiction was visible in the code before either
+attempt ran.
+
+So: **when an asset's brief says it must DIFFER from its comparable, the
+comparable is a FLOOR (or ceiling), never a centre.** Derive the other end
+from the nearest class member in the direction of the difference. log-b's
+corrected band ran from log-a's mass (0.229, must be fuller) to stump-a's
+(0.505, the densest shipped understory solid — past that it stops being a log
+and becomes a mound).
+
+Ratified as standing policy by Casey verdict, Art Session 6.
+
+Corollary, same session (`scrub-a`): **check that the comparable belongs to
+the same world before deriving from it.** scrub-a's luminance band came from
+salal-a, a lush dark rainforest evergreen, which is the wrong tonal reference
+for a sun-bleached desert shrub. The rule is to notice this *before*
+generating; when it is noticed after, report the mis-derivation rather than
+quietly re-deriving a band that happens to pass.
+
+### 3. Anchors are read from source, never retyped
 
 Biome anchors live in `src/world/terrain-placeholder.ts` and are the single
 source of truth. Band tooling must **import** them; a hand-typed hex in a
