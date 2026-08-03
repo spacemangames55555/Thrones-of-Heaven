@@ -570,3 +570,57 @@ ruling lands, strike the entry with a pointer to the commit that resolved it.
   derived in-repo at zero credits, which is the model arguing for itself.
   Bake-off assets archived under art-review/tint-decision/; nothing on live
   paths.
+- ART SESSION 8 (bestiary opening, 2026-08-03): THE ENEMY STYLE LOCK IS
+  CANDIDATE 0 (Casey verdict) - the master generated in Art Session 7 for the
+  tint bake-off, re-judged against two fresh candidates and adopted at ZERO
+  additional spend. Full provenance (tool, seed 76001, canvas, params, prompt,
+  measured opacity/luminance/saturation/palette and rim-compat numbers) is in
+  art/style-locks.json under `enemy`. Rejected: candidate A (dense paint,
+  heavy outline, compressed values) and candidate B (sparse paint, selective
+  outline, wide values). All three passed rim-compat; the lock was a look
+  call, not a band call.
+  THE ANGELIC RULING - UNMARKED STANDS, PROMOTED FROM CODE COMMENT TO CANON
+  DATA. For four passes MainScene carried the line "canon says no domain tint
+  on them", which is a promise nothing can check, and art:rims would have
+  baked spiritual rims onto all three angelic families the day their masters
+  landed. It is data now: UNMARKED_FAMILIES in src/world/enemy-roster.ts.
+  The DOMAIN TABLE IS UNTOUCHED - angels are still spiritual as data, still
+  gating spawns and marker colour; what changed is that the domain is never
+  PAINTED. art:rims derives an unmarked family as IDENTITY, so the master
+  ships byte-for-byte and rims-derived still enforces that identity: an
+  unmarked master is as canonical and as un-hand-landable as a rimmed one.
+  The dressing funnel reads the same table, so undeclared unmarked families
+  keep their untinted look as DATA rather than a per-site exception.
+  RATIONALE ON RECORD: the angelic silhouette IS the domain read - a winged
+  radiant figure needs no ring to say what it is - and leaving them unmarked
+  serves the moral inversion the bestiary is built around. A rimmed angel
+  would read as one more colour-coded monster. BATCH 2 UNBLOCKS as unmarked
+  masters.
+  TOMBSTONE, so the ruling cannot erode: unmarked-families-tombstone asserts
+  the canon table names all three angelics, that their domain DATA is intact,
+  and - on a permanent synthetic pair - that an unmarked master derives as
+  byte identity with ZERO rim while a marked family in the same run gets its
+  rim. Permanent fixtures, so it cannot go hollow when real masters land.
+  METRIC CALIBRATION IS NOW STANDING POLICY (docs/art-pipeline.md): calibrate
+  a new metric on an input whose answer you already know BEFORE pointing it at
+  art. The rim-compat band is the precedent - its first draft reported 176
+  ring gaps on a master whose ring is continuous, because it counted crevices
+  blocked by the creature own body as holes. A hard-edged synthetic master
+  exposed it. The corrected CREVICE RULE (frame and own-body stop the walk
+  without scoring a gap) is documented with the band. The failure this
+  prevents is not a wrong number but regenerating good assets to satisfy a
+  lying instrument.
+  BESPOKE-SPAWN REACH UNDERCOUNT, ledgered: the roster rank uses zones times
+  pack, where zones counts `enemyFamily:` markers in the world manifest.
+  herald-angels and hollowed-brutes score ZERO there because they spawn
+  through bespoke paths (spawnEuropeBrute and the herald spawner), NOT because
+  players never meet them. Any future ranking that reads marker counts must
+  add the bespoke spawners by hand or it will rank those two last for the
+  wrong reason.
+  BATCH PLAN PUBLISHED (art-review/enemy-lock/report.md): batch 1 is the six
+  non-angelic families, batch 2 the three angelics as unmarked masters, batch
+  3 the hostile creature rows (their own size and spawn recon needed), bosses
+  and hero enemies later as 128px set-pieces.
+  SPEND: 2 generations (candidate 0 was free); running 530 of 2000, $0.00.
+  STEP 2 - THE FIRST BATCH - IS NOT DONE. The 30-generation round cap is
+  untouched and the lock is now in place for it.

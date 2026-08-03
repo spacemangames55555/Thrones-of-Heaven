@@ -162,6 +162,27 @@ distance instead, worst pair **102.2**. The full-colour + aura model needed a
 persistent pooled under-glow that does not exist (`CircleFxPool` is a
 transient flash pool).
 
+## Enemy masters — the rim-compat band (Art Session 8)
+
+`art:rims` treats **any nonzero alpha as body**. A master with a soft or
+anti-aliased edge therefore pushes the rim outward from its faintest fringe
+pixel, wrapping a halo instead of the creature. Every enemy master is measured
+through the real `bakeRim` before staging:
+
+| measure | rule |
+|---|---|
+| fringe share | opaque pixels with alpha < 250, as a fraction — hard-edged pixel art is 0 |
+| ring gaps | boundary samples whose outward ring is thinner than `RIM_PX` |
+| min ring depth | must equal `RIM_PX` (4) |
+| frame clipping | body pixels on the frame edge, where the ring cannot fit |
+
+**THE CREVICE RULE** (corrected, Art Session 8): walking outward from a body
+boundary pixel, two things legitimately stop the ring short and are **not**
+gaps — the frame edge, and the creature's **own body** across a narrow
+crevice. Only genuinely EMPTY pixels before the wanted depth count as a gap.
+Without this rule the band fails intricate silhouettes (fur, limbs, spikes)
+for having exactly the shape they are supposed to have.
+
 ## Standing batch policy (Casey ruling, Art Session 5)
 
 Rules that apply to **every** category from here on, not just water.
@@ -220,7 +241,27 @@ for a sun-bleached desert shrub. The rule is to notice this *before*
 generating; when it is noticed after, report the mis-derivation rather than
 quietly re-deriving a band that happens to pass.
 
-### 3. Anchors are read from source, never retyped
+### 3. Calibrate a metric on known truth before trusting it
+
+A band is a measurement, and a measurement can be wrong in the same direction
+twice. **Run every new metric against an input whose answer you already know
+before you point it at art.** Art Session 8's rim-compat band is the
+precedent: its first draft reported **176 ring gaps** on a master whose ring
+is in fact continuous, because it counted crevices blocked by the creature's
+*own body* — between legs, between fur spikes — as holes. A hard-edged
+synthetic master was the known-truth input that exposed it (`fringe 0, gaps 0,
+depth 4` is what "correct" has to look like), and the fix was to the metric,
+not the art.
+
+The failure mode this prevents is worse than a wrong number: a
+badly-calibrated band sends you regenerating perfectly good assets, burning
+spend to satisfy an instrument that is lying.
+
+Ratified as standing policy by Casey verdict, Art Session 8. See also the
+Session 6 purpose rule above — a band must serve the asset, and it must also
+be *true*.
+
+### 4. Anchors are read from source, never retyped
 
 Biome anchors live in `src/world/terrain-placeholder.ts` and are the single
 source of truth. Band tooling must **import** them; a hand-typed hex in a

@@ -36,6 +36,32 @@
       "reference": "public/art/terrain/ocean.png",
       "referenceRole": "verification-target: candidates are JUDGED against this sheet, never fed into a generation call",
       "approved": "Casey verdict C2, Art Session 5 (ocean bake-off, three candidates, judged on the animated coastline preview)"
+    },
+    "enemy": {
+      "technique": "prompt-only, single-facing still master; rims DERIVED (Model C)",
+      "approved": "Casey verdict CANDIDATE 0, Art Session 8 (three-candidate bake-off judged rimmed through the real art:rims baker)",
+      "reference": "art/references/enemy-corrupted-wildlife-lock.png",
+      "referenceRole": "verification-target: candidates are JUDGED against this master, never generated from it",
+      "provenance": {
+        "subject": "corrupted-wildlife (rank 1 by encounter reach: 21 zones x pack 6 = 126)",
+        "origin": "generated in Art Session 7 as the tint-decision bake-off master, re-judged and adopted in Art Session 8 at ZERO additional spend",
+        "tool": "create_image_pixflux",
+        "seed": 76001,
+        "canvas": "96x136 master, fitted to the manifest row size at boot (24x34 for this family)",
+        "params": "low top-down, single color black outline, medium detail, medium shading, no_background",
+        "prompt": "A corrupted wild beast, a hunched snarling wolf-like creature with matted fur, bared teeth and a low prowling stance, blighted and diseased looking, warm brown and umber fur with sickly ochre highlights and dark grey underbelly, mid-saturation natural colors, pixel art with crisp dark outline, readable at thumbnail size, single creature facing the viewer, transparent background, no ground, no shadow"
+      },
+      "measured": {
+        "opacity": 0.339,
+        "meanLuminance": 56.8,
+        "meanSaturation": 0.602,
+        "paletteSize": 32,
+        "rimCompat": "fringeShare 0, ringGaps 0, minRingDepth 4, bodyPixelsOnFrameEdge 0"
+      },
+      "rejected": "candidate A (dense paint, heavy outline, compressed values: opacity 0.472, lum 38.5, sat 0.790, palette 21) and candidate B (sparse paint, selective outline, wide values: opacity 0.422, lum 42.2, sat 0.354, palette 30). All three passed rim-compat; the lock is a look call.",
+      "shape": "SINGLE-FACING STILL. No rotations, no animation - the enemy renderer consumes one facing (Pass 10 recon; only the three class figures are 8-way). Rotations and animation belong to the walk-framework and are their own ceremony.",
+      "rims": "NEVER hand-authored. Masters land at public/sprites/masters/<key>.png and npm run art:rims derives the shipped sprite; UNMARKED families (canon table in src/world/enemy-roster.ts) derive as IDENTITY with no rim. Hand-landing a rim is forbidden and gate-enforced by rims-derived.",
+      "palette": "the figure brief: pixel art with a dark outline, crisp 1px-ish dark edges, readable at thumbnail size, mid-saturation colors"
     }
   }
 }

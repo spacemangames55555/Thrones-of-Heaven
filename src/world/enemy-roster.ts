@@ -142,6 +142,36 @@ export const EXISTING_FAMILY_DOMAIN: Record<string, CombatDomain> = {
   'hollowed-brutes': 'spiritual',
 };
 
+/**
+ * UNMARKED FAMILIES — CANON DATA (Casey ruling, Art Session 8).
+ *
+ * These families carry NO domain marking. Their EXISTING_FAMILY_DOMAIN entry
+ * is untouched and still reads 'spiritual': the domain is real as DATA and
+ * gates spawning, encounter mix and marker colour exactly as before. What
+ * this table says is that the domain is never PAINTED on them.
+ *
+ * RATIONALE ON RECORD: the angelic silhouette IS the domain read — a winged
+ * radiant figure needs no ring to say what it is — and leaving them unmarked
+ * serves the moral inversion the bestiary is built around. A rimmed angel
+ * would read as one more colour-coded monster.
+ *
+ * This was a CODE COMMENT in MainScene ("canon says no domain tint on them")
+ * for four passes, which is a promise nothing can check. It is data now:
+ *   * art:rims derives an unmarked family as IDENTITY — the master ships
+ *     byte-for-byte, no rim, and rims-derived still enforces that byte
+ *     identity, so the master is as canonical as any other;
+ *   * the `unmarked-families-tombstone` gate check asserts ZERO rim pixels on
+ *     every unmarked family, so the ruling cannot erode by a later bake;
+ *   * the dressing funnel reads this table, so undeclared unmarked families
+ *     keep today's untinted look as DATA rather than a per-site exception.
+ */
+export const UNMARKED_FAMILIES: ReadonlySet<string> = new Set(['herald-angels', 'radiant-guardians', 'lesser-angels']);
+
+/** Is this family painted with its domain, or left unmarked by canon? */
+export function isDomainMarked(family: string): boolean {
+  return !UNMARKED_FAMILIES.has(family);
+}
+
 /** LIVE pack size per mapped family (per zone activation; tunable gray-box). All
  *  clear-beat target families spawn ≥ EUROPE_CLEAR_KILLS so one pack can finish
  *  a clear objective without forcing a leave-and-return respawn. */

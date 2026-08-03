@@ -1069,6 +1069,69 @@ const ok = (name, pass, detail = '') => {
     );
   }
 
+  // 0f4e. UNMARKED-FAMILIES TOMBSTONE (ART SESSION 8, Casey ruling). The
+  // angelic families carry no domain marking. That was a CODE COMMENT in
+  // MainScene for four passes — "canon says no domain tint on them" — which
+  // is a promise nothing can check, and art:rims would happily have baked
+  // spiritual rims onto all three the day their masters landed.
+  //
+  // TOMBSTONE FORM, so the ruling cannot erode: the check asserts the shape
+  // of the ruling itself (the canon table exists, is non-empty, names the
+  // three angelics, and their DOMAIN DATA is untouched), and it proves the
+  // consequence on a synthetic master — an unmarked family derives as
+  // IDENTITY with ZERO rim pixels, while a marked one in the same run gets
+  // its rim. It cannot go hollow when real masters land: the synthetic pair
+  // is permanent.
+  {
+    const ufx = new URL('../node_modules/.cache/toh-unmarked-fx', import.meta.url).pathname;
+    rmSync(ufx, { recursive: true, force: true });
+    mkdirSync(join(ufx, 'masters'), { recursive: true });
+    mkdirSync(join(ufx, 'out'), { recursive: true });
+    const body = new PNG({ width: 24, height: 24 });
+    for (let y = 0; y < 24; y++) {
+      for (let x = 0; x < 24; x++) {
+        const o = (y * 24 + x) * 4;
+        const solid = x >= 8 && x < 16 && y >= 8 && y < 16;
+        body.data[o] = 200;
+        body.data[o + 1] = 120;
+        body.data[o + 2] = 60;
+        body.data[o + 3] = solid ? 255 : 0;
+      }
+    }
+    // One UNMARKED family and one MARKED family, same master, same run.
+    writeFileSync(join(ufx, 'masters', 'enemy-lesser-angels.png'), PNG.sync.write(body));
+    writeFileSync(join(ufx, 'masters', 'enemy-corrupted-wildlife.png'), PNG.sync.write(body));
+    const derive = run(['scripts/art-batch/bake-rims.mjs', '--masters', join(ufx, 'masters'), '--out', join(ufx, 'out')]);
+    const masterBytes = readFileSync(join(ufx, 'masters', 'enemy-lesser-angels.png'));
+    const unmarkedOut = readFileSync(join(ufx, 'out', 'enemy-lesser-angels.png'));
+    const markedOut = PNG.sync.read(readFileSync(join(ufx, 'out', 'enemy-corrupted-wildlife.png')));
+    const identity = masterBytes.equals(unmarkedOut);
+    // ZERO rim pixels on the unmarked output; the marked one really has some.
+    const countRim = (png) => {
+      let n = 0;
+      for (let i = 0; i < png.data.length; i += 4) {
+        if (png.data[i + 3] !== 255) continue;
+        const isBody = png.data[i] === 200 && png.data[i + 1] === 120 && png.data[i + 2] === 60;
+        if (!isBody) n++;
+      }
+      return n;
+    };
+    const unmarkedRim = countRim(PNG.sync.read(unmarkedOut));
+    const markedRim = countRim(markedOut);
+    const reCheck = run(['scripts/art-batch/bake-rims.mjs', '--masters', join(ufx, 'masters'), '--out', join(ufx, 'out'), '--check']);
+    rmSync(ufx, { recursive: true, force: true });
+    // The canon table itself, and the domain data it must NOT have touched.
+    const rosterSrc = readFileSync('src/world/enemy-roster.ts', 'utf8');
+    const canonNames = ['herald-angels', 'radiant-guardians', 'lesser-angels'];
+    const tableOk = /export const UNMARKED_FAMILIES/.test(rosterSrc) && canonNames.every((n) => new RegExp(`UNMARKED_FAMILIES[\\s\\S]{0,300}'${n}'`).test(rosterSrc));
+    const domainDataIntact = canonNames.every((n) => new RegExp(`'${n}': 'spiritual'`).test(rosterSrc));
+    ok(
+      'unmarked-families-tombstone: the no-domain-marking ruling is CANON DATA, not a comment — the table names all three angelics, their domain data is untouched (still spiritual, still gating spawns), an unmarked master derives as byte IDENTITY with ZERO rim, and a marked family in the SAME run still gets its rim',
+      derive.status === 0 && identity && unmarkedRim === 0 && markedRim > 0 && reCheck.status === 0 && tableOk && domainDataIntact,
+      JSON.stringify({ derive: derive.status, identity, unmarkedRim, markedRim, reCheck: reCheck.status, tableOk, domainDataIntact }),
+    );
+  }
+
   // 0f5. SECRET-HYGIENE (PASS 8): scan every git-tracked TEXT file for key
   // material. PATTERN SET (stated): (a) a LITERAL assignment to
   // PIXELLAB_SECRET / *_API_KEY / *_TOKEN (an env EXPANSION like
