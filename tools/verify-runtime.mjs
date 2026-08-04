@@ -275,7 +275,14 @@ const ok = (name, pass, detail = '') => {
     const readsBrute = /spawnEuropeBrute[\s\S]{0,200}?setScale/.test(sheetSrc);
     const readsAngels = /angelScale\('darkcaster'\)/.test(sheetSrc);
     // And it must not still be claiming the retired nearest-neighbour story.
-    const staleClaim = /true nearest-neighbour[\s\S]{0,80}?applies at boot/.test(sheetSrc);
+    // SCAN THE WHOLE FILE, not just the header. The first version of this
+    // regexed only the doc comment and passed while the sheet's own visible
+    // SUBTITLE still read "Reduced by true nearest-neighbour" — a check that
+    // cleared the claim in the one place nobody sees it. Any surviving mention
+    // outside the correction note that documents its retirement is stale.
+    const nnMentions = [...sheetSrc.matchAll(/nearest-neighbour/g)].length;
+    const documentedRetirement = /reduced the WHOLE CANVAS by nearest-neighbour/.test(sheetSrc);
+    const staleClaim = nnMentions > (documentedRetirement ? 1 : 0);
     // AGREEMENT on a scaled family, computed here and asserted against the
     // tool's own arithmetic on the same inputs.
     const scaled = sprites.filter((x) => (RUNTIME_SCALE[x.id] ?? 1) !== 1);
@@ -283,7 +290,7 @@ const ok = (name, pass, detail = '') => {
     ok(
       'contact-fidelity: the hold tool reproduces the REAL boot geometry — it reads runtime scale from both MainScene and the angel variant table (not frames alone), no longer advertises the retired nearest-neighbour story, and every runtime-SCALED family measures a real rendered size here; a scale-blind sheet is how Session 9 showed a family smaller than it renders',
       readsBrute && readsAngels && !staleClaim && scaled.length === 5 && consistent,
-      JSON.stringify({ readsBrute, readsAngels, staleClaim, scaledFamilies: scaled.map((x) => `${x.id}@${RUNTIME_SCALE[x.id]}:${x.rendered}`) }),
+      JSON.stringify({ readsBrute, readsAngels, staleClaim, nnMentions, documentedRetirement, scaledFamilies: scaled.map((x) => `${x.id}@${RUNTIME_SCALE[x.id]}:${x.rendered}`) }),
     );
   }
 
