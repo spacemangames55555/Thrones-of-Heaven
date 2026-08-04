@@ -283,8 +283,8 @@ const shell = (body) => `<!doctype html><meta charset="utf-8"><style>
 </style>
 <h1>Thrones of Heaven — ${CANDIDATES ? `re-lock candidates: ${CANDIDATES}` : 'bestiary roster v1'} contact sheet</h1>
 <div class="sub">${CANDIDATES
-  ? `UNRIMMED candidate masters staged under art-review/${BATCH}/ — no rim is baked until a lock is approved. Reduced by true nearest-neighbour to the boot fitter frame, so the 1:1 views are the pixels a 428&times;926 phone would actually receive.`
-  : 'Rimmed as shipped. Rendered from public/sprites/enemy-*.png reduced by true nearest-neighbour to the boot fitter frame — the pixels a 428&times;926 phone actually receives.'}</div>
+  ? `UNRIMMED candidate masters staged under art-review/${BATCH}/ — no rim is baked until a lock is approved. Put through the REAL boot fitter geometry (contain-fit of the opaque box into the frame, then runtime scale), so the 1:1 views are the pixels a 428&times;926 phone would actually receive.`
+  : 'Rimmed as shipped. Rendered from public/sprites/enemy-*.png through the REAL boot fitter geometry — contain-fit of the opaque box into the frame, then runtime scale — so the 1:1 views are the pixels a 428&times;926 phone actually receives.'}</div>
 <div class="pending">${CANDIDATES ? 'HOLD — awaiting Casey verdict. Nothing lands until a verdict receipt exists.' : 'VERDICT PENDING — backfill for Art Session 8. The art landed unverdicted; this sheet is the hold that should have preceded it.'}</div>
 ${body}`;
 
