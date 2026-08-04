@@ -700,10 +700,17 @@ ruling lands, strike the entry with a pointer to the commit that resolved it.
   fists. Five of the six marked families are upright bipeds of similar
   proportion, so at 24x34 the domain RIM is carrying identity as well as
   domain - which is the exact job Model C was chosen NOT to need the rim for.
-  And the scale hierarchy is inverted: dark-casters at 48x56 towers over
-  hollowed-brutes at 24x34, so a robed caster is 1.6x the height of the
-  family named brutes. That last one is inherited from the shared-key size
-  classes rather than from this art, but it is only visible in a picture.
+  And the scale hierarchy is inverted: a robed caster stands taller than the
+  family named brutes. CORRECTION ON RECORD (same day, before any action was
+  taken on it): the first report of this said 1.6x, measured from FRAME sizes
+  alone - 48x56 against 24x34. That is not the rendered size. spawnEuropeBrute
+  applies setScale(1.35) at spawn, so hollowed-brutes renders about 46px tall
+  against dark-casters at 56px, a ratio of 1.22x. The inversion is real; the
+  magnitude was overstated. The lesson is exactly the one the band is about -
+  a batch property measured against the wrong quantity is how the original
+  defect got through in the first place. RELATIVE SCALE = frame x runtime
+  scale, never frame alone. It is inherited from the shared-key size classes
+  rather than from this art, but it is only visible in a picture.
   NONE OF THIS IS ACTED ON. The verdict is Casey's and is held open. The art
   stays exactly as landed; these are review notes for the pending verdict,
   not a mandate to regenerate.
@@ -722,3 +729,44 @@ ruling lands, strike the entry with a pointer to the commit that resolved it.
   this purpose, and refuses to emit a sheet too tall for the chat surface,
   because an image that cannot be posted is the failure it exists to prevent.
   NOTE: art:approve would now REFUSE the bestiary-roster-v1 batch that shipped.
+- SESSION 8 ROSTER VERDICT (2026-08-04): REJECTED AS A SET. Casey verdict,
+  verbatim: "reject the roster as a set. Shipped art STAYS on main for now
+  (a placeholder revert would make the game worse; this is a replacement,
+  not a rollback)".
+  THE NINE SHIPPED MASTERS ARE NOW PROVISIONAL ART. They remain on live paths
+  and on main deliberately - reverting to the grayscale gen-sprites
+  placeholders would make the game worse, and the roster is being REPLACED,
+  not rolled back. Provisional means: rejected, retained, and scheduled. It is
+  not approval by another name and must never be cited as one. Every landing
+  after this verdict carries a receipt.
+  ROOT DEFECT: the LOCK REFERENCE depicts a biped where the family own prompt
+  says hunched quadruped. Because the lock is the reference every future
+  master inherits, the defect is upstream of all nine - which is why the fix
+  is a RE-LOCK and not nine regenerations. Re-lock happens BEFORE any
+  re-batch.
+  ROAD: Session 9 re-locks corrupted-wildlife as a hunched quadruped (2-3
+  candidates, contact sheet posted inline, real hold) and lands the DEV MUSTER
+  - a ?debug=1 ring spawn of one of every family - because Session 10 cannot
+  be judged by hunting for enemies in the open world. Session 10 re-batches
+  all nine under the new lock, each master judged against its own family theme
+  text, contact sheet plus muster before any approve.
+- NEW STANDING BAND - SUBJECT FIDELITY (Casey ruling, Session 8 verdict). The
+  gap the bestiary exposed: every numeric band the session ran - rim-compat,
+  opacity, radiance, luminance, palette size - passed on a master that does
+  not depict its own subject. The bands measured how the art was MADE and
+  never once asked WHAT IT WAS.
+  1. SUBJECT SPEC BEFORE GENERATION. Every master carries a one-line spec
+     from its family theme - posture, body plan, relative scale - written
+     down before a single call is made, and the candidate is judged against
+     that text.
+  2. SILHOUETTE DIVERSITY IS A BATCH PROPERTY. Five of six marked families
+     converging on one humanoid outline is a BATCH-LEVEL FAILURE even when
+     every asset passes individually. The rim carries domain; the silhouette
+     must carry identity. Per-asset green cannot clear this.
+  3. RELATIVE SCALE IS A BATCH PROPERTY. Brutes must not be smaller than
+     casters. The roster intended size relationships are derived from family
+     names and themes and checked as a SET, not per asset.
+  4. NO NUMERIC BAND SUBSTITUTES FOR THE CONTACT SHEET. Subject fidelity is
+     verdict-judged, image-first, always. Machine checks under this band are
+     SUPPORTS that surface candidates for the eye; they are never the
+     authority and must never be cited as one.

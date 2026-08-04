@@ -1,0 +1,13 @@
+{
+  "batch": "relock-corrupted-wildlife",
+  "family": "corrupted-wildlife",
+  "subjectSpec": "hunched QUADRUPED beast, four legs on the ground, head low below the shoulder line, raised haunch, side-on profile; townsfolk size class, frame 24x34, master 96x136 (4x)",
+  "note": "Session 9 re-lock candidates. Generated 2026-08-04 under the SAME technique as the Session 8 lock (prompt-only, create_image_pixflux, low top-down, single color black outline, medium detail, medium shading, no_background) so SUBJECT is the only variable. Retrieval blocked at generation time: the PixelLab MCP server was flapping and direct REST is not on the agent-proxy allowlist (403). Job ids persist server-side; re-fetch with get_image.",
+  "jobs": {
+    "cand-a-wolf": "3b1e135c-19fe-4837-b8b9-1b04d7677093",
+    "cand-b-hyena": "7cff5854-c0e8-4303-a7af-63cc64de8c9a",
+    "cand-c-gaunt": "d0483720-dec7-4df6-99a2-b2087663c187"
+  },
+  "seeds": { "cand-a-wolf": 76101, "cand-b-hyena": 76102, "cand-c-gaunt": 76103 },
+  "spend": "3 generations"
+}
