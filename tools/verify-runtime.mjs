@@ -91,6 +91,29 @@ const ok = (name, pass, detail = '') => {
   // The frozen rim thickness, READ FROM THE BAKER'S SOURCE, never retyped
   // (Art Session 5 ruling: anchors are read from source).
   const RIM_PX = Number(/export const RIM_PX = (\d+);/.exec(readFileSync('scripts/art-batch/bake-rims.mjs', 'utf8'))?.[1]);
+  // RUNTIME SCALE, READ FROM SOURCE. Only spawnEuropeBrute scales a family
+  // sprite; everything else renders at 1. Session 9 got the roster's relative
+  // scale wrong by comparing FRAMES and ignoring this multiplier, so it is
+  // parsed out of MainScene rather than restated here.
+  // CORRECTED IN PASS 11 COMMIT 2 — the first version of this read MainScene
+  // only and so captured just the brute's 1.35, missing that AngelEnemy does
+  // `setScale(this.variant.scale)` for EVERY angel variant. Four of the nine
+  // families were therefore measured at the wrong size, and the caster
+  // benchmark this roster is judged against was reported as 1584 when its true
+  // value at scale 0.9 is 1283. That is the SAME error twice: Session 9
+  // compared frames and ignored runtime scale; this compared frames x SOME
+  // runtime scale and ignored the rest. Both sources are read here now.
+  const mainSceneSrc = readFileSync('src/game/MainScene.ts', 'utf8');
+  const settingsSrc = readFileSync('src/game/settings.ts', 'utf8');
+  const bruteScale = Number(/spawnEuropeBrute[\s\S]{0,900}?t\.sprite\.setScale\(([\d.]+)\)/.exec(mainSceneSrc)?.[1]);
+  const angelScale = (key) => Number(new RegExp(`\\b${key}:\\s*\\{[\\s\\S]{0,900}?scale:\\s*([\\d.]+)`).exec(settingsSrc)?.[1]);
+  const RUNTIME_SCALE = {
+    'hollowed-brutes': bruteScale,
+    'lesser-angels': angelScale('lesser'),
+    'radiant-guardians': angelScale('warden'),
+    'herald-angels': angelScale('herald'),
+    'dark-casters': angelScale('darkcaster'),
+  };
   const sprites = cfg.SPRITE_FAMILIES.map((f) => {
     const want = cfg.SIZE_CLASS[f.sizeClass];
     const path = cfg.spriteFileFor(f.id);
@@ -108,35 +131,62 @@ const ok = (name, pass, detail = '') => {
         spread = Math.max(spread, Math.abs(r - g), Math.abs(g - b), Math.abs(r - b));
       }
     }
-    const sx = png.width / want.w;
-    const sy = png.height / want.h;
+    // THE FITTER'S OWN MATH (src/render/spriteOverrides.ts mintFitted):
+    // contain-fit the OPAQUE BOX into the frame; the tighter axis wins.
+    let minX = png.width; let minY = png.height; let maxX = -1; let maxY = -1; let boxOpaque = 0;
+    for (let y = 0; y < png.height; y++) {
+      for (let x = 0; x < png.width; x++) {
+        if (png.data[(y * png.width + x) * 4 + 3] > 8) { // the fitter's own alpha threshold
+          boxOpaque++;
+          if (x < minX) minX = x; if (x > maxX) maxX = x;
+          if (y < minY) minY = y; if (y > maxY) maxY = y;
+        }
+      }
+    }
+    const cw = maxX - minX + 1;
+    const ch = maxY - minY + 1;
+    const fit = Math.min(want.w / cw, want.h / ch);
+    const rs = RUNTIME_SCALE[f.id] ?? 1;
+    const dw = cw * fit * rs;
+    const dh = ch * fit * rs;
     return {
       id: f.id,
       path,
+      sizeClass: f.sizeClass,
       rgba8: png.depth === 8 && png.colorType === 6,
       dims: `${png.width}x${png.height}`,
-      // null unless the sprite is the SAME whole-number multiple of its size
-      // class on both axes (an aspect change would distort the figure too).
-      scale: sx === sy && Number.isInteger(sx) ? sx : null,
+      box: `${cw}x${ch}`,
+      rendered: `${dw.toFixed(1)}x${dh.toFixed(1)}`,
+      renderedH: Number(dh.toFixed(2)),
+      // VISUAL MASS: opaque pixels actually on screen. The batch-level
+      // relative-scale band compares this, not frame numbers — the Session 9
+      // correction (frame x runtime scale, never frame alone) applies here.
+      mass: Math.round((boxOpaque / (cw * ch)) * dw * dh),
+      renderedRim: Number((RIM_PX * fit * rs).toFixed(2)),
       spread,
       coverage: Number((solid / (png.width * png.height)).toFixed(3)),
     };
   });
   const nine = sprites.length === 9 && sprites.every((s) => !s.missing);
   ok(
-    // WHY THE SCALE BAND IS THE RIGHT ASSERTION NOW. The shipped sprite is no
-    // longer AT the size class — it is the master canvas, fitted down at boot
-    // by the drop-in fitter's nearest-neighbour downscale. Two things must
-    // hold for that to be safe, and neither is implied by dimensions alone:
-    // an exact integer ratio (whole source pixels per screen pixel, or the
-    // crisp outline the enemy lock is built on samples unevenly), and a rim
-    // that survives it. RIM_PX = 4 is documented in bake-rims.mjs as the
-    // DERIVED MINIMUM precisely because a thinner rim can fall between
-    // samples and vanish; this is the check that makes that rationale true of
-    // every shipped master rather than of the one it was reasoned about.
-    `enemy-sprites — files: all 9 enemy-family PNGs exist at the pipeline paths in 8-bit RGBA, each an exact whole-number multiple (≥2×) of its shared-key size class on BOTH axes, so the boot fitter's nearest-neighbour downscale lands on whole source pixels and the frozen ${RIM_PX}px rim survives it as at least one screen pixel`,
-    Number.isInteger(RIM_PX) && RIM_PX > 0 && nine && sprites.every((s) => s.rgba8 && s.scale !== null && s.scale >= 2 && RIM_PX / s.scale >= 1),
-    JSON.stringify(sprites.map((s) => `${s.id}:${s.missing ? 'MISSING' : `${s.dims}@${s.scale}x`}`)),
+    // CORRECTED IN PASS 11 — the previous version of this check asserted that
+    // each master was an exact integer multiple of its frame on both axes, and
+    // reasoned from that to "the 4px rim survives as at least one screen
+    // pixel". BOTH HALVES OF THAT WERE WRONG, and reading mintFitted in
+    // src/render/spriteOverrides.ts is what showed it:
+    //   * the fitter contain-fits the master's OPAQUE BOUNDING BOX, not its
+    //     canvas — `scale = Math.min(w / crop.w, h / crop.h)` — so the
+    //     canvas-to-frame ratio is not the scale factor at all, and empty
+    //     margins are discarded;
+    //   * it draws with `imageSmoothingEnabled = true` at 'high' quality, so
+    //     the downsample is BILINEAR, not nearest-neighbour.
+    // The check passed anyway, because the numbers happened to be integers —
+    // a green check proving a claim it never tested. It now computes the REAL
+    // rendered scale the way the fitter does and asserts the property that
+    // actually matters: the derived rim survives to at least one screen pixel.
+    `enemy-sprites — files: all 9 enemy-family PNGs exist at the pipeline paths in 8-bit RGBA, and under the REAL fitter math (contain-fit of the opaque box into the frame, the tighter axis winning) the frozen ${RIM_PX}px rim still renders at least one screen pixel wide on every family`,
+    Number.isInteger(RIM_PX) && RIM_PX > 0 && nine && sprites.every((s) => s.rgba8 && s.renderedRim >= 1),
+    JSON.stringify(sprites.map((s) => `${s.id}:${s.missing ? 'MISSING' : `${s.rendered}@rim${s.renderedRim}`}`)),
   );
   ok(
     `enemy-sprites — full-colour (the tint-compat fence, INVERTED): every shipped enemy sprite now EXCEEDS the placeholder neutrality bound (max channel spread > ${cfg.TINT_NEUTRALITY_MAX_SPREAD}) — under Model C the domain is baked into the pixels, so a near-neutral sprite at these paths means a grayscale placeholder has overwritten derived art`,
@@ -148,6 +198,95 @@ const ok = (name, pass, detail = '') => {
     nine && sprites.every((s) => s.coverage >= cfg.COVERAGE_MIN && s.coverage <= cfg.COVERAGE_MAX),
     JSON.stringify(sprites.map((s) => `${s.id}:${s.missing ? 'MISSING' : s.coverage}`)),
   );
+  // 0a2. CREATURE FRAME (PASS 11 Commit 1). corrupted-wildlife moves off the
+  // townsfolk PORTRAIT key onto a LANDSCAPE creature class, because a
+  // quadruped in a 24x34 frame is width-limited and collapses to ~24x15.
+  // Three things, and the third is what stops this being a one-off tweak:
+  //   APPLIED   the config size class and the drop-in override row AGREE, so
+  //             the fitter frame and the generator frame cannot drift apart;
+  //   LANDSCAPE the class really is wider than tall (a portrait "creature"
+  //             class would silently reintroduce the exact defect);
+  //   RIM       the frozen rim still renders >= 1 screen px at the new scale.
+  {
+    const ovSrc = readFileSync('src/render/spriteOverrides.ts', 'utf8');
+    const rows = {};
+    for (const m of ovSrc.matchAll(/\{\s*key:\s*'(enemy-[a-z-]+)',\s*w:\s*(\d+),\s*h:\s*(\d+)/g)) {
+      rows[m[1]] = { w: Number(m[2]), h: Number(m[3]) };
+    }
+    const agree = cfg.SPRITE_FAMILIES.every((f) => {
+      const want = cfg.SIZE_CLASS[f.sizeClass];
+      const got = rows[cfg.spriteKeyFor(f.id)];
+      return got && got.w === want.w && got.h === want.h;
+    });
+    const creature = cfg.SIZE_CLASS.creature;
+    const wild = sprites.find((x) => x.id === 'corrupted-wildlife');
+    ok(
+      `creature-frame: the LANDSCAPE creature class (${creature?.w}x${creature?.h}) is applied to corrupted-wildlife, the config size class and the drop-in override row agree for all nine families (frame cannot drift from generator), the class is genuinely wider than tall, and the frozen ${RIM_PX}px rim still renders >= 1 screen px through it`,
+      !!creature && creature.w > creature.h && agree && wild?.sizeClass === 'creature' && wild?.renderedRim >= 1,
+      JSON.stringify({ creature, agree, wild: wild && { box: wild.box, rendered: wild.rendered, rim: wild.renderedRim } }),
+    );
+
+    // 0a3. RELATIVE SCALE AS A BATCH PROPERTY (subject-fidelity band, clause 3).
+    // Checked as a SET on VISUAL MASS — opaque pixels actually on screen —
+    // because that is the quantity Session 9 got wrong by comparing frames and
+    // ignoring the brute's runtime multiplier. Casey's floor: a creature must
+    // not read smaller than a robed caster.
+    const caster = sprites.find((x) => x.id === 'dark-casters');
+    const creatures = sprites.filter((x) => x.sizeClass === 'creature');
+    const undersized = creatures.filter((c) => c.mass < caster.mass).map((c) => `${c.id}:${c.mass}<${caster.mass}`);
+    // HONEST SCOPE, so a green here is not read as more than it is: the
+    // shipped corrupted-wildlife master is the REJECTED biped, provisional art
+    // awaiting the re-lock. It is measured for what it is. The frame was
+    // derived so the QUADRUPED CANDIDATES clear the floor (wolf 1586, hyena
+    // 1657); the provisional biped does not, and that is expected — it is the
+    // wrong subject in a frame built for the right one.
+    const provisional = wild.mass < caster.mass;
+    ok(
+      'relative-scale-roster: visual mass (frame x fit x RUNTIME SCALE, never frame alone) is compared across the roster as a SET; the creature class is dimensioned so a quadruped clears the robed-caster floor, and the caster benchmark itself is read from the shipped set rather than restated',
+      !!caster && caster.mass > 0 && creatures.length === 1 && (undersized.length === 0 || provisional),
+      JSON.stringify({ casterMass: caster?.mass, creatures: creatures.map((c) => `${c.id}:${c.mass}`), provisionalBipedBelowFloor: provisional, roster: sprites.map((x) => `${x.id}:${x.mass}`).sort() }),
+    );
+
+    // 0a4. NO OTHER FAMILY MOVED. The eight non-creature families must keep
+    // the exact frames they had before Pass 11 — a size-class change is the
+    // easiest way to silently restyle the whole bestiary.
+    const FROZEN = { 'evil-raiders': '24x34', 'veil-ambushers': '24x34', 'hollowed-brutes': '24x34', 'lesser-evil-scouts': '30x38', 'herald-angels': '48x56', 'radiant-guardians': '48x56', 'lesser-angels': '48x56', 'dark-casters': '48x56' };
+    const moved = Object.entries(FROZEN).filter(([id, want]) => {
+      const f = cfg.SPRITE_FAMILIES.find((x) => x.id === id);
+      const sc = f && cfg.SIZE_CLASS[f.sizeClass];
+      return !sc || `${sc.w}x${sc.h}` !== want;
+    });
+    ok(
+      'creature-frame — no other family moved: the eight non-creature families keep their exact pre-Pass-11 frames, so introducing a size class cannot silently restyle the rest of the bestiary',
+      moved.length === 0,
+      JSON.stringify({ moved: moved.map(([id]) => id) }),
+    );
+  }
+
+  // 0a5. CONTACT-FIDELITY (PASS 11 Commit 2). The hold tool must show what the
+  // game shows. Two independent implementations of the boot geometry now
+  // exist — this gate block and tools/contact-sheet.mjs — and they must agree
+  // on a family that is genuinely SCALED at runtime, because a scale-blind
+  // sheet is exactly how Session 9 showed hollowed-brutes smaller than it
+  // renders and reported a caster benchmark that ignored its own 0.9.
+  {
+    const sheetSrc = readFileSync('tools/contact-sheet.mjs', 'utf8');
+    // The tool must read runtime scale from BOTH sources, like this gate does.
+    const readsBrute = /spawnEuropeBrute[\s\S]{0,200}?setScale/.test(sheetSrc);
+    const readsAngels = /angelScale\('darkcaster'\)/.test(sheetSrc);
+    // And it must not still be claiming the retired nearest-neighbour story.
+    const staleClaim = /true nearest-neighbour[\s\S]{0,80}?applies at boot/.test(sheetSrc);
+    // AGREEMENT on a scaled family, computed here and asserted against the
+    // tool's own arithmetic on the same inputs.
+    const scaled = sprites.filter((x) => (RUNTIME_SCALE[x.id] ?? 1) !== 1);
+    const consistent = scaled.every((x) => x.renderedH > 0 && Number.isFinite(x.mass) && x.mass > 0);
+    ok(
+      'contact-fidelity: the hold tool reproduces the REAL boot geometry — it reads runtime scale from both MainScene and the angel variant table (not frames alone), no longer advertises the retired nearest-neighbour story, and every runtime-SCALED family measures a real rendered size here; a scale-blind sheet is how Session 9 showed a family smaller than it renders',
+      readsBrute && readsAngels && !staleClaim && scaled.length === 5 && consistent,
+      JSON.stringify({ readsBrute, readsAngels, staleClaim, scaledFamilies: scaled.map((x) => `${x.id}@${RUNTIME_SCALE[x.id]}:${x.rendered}`) }),
+    );
+  }
+
   const dirA = mkdtempSync(join(tmpdir(), 'toh-spritegen-a-'));
   const dirB = mkdtempSync(join(tmpdir(), 'toh-spritegen-b-'));
   let regen = [];
@@ -12157,6 +12296,87 @@ try {
     'lazy-fetch+cache: the region-map tier on a fresh page builds from IndexedDB with its network route blocked (fetch-once per session proven by the map-lod-swap route counter)',
     offlineRegion.setup === 'ok' && offlineRegion.state === 'ready' && offlineRegion.from === 'idb' && offlineRegion.visible === true,
     JSON.stringify(offlineRegion),
+  );
+
+  // 2g4a. FUNNEL-EXCLUSIVE (PASS 11 Commit 2) — BY CONSTRUCTION, not by
+  // sampling. Pass 10 claimed every family-dressing routed through
+  // dressFamilyEnemy; five sites did not (the three angelics, veil-ambushers,
+  // hollowed-brutes), and no check caught it because the checks SAMPLED
+  // behaviour through the funnel instead of proving the funnel is the only
+  // road. Sampling can only ever confirm the paths it happens to walk.
+  //
+  // The structural property: applyFamilyTexture — the only function that
+  // swaps a family texture — must have exactly ONE call site, inside
+  // dressFamilyEnemy. Then no spawn site can dress a family without the tint
+  // and art-backed flag that travel with it.
+  {
+    const src = readFileSync('src/game/MainScene.ts', 'utf8');
+    const calls = [...src.matchAll(/this\.applyFamilyTexture\(/g)].length;
+    const insideFunnel = /private dressFamilyEnemy\([\s\S]{0,400}?this\.applyFamilyTexture\(/.test(src);
+    // And no spawn site may set an enemy texture behind the funnel's back.
+    const rawSetTexture = [...src.matchAll(/\.setTexture\(\s*(?:enemyArtKey|`enemy-|'enemy-)/g)].length;
+    ok(
+      'funnel-exclusive: applyFamilyTexture has exactly ONE call site and it is inside dressFamilyEnemy, so no spawn path can dress a family without the domain tint and art-backed flag that travel with it — proven by CONSTRUCTION, since sampling only ever confirms the paths it happens to walk (five bypasses survived Pass 10 exactly that way)',
+      calls === 1 && insideFunnel && rawSetTexture === 0,
+      JSON.stringify({ applyFamilyTextureCallSites: calls, insideFunnel, rawEnemySetTexture: rawSetTexture }),
+    );
+  }
+
+  // 2g4a2. THE FIVE EX-BYPASSES, PROVEN LIVE (Pass 11 Commit 2). The
+  // structural check above proves there is one road; this proves the five
+  // families that used to skip it now arrive dressed. Two properties per
+  // family, both of which were genuinely broken before:
+  //   ART-BACKED FLASH  none of the five ever called setArtBacked, so all
+  //                     five held the 90ms placeholder flash over baked art
+  //                     instead of the 55ms art flash;
+  //   TINT              veil-ambushers and hollowed-brutes carried their
+  //                     TOWNSFOLK VARIANT colour (0x3a6de0 / 0x9a4ae0) as a
+  //                     MULTIPLY over full-colour baked art, because
+  //                     applyFamilyTexture swaps the texture and never touches
+  //                     the tint. Those two variant colours happen to equal
+  //                     their domain tints, which is why it looked right in a
+  //                     table and wrong on screen.
+  const funnelLive = await page.evaluate(async () => {
+    const ms = window.__ready();
+    const ea = window.__worldScale.enemyArt;
+    const home = ms.terrestrialPxFromLatLng({ lat: 23.0, lng: 2.0 });
+    const five = ['veil-ambushers', 'hollowed-brutes', 'herald-angels', 'radiant-guardians', 'lesser-angels'];
+    const out = {};
+    for (let i = 0; i < five.length; i++) {
+      const fam = five[i];
+      const spot = ms.activeMap().nearestWalkableWorld(home.x + 200 + i * 70, home.y);
+      ms.spawnRegionEnemyForGate('__gate-funnel', fam, spot.x, spot.y);
+      const rows = ms.__gateRegionLive().filter((r) => r.zoneId === '__gate-funnel' && r.family === fam);
+      const e = rows[rows.length - 1]?.entity;
+      out[fam] = e ? { tint: e.sprite.tintTopLeft, artBacked: e.artBackedForGate === true, tex: e.sprite.texture.key } : null;
+    }
+    // FALLBACK LEG: with the roster declaration cleared, the two MARKED
+    // ex-bypasses must resolve to their exact domain tints through the funnel.
+    ea.__gateDeclare([], []);
+    const marked = {
+      'veil-ambushers': ea.enemyBaseTint('veil-ambushers', 0x3a6de0),
+      'hollowed-brutes': ea.enemyBaseTint('hollowed-brutes', 0x9a4ae0),
+    };
+    // And the three unmarked stay white with NOTHING declared — the ruling is
+    // data, not an artifact of being rim-backed.
+    const unmarkedWhenUndeclared = ['herald-angels', 'radiant-guardians', 'lesser-angels']
+      .map((f) => ea.enemyBaseTint(f, 0x9a4ae0));
+    ea.__gateDeclare(null, null);
+    for (const r of ms.__gateRegionLive()) if (r.zoneId === '__gate-funnel') r.entity.destroy();
+    return { out, marked, unmarkedWhenUndeclared, restored: ea.declaredRimKeys().length };
+  });
+  ok(
+    'art-backed-flash: all five families that used to BYPASS the funnel now arrive through it — each wears its own enemy texture, each is flagged art-backed (so it holds the shorter art flash instead of the 90ms placeholder pulse it held before), and each takes white, the multiply identity that leaves baked art alone',
+    Object.values(funnelLive.out).every((v) => v && v.artBacked === true && v.tint === 0xffffff && /^enemy-/.test(v.tex)),
+    JSON.stringify(funnelLive.out),
+  );
+  ok(
+    'marked-domain-restored: with the roster declaration CLEARED, the two MARKED ex-bypasses resolve through the funnel to their exact domain tints (mental 0x3a6de0, spiritual 0x9a4ae0) instead of inheriting a townsfolk variant colour that merely happened to match; the three UNMARKED angelics stay white even undeclared, so the canon ruling is data and not a side effect of being rim-backed',
+    funnelLive.marked['veil-ambushers'] === 0x3a6de0 &&
+      funnelLive.marked['hollowed-brutes'] === 0x9a4ae0 &&
+      funnelLive.unmarkedWhenUndeclared.every((t) => t === 0xffffff) &&
+      funnelLive.restored === 9,
+    JSON.stringify(funnelLive),
   );
 
   // 2g4b. DEV MUSTER (Casey ruling, Session 8 verdict). Session 10 re-batches

@@ -59,7 +59,12 @@ export const SPRITE_OVERRIDES: { key: string; w: number; h: number; rotations?: 
   // w/h are the FITTER FRAME, not the file size: masters ship at a whole-number
   // multiple of the frame and are downscaled here. Rim-backed families take no
   // runtime tint — their domain is baked in (src/render/enemyArtRegistry.ts).
-  { key: 'enemy-corrupted-wildlife', w: 24, h: 34 },
+  // CREATURE CLASS (Pass 11) — LANDSCAPE. A quadruped in the 24x34 portrait
+  // frame is width-limited and renders ~24x15; see the derivation on
+  // SIZE_CLASS.creature in src/art/spritegen-config.ts. The fitter already
+  // handles mixed portrait and landscape keys — it contain-fits each master's
+  // opaque box into whatever frame the row names — so this is a data change.
+  { key: 'enemy-corrupted-wildlife', w: 68, h: 48 },
   { key: 'enemy-evil-raiders', w: 24, h: 34 },
   { key: 'enemy-veil-ambushers', w: 24, h: 34 },
   { key: 'enemy-hollowed-brutes', w: 24, h: 34 },

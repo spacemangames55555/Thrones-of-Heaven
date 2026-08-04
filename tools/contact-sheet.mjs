@@ -24,11 +24,11 @@
  *                     pixels, so rim thickness and silhouette can be examined
  *                     without misrepresenting the shipped result.
  *
- * The 1:1 image is reduced in Node by true nearest-neighbour — the same
- * sampling Phaser's NEAREST filter applies at boot — rather than left to CSS,
- * so what the sheet shows is what the game shows. The 6x view then magnifies
- * that reduced image, never the master: magnifying the master would show
- * detail the player never receives.
+ * The 1:1 image is produced by fitLikeBoot below, which reproduces the real
+ * fitter (contain-fit of the OPAQUE BOX, then the family's RUNTIME SCALE) —
+ * see the correction note on that function. The 6x view magnifies that
+ * reduced image, never the master: magnifying the master would show detail
+ * the player never receives.
  *
  * usage:
  *   node tools/contact-sheet.mjs --batch <name>   sheet + per-family crops
@@ -57,19 +57,65 @@ function loadTs(rel, cacheName) {
   return import(pathToFileURL(out).href + `?t=${Date.now()}`);
 }
 
-/** True nearest-neighbour reduction — the boot fitter's sampling, exactly. */
-function reduce(src, w, h) {
-  const out = new PNG({ width: w, height: h });
-  const sx = src.width / w;
-  const sy = src.height / h;
-  for (let y = 0; y < h; y++) {
-    for (let x = 0; x < w; x++) {
-      const s = ((Math.floor(y * sy) * src.width) + Math.floor(x * sx)) * 4;
-      const d = (y * w + x) * 4;
-      for (let c = 0; c < 4; c++) out.data[d + c] = src.data[s + c];
+/**
+ * THE BOOT FITTER'S OWN MATH (Pass 11 Commit 2 — CORRECTED).
+ *
+ * The first version of this reduced the WHOLE CANVAS by nearest-neighbour and
+ * advertised itself as "the same sampling Phaser applies at boot". Reading
+ * `mintFitted` in src/render/spriteOverrides.ts showed both halves were wrong:
+ * it CONTAIN-FITS the master's OPAQUE BOX (`Math.min(w/crop.w, h/crop.h)`,
+ * empty margins discarded) and draws with `imageSmoothingEnabled = true` at
+ * 'high' quality, i.e. BILINEAR. Sheets built the old way misreported both the
+ * size and the softness of every family — on the one tool whose entire purpose
+ * is showing the truth.
+ *
+ * This crops to the opaque box, contain-fits it into the frame, applies the
+ * family's RUNTIME SCALE, and area-averages when downsampling (the honest
+ * stand-in for the browser's smoothing — box filtering, not point sampling).
+ */
+function fitLikeBoot(src, frameW, frameH, runtimeScale) {
+  let minX = src.width; let minY = src.height; let maxX = -1; let maxY = -1;
+  for (let y = 0; y < src.height; y++) {
+    for (let x = 0; x < src.width; x++) {
+      if (src.data[(y * src.width + x) * 4 + 3] > 8) { // the fitter's own threshold
+        if (x < minX) minX = x; if (x > maxX) maxX = x;
+        if (y < minY) minY = y; if (y > maxY) maxY = y;
+      }
     }
   }
-  return out;
+  if (maxX < 0) return { png: new PNG({ width: 1, height: 1 }), w: 0, h: 0 };
+  const cw = maxX - minX + 1;
+  const ch = maxY - minY + 1;
+  const fit = Math.min(frameW / cw, frameH / ch) * runtimeScale;
+  const w = Math.max(1, Math.round(cw * fit));
+  const h = Math.max(1, Math.round(ch * fit));
+  const out = new PNG({ width: w, height: h });
+  const sxr = cw / w;
+  const syr = ch / h;
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      // Area average over the source footprint of this destination pixel.
+      const x0 = minX + x * sxr; const x1 = minX + (x + 1) * sxr;
+      const y0 = minY + y * syr; const y1 = minY + (y + 1) * syr;
+      let r = 0; let g = 0; let b = 0; let a = 0; let n = 0;
+      for (let sy2 = Math.floor(y0); sy2 < Math.max(Math.floor(y0) + 1, Math.ceil(y1)); sy2++) {
+        for (let sx2 = Math.floor(x0); sx2 < Math.max(Math.floor(x0) + 1, Math.ceil(x1)); sx2++) {
+          if (sx2 < 0 || sy2 < 0 || sx2 >= src.width || sy2 >= src.height) continue;
+          const o = (sy2 * src.width + sx2) * 4;
+          const al = src.data[o + 3] / 255;
+          r += src.data[o] * al; g += src.data[o + 1] * al; b += src.data[o + 2] * al;
+          a += src.data[o + 3]; n++;
+        }
+      }
+      const d = (y * w + x) * 4;
+      const aw = a / 255;
+      out.data[d] = n && aw ? Math.round(r / aw) : 0;
+      out.data[d + 1] = n && aw ? Math.round(g / aw) : 0;
+      out.data[d + 2] = n && aw ? Math.round(b / aw) : 0;
+      out.data[d + 3] = n ? Math.round(a / n) : 0;
+    }
+  }
+  return { png: out, w, h };
 }
 
 /** Exact integer magnification of an already-reduced image. */
@@ -105,6 +151,20 @@ function terrainTile(name) {
 
 const uri = (png) => `data:image/png;base64,${PNG.sync.write(png).toString('base64')}`;
 
+// RUNTIME SCALE, READ FROM SOURCE (never retyped). A sheet that ignores this
+// misreports size — Session 9 showed hollowed-brutes smaller than it renders,
+// and the angel variants each carry a scale too.
+const mainSrc = readFileSync(join(ROOT, 'src/game/MainScene.ts'), 'utf8');
+const setSrc = readFileSync(join(ROOT, 'src/game/settings.ts'), 'utf8');
+const angelScale = (k) => Number(new RegExp(`\\b${k}:\\s*\\{[\\s\\S]{0,900}?scale:\\s*([\\d.]+)`).exec(setSrc)?.[1]) || 1;
+const RUNTIME_SCALE = {
+  'hollowed-brutes': Number(/spawnEuropeBrute[\s\S]{0,900}?t\.sprite\.setScale\(([\d.]+)\)/.exec(mainSrc)?.[1]) || 1,
+  'lesser-angels': angelScale('lesser'),
+  'radiant-guardians': angelScale('warden'),
+  'herald-angels': angelScale('herald'),
+  'dark-casters': angelScale('darkcaster'),
+};
+
 const roster = await loadTs('src/world/enemy-roster.ts', 'toh-contact-roster');
 const cfg = await loadTs('src/art/spritegen-config.ts', 'toh-contact-cfg');
 const { EXISTING_FAMILY_DOMAIN: DOMAIN, UNMARKED_FAMILIES: UNMARKED, DOMAIN_TINT } = roster;
@@ -129,11 +189,12 @@ if (CANDIDATES) {
     .sort()
     .map((f) => {
       const src = PNG.sync.read(readFileSync(join(dir, f)));
-      const small = reduce(src, frame.w, frame.h);
+      const fitted = fitLikeBoot(src, frame.w, frame.h, RUNTIME_SCALE[CANDIDATES] ?? 1);
       return {
         id: f.slice(0, -4), domain: null, unmarked: false, group: 'candidates',
         sizeClass: fam.sizeClass, frame, master: `${src.width}x${src.height}`,
-        scale: src.width / frame.w, small, big: magnify(small, 6),
+        renders: `${fitted.w}x${fitted.h}`, rs: RUNTIME_SCALE[CANDIDATES] ?? 1,
+        small: fitted.png, big: magnify(fitted.png, 6),
       };
     });
   if (rows.length === 0) {
@@ -145,7 +206,9 @@ if (CANDIDATES) {
     const frame = cfg.SIZE_CLASS[f.sizeClass];
     const shipped = join(ROOT, cfg.spriteFileFor(f.id));
     const src = PNG.sync.read(readFileSync(shipped));
-    const small = reduce(src, frame.w, frame.h);
+    const rs = RUNTIME_SCALE[f.id] ?? 1;
+    const fitted = fitLikeBoot(src, frame.w, frame.h, rs);
+    const small = fitted.png;
     const unmarked = UNMARKED.has(f.id);
     return {
       id: f.id,
@@ -155,7 +218,8 @@ if (CANDIDATES) {
       sizeClass: f.sizeClass,
       frame,
       master: `${src.width}x${src.height}`,
-      scale: src.width / frame.w,
+      renders: `${fitted.w}x${fitted.h}`,
+      rs,
       small,
       big: magnify(small, 6),
     };
@@ -179,7 +243,7 @@ const hex = (n) => `#${n.toString(16).padStart(6, '0')}`;
 const cell = (r) => `
   <div class="fam">
     <div class="nm">${r.id}</div>
-    <div class="meta">${r.sizeClass} &middot; frame ${r.frame.w}&times;${r.frame.h} &middot; master ${r.master} (${r.scale}&times;)</div>
+    <div class="meta">${r.sizeClass} &middot; frame ${r.frame.w}&times;${r.frame.h} &middot; master ${r.master} &middot; <strong>renders ${r.renders}</strong>${r.rs !== 1 ? ` (runtime scale ${r.rs}&times;)` : ''}</div>
     <div class="views">
       <figure><div class="pad neutral"><img src="${uri(r.small)}" width="${r.frame.w}" height="${r.frame.h}"></div><figcaption>1:1 neutral</figcaption></figure>
       ${grass ? `<figure><div class="pad" style="background-image:url(${uri(grass)})"><img src="${uri(r.small)}" width="${r.frame.w}" height="${r.frame.h}"></div><figcaption>1:1 grass</figcaption></figure>` : ''}

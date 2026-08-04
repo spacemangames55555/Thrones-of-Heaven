@@ -323,8 +323,8 @@
       "category": "enemy",
       "spec": {
         "kind": "still",
-        "w": 24,
-        "h": 34,
+        "w": 68,
+        "h": 48,
         "path": "public/sprites/enemy-corrupted-wildlife.png",
         "brief": "toh-figure-art-brief.md",
         "domain": "physical"
