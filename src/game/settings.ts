@@ -1771,6 +1771,15 @@ export const EUROPE_SPAWN_DEACTIVATE_MARGIN = 1400;
  *  LOCAL-DENSITY cap around the player, not a planetary budget. Per-region
  *  tuning is ledgered. */
 export const LIVE_ENEMY_CAP = 48;
+
+/** DEV MUSTER (`?debug=1`) — the review ring: one of every roster family
+ *  around the player. The radius is wide enough that nine entities do not
+ *  overlap at 24-56px frames, and close enough that the whole set is on
+ *  screen at ground zoom on a 428x926 phone. The zone id is deliberately
+ *  un-zone-like: nothing in the quest chain can ever match it, so a muster
+ *  kill credits no objective. */
+export const MUSTER_RADIUS_PX = 190;
+export const MUSTER_ZONE_ID = '__dev-muster';
 /** HEARTH RADIUS (home-city pacing): no hostile MATERIALIZES within this many
  *  px of a home city's mentor/arrival point — the mentor's feet are safe
  *  ground, always. Home cities only; corridors stay dangerous. */

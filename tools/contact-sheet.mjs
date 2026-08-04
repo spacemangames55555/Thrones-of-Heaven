@@ -35,7 +35,7 @@
  *   --out <dir>                                   default art-review/contact-sheets
  */
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { PNG } from 'pngjs';
@@ -109,26 +109,58 @@ const roster = await loadTs('src/world/enemy-roster.ts', 'toh-contact-roster');
 const cfg = await loadTs('src/art/spritegen-config.ts', 'toh-contact-cfg');
 const { EXISTING_FAMILY_DOMAIN: DOMAIN, UNMARKED_FAMILIES: UNMARKED, DOMAIN_TINT } = roster;
 
-const DOMAIN_ORDER = ['physical', 'mental', 'spiritual'];
-const rows = cfg.SPRITE_FAMILIES.map((f) => {
-  const frame = cfg.SIZE_CLASS[f.sizeClass];
-  const shipped = join(ROOT, cfg.spriteFileFor(f.id));
-  const src = PNG.sync.read(readFileSync(shipped));
-  const small = reduce(src, frame.w, frame.h);
-  const unmarked = UNMARKED.has(f.id);
-  return {
-    id: f.id,
-    domain: DOMAIN[f.id],
-    unmarked,
-    group: unmarked ? 'unmarked' : DOMAIN[f.id],
-    sizeClass: f.sizeClass,
-    frame,
-    master: `${src.width}x${src.height}`,
-    scale: src.width / frame.w,
-    small,
-    big: magnify(small, 6),
-  };
-});
+// CANDIDATE MODE (`--candidates <family>`): render every PNG staged under
+// art-review/<batch>/ against that family's real frame, unrimmed, so a
+// re-lock bake-off is judged at the SAME true display size as shipped art.
+// The subject is what is on trial, so nothing else may differ.
+const CANDIDATES = args.includes('--candidates') ? arg('--candidates', null) : null;
+
+let rows;
+if (CANDIDATES) {
+  const fam = cfg.SPRITE_FAMILIES.find((f) => f.id === CANDIDATES);
+  if (!fam) {
+    console.error(`art:contact: unknown family "${CANDIDATES}"`);
+    process.exit(1);
+  }
+  const frame = cfg.SIZE_CLASS[fam.sizeClass];
+  const dir = join(ROOT, 'art-review', BATCH);
+  rows = readdirSync(dir)
+    .filter((f) => f.endsWith('.png'))
+    .sort()
+    .map((f) => {
+      const src = PNG.sync.read(readFileSync(join(dir, f)));
+      const small = reduce(src, frame.w, frame.h);
+      return {
+        id: f.slice(0, -4), domain: null, unmarked: false, group: 'candidates',
+        sizeClass: fam.sizeClass, frame, master: `${src.width}x${src.height}`,
+        scale: src.width / frame.w, small, big: magnify(small, 6),
+      };
+    });
+  if (rows.length === 0) {
+    console.error(`art:contact: no candidate PNGs under art-review/${BATCH}`);
+    process.exit(1);
+  }
+} else {
+  rows = cfg.SPRITE_FAMILIES.map((f) => {
+    const frame = cfg.SIZE_CLASS[f.sizeClass];
+    const shipped = join(ROOT, cfg.spriteFileFor(f.id));
+    const src = PNG.sync.read(readFileSync(shipped));
+    const small = reduce(src, frame.w, frame.h);
+    const unmarked = UNMARKED.has(f.id);
+    return {
+      id: f.id,
+      domain: DOMAIN[f.id],
+      unmarked,
+      group: unmarked ? 'unmarked' : DOMAIN[f.id],
+      sizeClass: f.sizeClass,
+      frame,
+      master: `${src.width}x${src.height}`,
+      scale: src.width / frame.w,
+      small,
+      big: magnify(small, 6),
+    };
+  });
+}
 
 mkdirSync(OUT, { recursive: true });
 mkdirSync(join(OUT, 'crops'), { recursive: true });
@@ -136,7 +168,7 @@ for (const r of rows) writeFileSync(join(OUT, 'crops', `${r.id}.png`), PNG.sync.
 
 const grass = terrainTile('grass');
 const forest = terrainTile('forest');
-const GROUPS = [
+const GROUPS = CANDIDATES ? [{ key: 'candidates', label: `RE-LOCK CANDIDATES — ${CANDIDATES}`, tint: null }] : [
   { key: 'physical', label: 'PHYSICAL', tint: DOMAIN_TINT.physical },
   { key: 'mental', label: 'MENTAL', tint: DOMAIN_TINT.mental },
   { key: 'spiritual', label: 'SPIRITUAL', tint: DOMAIN_TINT.spiritual },
@@ -185,9 +217,11 @@ const shell = (body) => `<!doctype html><meta charset="utf-8"><style>
   img{image-rendering:pixelated;display:block}
   figcaption{color:#7e858d;font-size:10px;margin-top:5px;text-align:center}
 </style>
-<h1>Thrones of Heaven — bestiary roster v1 contact sheet</h1>
-<div class="sub">Rimmed as shipped. Rendered from public/sprites/enemy-*.png reduced by true nearest-neighbour to the boot fitter frame — the pixels a 428&times;926 phone actually receives.</div>
-<div class="pending">VERDICT PENDING — backfill for Art Session 8. The art landed unverdicted; this sheet is the hold that should have preceded it.</div>
+<h1>Thrones of Heaven — ${CANDIDATES ? `re-lock candidates: ${CANDIDATES}` : 'bestiary roster v1'} contact sheet</h1>
+<div class="sub">${CANDIDATES
+  ? `UNRIMMED candidate masters staged under art-review/${BATCH}/ — no rim is baked until a lock is approved. Reduced by true nearest-neighbour to the boot fitter frame, so the 1:1 views are the pixels a 428&times;926 phone would actually receive.`
+  : 'Rimmed as shipped. Rendered from public/sprites/enemy-*.png reduced by true nearest-neighbour to the boot fitter frame — the pixels a 428&times;926 phone actually receives.'}</div>
+<div class="pending">${CANDIDATES ? 'HOLD — awaiting Casey verdict. Nothing lands until a verdict receipt exists.' : 'VERDICT PENDING — backfill for Art Session 8. The art landed unverdicted; this sheet is the hold that should have preceded it.'}</div>
 ${body}`;
 
 const browser = await chromium.launch({ executablePath: EXE, args: ['--no-sandbox'] });
@@ -198,7 +232,7 @@ for (const g of GROUPS) {
   const body = `<div class="grpwrap"><div class="grp">
       ${g.tint === null ? '<span class="sw" style="background:repeating-linear-gradient(45deg,#333,#333 4px,#222 4px,#222 8px)"></span>' : `<span class="sw" style="background:${hex(g.tint)}"></span>`}
       <span>${g.label}</span>
-      <span style="color:#868c94;letter-spacing:0">${g.tint === null ? 'domain data intact, never painted' : hex(g.tint)} &middot; ${list.length} famil${list.length === 1 ? 'y' : 'ies'}</span>
+      <span style="color:#868c94;letter-spacing:0">${g.tint === null ? (CANDIDATES ? 'unrimmed masters, judged on SUBJECT' : 'domain data intact, never painted') : hex(g.tint)} &middot; ${list.length} famil${list.length === 1 ? 'y' : 'ies'}</span>
     </div>${list.map(cell).join('')}</div>`;
   const page = join(OUT, `${BATCH}-${g.key}.html`);
   writeFileSync(page, shell(body));

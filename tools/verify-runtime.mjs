@@ -12159,6 +12159,87 @@ try {
     JSON.stringify(offlineRegion),
   );
 
+  // 2g4b. DEV MUSTER (Casey ruling, Session 8 verdict). Session 10 re-batches
+  // all nine families, and silhouette diversity and relative scale are BATCH
+  // properties — they cannot be judged by hunting enemies across an open
+  // world. Three things, on ISOLATED pages so the main session is untouched:
+  //   DEV-ONLY   without ?debug=1 the button does not exist AND the method
+  //              itself refuses, so there is no path to it in a player build;
+  //   REAL       under ?debug=1 it stands up one of EVERY roster family at
+  //              once, through the SAME spawner the world uses — a muster that
+  //              drew sprites its own way would hide the bug being hunted;
+  //   INERT      a mustered kill credits NO quest objective and fires NO
+  //              Watcher first-kill hook. A review tool that advances the
+  //              story while you look at sprites is worse than none.
+  {
+    const musterBoot = async (qs) => {
+      const ctx = await browser.newContext({ viewport: { width: 428, height: 926 } });
+      const p = await ctx.newPage();
+      const errs = [];
+      p.on('pageerror', (e) => errs.push(e.message));
+      await p.goto(`http://localhost:${PORT}/${qs}`, { waitUntil: 'load' });
+      await p.waitForFunction(() => !!window.__game && window.__game.scene.isActive('TitleScene'), null, { timeout: 25000 });
+      await p.evaluate(() => window.__game.scene.getScene('TitleScene').scene.start('MainScene', { mode: 'new', classId: 'blacksmith' }));
+      await p.waitForFunction(() => window.__game.scene.isActive('MainScene'), null, { timeout: 60000 });
+      // NOTE: window.__ready is a harness helper registered by addInitScript on
+      // the MAIN page only, so it does not exist here. These legs do not need
+      // its health setup — they read the scene directly.
+      await p.waitForFunction(() => !!window.__game.scene.getScene('MainScene')?.player, null, { timeout: 30000 });
+      return { ctx, p, errs };
+    };
+    // LEG 1 — no ?debug=1: no button, and the method refuses.
+    const off = await musterBoot('?scale=v2');
+    const offState = await off.p.evaluate(() => {
+      const ms = window.__game.scene.getScene('MainScene');
+      return {
+        button: !!ms.children.getByName('debug-muster-button'),
+        returned: ms.musterAllFamilies().length,
+        spawned: ms.__gateRegionLive ? ms.__gateRegionLive().length : -1,
+      };
+    });
+    await off.ctx.close();
+    // LEG 2 — with ?debug=1: the button exists, the ring stands up, and the
+    // rows are inert.
+    const on = await musterBoot('?scale=v2&debug=1');
+    const onState = await on.p.evaluate(async () => {
+      const ms = window.__game.scene.getScene('MainScene');
+      const button = !!ms.children.getByName('debug-muster-button');
+      const placed = ms.musterAllFamilies();
+      const rows = ms.__gateRegionLive();
+      const mustered = rows.filter((r) => r.muster === true);
+      // Kill every mustered entity and prove the narrative hooks stayed shut.
+      const questBefore = JSON.stringify(ms.__gateKillCounts());
+      const evilBefore = ms.__gateEvilSeen();
+      for (const r of mustered) r.entity.destroy();
+      await new Promise((res) => setTimeout(res, 700)); // let the death sweep run
+      return {
+        button,
+        placedCount: placed.length,
+        families: [...new Set(placed.map((p) => p.family))].sort(),
+        musterRows: mustered.length,
+        allTagged: mustered.length === rows.length,
+        questUnchanged: JSON.stringify(ms.__gateKillCounts()) === questBefore,
+        evilUnchanged: ms.__gateEvilSeen() === evilBefore,
+      };
+    });
+    await on.ctx.close();
+    ok(
+      'dev-muster: ?debug=1 stands up ONE OF EVERY roster family in a ring through the real spawner (so what is judged is what ships); without the param the button does not exist and the method refuses outright; and a mustered kill is NARRATIVELY INERT — no quest objective credited, no Watcher first-kill hook fired',
+      offState.button === false &&
+        offState.returned === 0 &&
+        onState.button === true &&
+        onState.placedCount === 9 &&
+        onState.families.length === 9 &&
+        onState.musterRows === 9 &&
+        onState.allTagged === true &&
+        onState.questUnchanged === true &&
+        onState.evilUnchanged === true &&
+        off.errs.length === 0 &&
+        on.errs.length === 0,
+      JSON.stringify({ off: offState, on: onState, offErrs: off.errs.slice(0, 2), onErrs: on.errs.slice(0, 2) }),
+    );
+  }
+
   // 2g5. decompression-unavailable (PASS 7): a platform WITHOUT
   // DecompressionStream must fail the boot LOUDLY with the requirement named
   // — never a silent procedural session. Isolated page (init scripts are

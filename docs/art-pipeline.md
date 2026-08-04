@@ -259,6 +259,47 @@ whose own lock prompt both describe a hunched quadruped — on the very asset
 that *is* the enemy style lock reference. No metric in the session caught it,
 because no metric was looking at the picture.
 
+## Standing band — SUBJECT FIDELITY (Casey ruling, Session 8 verdict)
+
+**The gap the bestiary exposed.** Every numeric band Art Session 8 ran —
+rim-compat, opacity, radiance, luminance, palette size, ring depth — passed on
+a master that does not depict its own subject. `corrupted-wildlife` shipped as
+an upright biped while its family theme says *hunched quadruped beast* and the
+lock's own recorded prompt says *low prowling wolf-like creature*. The bands
+measured how the art was MADE. Not one of them asked WHAT IT WAS.
+
+**1. Subject spec before generation.** Every master carries a one-line spec
+drawn from its family theme — **posture, body plan, relative scale** — written
+down *before* any call is made. The candidate is then judged against that text.
+The themes already exist in `src/art/spritegen-config.ts`; the failure was
+never consulting them.
+
+**2. Silhouette diversity is a BATCH property.** Five of six marked families
+converging on one humanoid outline is a **batch-level failure even when every
+asset passes individually**. The rim carries domain; the silhouette must carry
+identity. This is the whole reason Model C was chosen over a whole-body tint —
+if every body is the same shape, the rim is doing identity work it was never
+meant to do. Per-asset green cannot clear this.
+
+**3. Relative scale is a BATCH property.** *Brutes must not be smaller than
+casters.* The roster's intended size relationships are derived from family
+names and themes and checked as a SET. The shipped roster violates this today:
+`dark-casters` renders ~56px tall against `hollowed-brutes` at ~46px — a robed
+caster standing **1.22×** the family named *brutes*.
+
+**Measure the RENDERED size, not the frame.** The first draft of this band
+quoted 1.6×, taken from frame sizes alone (48×56 vs 24×34). That was wrong:
+`spawnEuropeBrute` applies `setScale(1.35)` at spawn, so the brute's frame is
+not its size on screen. The inversion is real either way, but the number was
+not — and a batch property checked against the wrong quantity is how the
+original defect got through. Relative scale means **frame × runtime scale**.
+
+**4. No numeric band substitutes for the contact sheet.** Subject fidelity is
+**verdict-judged, image-first, always**. Machine checks under this band are
+SUPPORTS that surface candidates for the eye. They are never the authority and
+must never be cited as one. A green metric that never looked at the picture is
+precisely what shipped a biped as the lock for a quadruped family.
+
 ## Standing batch policy (Casey ruling, Art Session 5)
 
 Rules that apply to **every** category from here on, not just water.

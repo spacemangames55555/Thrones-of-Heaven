@@ -366,6 +366,8 @@ import {
   EUROPE_SPAWN_ACTIVATE_MARGIN,
   EUROPE_SPAWN_DEACTIVATE_MARGIN,
   LIVE_ENEMY_CAP,
+  MUSTER_RADIUS_PX,
+  MUSTER_ZONE_ID,
   HOME_HEARTH_RADIUS_PX,
   EUROPE_CLEAR_KILLS,
   EUROPE_HARVEST_KILLS,
@@ -1233,6 +1235,12 @@ export class MainScene extends Phaser.Scene {
     kind: 'townsfolk' | 'demon' | 'angel';
     entity: { readonly isAlive: boolean; readonly x: number; readonly y: number; destroy(): void; takeHit(amount: number): number };
     counted: boolean;
+    /** DEV MUSTER rows (?debug=1 review spawn). They ride the normal pooling,
+     *  cap and expiry machinery — that is the point, they must behave like real
+     *  enemies — but they are NARRATIVELY INERT: killing one credits no quest
+     *  and fires no Watcher first-kill hook. A review tool that advances the
+     *  story while you look at sprites is worse than no review tool. */
+    muster?: boolean;
   }[] = [];
   /** Kill progress per ACTIVE europe beat id (clear + eu-10 harvest counters). */
   private regionKillCounts: Record<string, number> = {};
@@ -1871,6 +1879,17 @@ export class MainScene extends Phaser.Scene {
         .setScrollFactor(0)
         .setDepth(1360)
         .setName('debug-build-stamp');
+      // DEV MUSTER button (Casey ruling, Session 8 verdict): a roster cannot be
+      // judged by hunting. One tap stands every family up around the player at
+      // real size on real ground. Dev-only — this button exists nowhere without
+      // ?debug=1, and musterAllFamilies() refuses without it besides.
+      this.add
+        .text(6, this.scale.height - 40, ' MUSTER ', { fontFamily: 'monospace', fontSize: '13px', color: '#14161a', backgroundColor: '#9adf9a' })
+        .setScrollFactor(0)
+        .setDepth(1360)
+        .setName('debug-muster-button')
+        .setInteractive({ useHandCursor: true })
+        .on('pointerdown', () => this.musterAllFamilies());
     }
 
     // The quest CHAIN (data-driven registry). The world objective marker lives
@@ -11099,6 +11118,7 @@ export class MainScene extends Phaser.Scene {
     for (const rec of this.regionLive) {
       if (!rec.counted && !rec.entity.isAlive) {
         rec.counted = true;
+        if (rec.muster) continue; // DEV MUSTER rows credit nothing (see the field note)
         this.onRegionEnemyKilled(rec.family, rec.zoneId);
         this.onEvilKilled(rec.family); // the Watcher's first-kill hook
       }
@@ -11291,6 +11311,62 @@ export class MainScene extends Phaser.Scene {
       this.regionLive.push({ zoneId, family, kind: 'angel', entity: a, counted: false });
       this.attachPlate(zoneId, family, a.sprite, () => a.isAlive, () => a.health.ratio);
     }
+  }
+
+  /**
+   * DEV MUSTER (`?debug=1`) — one of EVERY roster family in a ring around the
+   * player, spawned through the REAL spawner so what you judge is what ships.
+   *
+   * WHY THIS EXISTS (Casey ruling, Session 8 verdict): Session 10 re-batches
+   * all nine families, and a roster cannot be judged by hunting for enemies in
+   * an open world. Silhouette diversity and relative scale are BATCH
+   * properties under the subject-fidelity band — they are only visible with
+   * the whole set standing together, at real size, on real ground. A contact
+   * sheet shows each family alone; this shows them as a crowd.
+   *
+   * It routes through `spawnRegionEnemy`, the same function the world uses, so
+   * every family gets its real entity kind, real texture, real runtime scale
+   * (the brute's 1.35x included) and real dressing. A muster that drew sprites
+   * its own way would be a different bug hiding the one you are looking for.
+   *
+   * The rows are NARRATIVELY INERT (see `muster` on regionLive) and the whole
+   * thing is dev-gated: without `?debug=1` this refuses and returns an empty
+   * list, so there is no path to it in a player build.
+   */
+  musterAllFamilies(): { family: string; x: number; y: number }[] {
+    if (!isDebugOverlay()) return [];
+    const families = Object.keys(EXISTING_FAMILY_DOMAIN);
+    const before = this.regionLive.length;
+    const placed: { family: string; x: number; y: number }[] = [];
+    families.forEach((family, i) => {
+      const a = (Math.PI * 2 * i) / families.length;
+      const spot = this.activeMap().nearestWalkableWorld(
+        this.player.x + Math.cos(a) * MUSTER_RADIUS_PX,
+        this.player.y + Math.sin(a) * MUSTER_RADIUS_PX * 0.8,
+      );
+      this.spawnRegionEnemy(MUSTER_ZONE_ID, family, spot.x, spot.y, DOMAIN_TINT[EXISTING_FAMILY_DOMAIN[family]]);
+      placed.push({ family, x: spot.x, y: spot.y });
+    });
+    // Tag every row this call created. spawnRegionEnemy owns the push, so the
+    // tag is applied after the fact rather than threaded through its signature
+    // — the muster must not change the shape of the live spawn path.
+    for (let k = before; k < this.regionLive.length; k++) this.regionLive[k].muster = true;
+    this.showBanner(`DEV MUSTER: ${placed.length} families`, 2200);
+    return placed;
+  }
+
+  /** RUNTIME VERIFICATION SEAMS for the dev-muster check (read-only, no
+   *  behaviour). They expose the LIVE state the muster must leave alone, so
+   *  the inertness assertion reads the real quest counters and the real
+   *  Watcher flag rather than a copy that could drift from them. */
+  __gateRegionLive(): { family: string; muster?: boolean; entity: { destroy(): void; readonly isAlive: boolean } }[] {
+    return this.regionLive;
+  }
+  __gateKillCounts(): Record<string, number> {
+    return this.regionKillCounts;
+  }
+  __gateEvilSeen(): boolean {
+    return this.watcherSpoken;
   }
 
   /** VEIL-AMBUSHER: spawned already HIDDEN at its marker (invisible, physics off,
