@@ -83,6 +83,13 @@ export class Demon {
    *  ONE dressing funnel in MainScene; false for every placeholder enemy. */
   private artBacked = false;
 
+  /** Gate seam (tools/verify-runtime.mjs): read-only view of the art-backed
+   *  flag, so funnel checks can prove the flag really travelled with the
+   *  dressing rather than assuming it did. No behaviour. */
+  get artBackedForGate(): boolean {
+    return this.artBacked;
+  }
+
   setArtBacked(on: boolean): void {
     this.artBacked = on;
   }

@@ -95,9 +95,25 @@ const ok = (name, pass, detail = '') => {
   // sprite; everything else renders at 1. Session 9 got the roster's relative
   // scale wrong by comparing FRAMES and ignoring this multiplier, so it is
   // parsed out of MainScene rather than restated here.
+  // CORRECTED IN PASS 11 COMMIT 2 — the first version of this read MainScene
+  // only and so captured just the brute's 1.35, missing that AngelEnemy does
+  // `setScale(this.variant.scale)` for EVERY angel variant. Four of the nine
+  // families were therefore measured at the wrong size, and the caster
+  // benchmark this roster is judged against was reported as 1584 when its true
+  // value at scale 0.9 is 1283. That is the SAME error twice: Session 9
+  // compared frames and ignored runtime scale; this compared frames x SOME
+  // runtime scale and ignored the rest. Both sources are read here now.
   const mainSceneSrc = readFileSync('src/game/MainScene.ts', 'utf8');
+  const settingsSrc = readFileSync('src/game/settings.ts', 'utf8');
   const bruteScale = Number(/spawnEuropeBrute[\s\S]{0,900}?t\.sprite\.setScale\(([\d.]+)\)/.exec(mainSceneSrc)?.[1]);
-  const RUNTIME_SCALE = { 'hollowed-brutes': bruteScale };
+  const angelScale = (key) => Number(new RegExp(`\\b${key}:\\s*\\{[\\s\\S]{0,900}?scale:\\s*([\\d.]+)`).exec(settingsSrc)?.[1]);
+  const RUNTIME_SCALE = {
+    'hollowed-brutes': bruteScale,
+    'lesser-angels': angelScale('lesser'),
+    'radiant-guardians': angelScale('warden'),
+    'herald-angels': angelScale('herald'),
+    'dark-casters': angelScale('darkcaster'),
+  };
   const sprites = cfg.SPRITE_FAMILIES.map((f) => {
     const want = cfg.SIZE_CLASS[f.sizeClass];
     const path = cfg.spriteFileFor(f.id);
@@ -244,6 +260,30 @@ const ok = (name, pass, detail = '') => {
       'creature-frame — no other family moved: the eight non-creature families keep their exact pre-Pass-11 frames, so introducing a size class cannot silently restyle the rest of the bestiary',
       moved.length === 0,
       JSON.stringify({ moved: moved.map(([id]) => id) }),
+    );
+  }
+
+  // 0a5. CONTACT-FIDELITY (PASS 11 Commit 2). The hold tool must show what the
+  // game shows. Two independent implementations of the boot geometry now
+  // exist — this gate block and tools/contact-sheet.mjs — and they must agree
+  // on a family that is genuinely SCALED at runtime, because a scale-blind
+  // sheet is exactly how Session 9 showed hollowed-brutes smaller than it
+  // renders and reported a caster benchmark that ignored its own 0.9.
+  {
+    const sheetSrc = readFileSync('tools/contact-sheet.mjs', 'utf8');
+    // The tool must read runtime scale from BOTH sources, like this gate does.
+    const readsBrute = /spawnEuropeBrute[\s\S]{0,200}?setScale/.test(sheetSrc);
+    const readsAngels = /angelScale\('darkcaster'\)/.test(sheetSrc);
+    // And it must not still be claiming the retired nearest-neighbour story.
+    const staleClaim = /true nearest-neighbour[\s\S]{0,80}?applies at boot/.test(sheetSrc);
+    // AGREEMENT on a scaled family, computed here and asserted against the
+    // tool's own arithmetic on the same inputs.
+    const scaled = sprites.filter((x) => (RUNTIME_SCALE[x.id] ?? 1) !== 1);
+    const consistent = scaled.every((x) => x.renderedH > 0 && Number.isFinite(x.mass) && x.mass > 0);
+    ok(
+      'contact-fidelity: the hold tool reproduces the REAL boot geometry — it reads runtime scale from both MainScene and the angel variant table (not frames alone), no longer advertises the retired nearest-neighbour story, and every runtime-SCALED family measures a real rendered size here; a scale-blind sheet is how Session 9 showed a family smaller than it renders',
+      readsBrute && readsAngels && !staleClaim && scaled.length === 5 && consistent,
+      JSON.stringify({ readsBrute, readsAngels, staleClaim, scaledFamilies: scaled.map((x) => `${x.id}@${RUNTIME_SCALE[x.id]}:${x.rendered}`) }),
     );
   }
 
@@ -12256,6 +12296,87 @@ try {
     'lazy-fetch+cache: the region-map tier on a fresh page builds from IndexedDB with its network route blocked (fetch-once per session proven by the map-lod-swap route counter)',
     offlineRegion.setup === 'ok' && offlineRegion.state === 'ready' && offlineRegion.from === 'idb' && offlineRegion.visible === true,
     JSON.stringify(offlineRegion),
+  );
+
+  // 2g4a. FUNNEL-EXCLUSIVE (PASS 11 Commit 2) — BY CONSTRUCTION, not by
+  // sampling. Pass 10 claimed every family-dressing routed through
+  // dressFamilyEnemy; five sites did not (the three angelics, veil-ambushers,
+  // hollowed-brutes), and no check caught it because the checks SAMPLED
+  // behaviour through the funnel instead of proving the funnel is the only
+  // road. Sampling can only ever confirm the paths it happens to walk.
+  //
+  // The structural property: applyFamilyTexture — the only function that
+  // swaps a family texture — must have exactly ONE call site, inside
+  // dressFamilyEnemy. Then no spawn site can dress a family without the tint
+  // and art-backed flag that travel with it.
+  {
+    const src = readFileSync('src/game/MainScene.ts', 'utf8');
+    const calls = [...src.matchAll(/this\.applyFamilyTexture\(/g)].length;
+    const insideFunnel = /private dressFamilyEnemy\([\s\S]{0,400}?this\.applyFamilyTexture\(/.test(src);
+    // And no spawn site may set an enemy texture behind the funnel's back.
+    const rawSetTexture = [...src.matchAll(/\.setTexture\(\s*(?:enemyArtKey|`enemy-|'enemy-)/g)].length;
+    ok(
+      'funnel-exclusive: applyFamilyTexture has exactly ONE call site and it is inside dressFamilyEnemy, so no spawn path can dress a family without the domain tint and art-backed flag that travel with it — proven by CONSTRUCTION, since sampling only ever confirms the paths it happens to walk (five bypasses survived Pass 10 exactly that way)',
+      calls === 1 && insideFunnel && rawSetTexture === 0,
+      JSON.stringify({ applyFamilyTextureCallSites: calls, insideFunnel, rawEnemySetTexture: rawSetTexture }),
+    );
+  }
+
+  // 2g4a2. THE FIVE EX-BYPASSES, PROVEN LIVE (Pass 11 Commit 2). The
+  // structural check above proves there is one road; this proves the five
+  // families that used to skip it now arrive dressed. Two properties per
+  // family, both of which were genuinely broken before:
+  //   ART-BACKED FLASH  none of the five ever called setArtBacked, so all
+  //                     five held the 90ms placeholder flash over baked art
+  //                     instead of the 55ms art flash;
+  //   TINT              veil-ambushers and hollowed-brutes carried their
+  //                     TOWNSFOLK VARIANT colour (0x3a6de0 / 0x9a4ae0) as a
+  //                     MULTIPLY over full-colour baked art, because
+  //                     applyFamilyTexture swaps the texture and never touches
+  //                     the tint. Those two variant colours happen to equal
+  //                     their domain tints, which is why it looked right in a
+  //                     table and wrong on screen.
+  const funnelLive = await page.evaluate(async () => {
+    const ms = window.__ready();
+    const ea = window.__worldScale.enemyArt;
+    const home = ms.terrestrialPxFromLatLng({ lat: 23.0, lng: 2.0 });
+    const five = ['veil-ambushers', 'hollowed-brutes', 'herald-angels', 'radiant-guardians', 'lesser-angels'];
+    const out = {};
+    for (let i = 0; i < five.length; i++) {
+      const fam = five[i];
+      const spot = ms.activeMap().nearestWalkableWorld(home.x + 200 + i * 70, home.y);
+      ms.spawnRegionEnemyForGate('__gate-funnel', fam, spot.x, spot.y);
+      const rows = ms.__gateRegionLive().filter((r) => r.zoneId === '__gate-funnel' && r.family === fam);
+      const e = rows[rows.length - 1]?.entity;
+      out[fam] = e ? { tint: e.sprite.tintTopLeft, artBacked: e.artBackedForGate === true, tex: e.sprite.texture.key } : null;
+    }
+    // FALLBACK LEG: with the roster declaration cleared, the two MARKED
+    // ex-bypasses must resolve to their exact domain tints through the funnel.
+    ea.__gateDeclare([], []);
+    const marked = {
+      'veil-ambushers': ea.enemyBaseTint('veil-ambushers', 0x3a6de0),
+      'hollowed-brutes': ea.enemyBaseTint('hollowed-brutes', 0x9a4ae0),
+    };
+    // And the three unmarked stay white with NOTHING declared — the ruling is
+    // data, not an artifact of being rim-backed.
+    const unmarkedWhenUndeclared = ['herald-angels', 'radiant-guardians', 'lesser-angels']
+      .map((f) => ea.enemyBaseTint(f, 0x9a4ae0));
+    ea.__gateDeclare(null, null);
+    for (const r of ms.__gateRegionLive()) if (r.zoneId === '__gate-funnel') r.entity.destroy();
+    return { out, marked, unmarkedWhenUndeclared, restored: ea.declaredRimKeys().length };
+  });
+  ok(
+    'art-backed-flash: all five families that used to BYPASS the funnel now arrive through it — each wears its own enemy texture, each is flagged art-backed (so it holds the shorter art flash instead of the 90ms placeholder pulse it held before), and each takes white, the multiply identity that leaves baked art alone',
+    Object.values(funnelLive.out).every((v) => v && v.artBacked === true && v.tint === 0xffffff && /^enemy-/.test(v.tex)),
+    JSON.stringify(funnelLive.out),
+  );
+  ok(
+    'marked-domain-restored: with the roster declaration CLEARED, the two MARKED ex-bypasses resolve through the funnel to their exact domain tints (mental 0x3a6de0, spiritual 0x9a4ae0) instead of inheriting a townsfolk variant colour that merely happened to match; the three UNMARKED angelics stay white even undeclared, so the canon ruling is data and not a side effect of being rim-backed',
+    funnelLive.marked['veil-ambushers'] === 0x3a6de0 &&
+      funnelLive.marked['hollowed-brutes'] === 0x9a4ae0 &&
+      funnelLive.unmarkedWhenUndeclared.every((t) => t === 0xffffff) &&
+      funnelLive.restored === 9,
+    JSON.stringify(funnelLive),
   );
 
   // 2g4b. DEV MUSTER (Casey ruling, Session 8 verdict). Session 10 re-batches

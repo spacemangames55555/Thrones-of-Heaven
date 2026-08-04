@@ -11250,6 +11250,15 @@ export class MainScene extends Phaser.Scene {
     if (this.textures.exists(key)) sprite.setTexture(key);
   }
 
+  /** Gate seam (tools/verify-runtime.mjs): spawn through the REAL region
+   *  spawner, with the canon domain tint read from the table — so the funnel
+   *  checks exercise the shipped spawn path rather than a reconstruction of
+   *  it. That distinction is the whole point: Pass 10 sampled a copy of the
+   *  path and five real spawn sites bypassed the funnel unnoticed. */
+  spawnRegionEnemyForGate(zoneId: string, family: string, x: number, y: number): void {
+    this.spawnRegionEnemy(zoneId, family, x, y, DOMAIN_TINT[EXISTING_FAMILY_DOMAIN[family]]);
+  }
+
   /** Gate seam (tools/verify-runtime.mjs): dress an enemy through the real
    *  funnel so the check exercises the shipped path, not a copy of it. */
   dressFamilyEnemyForGate(entity: { sprite: Phaser.GameObjects.Sprite; setBaseTint: (t: number) => void; setArtBacked: (on: boolean) => void }, family: string, domainTint: number): void {
@@ -11303,11 +11312,15 @@ export class MainScene extends Phaser.Scene {
     } else if (family === 'hollowed-brutes') {
       this.spawnEuropeBrute(zoneId, x, y);
     } else {
-      // ANGELIC families keep their existing angel look — canon says no domain
-      // tint on them (their EXISTING_FAMILY_DOMAIN entry gates spawning only).
+      // ANGELIC families route through the SAME funnel as everything else.
+      // Canon says no domain tint on them, and that ruling is DATA: the
+      // UNMARKED_FAMILIES table makes enemyBaseTint return white for them, so
+      // no per-site exception is needed here (Pass 11 Commit 2 — this site
+      // used to bypass the funnel and was the reason the ruling had to be
+      // remembered rather than enforced).
       const variant = family === 'herald-angels' ? 'herald' : family === 'radiant-guardians' ? 'warden' : 'lesser';
       const a = this.spawnAngel(variant, x, y);
-      this.applyFamilyTexture(a.sprite, family);
+      this.dressFamilyEnemy(a, family, DOMAIN_TINT[EXISTING_FAMILY_DOMAIN[family]]);
       this.regionLive.push({ zoneId, family, kind: 'angel', entity: a, counted: false });
       this.attachPlate(zoneId, family, a.sprite, () => a.isAlive, () => a.health.ratio);
     }
@@ -11374,7 +11387,7 @@ export class MainScene extends Phaser.Scene {
    *  touch it). updateRegionAmbushers runs the reveal/burst/re-hide machine. */
   private spawnRegionAmbusher(zoneId: string, x: number, y: number): void {
     const t = this.spawnTownsfolk(x, y, null, 'ambusher');
-    this.applyFamilyTexture(t.sprite, 'veil-ambushers');
+    this.dressFamilyEnemy(t, 'veil-ambushers', DOMAIN_TINT[EXISTING_FAMILY_DOMAIN['veil-ambushers']]);
     this.hideAmbusher(t);
     this.regionLive.push({ zoneId, family: 'veil-ambushers', kind: 'townsfolk', entity: t, counted: false });
     this.attachPlate(zoneId, 'veil-ambushers', t.sprite, () => t.isAlive, () => t.health.ratio);
@@ -11395,7 +11408,7 @@ export class MainScene extends Phaser.Scene {
    *  the townsfolk chase AI has no flee state. */
   private spawnEuropeBrute(zoneId: string, x: number, y: number): void {
     const t = this.spawnTownsfolk(x, y, null, 'brute');
-    this.applyFamilyTexture(t.sprite, 'hollowed-brutes');
+    this.dressFamilyEnemy(t, 'hollowed-brutes', DOMAIN_TINT[EXISTING_FAMILY_DOMAIN['hollowed-brutes']]);
     const tier = getZone(zoneId)?.tier ?? 1;
     t.health.setMax(BRUTE_HP_PER_TIER * tier);
     t.health.full();
