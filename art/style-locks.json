@@ -39,29 +39,35 @@
     },
     "enemy": {
       "technique": "prompt-only, single-facing still master; rims DERIVED (Model C)",
-      "approved": "Casey verdict CANDIDATE 0, Art Session 8 (three-candidate bake-off judged rimmed through the real art:rims baker)",
+      "approved": "Casey verdict A (wolf), Session 9 RE-LOCK (three quadruped candidates judged in the corrected 68x48 creature frame). SUPERSEDES the Art Session 8 lock.",
       "reference": "art/references/enemy-corrupted-wildlife-lock.png",
       "referenceRole": "verification-target: candidates are JUDGED against this master, never generated from it",
       "provenance": {
-        "subject": "corrupted-wildlife (rank 1 by encounter reach: 21 zones x pack 6 = 126)",
-        "origin": "generated in Art Session 7 as the tint-decision bake-off master, re-judged and adopted in Art Session 8 at ZERO additional spend",
+        "subject": "corrupted-wildlife as a HUNCHED QUADRUPED - four legs on the ground, head low below the shoulder line, raised haunch, side-on profile",
+        "origin": "Session 9 re-lock bake-off, 3 candidates (wolf / hyena-boar / gaunt stalker), judged in the corrected 68x48 creature frame at true boot-fitter geometry",
         "tool": "create_image_pixflux",
-        "seed": 76001,
-        "canvas": "96x136 master, fitted to the manifest row size at boot (24x34 for this family)",
+        "seed": 76101,
+        "canvas": "96x136 as generated. NOTE: the creature class authors at 2x = 136x96 going forward; this master keeps the portrait canvas it was generated and JUDGED in, because the fitter contain-fits the OPAQUE BOX (80x51) and discards margins, so the canvas does not affect rendering. Landing it unmodified keeps the shipped bytes identical to the reviewed image.",
         "params": "low top-down, single color black outline, medium detail, medium shading, no_background",
-        "prompt": "A corrupted wild beast, a hunched snarling wolf-like creature with matted fur, bared teeth and a low prowling stance, blighted and diseased looking, warm brown and umber fur with sickly ochre highlights and dark grey underbelly, mid-saturation natural colors, pixel art with crisp dark outline, readable at thumbnail size, single creature facing the viewer, transparent background, no ground, no shadow"
+        "prompt": "A corrupted wild beast on ALL FOUR LEGS, a hunched wolf-like quadruped standing side-on in a low prowling stance, head hanging LOW below the shoulder line, raised bony haunch at the rear, four legs planted on the ground, long tail, matted blighted fur, bared teeth, warm brown and umber fur with sickly ochre highlights and dark grey underbelly, mid-saturation natural colors, pixel art with crisp dark outline, readable at thumbnail size, four-legged animal not a person, no human posture, single isolated figure cut out on empty transparent space, no ground, no shadow"
       },
       "measured": {
-        "opacity": 0.339,
-        "meanLuminance": 56.8,
-        "meanSaturation": 0.602,
-        "paletteSize": 32,
-        "rimCompat": "fringeShare 0, ringGaps 0, minRingDepth 4, bodyPixelsOnFrameEdge 0"
+        "opacity": 0.168,
+        "bbox": "80x51",
+        "subjectAspect": 1.569,
+        "meanLuminance": 68.0,
+        "meanSaturation": 0.502,
+        "paletteSize": 20,
+        "rimPixels": 1724,
+        "rendersAt": "68x43 in the 68x48 creature frame (width-limited)",
+        "visualMass": 1586,
+        "casterBenchmark": 1283
       },
-      "rejected": "candidate A (dense paint, heavy outline, compressed values: opacity 0.472, lum 38.5, sat 0.790, palette 21) and candidate B (sparse paint, selective outline, wide values: opacity 0.422, lum 42.2, sat 0.354, palette 30). All three passed rim-compat; the lock is a look call.",
-      "shape": "SINGLE-FACING STILL. No rotations, no animation - the enemy renderer consumes one facing (Pass 10 recon; only the three class figures are 8-way). Rotations and animation belong to the walk-framework and are their own ceremony.",
+      "rejected": "Session 9 candidates B (hyena/boar, bbox 86x68, renders 61x48, mass 1657) and C (gaunt stalker, bbox 81x115, renders 34x48, mass 913 - its raised tail dominates the box so the contain-fit shrinks the body, the same aspect trap the frame was widened to escape). Also rejected earlier and superseded: Art Session 8 candidate 0 (the biped) and its two bake-off rivals A and B.",
+      "shape": "SINGLE-FACING STILL, and for creature families LANDSCAPE. A quadruped in the old 24x34 portrait frame rendered 24x15 because the fitter contain-fits the opaque box and the subject aspect fought the frame. Creature masters compose to the 68x48 frame aspect (1.4167); see the derivation on SIZE_CLASS.creature in src/art/spritegen-config.ts.",
       "rims": "NEVER hand-authored. Masters land at public/sprites/masters/<key>.png and npm run art:rims derives the shipped sprite; UNMARKED families (canon table in src/world/enemy-roster.ts) derive as IDENTITY with no rim. Hand-landing a rim is forbidden and gate-enforced by rims-derived.",
-      "palette": "the figure brief: pixel art with a dark outline, crisp 1px-ish dark edges, readable at thumbnail size, mid-saturation colors"
+      "palette": "the figure brief: pixel art with a dark outline, crisp 1px-ish dark edges, readable at thumbnail size, mid-saturation colors",
+      "amendment": "RE-LOCK AMENDMENT (Casey verdict, Session 9). The Art Session 8 lock was REJECTED at the roster verdict and its defect is recorded here so it cannot recur: candidate 0 depicted an upright BIPED while the family theme in src/art/spritegen-config.ts says 'hunched quadruped beast, low head, raised haunch' and the lock's own recorded prompt asked for a 'low prowling wolf-like creature'. The master was BYTE-IDENTICAL to the lock reference, so every future master would have inherited a reference that does not depict its own family. Every numeric band the session ran - rim-compat, opacity, radiance, luminance, palette size - PASSED on it, because each measured how the art was made and none asked what it was. That gap is now the standing SUBJECT FIDELITY band. TECHNIQUE IS UNCHANGED: same prompt-only create_image_pixflux recipe, same params, so SUBJECT was the only variable in the bake-off - which is what makes this an amendment rather than a new lock."
     }
   }
 }

@@ -1,0 +1,12 @@
+{
+  "batch": "relock-corrupted-wildlife",
+  "stagedAt": "2026-08-04T11:52:00Z",
+  "images": [
+    "art-review/contact-sheets/relock-corrupted-wildlife-candidates.png",
+    "art-review/contact-sheets/crops/cand-a-wolf.png",
+    "art-review/contact-sheets/crops/cand-b-hyena.png",
+    "art-review/contact-sheets/crops/cand-c-gaunt.png"
+  ],
+  "receivedAt": "2026-08-04T12:10:00Z",
+  "verdict": "A (wolf)"
+}
