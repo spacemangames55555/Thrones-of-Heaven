@@ -770,3 +770,30 @@ ruling lands, strike the entry with a pointer to the commit that resolved it.
      verdict-judged, image-first, always. Machine checks under this band are
      SUPPORTS that surface candidates for the eye; they are never the
      authority and must never be cited as one.
+- SESSION 9 RE-LOCK (2026-08-04): CANDIDATE A, THE WOLF. Casey verdict,
+  verbatim: "A (wolf)". The enemy style lock is amended - technique unchanged,
+  subject corrected - and the Art Session 8 lock is superseded with its defect
+  recorded in the lock file itself so it cannot quietly recur.
+  WHAT LANDED: the master is BYTE-IDENTICAL to the candidate Casey judged. It
+  keeps the 96x136 portrait canvas it was generated in rather than being
+  re-canvassed to the creature class 136x96, because the fitter contain-fits
+  the OPAQUE BOX (80x51) and discards margins - the canvas cannot affect
+  rendering, and landing it unmodified means the shipped bytes are the
+  reviewed bytes. Future creature masters author at 136x96.
+  MEASURED: opacity 0.168, palette 20, mean luminance 68.0, saturation 0.502,
+  1724 rim pixels of physical tint, renders 68x43 in the 68x48 frame
+  (width-limited), visual mass 1586 against the corrected caster benchmark
+  1283. The rejected biped it replaces measured 1160.
+  REJECTED: B (hyena/boar, mass 1657) and C (gaunt stalker, mass 913 - its
+  raised tail dominates the bounding box so the contain-fit shrinks the body,
+  which is the same aspect trap the creature frame was widened to escape, and
+  is exactly why C was excluded from the aspect derivation).
+  THE ROSTER IS NOW MIXED, DELIBERATELY: corrupted-wildlife is approved art;
+  the other eight remain PROVISIONAL ART from the rejected Session 8 roster,
+  awaiting the Session 10 re-batch under this new lock. Per-family activation
+  is what makes that coexistence legal, and this is its first real use rather
+  than a synthetic gate injection.
+  SPEND: 0 additional generations - the three candidates were generated in
+  Session 9 before the frame correction and re-judged in the corrected frame
+  at zero extra cost, the same zero-credit re-derivation the Model C ruling
+  established.

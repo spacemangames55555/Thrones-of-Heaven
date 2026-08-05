@@ -1,0 +1,11 @@
+{
+  "batchId": "relock-corrupted-wildlife",
+  "category": "enemy",
+  "staged": [
+    { "id": "enemy-corrupted-wildlife",
+      "files": ["public/sprites/masters/enemy-corrupted-wildlife.png",
+                "art/references/enemy-corrupted-wildlife-lock.png"] }
+  ],
+  "excluded": [],
+  "blockedSkipped": []
+}
